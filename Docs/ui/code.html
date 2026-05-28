@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+
+<html dir="rtl" lang="fa"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>مدیریت کارت و تخصیص خدمات</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&amp;family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind Config Injection -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-low": "#f2f4f6",
+                        "on-primary-fixed": "#001a42",
+                        "inverse-surface": "#2d3133",
+                        "primary-fixed-dim": "#adc6ff",
+                        "primary-container": "#2170e4",
+                        "primary": "#0058be",
+                        "on-tertiary-container": "#fffbff",
+                        "on-tertiary-fixed-variant": "#5516be",
+                        "on-surface-variant": "#424754",
+                        "tertiary-container": "#8455ef",
+                        "surface-container-lowest": "#ffffff",
+                        "on-error": "#ffffff",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-secondary": "#ffffff",
+                        "surface": "#f7f9fb",
+                        "outline-variant": "#c2c6d6",
+                        "background": "#f7f9fb",
+                        "on-surface": "#191c1e",
+                        "on-secondary-fixed-variant": "#004e5c",
+                        "surface-bright": "#f7f9fb",
+                        "secondary": "#00687a",
+                        "surface-container": "#eceef0",
+                        "on-secondary-fixed": "#001f26",
+                        "on-error-container": "#93000a",
+                        "surface-variant": "#e0e3e5",
+                        "secondary-fixed-dim": "#4cd7f6",
+                        "on-secondary-container": "#006172",
+                        "inverse-primary": "#adc6ff",
+                        "surface-dim": "#d8dadc",
+                        "on-primary": "#ffffff",
+                        "tertiary": "#6b38d4",
+                        "tertiary-fixed": "#e9ddff",
+                        "secondary-container": "#57dffe",
+                        "tertiary-fixed-dim": "#d0bcff",
+                        "surface-container-highest": "#e0e3e5",
+                        "primary-fixed": "#d8e2ff",
+                        "on-primary-container": "#fefcff",
+                        "on-background": "#191c1e",
+                        "on-tertiary-fixed": "#23005c",
+                        "surface-container-high": "#e6e8ea",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed": "#acedff",
+                        "outline": "#727785",
+                        "surface-tint": "#005ac2",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#004395"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "container-padding-desktop": "32px",
+                        "base": "8px",
+                        "container-padding-mobile": "16px",
+                        "card-gap": "20px",
+                        "gutter": "24px"
+                    },
+                    fontFamily: {
+                        "label-mono": ["JetBrains Mono"],
+                        "body-md": ["Vazirmatn", "Inter"],
+                        "headline-sm": ["Vazirmatn", "Inter"],
+                        "display-lg": ["Vazirmatn", "Inter"],
+                        "body-sm": ["Vazirmatn", "Inter"],
+                        "headline-md": ["Vazirmatn", "Inter"],
+                        "headline-lg-mobile": ["Vazirmatn", "Inter"],
+                        "body-lg": ["Vazirmatn", "Inter"],
+                        "headline-lg": ["Vazirmatn", "Inter"]
+                    },
+                    fontSize: {
+                        "label-mono": ["14px", { lineHeight: "20px", letterSpacing: "0.05em", fontWeight: "500" }],
+                        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+                        "headline-sm": ["20px", { lineHeight: "28px", fontWeight: "600" }],
+                        "display-lg": ["48px", { lineHeight: "56px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "body-sm": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "headline-md": ["24px", { lineHeight: "32px", fontWeight: "600" }],
+                        "headline-lg-mobile": ["28px", { lineHeight: "36px", fontWeight: "600" }],
+                        "body-lg": ["18px", { lineHeight: "28px", fontWeight: "400" }],
+                        "headline-lg": ["32px", { lineHeight: "40px", fontWeight: "600" }]
+                    },
+                    boxShadow: {
+                        'soft-md': '0px 10px 25px -5px rgba(15, 23, 42, 0.05)',
+                        'glow-primary': '0px 8px 20px rgba(0, 88, 190, 0.25)',
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Vazirmatn', sans-serif; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Custom Checkbox styles */
+        .custom-checkbox:checked + div {
+            background-color: theme('colors.primary');
+            border-color: theme('colors.primary');
+        }
+        .custom-checkbox:checked + div svg {
+            display: block;
+        }
+    </style>
+</head>
+<body class="bg-surface-container-low text-on-surface h-screen w-full overflow-hidden flex items-center justify-center font-body-md">
+<!-- Modal Overlay -->
+<div class="fixed inset-0 bg-inverse-surface/40 backdrop-blur-sm z-40 flex items-center justify-center p-gutter">
+<!-- Modal Container -->
+<div class="bg-surface-container-lowest rounded-[20px] shadow-soft-md w-full max-w-[1440px] h-[921px] flex flex-col overflow-hidden relative z-50">
+<!-- Header Section -->
+<header class="flex items-center justify-between px-container-padding-desktop py-6 border-b border-surface-variant bg-surface-container-lowest shrink-0">
+<div class="flex items-center gap-6">
+<!-- License Plate Badge -->
+<div class="flex items-center bg-on-primary-fixed text-on-primary rounded-lg overflow-hidden border-2 border-on-primary-fixed h-10 w-fit">
+<div class="bg-primary px-2 h-full flex items-center justify-center border-l border-on-primary-fixed">
+<span class="text-[10px] font-bold">IR</span>
+</div>
+<div class="px-4 font-label-mono text-label-mono tracking-widest flex gap-2 items-center">
+<span>۱۲</span>
+<span>ب</span>
+<span>۳۴۵</span>
+<span class="w-px h-4 bg-on-primary/30 mx-1"></span>
+<span>۶۷</span>
+</div>
+</div>
+<!-- Vehicle & Driver Info -->
+<div class="flex flex-col justify-center">
+<div class="flex items-center gap-3">
+<h2 class="text-headline-sm font-headline-sm text-on-surface">پژو ۲۰۷i سفید</h2>
+<span class="px-2 py-0.5 rounded-full bg-secondary-container/30 text-on-secondary-container text-[12px] font-bold">عادی</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant mt-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="person">person</span>
+<span class="text-body-sm font-body-sm">علی رضایی</span>
+<span class="w-1 h-1 rounded-full bg-outline-variant mx-1"></span>
+<span class="text-body-sm font-body-sm">۰۹۱۲۳۴۵۶۷۸۹</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<!-- Status Badge -->
+<div class="bg-tertiary-container/10 text-tertiary px-4 py-2 rounded-xl flex items-center gap-2 border border-tertiary-container/20">
+<div class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></div>
+<span class="text-label-mono font-label-mono font-bold">در حال تخصیص</span>
+</div>
+<!-- Close Button -->
+<button class="w-10 h-10 rounded-full hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant transition-colors">
+<span class="material-symbols-outlined" data-icon="close">close</span>
+</button>
+</div>
+</header>
+<!-- Main Body (3 Columns) -->
+<div class="flex flex-1 overflow-hidden">
+<!-- LEFT COLUMN: Services -->
+<div class="w-[35%] flex flex-col border-l border-surface-variant bg-surface-bright">
+<div class="p-6 shrink-0 flex flex-col gap-4">
+<h3 class="text-headline-md font-headline-md text-on-surface">انتخاب خدمات</h3>
+<!-- Search -->
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-outline" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-[14px] py-3 pr-12 pl-4 text-body-md font-body-md text-on-surface placeholder:text-outline focus:ring-2 focus:ring-primary focus:bg-surface-container-lowest transition-all" placeholder="جستجوی خدمات..." type="text"/>
+</div>
+<!-- Categories -->
+<div class="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
+<button class="whitespace-nowrap px-4 py-2 rounded-full bg-primary text-on-primary text-body-sm font-body-sm shadow-glow-primary">همه موارد</button>
+<button class="whitespace-nowrap px-4 py-2 rounded-full bg-surface-container-high text-on-surface-variant text-body-sm font-body-sm hover:bg-surface-variant transition-colors">روشویی</button>
+<button class="whitespace-nowrap px-4 py-2 rounded-full bg-surface-container-high text-on-surface-variant text-body-sm font-body-sm hover:bg-surface-variant transition-colors">نظافت داخل</button>
+<button class="whitespace-nowrap px-4 py-2 rounded-full bg-surface-container-high text-on-surface-variant text-body-sm font-body-sm hover:bg-surface-variant transition-colors">موتورشویی</button>
+</div>
+</div>
+<!-- Services List -->
+<div class="flex-1 overflow-y-auto px-6 pb-6 flex flex-col gap-3">
+<!-- Service Item 1 (Selected) -->
+<label class="flex items-start gap-4 p-4 rounded-[16px] bg-primary-fixed/20 border-2 border-primary cursor-pointer transition-all">
+<div class="relative flex items-center justify-center mt-1">
+<input checked="" class="custom-checkbox opacity-0 absolute h-0 w-0" type="checkbox"/>
+<div class="w-5 h-5 rounded-[4px] border-2 border-outline flex items-center justify-center transition-colors">
+<svg class="w-3 h-3 text-white hidden" fill="none" stroke="currentColor" stroke-width="3" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<h4 class="text-body-lg font-headline-sm text-on-surface font-semibold">روشویی ویژه نانو</h4>
+<span class="text-body-md font-body-md font-bold text-primary">۱۲۰,۰۰۰ تومان</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface-variant mt-1">شستشوی کامل بدنه با مواد نانو و خشک کردن با دستمال میکروفایبر.</p>
+</div>
+</label>
+<!-- Service Item 2 -->
+<label class="flex items-start gap-4 p-4 rounded-[16px] bg-surface-container-lowest border border-surface-variant hover:border-outline-variant cursor-pointer transition-all">
+<div class="relative flex items-center justify-center mt-1">
+<input class="custom-checkbox opacity-0 absolute h-0 w-0" type="checkbox"/>
+<div class="w-5 h-5 rounded-[4px] border-2 border-outline flex items-center justify-center transition-colors">
+<svg class="w-3 h-3 text-white hidden" fill="none" stroke="currentColor" stroke-width="3" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<h4 class="text-body-lg font-headline-sm text-on-surface font-semibold">نظافت داخل کابین</h4>
+<span class="text-body-md font-body-md font-bold text-on-surface">۸۰,۰۰۰ تومان</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface-variant mt-1">جاروبرقی کامل، تمیز کردن داشبورد و شیشه های داخلی.</p>
+</div>
+</label>
+<!-- Service Item 3 -->
+<label class="flex items-start gap-4 p-4 rounded-[16px] bg-surface-container-lowest border border-surface-variant hover:border-outline-variant cursor-pointer transition-all">
+<div class="relative flex items-center justify-center mt-1">
+<input class="custom-checkbox opacity-0 absolute h-0 w-0" type="checkbox"/>
+<div class="w-5 h-5 rounded-[4px] border-2 border-outline flex items-center justify-center transition-colors">
+<svg class="w-3 h-3 text-white hidden" fill="none" stroke="currentColor" stroke-width="3" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<h4 class="text-body-lg font-headline-sm text-on-surface font-semibold">موتورشویی با بخار</h4>
+<span class="text-body-md font-body-md font-bold text-on-surface">۱۵۰,۰۰۰ تومان</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface-variant mt-1">شستشوی ایمن موتور بدون آب و با استفاده از بخار خشک.</p>
+</div>
+</label>
+</div>
+</div>
+<!-- MIDDLE COLUMN: Staff / Operators -->
+<div class="w-[35%] flex flex-col border-l border-surface-variant bg-surface">
+<div class="p-6 shrink-0 flex flex-col gap-4">
+<div class="flex items-center justify-between">
+<h3 class="text-headline-md font-headline-md text-on-surface">تخصیص پرسنل</h3>
+<span class="text-body-sm font-body-sm text-on-surface-variant">۴ نفر حاضر</span>
+</div>
+<!-- Search Staff -->
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-outline" data-icon="search">search</span>
+<input class="w-full bg-surface-container-lowest border border-surface-variant rounded-[14px] py-3 pr-12 pl-4 text-body-md font-body-md text-on-surface placeholder:text-outline focus:ring-2 focus:ring-primary transition-all" placeholder="جستجوی نام پرسنل..." type="text"/>
+</div>
+</div>
+<!-- Staff List -->
+<div class="flex-1 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
+<!-- Staff Card 1 (Selected/Active) -->
+<div class="p-5 rounded-[20px] bg-surface-container-lowest shadow-soft-md border-2 border-primary relative overflow-hidden">
+<div class="absolute top-0 right-0 w-1.5 h-full bg-primary"></div>
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-headline-sm">
+                                        م‌ر
+                                    </div>
+<div>
+<h4 class="text-body-lg font-headline-sm text-on-surface font-bold">محمد رضایی</h4>
+<span class="text-body-sm font-body-sm text-on-surface-variant">متخصص دیتیلینگ</span>
+</div>
+</div>
+<div class="bg-secondary/10 text-secondary px-3 py-1 rounded-full text-[12px] font-bold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                    آزاد
+                                </div>
+</div>
+<div class="bg-surface-container-low rounded-xl p-3 flex items-center justify-between mb-4">
+<span class="text-body-sm font-body-sm text-on-surface-variant">سفارشات در حال انجام:</span>
+<span class="text-body-md font-headline-sm font-bold text-on-surface">۰</span>
+</div>
+<!-- Payment Config -->
+<div class="flex items-center gap-3">
+<div class="flex bg-surface-container rounded-lg p-1">
+<button class="px-4 py-1.5 rounded-md bg-surface-container-lowest text-on-surface shadow-sm text-body-sm font-headline-sm">درصد</button>
+<button class="px-4 py-1.5 rounded-md text-on-surface-variant text-body-sm hover:text-on-surface">ثابت</button>
+</div>
+<div class="relative flex-1">
+<input class="w-full bg-surface-container-lowest border border-surface-variant rounded-lg py-1.5 px-3 text-center text-body-md font-body-md focus:ring-1 focus:ring-primary" dir="ltr" type="number" value="40"/>
+<span class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-body-sm">%</span>
+</div>
+</div>
+</div>
+<!-- Staff Card 2 (Busy) -->
+<div class="p-5 rounded-[20px] bg-surface-container-lowest border border-surface-variant hover:border-outline-variant transition-all cursor-pointer">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-headline-sm">
+                                        س‌ک
+                                    </div>
+<div>
+<h4 class="text-body-lg font-headline-sm text-on-surface font-semibold">سعید کریمی</h4>
+<span class="text-body-sm font-body-sm text-on-surface-variant">کارگر ساده</span>
+</div>
+</div>
+<div class="bg-error/10 text-error px-3 py-1 rounded-full text-[12px] font-bold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+                                    مشغول
+                                </div>
+</div>
+<div class="bg-surface-container-low rounded-xl p-3 flex items-center justify-between mb-4">
+<span class="text-body-sm font-body-sm text-on-surface-variant">سفارشات در حال انجام:</span>
+<span class="text-body-md font-headline-sm font-bold text-on-surface">۲</span>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT COLUMN: Summary & Action -->
+<div class="w-[30%] flex flex-col bg-surface-container-lowest">
+<div class="p-6 shrink-0 border-b border-surface-variant">
+<h3 class="text-headline-md font-headline-md text-on-surface">خلاصه تخصیص</h3>
+</div>
+<div class="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+<!-- Selected Services Overview -->
+<div>
+<h4 class="text-body-sm font-headline-sm text-on-surface-variant mb-3 uppercase tracking-wider">خدمات انتخاب شده</h4>
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-center">
+<span class="text-body-md font-body-md text-on-surface">روشویی ویژه نانو</span>
+<span class="text-body-md font-headline-sm text-on-surface">۱۲۰,۰۰۰ ت</span>
+</div>
+<!-- Empty state or more items could go here -->
+</div>
+</div>
+<hr class="border-surface-variant"/>
+<!-- Selected Staff Overview -->
+<div>
+<h4 class="text-body-sm font-headline-sm text-on-surface-variant mb-3 uppercase tracking-wider">پرسنل مجری</h4>
+<div class="flex items-center gap-3 p-3 rounded-xl bg-surface-container-low">
+<div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center text-body-sm font-bold">م‌ر</div>
+<div class="flex-1">
+<div class="text-body-md font-headline-sm text-on-surface">محمد رضایی</div>
+<div class="text-[12px] text-on-surface-variant">سهم: ۴۰٪</div>
+</div>
+</div>
+</div>
+<hr class="border-surface-variant"/>
+<!-- Financial Totals -->
+<div class="flex flex-col gap-3 mt-auto">
+<div class="flex justify-between items-center text-on-surface-variant">
+<span class="text-body-md font-body-md">مبلغ کل خدمات:</span>
+<span class="text-body-lg font-headline-sm">۱۲۰,۰۰۰ تومان</span>
+</div>
+<div class="flex justify-between items-center text-tertiary">
+<span class="text-body-md font-body-md">سهم پرسنل (۴۰٪):</span>
+<span class="text-body-lg font-headline-sm">۴۸,۰۰۰ تومان</span>
+</div>
+<div class="flex justify-between items-center text-primary mt-2 p-4 bg-primary-fixed/30 rounded-xl">
+<span class="text-body-md font-headline-sm font-bold">سهم کارواش:</span>
+<span class="text-headline-sm font-headline-sm font-bold">۷۲,۰۰۰ تومان</span>
+</div>
+</div>
+</div>
+<!-- CTA Footer -->
+<div class="p-6 shrink-0 border-t border-surface-variant bg-surface-container-lowest">
+<button class="w-full py-4 rounded-xl bg-gradient-to-r from-primary to-primary-container text-on-primary text-headline-sm font-headline-sm shadow-glow-primary hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+                            تایید و تخصیص کار
+                        </button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Material Icons Initialization -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('[data-icon]').forEach(el => {
+                const iconName = el.getAttribute('data-icon');
+                el.textContent = iconName;
+                el.classList.add('material-symbols-outlined');
+            });
+        });
+    </script>
+</body></html>

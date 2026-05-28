@@ -1,0 +1,50 @@
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/font/webfonts/Vazirmatn-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/font/webfonts/Vazirmatn-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/font/webfonts/Vazirmatn-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+* { box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  font-family: Vazirmatn, Tahoma, sans-serif;
+}
+body {
+  margin: 0;
+  background: var(--bg-main);
+  color: var(--text-primary);
+}
+#app {
+  zoom: 0.9;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+.page {
+  padding: 24px;
+}
+.card {
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}

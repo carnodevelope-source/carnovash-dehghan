@@ -1,0 +1,99 @@
+from django.conf import settings
+from django.db import models
+
+
+class TimestampedModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
+class Wallet(TimestampedModel):
+    class WalletType(models.TextChoices):
+        CASH = 'cash', 'Cash'
+        POS = 'pos', 'POS'
+        BANK = 'bank', 'Bank'
+
+    name = models.CharField(max_length=120)
+    wallet_type = models.CharField(max_length=20, choices=WalletType.choices)
+    balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Payment(TimestampedModel):
+    class Method(models.TextChoices):
+        POS = 'pos', 'POS'
+        CASH = 'cash', 'Cash'
+        TRANSFER = 'transfer', 'Transfer'
+        MANUAL = 'manual', 'Manual'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        SUCCESS = 'success', 'Success'
+        FAILED = 'failed', 'Failed'
+        REFUNDED = 'refunded', 'Refunded'
+
+    vehicle_entry = models.ForeignKey(
+        'vehicles.VehicleEntry', on_delete=models.CASCADE, related_name='payments'
+    )
+    method = models.CharField(max_length=20, choices=Method.choices)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    tip_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    service_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    product_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    pos_reference = models.CharField(max_length=100, blank=True)
+    rrn = models.CharField(max_length=60, blank=True)
+    gateway_payload = models.JSONField(default=dict, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    wallet = models.ForeignKey(
+        Wallet, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments'
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='payments_created',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['status', 'method', 'created_at'])]
+
+
+class CashflowTransaction(TimestampedModel):
+    class Direction(models.TextChoices):
+        IN = 'in', 'In'
+        OUT = 'out', 'Out'
+
+    wallet = models.ForeignKey(
+        Wallet, on_delete=models.CASCADE, related_name='cashflow_transactions'
+    )
+    direction = models.CharField(max_length=10, choices=Direction.choices)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    description = models.CharField(max_length=255, blank=True)
+    reference_type = models.CharField(max_length=40, blank=True)
+    reference_id = models.PositiveBigIntegerField(null=True, blank=True)
+    transacted_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_transactions_created',
+    )
+
+    class Meta:
+        ordering = ['-transacted_at']
+        indexes = [models.Index(fields=['wallet', 'transacted_at'])]

@@ -1,0 +1,178 @@
+from django.conf import settings
+from django.db import models
+
+
+class TimestampedModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
+class VehicleEntry(TimestampedModel):
+    class Status(models.TextChoices):
+        ENTERED = 'entered', 'Entered'
+        ASSIGNED = 'assigned', 'Assigned'
+        IN_PROGRESS = 'in_progress', 'In Progress'
+        READY_TO_SETTLE = 'ready_to_settle', 'Ready To Settle'
+        RELEASED = 'released', 'Released'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    class PaymentStatus(models.TextChoices):
+        UNPAID = 'unpaid', 'Unpaid'
+        PARTIAL = 'partial', 'Partial'
+        PAID = 'paid', 'Paid'
+        REFUNDED = 'refunded', 'Refunded'
+
+    class SourceType(models.TextChoices):
+        MANUAL = 'manual', 'Manual'
+        AI = 'ai', 'AI'
+        HYBRID = 'hybrid', 'Hybrid'
+
+    plate_number = models.CharField(max_length=20, db_index=True)
+    plate_left = models.CharField(max_length=2, blank=True)
+    plate_letter = models.CharField(max_length=5, blank=True)
+    plate_mid = models.CharField(max_length=3, blank=True)
+    plate_right = models.CharField(max_length=2, blank=True)
+    car_model = models.CharField(max_length=120)
+    car_color = models.CharField(max_length=60)
+    driver_name = models.CharField(max_length=120)
+    driver_phone = models.CharField(max_length=20, db_index=True)
+    notes = models.TextField(blank=True)
+    status = models.CharField(max_length=30, choices=Status.choices, default=Status.ENTERED)
+    payment_status = models.CharField(
+        max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.UNPAID
+    )
+    intake_source = models.CharField(
+        max_length=20, choices=SourceType.choices, default=SourceType.MANUAL
+    )
+    ai_confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    check_in_at = models.DateTimeField(auto_now_add=True)
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+    entered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='vehicle_entries_created',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vehicle_entries_updated',
+    )
+
+    class Meta:
+        ordering = ['-check_in_at']
+        indexes = [
+            models.Index(fields=['status', 'check_in_at']),
+            models.Index(fields=['payment_status', 'check_in_at']),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.plate_number} - {self.driver_name}'
+
+
+class VehicleStatusLog(TimestampedModel):
+    vehicle = models.ForeignKey(
+        VehicleEntry, on_delete=models.CASCADE, related_name='status_logs'
+    )
+    from_status = models.CharField(max_length=30, blank=True)
+    to_status = models.CharField(max_length=30)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='vehicle_status_changes',
+    )
+    changed_at = models.DateTimeField(auto_now_add=True)
+    note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-changed_at']
+
+
+class VehicleJob(TimestampedModel):
+    class WorkerPaymentType(models.TextChoices):
+        PERCENT = 'percent', 'Percent'
+        FIXED = 'fixed', 'Fixed'
+
+    vehicle = models.OneToOneField(
+        VehicleEntry, on_delete=models.CASCADE, related_name='job'
+    )
+    assigned_worker = models.ForeignKey(
+        'workers.WorkerProfile',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vehicle_jobs',
+    )
+    worker_payment_type = models.CharField(
+        max_length=20,
+        choices=WorkerPaymentType.choices,
+        default=WorkerPaymentType.PERCENT,
+    )
+    worker_payment_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0
+    )
+    worker_payment_fixed = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0
+    )
+    services_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    products_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tax_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    final_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    worker_share_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    carwash_share_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tip_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    delivered_to_worker_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-id']
+
+
+class VehicleJobService(models.Model):
+    vehicle_job = models.ForeignKey(
+        VehicleJob, on_delete=models.CASCADE, related_name='service_lines'
+    )
+    service = models.ForeignKey(
+        'services.Service', on_delete=models.PROTECT, related_name='vehicle_job_lines'
+    )
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    line_total = models.DecimalField(max_digits=12, decimal_places=2)
+    is_completed = models.BooleanField(default=False)
+    note = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['vehicle_job', 'service'], name='uniq_vehicle_job_service'
+            )
+        ]
+
+
+class VehicleJobProduct(models.Model):
+    vehicle_job = models.ForeignKey(
+        VehicleJob, on_delete=models.CASCADE, related_name='product_lines'
+    )
+    product = models.ForeignKey(
+        'products.Product', on_delete=models.PROTECT, related_name='vehicle_job_lines'
+    )
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    line_total = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['vehicle_job', 'product'], name='uniq_vehicle_job_product'
+            )
+        ]
