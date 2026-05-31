@@ -1,13 +1,15 @@
+﻿const item = (label, route) => ({ label, route })
+
+const supportItem = item('پشتیبانی', '/support')
+
 export const navigationByRole = {
   accountant: [
     {
-      key: 'accounting',
-      label: 'حسابداری',
+      key: 'finance',
+      label: 'مالی',
       items: [
-        { label: 'انبار', route: '/accounting?tab=inventory' },
-        { label: 'خرید', route: '/accounting?tab=purchases' },
-        { label: 'فروش', route: '/accounting?tab=sales' },
-        { label: 'سند حسابداری', route: '/accounting?tab=vouchers' }
+        item('کیف پول', '/manager/wallet'),
+        supportItem
       ]
     }
   ],
@@ -16,10 +18,11 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        { label: 'مدیریت خودروها', route: '/' },
-        { label: 'گزارشات', route: '/manager/reports' },
-        { label: 'تنظیمات', route: '/manager/settings' },
-        { label: 'حسابداری', route: '/accounting?tab=inventory' }
+        item('مدیریت خودروها', '/'),
+        item('گزارشات', '/manager/reports'),
+        item('تنظیمات', '/manager/settings'),
+        item('کیف پول', '/manager/wallet'),
+        supportItem
       ]
     }
   ],
@@ -28,10 +31,11 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        { label: 'مدیریت خودروها', route: '/' },
-        { label: 'گزارشات', route: '/manager/reports' },
-        { label: 'تنظیمات', route: '/manager/settings' },
-        { label: 'حسابداری', route: '/accounting?tab=inventory' }
+        item('مدیریت خودروها', '/'),
+        item('گزارشات', '/manager/reports'),
+        item('تنظیمات', '/manager/settings'),
+        item('کیف پول', '/manager/wallet'),
+        supportItem
       ]
     }
   ],
@@ -40,7 +44,8 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        { label: 'مدیریت خودروها', route: '/' }
+        item('مدیریت خودروها', '/'),
+        supportItem
       ]
     }
   ],
@@ -49,7 +54,8 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        { label: 'مدیریت خودروها', route: '/' }
+        item('مدیریت خودروها', '/'),
+        supportItem
       ]
     }
   ],
@@ -58,8 +64,18 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        { label: 'مدیریت خودروها', route: '/' }
+        item('مدیریت خودروها', '/'),
+        supportItem
       ]
     }
   ]
+}
+
+export const defaultRouteByRole = {
+  accountant: '/manager/wallet',
+  admin: '/',
+  manager: '/',
+  owner: '/',
+  operator: '/',
+  worker: '/'
 }

@@ -1,32 +1,13 @@
-<template>
-  <div class="dashboard-page">
-    <header class="topbar">
-      <div class="topbar-left">
-        <span class="brand">CarWash</span>
-        <div class="search-box">
-          <input v-model="search" type="text" placeholder="جستجوی پلاک یا نام..." />
-        </div>
-      </div>
-      <div class="topbar-right">
-        <button class="primary-btn" @click="openVehicleModal">ثبت خودروی جدید</button>
-        <div class="profile">
-          <div>
-            <p class="profile-name">اپراتور</p>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <div class="layout">
-      <aside class="sidebar">
-        <nav>
-          <RouterLink class="menu-item" :class="{ active: route.name === 'operator-dashboard' }" to="/">مدیریت خودرو ها</RouterLink>
-          <RouterLink v-if="authStore.canAccessManagerSettings" class="menu-item" :class="{ active: route.name === 'manager-settings' }" to="/manager/settings">تنظیمات</RouterLink>
-          <RouterLink v-if="authStore.canAccessManagerSettings" class="menu-item" :class="{ active: route.name === 'manager-reports' }" to="/manager/reports">گزارشات</RouterLink>
-        </nav>
-      </aside>
-
-      <main class="content">
+﻿<template>
+  <AppShell
+    title="مدیریت خودروها"
+    subtitle="پذیرش، تخصیص و ترخیص خودروها"
+    :show-search="true"
+    search-placeholder="جستجوی پلاک یا نام..."
+    :search-query="search"
+    @update:search-query="search = $event"
+  >
+    <div class="dashboard-content">
         <div class="filters">
           <button
             v-for="item in filterItems"
@@ -37,7 +18,10 @@
           >
             {{ item.label }}
           </button>
+          <button class="primary-btn" @click="openVehicleModal">ثبت خودروی جدید</button>
+        
         </div>
+        
 
         <section class="cards-grid">
           <article
@@ -70,6 +54,13 @@
               <p>{{ car.service }}</p>
               <p>راننده: {{ car.driverName }} | {{ car.driverPhone }}</p>
               <p>نیرو: {{ car.workerName }}</p>
+              <p class="customer-score-row">
+                <span>امتیاز مشتری:</span>
+                <span class="star-track">
+                  <span class="star-bg">★★★★★</span>
+                  <span class="star-fill" :style="{ width: `${customerScorePercent(car.customerScore)}%` }">★★★★★</span>
+                </span>
+              </p>
             </div>
 
             <button
@@ -83,30 +74,31 @@
             <div v-else class="card-passive-state">ترخیص انجام شد</div>
           </article>
         </section>
-      </main>
     </div>
+  </AppShell>
 
-    <div v-if="showVehicleModal" class="modal-overlay" @click.self="closeVehicleModal">
-      <section class="modal-panel">
-        <header class="modal-head">
-          <div>
-            <p class="modal-step">مرحله {{ modalStep }} از فرآیند پذیرش</p>
-            <h2>{{ modalStep === 1 ? 'ثبت ورود خودرو' : 'تخصیص خدمات و پرسنل' }}</h2>
-          </div>
-          <button class="close-btn" @click="closeVehicleModal">✕</button>
-        </header>
+  <div v-if="showVehicleModal" class="modal-overlay" @click.self="closeVehicleModal">
+      <section class="modal-panel" :class="{ 'step-one-modal-panel': modalStep === 1, 'step-two-modal-panel': modalStep === 2 }">
+        <template v-if="modalStep === 1">
+          <header class="modal-head">
+            <div>
+              <p class="modal-step">مرحله {{ modalStep }} از فرآیند پذیرش</p>
+              <h2>ثبت ورود خودرو</h2>
+            </div>
+            <button class="close-btn" @click="closeVehicleModal">✕</button>
+          </header>
+          <VehicleEntryStepOne
+            :vehicle-info="vehicleDraft"
+            @continue="handleStepOneContinue"
+            @refer="handleStepOneRefer"
+          />
+        </template>
 
-        <VehicleEntryStepOne
-          v-if="modalStep === 1"
-          :vehicle-info="vehicleDraft"
-          @continue="handleStepOneContinue"
-          @refer="handleStepOneRefer"
-        />
         <VehicleEntryStepTwo
           v-else
           :vehicle-info="vehicleDraft"
           @back="modalStep = 1"
-          @refer="handleStepTwoRefer"
+          @close="closeVehicleModal"
           @assign="handleStepTwoAssign"
         />
       </section>
@@ -166,11 +158,11 @@
           <section class="details-card full">
             <h3>اطلاعات تخصیص و مالی</h3>
             <div class="info-grid four">
-              <p><span>پرسنل تخصیص</span><strong>{{ selectedVehicle.job?.assigned_worker_name || 'تخصیص نشده' }}</strong></p>
+              <p><span>پرسنل تخصیص</span><strong>{{ assignedWorkersLabel(selectedVehicle.job) }}</strong></p>
               <p><span>نوع سهم</span><strong>{{ selectedVehicle.job?.worker_payment_type === 'fixed' ? 'ثابت' : 'درصدی' }}</strong></p>
               <p><span>درصد سهم</span><strong>{{ formatPercent(selectedVehicle.job?.worker_payment_percent) }}</strong></p>
               <p><span>سهم ثابت</span><strong>{{ formatMoney(selectedVehicle.job?.worker_payment_fixed) }}</strong></p>
-              <p><span>سهم پرسنل</span><strong>{{ formatMoney(selectedVehicle.job?.worker_share_amount) }}</strong></p>
+              <p><span>سهم پرسنل</span><strong>{{ formatMoney(workerTotalWithTip(selectedVehicle.job)) }}</strong></p>
               <p><span>سهم کارواش</span><strong>{{ formatMoney(selectedVehicle.job?.carwash_share_amount) }}</strong></p>
               <p><span>تخفیف</span><strong>{{ formatMoney(selectedVehicle.job?.discount_total) }}</strong></p>
               <p><span>مالیات</span><strong>{{ formatMoney(selectedVehicle.job?.tax_total) }}</strong></p>
@@ -214,7 +206,7 @@
           <button class="close-btn" @click="closeReleaseModal">✕</button>
         </header>
         <div v-if="releaseCheckoutLoading" class="release-loading">
-          <p>در حال بارگذاری اطلاعات ترخیص...</p>
+          <BaseSpinner size="66px" color="#1d4ed8" ball-color="#60a5fa" label="در حال بارگذاری اطلاعات ترخیص..." />
         </div>
         <div v-else class="release-layout">
           <div class="release-col">
@@ -238,6 +230,7 @@
                   </label>
                 </div>
               </article>
+              <p v-if="!releaseForm.serviceLines.length" class="empty-row">خدمتی برای این خودرو ثبت نشده است.</p>
             </div>
             
           </div>
@@ -291,20 +284,31 @@
             <div class="summary-rows">
               <p><span>جمع خدمات</span><strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong></p>
               <p><span>جمع محصولات</span><strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong></p>
-              <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
-              <p><span>جمع قابل تسهیم</span><strong>{{ formatMoney(releaseSummary.shareBaseTotal) }}</strong></p>
-              <p class="summary-final"><span>جمع کل</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
+              <p><span>تخفیف مشتری ({{ formatPercent(releaseSummary.customerDiscountPercent) }})</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
+              <p><span>جمع انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
             </div>
-            <div class="summary-inputs">
-              <label>
-                <span>انعام (هزار تومان)</span>
-                <input v-model.number="releaseForm.tipAmount" type="number" min="0" />
-              </label>
-            </div>
+            <label class="tip-input-row">
+              <span>انعام (هزار تومان)</span>
+              <input v-model.number="releaseForm.tipAmount" type="number" min="0" step="1" />
+            </label>
             <div class="summary-share">
-              <p><span>سهم نیرو</span><strong>{{ formatMoney(releaseSummary.workerShare) }}</strong></p>
-              <p><span>سهم کارواش</span><strong>{{ formatMoney(releaseSummary.carwashShare) }}</strong></p>
+              <p
+                v-for="(worker, index) in releaseSummary.workerShares"
+                :key="`${worker.name || 'worker'}-${index}`"
+              >
+                <span>سهم {{ worker.name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</span>
+                <strong>{{ formatMoney(worker.amount) }}</strong>
+              </p>
+              <p v-if="!releaseSummary.workerShares.length">
+                <span>سهم نیرو</span>
+                <strong>{{ formatMoney(0) }}</strong>
+              </p>
+              <p class="summary-share-total">
+                <span>جمع سهم کارواش</span>
+                <strong>{{ formatMoney(releaseSummary.carwashShare) }}</strong>
+              </p>
             </div>
+            <p class="summary-final"><span>جمع کل</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             <label class="mark-paid forced-paid">
               <input type="checkbox" checked disabled />
               <span>در ترخیص، پرداخت به‌صورت خودکار کامل ثبت می‌شود</span>
@@ -319,16 +323,15 @@
         </div>
       </section>
     </div>
-  </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { useAuthStore } from '../../store/auth.store'
 import VehicleEntryStepOne from '../../components/operator/VehicleEntryStepOne.vue'
 import VehicleEntryStepTwo from '../../components/operator/VehicleEntryStepTwo.vue'
+import BaseSpinner from '../../components/base/BaseSpinner.vue'
+import AppShell from '../../components/layout/AppShell.vue'
 import { useVehicleStore } from '../../store/vehicle.store'
 import api from '../../services/api'
 
@@ -348,10 +351,11 @@ const releaseForm = ref({
   productLinesByProductId: {},
   productSearch: '',
   tipAmount: 0,
-  workerShareAmount: 0
+  assignedWorkers: [],
+  workerShareAmount: 0,
+  customerScore: 0,
+  discountPercentPerHalfStar: 0
 })
-const route = useRoute()
-const authStore = useAuthStore()
 const vehicleStore = useVehicleStore()
 const { vehicles, selectedVehicle } = storeToRefs(vehicleStore)
 
@@ -401,6 +405,59 @@ const formatDateTime = (value) => {
     timeStyle: 'short'
   }).format(new Date(value))
 }
+const customerScorePercent = (score) => {
+  const normalized = Math.max(0, Math.min(5, Number(score || 0)))
+  return (normalized / 5) * 100
+}
+const formatCustomerScore = (score) => `${Number(score || 0).toLocaleString('fa-IR')} / ۵`
+const normalizeDigits = (value) => String(value || '')
+  .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+  .replace(/\D/g, '')
+const splitPlate = (rawPlate) => String(rawPlate || '').trim().split(/\s+/).filter(Boolean)
+const mapVehicleToDraft = (source = {}) => ({
+  id: source.id,
+  plate: source.plate_number,
+  plate_left: source.plate_left,
+  plate_letter: source.plate_letter,
+  plate_mid: source.plate_mid,
+  plate_right: source.plate_right,
+  model: source.car_model,
+  color: source.car_color,
+  driver: source.driver_name,
+  mobile: source.driver_phone,
+  note: source.notes,
+  serviceIds: Array.isArray(source.job?.service_lines) ? source.job.service_lines.map((s) => s.service) : [],
+  staffId: source.job?.assigned_worker || null,
+  staffIds: Array.isArray(source.job?.assigned_workers_snapshot)
+    ? source.job.assigned_workers_snapshot
+      .map((item) => Number(item?.id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+    : []
+})
+const assignedWorkersLabel = (job) => {
+  if (!job) return 'تخصیص نشده'
+  const names = Array.isArray(job.assigned_workers_names)
+    ? job.assigned_workers_names.filter((item) => String(item || '').trim().length > 0)
+    : []
+  if (names.length) return names.join('، ')
+  return job.assigned_worker_name || 'تخصیص نشده'
+}
+const workerTotalWithTip = (job) => {
+  if (!job) return 0
+  return Number(job.worker_share_amount || 0) + Number(job.workers_tip_share_amount || 0)
+}
+const hasCompletedStepOneData = (source = {}) => {
+  const plateParts = splitPlate(source.plate_number)
+  const left = String(source.plate_left || plateParts[0] || '').trim()
+  const letter = String(source.plate_letter || plateParts[1] || '').trim()
+  const mid = String(source.plate_mid || plateParts[2] || '').trim()
+  const right = String(source.plate_right || plateParts[3] || '').trim()
+  const hasPlate = left.length === 2 && letter.length === 1 && mid.length === 3 && right.length === 2
+  const hasModel = String(source.car_model || '').trim().length > 0
+  const hasColor = String(source.car_color || '').trim().length > 0
+  const hasPhone = normalizeDigits(source.driver_phone).length > 0
+  return hasPlate && hasModel && hasColor && hasPhone
+}
 const handleCardAction = async (car) => {
   if (car.statusKey === 'released') return
   if (car.statusKey === 'ready_to_settle') {
@@ -409,22 +466,8 @@ const handleCardAction = async (car) => {
   }
   const source = vehicleStore.vehicles.find((item) => item.id === car.id)
   if (!source) return
-  vehicleDraft.value = {
-    id: source.id,
-    plate: source.plate_number,
-    plate_left: source.plate_left,
-    plate_letter: source.plate_letter,
-    plate_mid: source.plate_mid,
-    plate_right: source.plate_right,
-    model: source.car_model,
-    color: source.car_color,
-    driver: source.driver_name,
-    mobile: source.driver_phone,
-    note: source.notes,
-    serviceIds: Array.isArray(source.job?.service_lines) ? source.job.service_lines.map((s) => s.service) : [],
-    staffId: source.job?.assigned_worker || null
-  }
-  modalStep.value = car.statusKey === 'entered' ? 1 : 2
+  vehicleDraft.value = mapVehicleToDraft(source)
+  modalStep.value = (car.statusKey === 'entered' && !hasCompletedStepOneData(source)) ? 1 : 2
   showVehicleModal.value = true
 }
 const closeReleaseModal = () => {
@@ -438,7 +481,10 @@ const closeReleaseModal = () => {
     productLinesByProductId: {},
     productSearch: '',
     tipAmount: 0,
-    workerShareAmount: 0
+    assignedWorkers: [],
+    workerShareAmount: 0,
+    customerScore: 0,
+    discountPercentPerHalfStar: 0
   }
 }
 const openReleaseModal = async (car) => {
@@ -446,14 +492,26 @@ const openReleaseModal = async (car) => {
   showReleaseModal.value = true
   releaseCheckoutLoading.value = true
   try {
-    const { data } = await api.get(`/vehicles/${car.id}/release/`)
+    const [releaseResponse, settingsResponse] = await Promise.all([
+      api.get(`/vehicles/${car.id}/release/`),
+      api.get('/services/general-settings/').catch(() => ({ data: { discount_percent_per_half_star: 0 } }))
+    ])
+    const data = releaseResponse.data
+    const discountPercentPerHalfStar = Math.max(
+      0,
+      Number(
+        settingsResponse?.data?.discount_percent_per_half_star
+        ?? data?.job?.discount_percent_per_half_star
+        ?? 0
+      )
+    )
     const serviceLines = Array.isArray(data?.job?.service_lines)
       ? data.job.service_lines.map((line) => ({
         id: line.id,
         service_name: line.service_name,
         quantity: Number(line.quantity || 0),
         line_total: Number(line.line_total || 0),
-        is_completed: Boolean(line.is_completed)
+        is_completed: true
       }))
       : []
     const availableProducts = Array.isArray(data?.job?.available_products)
@@ -475,8 +533,27 @@ const openReleaseModal = async (car) => {
       availableProducts,
       productLinesByProductId,
       productSearch: '',
-      tipAmount: Number(data?.job?.tip_amount || 0),
-      workerShareAmount: Number(data?.job?.worker_share_amount || 0)
+      tipAmount: Math.max(0, Number(data?.job?.tip_amount || 0) / 1000),
+      assignedWorkers: Array.isArray(data?.job?.assigned_workers)
+        ? data.job.assigned_workers
+          .map((item) => ({
+            id: Number(item?.id || 0),
+            name: String(item?.name || '').trim(),
+            tip_share_percent: Number(item?.tip_share_percent || 0)
+          }))
+          .filter((item) => item.id > 0 && item.name.length > 0)
+        : (Array.isArray(data?.job?.assigned_workers_names)
+          ? data.job.assigned_workers_names
+            .filter((item) => String(item || '').trim().length > 0)
+            .map((name, index) => ({
+              id: index + 1,
+              name: String(name || '').trim(),
+              tip_share_percent: 0
+            }))
+          : []),
+      workerShareAmount: Number(data?.job?.worker_share_amount || 0),
+      customerScore: Math.max(0, Number(data?.vehicle?.customer_score || releaseCandidate.value?.customerScore || 0)),
+      discountPercentPerHalfStar
     }
   } catch (error) {
     console.error('openReleaseModal error:', error?.response?.data || error)
@@ -531,18 +608,79 @@ const releaseSummary = computed(() => {
     return sum + (qty * Number(product.sale_price || 0))
   }, 0)
   const tipAmount = Math.max(0, Number(releaseForm.value.tipAmount || 0) * 1000)
+  const customerScore = Math.max(0, Math.min(5, Number(releaseForm.value.customerScore || 0)))
+  const discountPercentPerHalfStar = Math.max(0, Number(releaseForm.value.discountPercentPerHalfStar || 0))
+  const customerDiscountPercent = Math.max(0, Math.min(100, Number((discountPercentPerHalfStar * customerScore * 2).toFixed(2))))
+  const discountBase = Math.max(0, servicesTotal + productsTotal)
+  const discountAmount = Number((discountBase * customerDiscountPercent / 100).toFixed(2))
   const shareBaseTotal = Math.max(0, servicesTotal)
-  const finalTotal = shareBaseTotal + tipAmount
-  const workerShare = Math.min(shareBaseTotal, Number(releaseForm.value.workerShareAmount || 0))
-  const carwashShare = Math.max(0, shareBaseTotal - workerShare)
-  const finalTotalWithProducts = Math.max(0, servicesTotal + productsTotal + tipAmount)
+  const workerShareBase = Math.min(shareBaseTotal, Number(releaseForm.value.workerShareAmount || 0))
+  const finalTotalWithProducts = Math.max(0, servicesTotal + productsTotal - discountAmount + tipAmount)
+  const assignedWorkers = Array.isArray(releaseForm.value.assignedWorkers)
+    ? releaseForm.value.assignedWorkers.filter((item) => String(item?.name || '').trim().length > 0)
+    : []
+  const workerCount = assignedWorkers.length
+  const baseAmountsByWorker = []
+  if (workerCount > 0 && workerShareBase > 0) {
+    const baseAmount = Number((workerShareBase / workerCount).toFixed(2))
+    let remaining = workerShareBase
+    for (let i = 0; i < workerCount; i += 1) {
+      const amount = i === workerCount - 1 ? Number(remaining.toFixed(2)) : baseAmount
+      baseAmountsByWorker.push(amount)
+      remaining = Number((remaining - amount).toFixed(2))
+    }
+  } else if (workerCount > 0) {
+    assignedWorkers.forEach(() => baseAmountsByWorker.push(0))
+  }
+  const percentByWorker = assignedWorkers.map((worker) => {
+    const value = Number(worker?.tip_share_percent || 0)
+    return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))
+  })
+  const totalPercent = percentByWorker.reduce((sum, value) => sum + value, 0)
+  const tipAmountsByWorker = assignedWorkers.map(() => 0)
+  let allocatedTipTotal = 0
+  if (tipAmount > 0 && workerCount > 0 && totalPercent > 0) {
+    let distributed = 0
+    for (let i = 0; i < workerCount; i += 1) {
+      const divisor = totalPercent > 100 ? totalPercent : 100
+      const raw = totalPercent > 100
+        ? (tipAmount * percentByWorker[i]) / divisor
+        : (tipAmount * percentByWorker[i]) / 100
+      const amount = i === workerCount - 1
+        ? Math.max(0, Number((tipAmount - distributed).toFixed(2)))
+        : Number(raw.toFixed(2))
+      tipAmountsByWorker[i] = amount
+      distributed = Number((distributed + amount).toFixed(2))
+    }
+    allocatedTipTotal = Math.min(tipAmount, Number(distributed.toFixed(2)))
+  }
+
+  const workerShares = []
+  if (workerCount > 0) {
+    for (let i = 0; i < workerCount; i += 1) {
+      workerShares.push({
+        name: assignedWorkers[i]?.name || 'نیرو',
+        amount: Number((Number(baseAmountsByWorker[i] || 0) + Number(tipAmountsByWorker[i] || 0)).toFixed(2))
+      })
+    }
+  } else if (workerShareBase > 0) {
+    workerShares.push({ name: 'نیرو', amount: workerShareBase })
+  }
+  const carwashShare = Math.max(
+    0,
+    Number((shareBaseTotal - workerShareBase + (tipAmount - allocatedTipTotal) - discountAmount).toFixed(2))
+  )
   return {
     servicesTotal,
     productsTotal,
+    customerScore,
+    customerDiscountPercent,
+    discountAmount,
     tipAmount,
     shareBaseTotal,
     finalTotal: finalTotalWithProducts,
-    workerShare,
+    workerShare: Number((workerShareBase + allocatedTipTotal).toFixed(2)),
+    workerShares,
     carwashShare
   }
 })
@@ -574,9 +712,15 @@ const confirmReleaseVehicle = async () => {
     releaseSubmitting.value = false
   }
 }
-const handleStepOneContinue = (payload) => {
-  vehicleDraft.value = payload
-  modalStep.value = 2
+const handleStepOneContinue = async (payload) => {
+  try {
+    const savedVehicle = await saveVehicle({ vehicle: payload }, 'entered')
+    vehicleDraft.value = mapVehicleToDraft(savedVehicle)
+    modalStep.value = 2
+  } catch (error) {
+    console.error('continue step one error:', error?.response?.data || error)
+    alert('ذخیره اطلاعات مرحله اول ناموفق بود.')
+  }
 }
 const buildCreateOrUpdatePayload = (payload, status) => {
   const plateRaw = (payload?.vehicle?.plate || '').trim()
@@ -603,6 +747,12 @@ const buildCreateOrUpdatePayload = (payload, status) => {
     status,
     worker_id: payload?.staff?.id || null,
     worker_name: payload?.staff?.name || '',
+    staff_members: Array.isArray(payload?.staffMembers)
+      ? payload.staffMembers.map((item) => ({
+        id: item?.id,
+        name: item?.name || ''
+      }))
+      : [],
     services: payload?.services || [],
     share: payload?.share || {}
   }
@@ -626,16 +776,6 @@ const handleStepOneRefer = async (payload) => {
     closeVehicleModal()
   } catch (error) {
     console.error('refer step one error:', error?.response?.data || error)
-    alert('ثبت ارجاع ناموفق بود.')
-  }
-}
-
-const handleStepTwoRefer = async (payload) => {
-  try {
-    await saveVehicle(payload, 'entered')
-    closeVehicleModal()
-  } catch (error) {
-    console.error('refer step two error:', error?.response?.data || error)
     alert('ثبت ارجاع ناموفق بود.')
   }
 }
@@ -664,7 +804,7 @@ const cars = computed(() => vehicles.value.map((item) => ({
           : '#16a34a',
   badgeBg: '#eef2ff',
   badgeText: '#334155',
-  time: 'از دیتابیس',
+  time: formatDateTime(item.check_in_at),
   plateTwoDigit: item.plate_left || '--',
   plateLetter: item.plate_letter || '-',
   plateThreeDigit: item.plate_mid || '---',
@@ -672,12 +812,15 @@ const cars = computed(() => vehicles.value.map((item) => ({
   model: item.car_model,
   colorName: item.car_color,
   plateDisplay: item.plate_number || '-',
-  service: 'بر اساس خدمات ثبت‌شده',
+  service: Array.isArray(item.job?.service_lines) && item.job.service_lines.length
+    ? item.job.service_lines.map((line) => line.service_name || 'خدمت').join('، ')
+    : 'خدمت ثبت نشده',
   driverName: item.driver_name,
   driverPhone: item.driver_phone,
+  customerScore: Number(item.customer_score || 0),
   finalTotal: item.job?.final_total || item.job?.services_total || 0,
   carwashShare: item.job?.carwash_share_amount || 0,
-  workerName: item.status === 'assigned' ? 'تخصیص انجام شده' : 'تخصیص نشده',
+  workerName: assignedWorkersLabel(item.job),
   action: item.status === 'released' ? 'ترخیص انجام شد' : item.status === 'ready_to_settle' ? 'ترخیص خودرو' : 'تکمیل اطلاعات',
   actionClass: item.status === 'ready_to_settle' ? 'action-release' : item.status === 'released' ? 'action-done' : 'action-complete'
 })))
@@ -717,19 +860,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.dashboard-page { min-height: 100vh; background: #f7f9fb; font-family: Vazirmatn, sans-serif; color: #191c1e; }
-.topbar { position: sticky; top: 0; z-index: 10; height: 64px; display: flex; justify-content: space-between; align-items: center; padding: 0 24px; background: rgba(255,255,255,.86); backdrop-filter: blur(12px); border-bottom: 1px solid #e3e6ed; }
-.topbar-left,.topbar-right { display: flex; align-items: center; gap: 12px; }
-.brand { color: #0058be; font-weight: 700; }
-.search-box input { width: 260px; height: 40px; border: none; border-radius: 12px; background: #f2f4f6; padding: 0 12px; }
-.search-box input:focus { outline: 2px solid #0058be; }
-.primary-btn { height: 40px; border: none; border-radius: 12px; color: #fff; font-weight: 700; padding: 0 16px; background: linear-gradient(135deg, #0058be 0%, #57dffe 100%); cursor: pointer; }
-.profile-name { margin: 0; font-size: 13px; font-weight: 700; }
-.layout { display: flex; }
-.sidebar { width: 240px; min-height: calc(100vh - 64px); padding: 24px 12px; background: #f2f4f6; border-left: 1px solid #e3e6ed; }
-.menu-item { display: block; padding: 12px 14px; border-radius: 12px; text-decoration: none; color: #475569; font-weight: 600; }
-.menu-item.active { background: #dbeafe; color: #0058be; }
-.content { flex: 1; padding: 24px; }
+.dashboard-content { min-width: 0; }
+.primary-btn { height: 40px; border: none; border-radius: 12px; color: #fff; font-weight: 700; padding: 0 16px; background: linear-gradient(135deg, #0058be 0%, #57dffe 100%); cursor: pointer;margin-right: 3%; }
 .filters { display: flex; gap: 10px; overflow: auto; padding-bottom: 8px; }
 .chip { border: none; border-radius: 999px; padding: 10px 16px; background: #e6e8ea; color: #4b5563;font-size:13px; font-weight: 500; white-space: nowrap; }
 .chip.active { background: #0058be; color: #fff; }
@@ -750,6 +882,11 @@ onMounted(() => {
 .plate-blue { min-width: 52px; background: #2563eb; color: #ffffff; border-radius: 0 7px 7px 0; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 24px; line-height: 1; padding-top: 12px; padding-bottom: 8px; }
 .car-info h3 { margin: 0 0 6px; font-size: 15px; }
 .car-info p { margin: 3px 0; font-size: 13px; color: #64748b; }
+.customer-score-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.customer-score-row strong { color: #0f172a; font-weight: 700; font-size: 12px; }
+.star-track { position: relative; display: inline-block; line-height: 1; font-size: 14px; letter-spacing: 1px; }
+.star-bg { color: #d1d5db; }
+.star-fill { position: absolute; inset: 0 auto 0 0; overflow: hidden; white-space: nowrap; color: #f59e0b; }
 .card-action { margin-top: auto; height: 42px; border: none; border-radius: 12px; font-weight: 700; }
 .card-action.action-complete { background: #d0fadf; color: #166534; }
 .card-action.action-release { background: #fef3c7; color: #92850e; }
@@ -757,50 +894,51 @@ onMounted(() => {
 .card-passive-state { margin-top: auto; height: 42px; border-radius: 12px; border: 1px dashed #cbd5e1; color: #64748b; background: #f8fafc; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 .release-panel { width: min(1380px, 100%); }
 .release-loading { min-height: 280px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 14px; }
-.release-layout { padding: 24px; display: grid; gap: 20px; grid-template-columns: repeat(3, minmax(0, 1fr)); background: #f7f9fb; }
-.release-col { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; min-height: 620px; }
-.release-products-col, .release-summary-col { border-right: 1px solid #e2e8f0; }
-.release-title { padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
+.release-layout { padding: 24px; display: grid; gap: 20px; grid-template-columns: repeat(3, minmax(0, 1fr)); background: #edf5ff; }
+.release-col { background: #f8fbff; border: 1px solid #d4e4ff; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; min-height: 620px; box-shadow: 0 10px 24px -18px rgba(0,88,190,.35); }
+.release-products-col, .release-summary-col { border-right: 1px solid #d4e4ff; }
+.release-title { padding-bottom: 10px; border-bottom: 1px solid #d4e4ff; margin-bottom: 12px; }
 .release-title h3 { margin: 0; font-size: 20px; color: #111827; }
 .release-list { display: grid; gap: 10px; overflow: auto; }
-.service-check-item { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; gap: 12px; background: #f8fbff; }
+.service-check-item { border: 1px solid #d4e4ff; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; gap: 12px; background: #eef5ff; }
 .service-check-item h4 { margin: 0 0 4px; font-size: 15px; color: #0f172a; }
 .service-check-item p { margin: 0; font-size: 12px; color: #64748b; }
 .service-check-action { display: grid; justify-items: end; gap: 8px; align-content: center; }
 .service-check-action span { font-size: 13px; font-weight: 700; color: #0058be; }
 .service-check-action label { font-size: 12px; color: #475569; display: inline-flex; align-items: center; gap: 6px; }
-.release-secondary-btn { margin-top: auto; border: 1px solid #cbd5e1; border-radius: 12px; height: 44px; background: #f8fafc; font-weight: 700; color: #0f172a; cursor: pointer; }
 .release-product-search { margin-bottom: 10px; }
-.release-product-search input { width: 100%; height: 42px; border: 1px solid #cbd5e1; border-radius: 12px; padding: 0 12px; }
+.release-product-search input { width: 100%; height: 42px; border: 1px solid #bfd7ff; border-radius: 12px; padding: 0 12px; background: #edf5ff; }
 .products-scroll { max-height: 520px; padding-right: 4px; }
-.product-item { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.product-item { border: 1px solid #d4e4ff; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; align-items: center; background: #fdfefe; }
 .product-item h4 { margin: 0 0 4px; font-size: 14px; color: #111827; }
 .product-item p { margin: 0; font-size: 12px; color: #64748b; }
 .product-item span { font-size: 13px; color: #00687a; font-weight: 700; }
 .product-item.unavailable { opacity: .55; }
 .product-item p.stock-empty { color: #ba1a1a; }
-.qty-controls { display: inline-flex; align-items: center; gap: 10px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 4px 6px; background: #f8fafc; }
-.qty-controls button { width: 28px; height: 28px; border: 1px solid #dbe3ef; border-radius: 8px; background: #fff; cursor: pointer; }
+.qty-controls { display: inline-flex; align-items: center; gap: 10px; border: 1px solid #d4e4ff; border-radius: 10px; padding: 4px 6px; background: #edf5ff; }
+.qty-controls button { width: 28px; height: 28px; border: 1px solid #bfd7ff; border-radius: 8px; background: #fff; cursor: pointer; }
 .qty-controls button:disabled { opacity: .45; cursor: not-allowed; }
-.qty-controls input { width: 72px; height: 28px; border: 1px solid #dbe3ef; border-radius: 8px; text-align: center; background: #fff; }
+.qty-controls input { width: 72px; height: 28px; border: 1px solid #bfd7ff; border-radius: 8px; text-align: center; background: #fff; }
 .summary-rows { display: grid; gap: 10px; }
 .summary-rows p { margin: 0; display: flex; justify-content: space-between; font-size: 14px; color: #475569; }
 .summary-rows p strong { color: #0f172a; }
-.summary-rows p.summary-final { border-top: 1px solid #e2e8f0; padding-top: 12px; margin-top: 4px; font-size: 18px; font-weight: 800; color: #111827; }
-.summary-inputs { margin-top: 14px; display: grid; gap: 10px; }
-.summary-inputs label { display: grid; gap: 6px; }
-.summary-inputs span { color: #64748b; font-size: 12px; }
-.summary-inputs input { height: 40px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 10px; }
-.summary-share { margin-top: 12px; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 10px; background: #f8fafc; display: grid; gap: 8px; }
+.tip-input-row { margin-top: 10px; display: grid; gap: 6px; }
+.tip-input-row span { color: #64748b; font-size: 12px; }
+.tip-input-row input { height: 40px; border: 1px solid #bfd7ff; border-radius: 10px; padding: 0 10px; background: #f7fbff; }
+.summary-share { margin-top: 12px; border: 1px dashed #bfd7ff; border-radius: 12px; padding: 10px; background: #edf5ff; display: grid; gap: 8px; }
 .summary-share p { margin: 0; display: flex; justify-content: space-between; font-size: 13px; color: #334155; }
+.summary-share .summary-share-total { border-top: 1px dashed #bfd7ff; padding-top: 8px; margin-top: 4px; font-weight: 700; }
+.summary-final { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid #d4e4ff; display: flex; justify-content: space-between; font-size: 18px; font-weight: 800; color: #111827; }
 .mark-paid { margin-top: 12px; display: inline-flex; align-items: center; gap: 8px; color: #334155; font-size: 13px; }
 .mark-paid.forced-paid { opacity: .85; }
 .release-actions { margin-top: auto; padding-top: 14px; display: flex; gap: 8px; }
-.back-btn { flex: 1; height: 44px; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; color: #334155; font-weight: 700; cursor: pointer; }
-.confirm-release-btn { flex: 1; height: 44px; border: none; border-radius: 12px; font-weight: 700; color: #92850e; background: #fef3c7; cursor: pointer; }
+.back-btn { flex: 1; height: 44px; border: 1px solid #bfd7ff; border-radius: 12px; background: #fff; color: #334155; font-weight: 700; cursor: pointer; }
+.confirm-release-btn { flex: 1; height: 44px; border: none; border-radius: 12px; font-weight: 700; color: #ffffff; background: linear-gradient(90deg,#0058be,#2170e4); cursor: pointer; box-shadow: 0 8px 20px rgba(0,88,190,.2); }
 .confirm-release-btn:disabled { opacity: .65; cursor: not-allowed; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .modal-panel { width: min(1280px, 100%); max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow: auto; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
+.step-one-modal-panel { overflow: hidden; }
+.step-two-modal-panel { width: min(1440px, 100%); height: calc(100vh - 40px); max-height: calc(100vh - 40px); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
 .modal-head { padding: 18px 22px; border-bottom: 1px solid #e3e6ed; display: flex; align-items: center; justify-content: space-between; }
 .modal-head h2 { margin: 0; font-size: 22px; }
 .modal-step { margin: 0 0 6px; color: #64748b; font-size: 12px; }
@@ -828,7 +966,6 @@ onMounted(() => {
 .empty-row { margin: 0; color: #64748b; font-size: 13px; }
 @media (max-width: 1400px) { .cards-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 1100px) {
-  .sidebar { display: none; }
   .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .details-grid { grid-template-columns: 1fr; }
   .summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -837,11 +974,11 @@ onMounted(() => {
   .release-col { min-height: auto; }
 }
 @media (max-width: 768px) {
-  .topbar { padding: 0 12px; }
-  .search-box input { width: 170px; }
   .cards-grid { grid-template-columns: 1fr; }
-  .content { padding: 14px; }
   .modal-overlay { padding: 8px; }
   .modal-panel { max-height: calc(100vh - 16px); border-radius: 14px; }
+  .step-two-modal-panel { height: calc(100vh - 16px); max-height: calc(100vh - 16px); }
 }
 </style>
+
+

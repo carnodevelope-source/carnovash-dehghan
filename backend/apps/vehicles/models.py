@@ -10,6 +10,26 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
+class CustomerProfile(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='customers',
+        null=True,
+        blank=True,
+    )
+    phone = models.CharField(max_length=20, unique=True, db_index=True)
+    full_name = models.CharField(max_length=120, blank=True)
+    yearly_score = models.DecimalField(max_digits=3, decimal_places=1, default=0)
+    score_year = models.PositiveSmallIntegerField(default=1400)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self) -> str:
+        return f'{self.phone} - {self.full_name or "Customer"}'
+
+
 class VehicleEntry(TimestampedModel):
     class Status(models.TextChoices):
         ENTERED = 'entered', 'Entered'
@@ -30,6 +50,13 @@ class VehicleEntry(TimestampedModel):
         AI = 'ai', 'AI'
         HYBRID = 'hybrid', 'Hybrid'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='vehicle_entries',
+        null=True,
+        blank=True,
+    )
     plate_number = models.CharField(max_length=20, db_index=True)
     plate_left = models.CharField(max_length=2, blank=True)
     plate_letter = models.CharField(max_length=5, blank=True)
@@ -39,6 +66,13 @@ class VehicleEntry(TimestampedModel):
     car_color = models.CharField(max_length=60)
     driver_name = models.CharField(max_length=120)
     driver_phone = models.CharField(max_length=20, db_index=True)
+    customer = models.ForeignKey(
+        CustomerProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vehicle_entries',
+    )
     notes = models.TextField(blank=True)
     status = models.CharField(max_length=30, choices=Status.choices, default=Status.ENTERED)
     payment_status = models.CharField(
@@ -78,6 +112,13 @@ class VehicleEntry(TimestampedModel):
 
 
 class VehicleStatusLog(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='vehicle_status_logs',
+        null=True,
+        blank=True,
+    )
     vehicle = models.ForeignKey(
         VehicleEntry, on_delete=models.CASCADE, related_name='status_logs'
     )
@@ -101,6 +142,13 @@ class VehicleJob(TimestampedModel):
         PERCENT = 'percent', 'Percent'
         FIXED = 'fixed', 'Fixed'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='vehicle_jobs',
+        null=True,
+        blank=True,
+    )
     vehicle = models.OneToOneField(
         VehicleEntry, on_delete=models.CASCADE, related_name='job'
     )
@@ -111,6 +159,7 @@ class VehicleJob(TimestampedModel):
         blank=True,
         related_name='vehicle_jobs',
     )
+    assigned_workers_snapshot = models.JSONField(default=list, blank=True)
     worker_payment_type = models.CharField(
         max_length=20,
         choices=WorkerPaymentType.choices,
@@ -128,8 +177,13 @@ class VehicleJob(TimestampedModel):
     tax_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     final_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     worker_share_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    workers_tip_share_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True
+    )
     carwash_share_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     tip_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    worker_share_paid_at = models.DateTimeField(null=True, blank=True)
+    tip_paid_at = models.DateTimeField(null=True, blank=True)
     delivered_to_worker_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     released_at = models.DateTimeField(null=True, blank=True)
@@ -139,6 +193,13 @@ class VehicleJob(TimestampedModel):
 
 
 class VehicleJobService(models.Model):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='vehicle_job_services',
+        null=True,
+        blank=True,
+    )
     vehicle_job = models.ForeignKey(
         VehicleJob, on_delete=models.CASCADE, related_name='service_lines'
     )
@@ -160,6 +221,13 @@ class VehicleJobService(models.Model):
 
 
 class VehicleJobProduct(models.Model):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='vehicle_job_products',
+        null=True,
+        blank=True,
+    )
     vehicle_job = models.ForeignKey(
         VehicleJob, on_delete=models.CASCADE, related_name='product_lines'
     )

@@ -1,11 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth.store'
+import { defaultRouteByRole } from '../config/navigation'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('../views/auth/LoginView.vue') },
   { path: '/', name: 'operator-dashboard', component: () => import('../views/operator/DashboardView.vue'), meta: { roles: ['admin', 'owner', 'manager', 'operator', 'worker'] } },
-  { path: '/accounting', name: 'accounting-dashboard', component: () => import('../views/accounting/AccountingDashboardView.vue'), meta: { roles: ['accountant', 'admin', 'manager'] } },
+  { path: '/manager/wallet', name: 'manager-wallet', component: () => import('../views/manager/WalletView.vue'), meta: { roles: ['accountant', 'admin', 'manager'] } },
   { path: '/manager/reports', name: 'manager-reports', component: () => import('../views/manager/ReportsView.vue'), meta: { roles: ['manager', 'admin'] } },
+  { path: '/support', name: 'support', component: () => import('../views/support/SupportView.vue'), meta: { roles: ['accountant', 'admin', 'owner', 'manager', 'operator', 'worker'] } },
   {
     path: '/manager/settings',
     name: 'manager-settings',
@@ -29,10 +31,14 @@ router.beforeEach(async (to) => {
   if (to.meta?.roles?.length) {
     if (!authStore.user) return '/login'
     if (!to.meta.roles.includes(authStore.role)) {
-      if (authStore.role === 'accountant') return '/accounting'
-      return '/'
+      return defaultRouteByRole[authStore.role] || '/'
     }
   }
+
+  if (to.path === '/login' && authStore.user) {
+    return defaultRouteByRole[authStore.role] || '/'
+  }
+
   return true
 })
 

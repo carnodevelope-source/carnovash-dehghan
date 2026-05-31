@@ -1,9 +1,9 @@
-<template>
-  <div class="login-page">
+﻿<template>
+  <div class="login-page" dir="rtl">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-title">Lumina Wash</span>
-        <span class="brand-subtitle">Enterprise</span>
+        <span class="brand-title">CarWash</span>
+        <span class="brand-subtitle">سامانه مدیریت</span>
       </div>
       <div class="lang">فارسی</div>
     </header>
@@ -15,7 +15,7 @@
       <section class="login-card">
         <div class="login-head">
           <h1>خوش آمدید</h1>
-          <p>لطفاً وارد حساب کاربری خود شوید</p>
+          <p>لطفا وارد حساب کاربری خود شوید</p>
         </div>
 
         <form class="login-form" @submit.prevent="onSubmit">
@@ -27,7 +27,6 @@
           <label class="field">
             <div class="field-row">
               <span>رمز عبور</span>
-              <a href="#">فراموشی رمز عبور؟</a>
             </div>
             <input v-model="form.password" :type="showPassword ? 'text' : 'password'" placeholder="رمز عبور" />
           </label>
@@ -42,7 +41,7 @@
       </section>
     </main>
 
-    <footer class="footer">Powered by Lumina Wash Intelligence Unit © 2024</footer>
+    <footer class="footer">Powered by CarWash Platform © 2026</footer>
   </div>
 </template>
 
@@ -51,6 +50,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { ensureCsrfToken } from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
+import { defaultRouteByRole } from '../../config/navigation'
 
 const showPassword = ref(false)
 const isLoading = ref(false)
@@ -73,12 +73,12 @@ const onSubmit = async () => {
     })
     await authStore.fetchMe()
 
-    await router.push(authStore.role === 'accountant' ? '/accounting' : '/')
+    await router.push(defaultRouteByRole[authStore.role] || '/')
   } catch (error) {
     errorMessage.value =
       error?.response?.data?.detail ||
       error?.response?.data?.non_field_errors?.[0] ||
-      'ورود ناموفق بود. لطفاً اطلاعات را بررسی کنید.'
+      'ورود ناموفق بود. لطفا اطلاعات را بررسی کنید.'
   } finally {
     isLoading.value = false
   }
@@ -176,7 +176,6 @@ const onSubmit = async () => {
 }
 .field input:focus { outline: 2px solid #0058be; }
 .field-row { display: flex; justify-content: space-between; align-items: center; }
-.field-row a { color: #0058be; text-decoration: none; }
 .submit-btn {
   height: 56px;
   border: 0;

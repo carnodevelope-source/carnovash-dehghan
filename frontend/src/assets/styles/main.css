@@ -28,7 +28,10 @@
 }
 body {
   margin: 0;
-  background: var(--bg-main);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0) 35%),
+    radial-gradient(circle at 88% 18%, rgba(14, 116, 144, 0.08), rgba(14, 116, 144, 0) 30%),
+    var(--bg-main);
   color: var(--text-primary);
 }
 #app {
@@ -47,4 +50,6 @@ textarea {
   background: var(--bg-surface);
   border-radius: var(--radius-md);
   padding: 16px;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
 }

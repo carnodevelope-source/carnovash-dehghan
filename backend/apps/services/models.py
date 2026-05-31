@@ -11,6 +11,13 @@ class TimestampedModel(models.Model):
 
 
 class ServiceCategory(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='service_categories',
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True)
     description = models.TextField(blank=True)
@@ -36,6 +43,13 @@ class Service(TimestampedModel):
         FIXED = 'fixed', 'Fixed'
         VARIABLE = 'variable', 'Variable'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='services',
+        null=True,
+        blank=True,
+    )
     category = models.ForeignKey(
         ServiceCategory,
         on_delete=models.SET_NULL,
@@ -72,3 +86,21 @@ class Service(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class GeneralSettings(TimestampedModel):
+    tenant = models.OneToOneField(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='general_settings',
+        null=True,
+        blank=True,
+    )
+    discount_percent_per_half_star = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+
+    class Meta:
+        verbose_name = 'General Settings'
+        verbose_name_plural = 'General Settings'
+
+    def __str__(self) -> str:
+        return 'General Settings'

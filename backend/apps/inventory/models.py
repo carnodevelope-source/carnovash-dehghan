@@ -11,6 +11,13 @@ class TimestampedModel(models.Model):
 
 
 class InventoryItem(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='inventory_items',
+        null=True,
+        blank=True,
+    )
     product = models.OneToOneField(
         'products.Product', on_delete=models.CASCADE, related_name='inventory_item'
     )
@@ -33,6 +40,13 @@ class StockMovement(TimestampedModel):
         OUT = 'out', 'Out'
         ADJUSTMENT = 'adjustment', 'Adjustment'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='stock_movements',
+        null=True,
+        blank=True,
+    )
     inventory_item = models.ForeignKey(
         InventoryItem, on_delete=models.CASCADE, related_name='movements'
     )

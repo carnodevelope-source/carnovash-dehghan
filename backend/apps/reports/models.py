@@ -18,6 +18,13 @@ class ReportSnapshot(TimestampedModel):
         TIPS = 'tips', 'Tips'
         ATTENDANCE = 'attendance', 'Attendance'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='report_snapshots',
+        null=True,
+        blank=True,
+    )
     report_type = models.CharField(max_length=40, choices=ReportType.choices)
     period_start = models.DateField()
     period_end = models.DateField()

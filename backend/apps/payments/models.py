@@ -16,6 +16,13 @@ class Wallet(TimestampedModel):
         POS = 'pos', 'POS'
         BANK = 'bank', 'Bank'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='wallets',
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=120)
     wallet_type = models.CharField(max_length=20, choices=WalletType.choices)
     balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
@@ -41,6 +48,13 @@ class Payment(TimestampedModel):
         FAILED = 'failed', 'Failed'
         REFUNDED = 'refunded', 'Refunded'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='payments',
+        null=True,
+        blank=True,
+    )
     vehicle_entry = models.ForeignKey(
         'vehicles.VehicleEntry', on_delete=models.CASCADE, related_name='payments'
     )
@@ -77,6 +91,13 @@ class CashflowTransaction(TimestampedModel):
         IN = 'in', 'In'
         OUT = 'out', 'Out'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='cashflow_transactions',
+        null=True,
+        blank=True,
+    )
     wallet = models.ForeignKey(
         Wallet, on_delete=models.CASCADE, related_name='cashflow_transactions'
     )

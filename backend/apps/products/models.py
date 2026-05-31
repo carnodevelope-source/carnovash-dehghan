@@ -11,6 +11,13 @@ class TimestampedModel(models.Model):
 
 
 class ProductCategory(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='product_categories',
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True)
     description = models.TextField(blank=True)
@@ -25,6 +32,13 @@ class ProductCategory(TimestampedModel):
 
 
 class Product(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='products',
+        null=True,
+        blank=True,
+    )
     category = models.ForeignKey(
         ProductCategory,
         on_delete=models.SET_NULL,

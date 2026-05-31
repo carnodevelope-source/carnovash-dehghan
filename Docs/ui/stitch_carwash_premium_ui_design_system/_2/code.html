@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+
+<html dir="rtl" lang="fa"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Lumina Wash Enterprise - Support Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "inverse-on-surface": "#eff1f3",
+                "surface-container": "#eceef0",
+                "surface-bright": "#f7f9fb",
+                "inverse-primary": "#adc6ff",
+                "surface-container-low": "#f2f4f6",
+                "on-primary-container": "#fefcff",
+                "primary-fixed-dim": "#adc6ff",
+                "on-primary": "#ffffff",
+                "background": "#f7f9fb",
+                "surface-dim": "#d8dadc",
+                "surface-container-highest": "#e0e3e5",
+                "on-surface": "#191c1e",
+                "on-error": "#ffffff",
+                "on-primary-fixed-variant": "#004395",
+                "on-secondary-fixed-variant": "#004e5c",
+                "error-container": "#ffdad6",
+                "surface-container-high": "#e6e8ea",
+                "primary": "#0058be",
+                "surface-variant": "#e0e3e5",
+                "on-tertiary-fixed": "#23005c",
+                "tertiary": "#6b38d4",
+                "secondary-container": "#57dffe",
+                "surface-container-lowest": "#ffffff",
+                "on-secondary-fixed": "#001f26",
+                "tertiary-fixed-dim": "#d0bcff",
+                "tertiary-fixed": "#e9ddff",
+                "secondary": "#00687a",
+                "on-secondary": "#ffffff",
+                "surface-tint": "#005ac2",
+                "on-tertiary-container": "#fffbff",
+                "tertiary-container": "#8455ef",
+                "on-tertiary": "#ffffff",
+                "secondary-fixed-dim": "#4cd7f6",
+                "on-background": "#191c1e",
+                "error": "#ba1a1a",
+                "secondary-fixed": "#acedff",
+                "inverse-surface": "#2d3133",
+                "on-tertiary-fixed-variant": "#5516be",
+                "on-surface-variant": "#424754",
+                "primary-container": "#2170e4",
+                "surface": "#f7f9fb",
+                "on-primary-fixed": "#001a42",
+                "on-error-container": "#93000a",
+                "outline": "#727785",
+                "outline-variant": "#c2c6d6",
+                "on-secondary-container": "#006172",
+                "primary-fixed": "#d8e2ff"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+            },
+            "spacing": {
+                "container-padding-mobile": "16px",
+                "container-padding-desktop": "32px",
+                "base": "8px",
+                "card-gap": "20px",
+                "gutter": "24px"
+            },
+            "fontFamily": {
+                "body-md": ["Inter"],
+                "headline-sm": ["Inter"],
+                "headline-md": ["Inter"],
+                "body-lg": ["Inter"],
+                "body-sm": ["Inter"],
+                "display-lg": ["Inter"],
+                "headline-lg": ["Inter"],
+                "label-mono": ["JetBrains Mono"],
+                "headline-lg-mobile": ["Inter"]
+            },
+            "fontSize": {
+                "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "600"}],
+                "label-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-header { backdrop-filter: blur(12px); }
+        .shadow-glow { box-shadow: 0px 8px 20px rgba(0, 88, 190, 0.25); }
+        .shadow-md { box-shadow: 0px 10px 25px -5px rgba(15, 23, 42, 0.05); }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e0e3e5; border-radius: 10px; }
+        .primary-gradient { background: linear-gradient(135deg, #0058be 0%, #00687a 100%); }
+    </style>
+</head>
+<body class="bg-surface-bright text-on-surface selection:bg-primary-fixed selection:text-on-primary-fixed">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar -->
+<aside class="fixed right-0 h-screen w-64 flex flex-col bg-surface-container-lowest dark:bg-surface-container-highest shadow-md border-l border-outline-variant z-40">
+<div class="flex flex-col p-base space-y-2 w-64 h-full">
+<!-- Brand Header -->
+<div class="flex items-center gap-3 px-4 py-6">
+<div class="w-10 h-10 primary-gradient rounded-xl flex items-center justify-center text-white shadow-glow">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">local_car_wash</span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm font-black text-primary">Lumina Wash</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant opacity-70">Enterprise Support</p>
+</div>
+</div>
+<!-- Main Navigation -->
+<nav class="flex-1 space-y-1 px-2 mt-4">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary">dashboard</span>
+<span class="font-body-sm text-body-sm">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 bg-primary-container text-on-primary-container rounded-lg font-semibold transition-all duration-200" href="#">
+<span class="material-symbols-outlined">confirmation_number</span>
+<span class="font-body-sm text-body-sm">Tickets</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary">local_car_wash</span>
+<span class="font-body-sm text-body-sm">Queue</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary">book</span>
+<span class="font-body-sm text-body-sm">Knowledge Base</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container-low rounded-lg transition-all duration-200 group" href="#">
+<span class="material-symbols-outlined group-hover:text-primary">settings</span>
+<span class="font-body-sm text-body-sm">Settings</span>
+</a>
+</nav>
+<!-- Footer Action -->
+<div class="px-4 py-6 border-t border-outline-variant/30">
+<button class="w-full primary-gradient text-white flex items-center justify-center gap-2 py-3 rounded-xl shadow-glow font-semibold transition-all hover:opacity-90 active:scale-95">
+<span class="material-symbols-outlined">add_circle</span>
+<span class="font-body-sm text-body-sm">New Ticket</span>
+</button>
+<a class="flex items-center gap-3 px-4 py-3 mt-4 text-error hover:bg-error-container/20 rounded-lg transition-all" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-body-sm text-body-sm">Logout</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="mr-64 flex-1 flex flex-col h-full overflow-y-auto">
+<!-- TopNavBar -->
+<header class="sticky top-0 w-full z-30 flex justify-between items-center px-container-desktop h-16 bg-surface-bright/80 dark:bg-surface-dim/80 backdrop-blur-xl shadow-md">
+<div class="flex items-center gap-6 flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant opacity-60">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-xl py-2 pl-10 pr-4 text-body-sm font-body-sm focus:ring-2 focus:ring-primary/20 placeholder:opacity-50" placeholder="Search tickets, customers, or plate numbers..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors active:scale-95">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low rounded-full transition-colors active:scale-95">
+<span class="material-symbols-outlined">help_outline</span>
+</button>
+<div class="h-8 w-px bg-outline-variant mx-2"></div>
+<div class="flex items-center gap-3">
+<span class="text-body-sm font-semibold hidden md:block">سهراب احمدی</span>
+<img alt="User Profile Avatar" class="w-9 h-9 rounded-full object-cover ring-2 ring-primary/10" data-alt="A professional headshot of a middle-aged Iranian man with short dark hair and a neat beard, wearing a crisp white shirt, set against a blurred soft-lit office background. The image has a clean, high-end corporate aesthetic with natural daylight casting gentle shadows, aligning with a premium enterprise UI design system." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCnvMTeeZL6wB2TaVzCYZ7b9HGW3xvB3YhZKOUQA_xe7zNGhqEWWc5UHWvEYGBWEP1X8B1bbJ0Y6tuLUzFxNBjh6WrSdTMLqNVp1KnqjhSP0UfSIphUdR5hIOAp0ogq4KNUbe0ktMq24NCV5FazImSYRm30DACJJxY-eFcVayBSOFOiZYZPxWCAJf5-tySXmPsCIw1V_zGMO7L1ovk-WO0EddbGcQrfZD5JNFLmCMcYsg5hBCni4nfBUnrQWR5XzC-B8M_m8VrYsp7P"/>
+</div>
+</div>
+</header>
+<!-- Dashboard Content -->
+<div class="p-container-desktop space-y-gutter">
+<!-- Page Header -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary">Support Overview</h2>
+<p class="text-on-surface-variant font-body-md mt-1 opacity-80">Manage active service tickets and customer inquiries.</p>
+</div>
+<div class="flex bg-surface-container-high p-1 rounded-xl">
+<button class="px-6 py-2 bg-surface-container-lowest shadow-sm rounded-lg text-body-sm font-bold text-primary">All</button>
+<button class="px-6 py-2 text-on-surface-variant font-medium hover:text-primary transition-colors text-body-sm">Open</button>
+<button class="px-6 py-2 text-on-surface-variant font-medium hover:text-primary transition-colors text-body-sm">In Progress</button>
+<button class="px-6 py-2 text-on-surface-variant font-medium hover:text-primary transition-colors text-body-sm">Resolved</button>
+</div>
+</div>
+<!-- Stats Bento Grid -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-card-gap">
+<div class="bg-surface-container-lowest p-6 rounded-[20px] shadow-md border border-white/50 flex items-center gap-4 group hover:scale-[1.02] transition-transform">
+<div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">analytics</span>
+</div>
+<div>
+<p class="text-body-sm text-on-surface-variant font-medium">Total Tickets</p>
+<p class="text-headline-md font-bold text-on-surface">1,284</p>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-[20px] shadow-md border border-white/50 flex items-center gap-4 group hover:scale-[1.02] transition-transform">
+<div class="w-12 h-12 rounded-full bg-error/10 flex items-center justify-center text-error">
+<span class="material-symbols-outlined">priority_high</span>
+</div>
+<div>
+<p class="text-body-sm text-on-surface-variant font-medium">Critical Issues</p>
+<p class="text-headline-md font-bold text-on-surface">12</p>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-[20px] shadow-md border border-white/50 flex items-center gap-4 group hover:scale-[1.02] transition-transform">
+<div class="w-12 h-12 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined">pending_actions</span>
+</div>
+<div>
+<p class="text-body-sm text-on-surface-variant font-medium">In Queue</p>
+<p class="text-headline-md font-bold text-on-surface">45</p>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-[20px] shadow-md border border-white/50 flex items-center gap-4 group hover:scale-[1.02] transition-transform">
+<div class="w-12 h-12 rounded-full bg-tertiary-container/10 flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined">check_circle</span>
+</div>
+<div>
+<p class="text-body-sm text-on-surface-variant font-medium">Resolved Today</p>
+<p class="text-headline-md font-bold text-on-surface">118</p>
+</div>
+</div>
+</div>
+<!-- Tickets Table Container -->
+<div class="bg-surface-container-lowest rounded-[20px] shadow-md overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full text-right border-collapse">
+<thead>
+<tr class="bg-surface-container-low/50">
+<th class="px-6 py-4 font-bold text-body-sm text-on-surface-variant border-b border-outline-variant/30">Ticket ID</th>
+<th class="px-6 py-4 font-bold text-body-sm text-on-surface-variant border-b border-outline-variant/30">Subject &amp; Service</th>
+<th class="px-6 py-4 font-bold text-body-sm text-on-surface-variant border-b border-outline-variant/30">License Plate</th>
+<th class="px-6 py-4 font-bold text-body-sm text-on-surface-variant border-b border-outline-variant/30">Customer</th>
+<th class="px-6 py-4 font-bold text-body-sm text-on-surface-variant border-b border-outline-variant/30">Priority</th>
+<th class="px-6 py-4 font-bold text-body-sm text-on-surface-variant border-b border-outline-variant/30">Status</th>
+<th class="px-6 py-4 font-bold text-body-sm text-on-surface-variant border-b border-outline-variant/30">Last Update</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/20">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-low/30 transition-colors group cursor-pointer">
+<td class="px-6 py-5 font-label-mono text-label-mono text-primary font-bold">#LW-9021</td>
+<td class="px-6 py-5">
+<div class="flex flex-col">
+<span class="font-body-md font-semibold">Sensor Calibration Error</span>
+<span class="text-body-sm text-on-surface-variant opacity-60">Tunnel B - Ceramic Wash</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="bg-inverse-surface text-on-primary-container px-3 py-1 rounded-lg inline-flex flex-col items-center border border-outline/30 font-label-mono text-xs shadow-sm">
+<span class="text-[10px] opacity-60">IRAN</span>
+<span class="text-sm font-bold tracking-widest">48-624-ج-33</span>
+</div>
+</td>
+<td class="px-6 py-5 font-body-sm">علیرضا میرزایی</td>
+<td class="px-6 py-5">
+<span class="px-3 py-1 bg-error/12 text-error rounded-full text-[12px] font-bold uppercase tracking-wider">High</span>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<span class="text-body-sm font-medium">In Progress</span>
+</div>
+</td>
+<td class="px-6 py-5 font-body-sm text-on-surface-variant opacity-60">2 mins ago</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-low/30 transition-colors group cursor-pointer">
+<td class="px-6 py-5 font-label-mono text-label-mono text-primary font-bold">#LW-8954</td>
+<td class="px-6 py-5">
+<div class="flex flex-col">
+<span class="font-body-md font-semibold">Billing Discrepancy Inquiry</span>
+<span class="text-body-sm text-on-surface-variant opacity-60">Fleet Account #902</span>
+</div>
+</td>
+<td class="px-6 py-5 italic text-on-surface-variant opacity-40">N/A</td>
+<td class="px-6 py-5 font-body-sm">سپهر محمودی</td>
+<td class="px-6 py-5">
+<span class="px-3 py-1 bg-secondary/12 text-secondary rounded-full text-[12px] font-bold uppercase tracking-wider">Medium</span>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-outline"></div>
+<span class="text-body-sm font-medium">Open</span>
+</div>
+</td>
+<td class="px-6 py-5 font-body-sm text-on-surface-variant opacity-60">1 hour ago</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-low/30 transition-colors group cursor-pointer">
+<td class="px-6 py-5 font-label-mono text-label-mono text-primary font-bold">#LW-8842</td>
+<td class="px-6 py-5">
+<div class="flex flex-col">
+<span class="font-body-md font-semibold">Pre-Wash Spray Malfunction</span>
+<span class="text-body-sm text-on-surface-variant opacity-60">Bay 3 - Manual Rinse</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="bg-inverse-surface text-on-primary-container px-3 py-1 rounded-lg inline-flex flex-col items-center border border-outline/30 font-label-mono text-xs shadow-sm">
+<span class="text-[10px] opacity-60">IRAN</span>
+<span class="text-sm font-bold tracking-widest">22-114-ب-55</span>
+</div>
+</td>
+<td class="px-6 py-5 font-body-sm">مریم رضایی</td>
+<td class="px-6 py-5">
+<span class="px-3 py-1 bg-tertiary/12 text-tertiary rounded-full text-[12px] font-bold uppercase tracking-wider">Low</span>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary/40"></div>
+<span class="text-body-sm font-medium">In Progress</span>
+</div>
+</td>
+<td class="px-6 py-5 font-body-sm text-on-surface-variant opacity-60">4 hours ago</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-low/30 transition-colors group cursor-pointer">
+<td class="px-6 py-5 font-label-mono text-label-mono text-primary font-bold">#LW-8711</td>
+<td class="px-6 py-5">
+<div class="flex flex-col">
+<span class="font-body-md font-semibold">App Connect Auth Failure</span>
+<span class="text-body-sm text-on-surface-variant opacity-60">iOS Application</span>
+</div>
+</td>
+<td class="px-6 py-5 italic text-on-surface-variant opacity-40">N/A</td>
+<td class="px-6 py-5 font-body-sm">نوید کامران</td>
+<td class="px-6 py-5">
+<span class="px-3 py-1 bg-secondary/12 text-secondary rounded-full text-[12px] font-bold uppercase tracking-wider">Medium</span>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-green-500"></div>
+<span class="text-body-sm font-medium">Resolved</span>
+</div>
+</td>
+<td class="px-6 py-5 font-body-sm text-on-surface-variant opacity-60">Yesterday</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer / Pagination -->
+<div class="px-6 py-4 flex items-center justify-between border-t border-outline-variant/30 bg-surface-container-low/20">
+<span class="text-body-sm text-on-surface-variant opacity-60">Showing 4 of 1,284 tickets</span>
+<div class="flex gap-2">
+<button class="p-2 border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors disabled:opacity-30" disabled="">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+<button class="px-4 py-2 bg-primary text-white rounded-lg text-body-sm font-bold shadow-sm">1</button>
+<button class="px-4 py-2 hover:bg-surface-container-low rounded-lg text-body-sm">2</button>
+<button class="px-4 py-2 hover:bg-surface-container-low rounded-lg text-body-sm">3</button>
+<button class="p-2 border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Featured Card: System Health -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-card-gap">
+<div class="lg:col-span-2 bg-surface-container-lowest p-8 rounded-[20px] shadow-md relative overflow-hidden">
+<div class="relative z-10 flex flex-col h-full justify-between">
+<div>
+<div class="flex items-center gap-2 text-primary mb-4">
+<span class="material-symbols-outlined">water_drop</span>
+<span class="font-bold text-body-sm uppercase tracking-widest">Live Efficiency</span>
+</div>
+<h3 class="font-headline-md text-headline-md mb-2">Automated Wash Efficiency</h3>
+<p class="text-on-surface-variant font-body-md max-w-lg">System throughput is currently operating at 94%. Tunnel B requires minor brush inspection to maintain optimal detergent distribution.</p>
+</div>
+<div class="mt-8 flex gap-4">
+<button class="px-6 py-3 border border-outline-variant rounded-xl font-bold text-primary hover:bg-primary/5 transition-colors">View Logs</button>
+<button class="px-6 py-3 primary-gradient text-white rounded-xl font-bold shadow-glow">Optimize Now</button>
+</div>
+</div>
+<div class="absolute -bottom-10 -left-10 w-64 h-64 bg-primary/5 rounded-full blur-3xl"></div>
+<div class="absolute top-10 -right-20 w-80 h-80 bg-secondary-container/10 rounded-full blur-3xl"></div>
+</div>
+<div class="bg-primary-container text-on-primary-container p-8 rounded-[20px] shadow-glow flex flex-col justify-between">
+<div>
+<span class="material-symbols-outlined text-4xl mb-4" style="font-variation-settings: 'FILL' 1;">star</span>
+<h3 class="font-headline-sm text-headline-sm font-black">CSAT Score</h3>
+<p class="opacity-80 mt-2 font-body-sm">Customer satisfaction is at an all-time high this quarter.</p>
+</div>
+<div class="text-right">
+<p class="text-6xl font-black">4.9</p>
+<p class="text-body-sm font-bold uppercase tracking-widest opacity-60">Out of 5.0</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Footer Copyright -->
+<footer class="p-container-desktop text-center text-on-surface-variant opacity-40 font-body-sm">
+                © 2024 Lumina Wash Enterprise Support System. Clinical Precision in Every Wash.
+            </footer>
+</main>
+</div>
+<!-- Micro-interaction JS -->
+<script>
+        document.querySelectorAll('tr').forEach(row => {
+            row.addEventListener('click', () => {
+                const id = row.querySelector('.font-label-mono')?.innerText;
+                if(id) console.log('Opening Ticket: ' + id);
+            });
+        });
+
+        // Search bar interaction
+        const searchInput = document.querySelector('input[type="text"]');
+        searchInput.addEventListener('focus', () => {
+            searchInput.parentElement.classList.add('ring-2', 'ring-primary/20');
+        });
+        searchInput.addEventListener('blur', () => {
+            searchInput.parentElement.classList.remove('ring-2', 'ring-primary/20');
+        });
+    </script>
+</body></html>

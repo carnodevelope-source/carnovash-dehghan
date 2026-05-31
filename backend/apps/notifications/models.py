@@ -21,6 +21,13 @@ class NotificationLog(TimestampedModel):
         SENT = 'sent', 'Sent'
         FAILED = 'failed', 'Failed'
 
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='notification_logs',
+        null=True,
+        blank=True,
+    )
     vehicle_entry = models.ForeignKey(
         'vehicles.VehicleEntry',
         on_delete=models.SET_NULL,

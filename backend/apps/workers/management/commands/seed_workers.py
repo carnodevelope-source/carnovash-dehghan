@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
+from apps.auth.models import CarWash
 from apps.workers.models import WorkerProfile
 
 
@@ -9,6 +10,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         user_model = get_user_model()
+        tenant, _ = CarWash.objects.get_or_create(slug='default', defaults={'name': 'Default CarWash'})
 
         workers = [
             {
@@ -49,6 +51,7 @@ class Command(BaseCommand):
                 defaults={
                     'full_name': item['full_name'],
                     'phone': item['phone'],
+                    'tenant': tenant,
                     'role': item['role'],
                     'is_active': True,
                     'is_staff': False,
@@ -66,7 +69,7 @@ class Command(BaseCommand):
             profile_defaults = item['profile']
             WorkerProfile.objects.update_or_create(
                 user=user,
-                defaults=profile_defaults,
+                defaults={**profile_defaults, 'tenant': tenant},
             )
 
         self.stdout.write(self.style.SUCCESS('Default workers seeded successfully.'))

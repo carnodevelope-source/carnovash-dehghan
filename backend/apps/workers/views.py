@@ -11,11 +11,14 @@ class WorkerProfileListCreateView(generics.ListCreateAPIView):
         return WorkerProfileListSerializer
 
     def get_queryset(self):
-        return WorkerProfile.objects.select_related('user').order_by('user__full_name', 'user__username')
+        tenant = getattr(self.request.user, 'tenant', None)
+        return WorkerProfile.objects.select_related('user').filter(tenant=tenant).order_by('user__full_name', 'user__username')
 
 
 class WorkerProfileRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = WorkerProfile.objects.select_related('user').order_by('user__full_name', 'user__username')
+    def get_queryset(self):
+        tenant = getattr(self.request.user, 'tenant', None)
+        return WorkerProfile.objects.select_related('user').filter(tenant=tenant).order_by('user__full_name', 'user__username')
 
     def get_serializer_class(self):
         if self.request.method in ['PUT', 'PATCH']:

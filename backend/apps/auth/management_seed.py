@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from apps.auth.models import CarWash
 
 
 SEED_USERS = [
@@ -52,11 +53,13 @@ SEED_USERS = [
 
 def seed_users():
     user_model = get_user_model()
+    tenant, _ = CarWash.objects.get_or_create(slug='default', defaults={'name': 'Default CarWash'})
     for item in SEED_USERS:
         username = item['username']
         defaults = {
             'full_name': item['full_name'],
             'phone': item['phone'],
+            'tenant': tenant,
             'role': item['role'],
             'is_staff': item['is_staff'],
             'is_superuser': item['is_superuser'],

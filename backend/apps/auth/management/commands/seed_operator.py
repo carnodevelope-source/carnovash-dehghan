@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
+from apps.auth.models import CarWash
 
 
 class Command(BaseCommand):
@@ -7,6 +8,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         user_model = get_user_model()
+        tenant, _ = CarWash.objects.get_or_create(slug='default', defaults={'name': 'Default CarWash'})
         username = 'op'
         password = 'op123'
 
@@ -15,6 +17,7 @@ class Command(BaseCommand):
             defaults={
                 'full_name': 'Operator User',
                 'phone': '09120000999',
+                'tenant': tenant,
                 'role': 'operator',
                 'is_active': True,
                 'is_staff': False,

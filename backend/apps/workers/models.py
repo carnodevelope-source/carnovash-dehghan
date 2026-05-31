@@ -20,12 +20,20 @@ class WorkerProfile(TimestampedModel):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='worker_profile'
     )
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='worker_profiles',
+        null=True,
+        blank=True,
+    )
     code = models.CharField(max_length=30, unique=True, null=True, blank=True)
     national_id = models.CharField(max_length=20, blank=True)
     default_commission_percent = models.DecimalField(
         max_digits=5, decimal_places=2, default=0
     )
     default_fixed_wage = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tip_share_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     is_available = models.BooleanField(default=True)
     load_status = models.CharField(
         max_length=20, choices=LoadStatus.choices, default=LoadStatus.FREE
@@ -48,6 +56,13 @@ class WorkerAttendance(TimestampedModel):
 
     worker = models.ForeignKey(
         WorkerProfile, on_delete=models.CASCADE, related_name='attendance_events'
+    )
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='worker_attendances',
+        null=True,
+        blank=True,
     )
     event_type = models.CharField(max_length=10, choices=EventType.choices)
     event_at = models.DateTimeField()

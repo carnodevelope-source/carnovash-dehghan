@@ -188,7 +188,7 @@ watch(() => props.vehicleInfo, (value) => {
 </script>
 
 <style scoped>
-.entry-step { padding: 22px; background: #f7f9fb; }
+.entry-step { padding: 22px; background: #f7f9fb; height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .step-layout { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #dbe3ef; border-radius: 18px; overflow: hidden; background: #fff; }
 .ai-panel, .form-panel { padding: 22px; display: grid; gap: 16px; }
 .ai-panel { background: #f8fbff; border-left: 1px solid #e2e8f0; }

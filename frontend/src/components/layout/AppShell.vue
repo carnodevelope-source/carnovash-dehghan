@@ -1,41 +1,77 @@
-<template>
-  <div class="app-shell" dir="rtl">
-    <aside class="sidebar">
-      <div class="brand-box">
-        <span class="brand-kicker">CarWash Suite</span>
-        <strong>{{ title }}</strong>
+﻿<template>
+  <div class="dashboard-page" dir="rtl">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand-wrap">
+          <span class="brand">{{ tenantName }}</span>
+          <span class="brand-sub">پنل مدیریت</span>
+        </div>
+        <div v-if="showSearch" class="search-box">
+          <input
+            :value="searchQuery"
+            type="text"
+            :placeholder="searchPlaceholder"
+            @input="onSearchInput"
+          />
+        </div>
       </div>
-      <nav class="nav-groups">
-        <section v-for="group in groups" :key="group.key" class="nav-group">
-          <p class="group-title">{{ group.label }}</p>
+
+      <div class="topbar-right">
+        <div ref="profileMenuRef" class="profile-menu">
+          <button type="button" class="profile-button" @click="toggleProfileMenu">
+            <div>
+              <p class="profile-name">{{ profileDisplayName }}</p>
+              <p class="profile-role">{{ roleLabel }}</p>
+            </div>
+            <span class="profile-caret">▾</span>
+          </button>
+
+          <div v-if="isProfileMenuOpen" class="profile-dropdown">
+            <button
+              type="button"
+              class="profile-dropdown-item"
+              :disabled="isLoggingOut"
+              @click="onLogoutClick"
+            >
+              {{ isLoggingOut ? 'در حال خروج...' : 'خروج از حساب' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <nav>
           <RouterLink
-            v-for="item in group.items"
+            v-for="item in navItems"
             :key="item.route"
-            class="nav-item"
+            class="menu-item"
             :class="{ active: isActive(item.route) }"
             :to="item.route"
           >
             {{ item.label }}
           </RouterLink>
-        </section>
-      </nav>
-    </aside>
+        </nav>
 
-    <div class="shell-main">
-      <header class="shell-header">
-        <div>
-          <p class="eyebrow">{{ eyebrow }}</p>
-          <h1>{{ title }}</h1>
+        <div class="premium-actions">
+          <button type="button" class="menu-item menu-button" @click="showPremiumFeatureMessage">ورود و خروج</button>
+          <button type="button" class="menu-item menu-button" @click="showPremiumFeatureMessage">حسابداری</button>
         </div>
-        <div class="header-right">
-          <slot name="header-actions" />
-          <div class="profile-chip">
-            <span>{{ authStore.user?.full_name || authStore.user?.username || 'کاربر' }}</span>
-            <small>{{ roleLabel }}</small>
+      </aside>
+
+      <main class="content">
+        <header class="page-head">
+          <div>
+            <p v-if="subtitle" class="page-subtitle">{{ subtitle }}</p>
+            <h1>{{ title }}</h1>
           </div>
-        </div>
-      </header>
-      <main class="shell-content">
+
+          <div class="page-actions">
+            <slot name="header-actions" />
+          </div>
+        </header>
+
         <slot />
       </main>
     </div>
@@ -43,59 +79,322 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
 import { navigationByRole } from '../../config/navigation'
 
 const props = defineProps({
   title: { type: String, required: true },
-  eyebrow: { type: String, default: '' }
+  subtitle: { type: String, default: '' },
+  showSearch: { type: Boolean, default: false },
+  searchPlaceholder: { type: String, default: 'جستجو...' },
+  searchQuery: { type: String, default: '' }
 })
 
-const route = useRoute()
-const authStore = useAuthStore()
+const emit = defineEmits(['update:searchQuery'])
 
-const groups = computed(() => navigationByRole[authStore.role] || [])
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+const isProfileMenuOpen = ref(false)
+const isLoggingOut = ref(false)
+const profileMenuRef = ref(null)
+
+const navItems = computed(() => (navigationByRole[authStore.role] || []).flatMap((group) => group.items || []))
+const tenantName = computed(() => authStore.user?.tenant_name || 'CarWash')
+const profileDisplayName = computed(() => {
+  const full = String(authStore.user?.full_name || '').trim()
+  if (full) return full
+  const first = String(authStore.user?.first_name || '').trim()
+  const last = String(authStore.user?.last_name || '').trim()
+  const combined = `${first} ${last}`.trim()
+  if (combined) return combined
+  return authStore.user?.username || 'کاربر'
+})
+
 const roleLabel = computed(() => ({
   accountant: 'حسابدار',
-  admin: 'مدیر سیستم',
+  admin: 'ادمین',
   manager: 'مدیر',
   owner: 'مالک',
   operator: 'اپراتور',
   worker: 'نیرو'
 }[authStore.role] || 'کاربر'))
 
-const isActive = (target) => route.fullPath === target || route.path === target.split('?')[0]
+const isActive = (target) => {
+  const normalizedTarget = String(target || '').split('?')[0]
+  return route.path === normalizedTarget || route.fullPath === target
+}
+
+const onSearchInput = (event) => {
+  emit('update:searchQuery', event?.target?.value || '')
+}
+
+const showPremiumFeatureMessage = () => {
+  alert('برای فعال‌سازی این قابلیت باید اشتراک ویژه را خریداری کنید.')
+}
+
+const toggleProfileMenu = () => {
+  isProfileMenuOpen.value = !isProfileMenuOpen.value
+}
+
+const closeProfileMenu = () => {
+  isProfileMenuOpen.value = false
+}
+
+const onDocumentClick = (event) => {
+  if (!profileMenuRef.value) return
+  if (profileMenuRef.value.contains(event.target)) return
+  closeProfileMenu()
+}
+
+const onLogoutClick = async () => {
+  if (isLoggingOut.value) return
+  isLoggingOut.value = true
+  try {
+    await authStore.logout()
+    closeProfileMenu()
+    await router.push('/login')
+  } finally {
+    isLoggingOut.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+})
 </script>
 
 <style scoped>
-.app-shell { min-height: 100vh; display: grid; grid-template-columns: 290px 1fr; background:
-  radial-gradient(circle at top right, rgba(34, 197, 94, 0.10), transparent 20%),
-  linear-gradient(180deg, #f7f7f2 0%, #eef2ea 100%); color: #142013; font-family: Vazirmatn, sans-serif; }
-.sidebar { padding: 24px 18px; border-left: 1px solid rgba(20, 32, 19, 0.08); background:
-  linear-gradient(180deg, rgba(13, 44, 28, 0.96), rgba(25, 69, 43, 0.94)); color: #f3f8f1; }
-.brand-box { padding: 18px; border-radius: 20px; background: rgba(255, 255, 255, 0.06); box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); }
-.brand-box strong { display: block; margin-top: 6px; font-size: 22px; }
-.brand-kicker { font-size: 12px; letter-spacing: 0.08em; color: #c9f1d2; }
-.nav-groups { margin-top: 18px; display: grid; gap: 18px; }
-.group-title { margin: 0 0 8px; font-size: 12px; color: #b9d6c1; }
-.nav-item { display: block; padding: 12px 14px; border-radius: 14px; color: #f3f8f1; text-decoration: none; transition: .18s ease; }
-.nav-item:hover { background: rgba(255, 255, 255, 0.08); transform: translateX(-2px); }
-.nav-item.active { background: linear-gradient(135deg, #c8f169, #7ed957); color: #17311a; font-weight: 700; }
-.shell-main { padding: 20px; display: grid; gap: 16px; }
-.shell-header { min-height: 92px; border: 1px solid rgba(20, 32, 19, 0.08); border-radius: 24px; padding: 18px 22px; background: rgba(255, 255, 255, 0.72); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: space-between; }
-.eyebrow { margin: 0 0 8px; font-size: 12px; color: #4e6a4c; }
-.shell-header h1 { margin: 0; font-size: 28px; }
-.header-right { display: flex; align-items: center; gap: 12px; }
-.profile-chip { min-width: 160px; padding: 10px 14px; border-radius: 16px; background: #132417; color: #f4f8f3; }
-.profile-chip span, .profile-chip small { display: block; }
-.profile-chip small { margin-top: 4px; color: #afd3b3; }
-.shell-content { min-width: 0; }
-@media (max-width: 1100px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar { border-left: 0; border-bottom: 1px solid rgba(20, 32, 19, 0.08); }
-  .shell-header { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .header-right { width: 100%; justify-content: space-between; }
+.dashboard-page {
+  min-height: 100vh;
+  background: #f7f9fb;
+  color: #191c1e;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: 64px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #e3e6ed;
+}
+
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand {
+  color: #0058be;
+  font-weight: 700;
+}
+.brand-wrap { display: flex; align-items: center; gap: 8px; }
+.brand-sub { font-size: 12px; color: #64748b; border-right: 1px solid #cbd5e1; padding-right: 8px; }
+
+.search-box input {
+  width: 260px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  background: #f2f4f6;
+  padding: 0 12px;
+}
+
+.search-box input:focus {
+  outline: 2px solid #0058be;
+}
+
+.profile-menu {
+  position: relative;
+}
+
+.profile-button {
+  height: 44px;
+  border: 1px solid #e3e6ed;
+  border-radius: 12px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.profile-caret {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.profile-dropdown {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid #e3e6ed;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+  padding: 6px;
+}
+
+.profile-dropdown-item {
+  width: 100%;
+  height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: right;
+  padding: 0 10px;
+  font: inherit;
+  color: #334155;
+  cursor: pointer;
+}
+
+.profile-dropdown-item:hover {
+  background: #f1f5f9;
+}
+
+.profile-dropdown-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.profile-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.profile-role {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.layout {
+  display: flex;
+}
+
+.sidebar {
+  width: 240px;
+  min-height: calc(100vh - 64px);
+  padding: 24px 12px;
+  background: #f2f4f6;
+  border-left: 1px solid #e3e6ed;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.menu-item {
+  display: block;
+  padding: 12px 14px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: #475569;
+  font-weight: 600;
+}
+
+.menu-item.active {
+  background: #dbeafe;
+  color: #0058be;
+}
+
+.premium-actions {
+  margin-top: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.menu-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: right;
+  font: inherit;
+  cursor: pointer;
+}
+
+.content {
+  flex: 1;
+  padding: 24px;
+}
+
+.page-head {
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-head h1 {
+  margin: 0;
+  font-size: 24px;
+  color: #0f172a;
+}
+
+.page-subtitle {
+  margin: 0 0 6px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 12px;
+  }
+
+  .search-box input {
+    width: 170px;
+  }
+
+  .layout {
+    flex-direction: row;
+  }
+
+  .sidebar {
+    width: 170px;
+    padding: 14px 8px;
+    min-height: calc(100vh - 64px);
+  }
+
+  .menu-item {
+    padding: 10px 10px;
+    font-size: 13px;
+  }
+
+  .profile-button {
+    padding: 0 8px;
+    gap: 8px;
+  }
+
+  .content {
+    padding: 12px;
+  }
 }
 </style>
