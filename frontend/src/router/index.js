@@ -4,6 +4,7 @@ import { defaultRouteByRole } from '../config/navigation'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('../views/auth/LoginView.vue') },
+  { path: '/hq', name: 'hq-panel', component: () => import('../views/hq/HqPanelView.vue'), meta: { hqOnly: true } },
   { path: '/', name: 'operator-dashboard', component: () => import('../views/operator/DashboardView.vue'), meta: { roles: ['admin', 'owner', 'manager', 'operator', 'worker'] } },
   { path: '/manager/wallet', name: 'manager-wallet', component: () => import('../views/manager/WalletView.vue'), meta: { roles: ['accountant', 'admin', 'manager'] } },
   { path: '/manager/reports', name: 'manager-reports', component: () => import('../views/manager/ReportsView.vue'), meta: { roles: ['manager', 'admin'] } },
@@ -28,16 +29,26 @@ router.beforeEach(async (to) => {
     await authStore.fetchMe()
   }
 
+  if (to.meta?.hqOnly) {
+    if (!authStore.user) return '/login'
+    if (!authStore.isHq) return defaultRouteByRole[authStore.role] || '/'
+    return true
+  }
+
   if (to.meta?.roles?.length) {
     if (!authStore.user) return '/login'
+    if (authStore.isHq) return '/hq'
     if (!to.meta.roles.includes(authStore.role)) {
       return defaultRouteByRole[authStore.role] || '/'
     }
   }
 
   if (to.path === '/login' && authStore.user) {
+    if (authStore.isHq) return '/hq'
     return defaultRouteByRole[authStore.role] || '/'
   }
+
+  if (to.path === '/' && authStore.isHq) return '/hq'
 
   return true
 })

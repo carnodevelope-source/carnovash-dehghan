@@ -29,34 +29,50 @@
       <form class="form-panel" @submit.prevent="onContinue">
         <header class="panel-head">
           <h3>فرم تکمیلی</h3>
-          <p>برای ادامه، پلاک، مدل، رنگ و شماره تلفن الزامی است.</p>
+          <p>{{ form.isPieceWash ? 'برای قطعه‌شویی فقط نام و شماره تلفن لازم است.' : 'برای ادامه، پلاک، مدل، رنگ و شماره تلفن الزامی است.' }}</p>
         </header>
 
-        <label class="field">
+        <label v-if="!form.isPieceWash" class="field">
           <span>شماره پلاک</span>
+          <div class="plate-tools">
+            <label class="toggle-check">
+              <input v-model="form.isAnonymous" type="checkbox" />
+              <span>بی‌نام</span>
+            </label>
+            <label class="toggle-check">
+              <input v-model="form.isPieceWash" type="checkbox" />
+              <span>قطعه‌شویی</span>
+            </label>
+          </div>
           <div class="plate-row" dir="ltr">
-            <input v-model="form.plateRight" maxlength="2" inputmode="numeric" placeholder="67" @input="onlyDigits('plateRight')" />
+            <input v-model="form.plateRight" :disabled="form.isAnonymous" maxlength="2" inputmode="numeric" placeholder="67" @input="onlyDigits('plateRight')" />
             <span>-</span>
-            <input v-model="form.plateMid" maxlength="3" inputmode="numeric" placeholder="345" @input="onlyDigits('plateMid')" />
-            <input v-model="form.plateLetter" maxlength="1" placeholder="A" @input="onlyLetter" />
-            <input v-model="form.plateLeft" maxlength="2" inputmode="numeric" placeholder="12" @input="onlyDigits('plateLeft')" />
+            <input v-model="form.plateMid" :disabled="form.isAnonymous" maxlength="3" inputmode="numeric" placeholder="345" @input="onlyDigits('plateMid')" />
+            <input v-model="form.plateLetter" :disabled="form.isAnonymous" maxlength="1" placeholder="ب" @input="onlyLetter" />
+            <input v-model="form.plateLeft" :disabled="form.isAnonymous" maxlength="2" inputmode="numeric" placeholder="12" @input="onlyDigits('plateLeft')" />
           </div>
         </label>
+        <div v-else class="piece-wash-toggle-row">
+          <label class="toggle-check">
+            <input v-model="form.isPieceWash" type="checkbox" />
+            <span>قطعه‌شویی</span>
+          </label>
+        </div>
 
-        <div class="grid-2">
+        <div v-if="!form.isPieceWash" class="grid-2">
           <label class="field">
             <span>مدل خودرو</span>
-            <input v-model="form.model" placeholder="مثال: پژو 206" />
+            <input v-model="form.model" :disabled="form.isAnonymous" placeholder="مثال: پژو 206" />
           </label>
           <label class="field">
             <span>رنگ خودرو</span>
-            <input v-model="form.color" placeholder="مثال: سفید" />
+            <input v-model="form.color" :disabled="form.isAnonymous" placeholder="مثال: سفید" />
           </label>
         </div>
 
         <div class="grid-2">
           <label class="field">
-            <span>نام راننده (اختیاری)</span>
+            <span>{{ form.isPieceWash ? 'نام مشتری' : 'نام راننده (اختیاری)' }}</span>
             <input v-model="form.driver" placeholder="نام و نام خانوادگی" />
           </label>
           <label class="field">
@@ -65,7 +81,7 @@
           </label>
         </div>
 
-        <label class="field">
+        <label v-if="!form.isPieceWash" class="field">
           <span>توضیحات</span>
           <textarea v-model="form.note" rows="3" placeholder="نکات تکمیلی"></textarea>
         </label>
@@ -81,6 +97,7 @@
 
 <script setup>
 import { computed, reactive, watch } from 'vue'
+import api from '../../services/api'
 
 const emit = defineEmits(['cancel', 'continue', 'refer'])
 const props = defineProps({
@@ -97,7 +114,9 @@ const form = reactive({
   color: '',
   driver: '',
   mobile: '',
-  note: ''
+  note: '',
+  isAnonymous: false,
+  isPieceWash: false
 })
 
 const hydrateForm = (data = {}) => {
@@ -105,7 +124,7 @@ const hydrateForm = (data = {}) => {
   const parts = plateNumber.split(/\s+/).filter(Boolean)
   form.id = data.id ?? null
   form.plateLeft = String(data.plateLeft || data.plate_left || parts[0] || '').slice(0, 2)
-  form.plateLetter = String(data.plateLetter || data.plate_letter || parts[1] || '').slice(0, 1).toUpperCase()
+  form.plateLetter = normalizePlateLetter(String(data.plateLetter || data.plate_letter || parts[1] || '').slice(0, 1))
   form.plateMid = String(data.plateMid || data.plate_mid || parts[2] || '').slice(0, 3)
   form.plateRight = String(data.plateRight || data.plate_right || parts[3] || '').slice(0, 2)
   form.model = String(data.model || data.car_model || '')
@@ -113,6 +132,8 @@ const hydrateForm = (data = {}) => {
   form.driver = String(data.driver || data.driver_name || '')
   form.mobile = normalizeDigits(String(data.mobile || data.driver_phone || ''))
   form.note = String(data.note || data.notes || '')
+  form.isAnonymous = Boolean(data.isAnonymous)
+  form.isPieceWash = Boolean(data.isPieceWash || data.is_piece_wash)
 }
 
 const normalizeDigits = (value) => String(value || '')
@@ -124,13 +145,19 @@ const onlyDigits = (key) => {
 }
 
 const onlyLetter = () => {
-  form.plateLetter = String(form.plateLetter || '')
-    .replace(/\s+/g, '')
-    .slice(0, 1)
-    .toUpperCase()
+  form.plateLetter = normalizePlateLetter(form.plateLetter)
+}
+
+const normalizePlateLetter = (value) => {
+  const raw = String(value || '').replace(/\s+/g, '').slice(0, 1)
+  const englishMap = { A: 'ا', B: 'ب', D: 'د', H: 'ه', J: 'ج', L: 'ل', M: 'م', N: 'ن', P: 'پ', S: 'س', T: 'ط', V: 'و', Y: 'ی' }
+  const upper = raw.toUpperCase()
+  if (englishMap[upper]) return englishMap[upper]
+  return raw.replace(/[^آابپتثجچحخدذرزسشصضطظعغفقکگلمنوهی]/g, '')
 }
 
 const plate = computed(() => {
+  if (form.isAnonymous) return '1111'
   const left = form.plateLeft.trim()
   const letter = form.plateLetter.trim()
   const mid = form.plateMid.trim()
@@ -140,22 +167,29 @@ const plate = computed(() => {
 })
 
 const canSubmit = computed(() => {
-  const hasPlate = form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1
-  return hasPlate && form.model.trim() && form.color.trim() && form.mobile.trim()
+  if (form.isPieceWash) {
+    return form.driver.trim() && form.mobile.trim()
+  }
+  const hasPlate = form.isAnonymous || (form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1)
+  const hasModel = form.isAnonymous || form.model.trim()
+  const hasColor = form.isAnonymous || form.color.trim()
+  return hasPlate && hasModel && hasColor && form.mobile.trim()
 })
 
 const payload = () => ({
   id: form.id,
-  plate: plate.value,
-  plateLeft: form.plateLeft.trim(),
-  plateLetter: form.plateLetter.trim(),
-  plateMid: form.plateMid.trim(),
-  plateRight: form.plateRight.trim(),
-  model: form.model.trim(),
-  color: form.color.trim(),
+  plate: form.isPieceWash ? '' : plate.value,
+  plateLeft: form.isAnonymous || form.isPieceWash ? '' : form.plateLeft.trim(),
+  plateLetter: form.isAnonymous || form.isPieceWash ? '' : form.plateLetter.trim(),
+  plateMid: form.isAnonymous || form.isPieceWash ? '' : form.plateMid.trim(),
+  plateRight: form.isAnonymous || form.isPieceWash ? '' : form.plateRight.trim(),
+  model: form.isPieceWash ? 'قطعه‌شویی' : (form.isAnonymous ? '1111' : form.model.trim()),
+  color: form.isPieceWash ? '-' : (form.isAnonymous ? '1111' : form.color.trim()),
   driver: form.driver.trim(),
   mobile: form.mobile.trim(),
-  note: form.note.trim()
+  note: form.isPieceWash ? '' : form.note.trim(),
+  isAnonymous: form.isAnonymous,
+  isPieceWash: form.isPieceWash
 })
 
 const onContinue = () => {
@@ -168,8 +202,9 @@ const onRefer = () => {
 }
 
 const onCaptureMock = () => {
+  if (form.isAnonymous) return
   if (!form.plateLeft) form.plateLeft = '12'
-  if (!form.plateLetter) form.plateLetter = 'A'
+  if (!form.plateLetter) form.plateLetter = 'ب'
   if (!form.plateMid) form.plateMid = '345'
   if (!form.plateRight) form.plateRight = '67'
   if (!form.model) form.model = 'پژو 206'
@@ -185,6 +220,61 @@ const detectedModelColor = computed(() => {
 watch(() => props.vehicleInfo, (value) => {
   hydrateForm(value || {})
 }, { immediate: true, deep: true })
+
+watch(() => form.isAnonymous, (value) => {
+  if (value) {
+    form.plateLeft = ''
+    form.plateLetter = ''
+    form.plateMid = ''
+    form.plateRight = ''
+    form.model = '1111'
+    form.color = '1111'
+    return
+  }
+  if (form.model === '1111') form.model = ''
+  if (form.color === '1111') form.color = ''
+})
+
+watch(() => form.isPieceWash, (value) => {
+  if (!value) return
+  form.isAnonymous = false
+  form.plateLeft = ''
+  form.plateLetter = ''
+  form.plateMid = ''
+  form.plateRight = ''
+  form.model = ''
+  form.color = ''
+  form.note = ''
+})
+
+let lookupTimer = null
+let lookupToken = 0
+watch(
+  () => [form.plateLeft, form.plateLetter, form.plateMid, form.plateRight, form.isAnonymous],
+  async () => {
+    if (lookupTimer) clearTimeout(lookupTimer)
+    if (form.isAnonymous) return
+    const hasFullPlate = form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1
+    if (!hasFullPlate) return
+    lookupTimer = setTimeout(async () => {
+      const token = ++lookupToken
+      try {
+        const { data } = await api.get('/vehicles/plate-lookup/', {
+          params: {
+            plate_left: form.plateLeft.trim(),
+            plate_letter: form.plateLetter.trim(),
+            plate_mid: form.plateMid.trim(),
+            plate_right: form.plateRight.trim()
+          }
+        })
+        if (token !== lookupToken || !data?.found) return
+        form.driver = String(data.driver_name || '').trim()
+        form.mobile = normalizeDigits(String(data.driver_phone || ''))
+      } catch (_error) {
+      }
+    }, 220)
+  }
+)
 </script>
 
 <style scoped>
@@ -206,9 +296,13 @@ watch(() => props.vehicleInfo, (value) => {
 .field { display: grid; gap: 6px; }
 .field > span { font-size: 12px; color: #475569; font-weight: 600; }
 .field input, .field textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 10px; font: inherit; background: #fff; }
+.plate-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.toggle-check { display: inline-flex; align-items: center; gap: 6px; color: #334155; font-size: 12px; font-weight: 700; }
+.toggle-check input { width: 16px; height: 16px; }
 .field input { height: 42px; }
 .field textarea { min-height: 90px; padding-top: 10px; resize: vertical; }
 .field input:focus, .field textarea:focus { outline: 2px solid #bfdbfe; border-color: #60a5fa; }
+.piece-wash-toggle-row { display: flex; justify-content: flex-end; }
 .plate-row { display: grid; grid-template-columns: 72px auto 84px 64px 72px; gap: 8px; align-items: center; justify-content: start; }
 .plate-row span { display: inline-flex; align-items: center; justify-content: center; height: 42px; text-align: center; color: #64748b; font-weight: 700; }
 .plate-row input { text-align: center; font-weight: 700; line-height: 42px; padding: 0; }

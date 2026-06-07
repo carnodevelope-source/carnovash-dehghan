@@ -2,7 +2,7 @@
   <section class="step-two" dir="rtl">
     <header class="step-two-header">
       <div class="header-main">
-        <div class="plate-badge" dir="ltr">
+        <div v-if="!isPieceWash" class="plate-badge" dir="ltr">
           <div class="plate-blue">IR</div>
           <div class="plate-white">
             <span>{{ plateParts.left }}</span>
@@ -16,7 +16,7 @@
         <div class="vehicle-meta">
           <div class="vehicle-title-row">
             <h3>{{ vehicleTitle }}</h3>
-            <span class="badge-muted">عادی</span>
+            <span class="badge-muted" :class="{ 'badge-danger': isPlateBlocked }">{{ isPlateBlocked ? 'پلاک بلاک‌شده' : 'عادی' }}</span>
           </div>
           <p>
             <span>{{ vehicleDriver || 'بدون نام راننده' }}</span>
@@ -31,6 +31,7 @@
           <span class="pulse"></span>
           <span>در حال تخصیص</span>
         </div>
+        <button type="button" class="back-btn-header" @click="emit('back')">??????</button>
         <button type="button" class="icon-btn" @click="emit('close')" aria-label="بستن">
           ×
         </button>
@@ -41,7 +42,7 @@
       <section class="col services-col">
         <div class="col-head">
           <h4>انتخاب خدمات</h4>
-          <div class="search-box">
+          <div v-if="!isPieceWash" class="search-box">
             <input v-model="serviceSearch" type="text" placeholder="جستجوی خدمات..." />
           </div>
           <div class="category-row">
@@ -50,7 +51,22 @@
         </div>
 
         <div class="col-list">
+          <template v-if="isPieceWash">
+            <article class="piece-wash-box">
+              <h5>خدمت ثابت: قطعه‌شویی</h5>
+              <label class="service-discount-row">
+                <span>مبلغ قطعه‌شویی (تومان)</span>
+                <input :value="toThousandsInput(pieceWashPrice)" type="number" min="0" @input="pieceWashPrice = fromThousandsInput($event.target.value)" />
+                <small class="unit-note">عدد را به هزار تومان وارد کنید.</small>
+              </label>
+              <label class="service-discount-row textarea-row">
+                <span>اطلاعات قطعه</span>
+                <textarea v-model="pieceDetails" rows="5" placeholder="نام قطعه، تعداد، توضیح و نکات لازم"></textarea>
+              </label>
+            </article>
+          </template>
           <label
+            v-else
             v-for="service in filteredServices"
             :key="service.id"
             class="service-card"
@@ -67,6 +83,11 @@
               <div class="service-head">
                 <h5>{{ service.name }}</h5>
                 <strong>{{ formatMoney(service.base_price) }}</strong>
+              </div>
+              <div class="service-discount-row">
+                <label>درصد تخفیف خدمت</label>
+                <input type="number" min="0" max="100" :value="serviceDiscountPercents[service.id] || 0" @input="setServiceDiscountPercent(service.id, $event.target.value)" />
+                <small class="unit-note">اگر وارد نشود ۰٪ در نظر گرفته می‌شود.</small>
               </div>
               <p>{{ service.description || 'بدون توضیحات' }}</p>
             </div>
@@ -171,6 +192,14 @@
           <hr />
 
           <section class="totals">
+            <p v-if="isPlateBlocked" class="blocked-plate-note">
+              این پلاک بلاک شده است. برای ثبت خودرو و ساخت کارت، پرداخت باید همین حالا تایید شود.
+            </p>
+            <div class="summary-row">
+              <span>تخفیف دستی (تومان):</span>
+              <input :value="toThousandsInput(manualDiscountTotal)" type="number" min="0" @input="manualDiscountTotal = fromThousandsInput($event.target.value)" />
+              <small class="unit-note">عدد تخفیف را به هزار تومان وارد کنید.</small>
+            </div>
             <div class="summary-row">
               <span>مبلغ کل خدمات:</span>
               <strong>{{ formatMoney(servicesTotal) }}</strong>
@@ -190,6 +219,10 @@
         </div>
 
         <footer class="summary-foot">
+          <label v-if="isPlateBlocked" class="blocked-payment-check">
+            <input v-model="blockedPlatePaymentConfirmed" type="checkbox" />
+            <span>پرداخت شد</span>
+          </label>
           <button type="button" class="primary-btn" :disabled="!canAssign" @click="onAssign">
             تایید و تخصیص کار
           </button>
@@ -203,6 +236,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '../../services/api'
 import BaseSpinner from '../base/BaseSpinner.vue'
+import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 
 const props = defineProps({
   vehicleInfo: { type: Object, default: () => ({}) }
@@ -221,6 +255,11 @@ const shareValueInput = ref('40')
 const serviceSearch = ref('')
 const workerSearch = ref('')
 const activeCategory = ref('همه موارد')
+const manualDiscountTotal = ref(0)
+const serviceDiscountPercents = ref({})
+const blockedPlatePaymentConfirmed = ref(false)
+const pieceWashPrice = ref(0)
+const pieceDetails = ref('')
 
 const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -228,7 +267,9 @@ const normalizeDigits = (value) => String(value || '')
 
 const toFaNumber = (value) => Number(value || 0).toLocaleString('fa-IR')
 
-const formatMoney = (value) => `${Number(value || 0).toLocaleString('fa-IR')} تومان`
+const formatMoney = (value) => formatThousandsToman(value)
+const toThousandsInput = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
+const fromThousandsInput = (value) => fromThousandsTomanInput(normalizeDigits(value))
 
 const parsePlate = (raw) => {
   const parts = String(raw || '').trim().split(/\s+/).filter(Boolean)
@@ -258,14 +299,19 @@ const normalizedVehicle = computed(() => {
     driver: String(data.driver || data.driver_name || '').trim(),
     mobile: String(data.mobile || data.driver_phone || '').trim(),
     note: String(data.note || data.notes || '').trim(),
+    isPieceWash: Boolean(data.isPieceWash || data.is_piece_wash),
+    pieceDetails: String(data.pieceDetails || data.piece_details || '').trim(),
+    pieceWashPrice: Number(data.pieceWashPrice || 0),
     serviceIds: Array.isArray(data.serviceIds) ? data.serviceIds.map((id) => Number(id)) : [],
     staffId: fallbackStaffId,
     staffIds: providedStaffIds.length ? providedStaffIds : (fallbackStaffId ? [fallbackStaffId] : [])
   }
 })
+const isPieceWash = computed(() => normalizedVehicle.value.isPieceWash)
 
 const plateParts = computed(() => {
   const v = normalizedVehicle.value
+  if (v.isPieceWash) return 'قطعه‌شویی'
   return {
     left: v.plateLeft || '--',
     letter: v.plateLetter || '-',
@@ -276,12 +322,16 @@ const plateParts = computed(() => {
 
 const vehicleTitle = computed(() => {
   const v = normalizedVehicle.value
+  if (v.isPieceWash) {
+    return v.driver.trim().length > 0 && normalizeDigits(v.mobile).length > 0
+  }
   const value = `${v.model} ${v.color}`.trim()
   return value || 'خودرو بدون مشخصات'
 })
 
 const vehicleDriver = computed(() => normalizedVehicle.value.driver)
 const vehiclePhone = computed(() => normalizedVehicle.value.mobile)
+const isPlateBlocked = computed(() => Boolean(props.vehicleInfo?.is_plate_blocked))
 
 const availableWorkersCount = computed(() => workers.value.filter((worker) => worker.is_available !== false).length)
 
@@ -295,6 +345,7 @@ const serviceCategories = computed(() => {
 })
 
 const filteredServices = computed(() => {
+  if (isPieceWash.value) return []
   const query = serviceSearch.value.trim().toLowerCase()
   return services.value.filter((item) => {
     const matchesCategory = activeCategory.value === 'همه موارد' || (item.category_name || '') === activeCategory.value
@@ -313,6 +364,11 @@ const filteredWorkers = computed(() => {
 })
 
 const selectedServices = computed(() => {
+  if (isPieceWash.value) {
+    return pieceWashPrice.value > 0
+      ? [{ id: -1, name: 'قطعه‌شویی', base_price: Number(pieceWashPrice.value || 0) }]
+      : []
+  }
   const idSet = new Set(selectedServiceIds.value.map((id) => Number(id)))
   return services.value.filter((item) => idSet.has(Number(item.id)))
 })
@@ -324,6 +380,16 @@ const selectedWorkers = computed(() => {
 const primarySelectedWorker = computed(() => selectedWorkers.value[0] || null)
 
 const servicesTotal = computed(() => selectedServices.value.reduce((sum, item) => sum + Number(item.base_price || 0), 0))
+const serviceDiscountAmount = (service) => {
+  const basePrice = Number(service?.base_price || 0)
+  const percent = Math.max(0, Math.min(100, Number(serviceDiscountPercents.value[service?.id] || 0)))
+  return Math.round((basePrice * percent) / 100)
+}
+const servicesDiscountTotal = computed(() => (
+  isPieceWash.value
+    ? 0
+    : selectedServices.value.reduce((sum, item) => sum + serviceDiscountAmount(item), 0)
+))
 
 const shareValueNumeric = computed(() => Number(normalizeDigits(shareValueInput.value) || 0))
 
@@ -338,6 +404,13 @@ const workerShareAmount = computed(() => {
 })
 
 const carwashShareAmount = computed(() => Math.max(0, servicesTotal.value - workerShareAmount.value))
+const setServiceDiscountPercent = (serviceId, value) => {
+  const nextValue = Math.max(0, Math.min(100, Math.floor(Number(normalizeDigits(value) || 0))))
+  serviceDiscountPercents.value = {
+    ...serviceDiscountPercents.value,
+    [serviceId]: nextValue
+  }
+}
 
 const hasRequiredVehicleInfo = computed(() => {
   const v = normalizedVehicle.value
@@ -357,6 +430,8 @@ const canAssign = computed(() => (
   && selectedServices.value.length > 0
   && selectedWorkers.value.length > 0
   && hasValidShare.value
+  && (!isPieceWash.value || pieceDetails.value.trim().length > 0)
+  && (!isPlateBlocked.value || blockedPlatePaymentConfirmed.value)
 ))
 
 const isServiceSelected = (id) => selectedServiceIds.value.includes(Number(id))
@@ -428,13 +503,22 @@ const buildPayload = () => {
       color: vehicle.color,
       driver: vehicle.driver,
       mobile: vehicle.mobile,
-      note: vehicle.note
+      note: vehicle.note,
+      isPieceWash: vehicle.isPieceWash,
+      pieceDetails: pieceDetails.value.trim()
     },
-    services: selectedServices.value.map((item) => ({
-      id: item.id,
-      title: item.name,
-      price: Number(item.base_price || 0)
-    })),
+    services: isPieceWash.value
+      ? [{
+          title: 'قطعه‌شویی',
+          price: Math.max(0, Number(pieceWashPrice.value || 0)),
+          discount_amount: 0
+        }]
+      : selectedServices.value.map((item) => ({
+          id: item.id,
+          title: item.name,
+          price: Number(item.base_price || 0),
+          discount_amount: serviceDiscountAmount(item)
+        })),
     staff: primarySelectedWorker.value
       ? {
           id: primarySelectedWorker.value.id,
@@ -448,7 +532,9 @@ const buildPayload = () => {
     share: {
       type: shareType.value,
       value: shareType.value === 'percent' ? clampedPercent.value : Math.max(0, shareValueNumeric.value)
-    }
+    },
+    manual_discount_total: Math.max(0, Number(manualDiscountTotal.value || 0)) + servicesDiscountTotal.value,
+    blocked_plate_payment_confirmed: blockedPlatePaymentConfirmed.value
   }
 }
 
@@ -461,6 +547,10 @@ const hydrateFromVehicleInfo = () => {
   const vehicle = normalizedVehicle.value
   selectedServiceIds.value = [...new Set(vehicle.serviceIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id)))]
   selectedWorkerIds.value = [...new Set((vehicle.staffIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
+  blockedPlatePaymentConfirmed.value = false
+  serviceDiscountPercents.value = {}
+  pieceDetails.value = vehicle.pieceDetails || ''
+  pieceWashPrice.value = isPieceWash.value ? Math.max(0, Number(vehicle.pieceWashPrice || 0)) : 0
 }
 
 const loadInitialData = async () => {
@@ -476,16 +566,20 @@ const loadInitialData = async () => {
       .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
 
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
-      .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''), 'fa'))
 
     const hasDefaultCategory = serviceCategories.value.includes(activeCategory.value)
     if (!hasDefaultCategory) activeCategory.value = 'همه موارد'
 
     const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
     selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
+    if (isPieceWash.value && pieceWashPrice.value <= 0) {
+      const pieceWashService = services.value.find((item) => String(item.name || '').trim() === 'قطعه‌شویی')
+      pieceWashPrice.value = Number(pieceWashService?.base_price || 0)
+    }
 
     const validWorkerIds = new Set(workers.value.map((item) => Number(item.id)))
     selectedWorkerIds.value = selectedWorkerIds.value.filter((id) => validWorkerIds.has(Number(id)))
+    if (!selectedWorkerIds.value.length && workers.value.length) selectedWorkerIds.value = [Number(workers.value[0].id)]
   } catch (error) {
     errorMessage.value = error?.response?.data?.detail || 'بارگذاری اطلاعات خدمات و پرسنل ناموفق بود.'
   } finally {
@@ -587,6 +681,11 @@ onMounted(loadInitialData)
   font-weight: 700;
 }
 
+.badge-danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .vehicle-meta p {
   margin: 6px 0 0;
   display: inline-flex;
@@ -607,6 +706,22 @@ onMounted(loadInitialData)
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.back-btn-header {
+  height: 40px;
+  border: 1px solid #c7d8f4;
+  border-radius: 999px;
+  padding: 0 16px;
+  background: #ffffff;
+  color: #1e3a5f;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.back-btn-header:hover {
+  background: #eef4ff;
 }
 
 .assigning-badge {
@@ -834,6 +949,53 @@ onMounted(loadInitialData)
   color: #424754;
   font-size: 13px;
   line-height: 1.7;
+}
+.service-discount-row {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+}
+.service-discount-row label {
+  font-size: 12px;
+  color: #475569;
+}
+.service-discount-row input,
+.totals input {
+  height: 34px;
+  border: 1px solid #bfd7ff;
+  border-radius: 8px;
+  padding: 0 8px;
+  width: 140px;
+}
+.unit-note {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.piece-wash-box {
+  border: 1px solid #bfd7ff;
+  border-radius: 18px;
+  padding: 16px;
+  background: #fff;
+  display: grid;
+  gap: 12px;
+}
+
+.piece-wash-box h5 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.textarea-row textarea {
+  width: 100%;
+  min-height: 110px;
+  border: 1px solid #bfd7ff;
+  border-radius: 10px;
+  padding: 10px;
+  resize: vertical;
+  background: #f8fbff;
+  font: inherit;
 }
 
 .worker-card {
@@ -1095,6 +1257,16 @@ onMounted(loadInitialData)
   margin-top: auto;
 }
 
+.blocked-plate-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
 .share-row {
   color: #6b38d4;
 }
@@ -1120,6 +1292,23 @@ onMounted(loadInitialData)
   padding: 16px 20px;
   display: grid;
   gap: 10px;
+}
+
+.blocked-payment-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #fecdd3;
+  border-radius: 12px;
+  background: #fff7f7;
+  color: #7f1d1d;
+  font-weight: 700;
+}
+
+.blocked-payment-check input {
+  width: 18px;
+  height: 18px;
 }
 
 .primary-btn {

@@ -88,6 +88,43 @@ class Service(TimestampedModel):
         return self.name
 
 
+class ServiceChangeLog(TimestampedModel):
+    class ActionType(models.TextChoices):
+        CREATED = 'created', 'Created'
+        UPDATED = 'updated', 'Updated'
+        DEACTIVATED = 'deactivated', 'Deactivated'
+        DELETED = 'deleted', 'Deleted'
+
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='service_change_logs',
+        null=True,
+        blank=True,
+    )
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.CASCADE,
+        related_name='change_logs',
+    )
+    action_type = models.CharField(max_length=20, choices=ActionType.choices, default=ActionType.UPDATED)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='service_change_logs_created',
+    )
+    name_snapshot = models.CharField(max_length=120)
+    base_price_snapshot = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    estimated_duration_snapshot = models.PositiveIntegerField(default=30)
+    is_active_snapshot = models.BooleanField(default=True)
+    change_summary = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+
 class GeneralSettings(TimestampedModel):
     tenant = models.OneToOneField(
         'cw_auth.CarWash',
@@ -97,6 +134,21 @@ class GeneralSettings(TimestampedModel):
         blank=True,
     )
     discount_percent_per_half_star = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    preferred_bank_name = models.CharField(max_length=120, blank=True)
+    bank_account_holder = models.CharField(max_length=120, blank=True)
+    bank_card_number = models.CharField(max_length=32, blank=True)
+    bank_account_iban = models.CharField(max_length=40, blank=True)
+    pos_device_name = models.CharField(max_length=120, blank=True)
+    pos_terminal_id = models.CharField(max_length=80, blank=True)
+    payment_methods_note = models.TextField(blank=True)
+    receipt_printer_enabled = models.BooleanField(default=False)
+    receipt_printer_name = models.CharField(max_length=120, blank=True)
+    receipt_printer_paper_width = models.CharField(max_length=20, blank=True, default='80mm')
+    receipt_print_copies = models.PositiveSmallIntegerField(default=1)
+    receipt_auto_print = models.BooleanField(default=False)
+    receipt_show_logo = models.BooleanField(default=False)
+    receipt_show_qr = models.BooleanField(default=False)
+    receipt_footer_note = models.TextField(blank=True)
 
     class Meta:
         verbose_name = 'General Settings'

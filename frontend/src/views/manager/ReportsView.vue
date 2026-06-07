@@ -1,142 +1,334 @@
 ﻿<template>
-  <AppShell
-    title="گزارشات"
-    subtitle="تحلیل مالی و عملیاتی"
-  >
+  <AppShell title="گزارشات" subtitle="تحلیل مالی و عملیاتی">
     <div class="reports-content">
-        <section class="filters-card">
-          <div class="field search-field">
-            <span>جستجو</span>
-            <input v-model="filters.q" type="text" placeholder="راننده، شماره، نیرو، مدل یا پلاک..." />
+      <section class="range-bar">
+        <button
+          v-for="option in rangeOptions"
+          :key="option.key"
+          class="range-chip"
+          :class="{ active: filters.rangeKey === option.key }"
+          @click="setRange(option.key)"
+        >
+          {{ option.label }}
+        </button>
+      </section>
+
+      <section class="filters-card">
+        <div class="field search-field">
+          <span>جستجو</span>
+          <input v-model="filters.q" type="text" placeholder="راننده، شماره، نیرو، مدل یا پلاک..." />
+        </div>
+        <div class="field">
+          <span>شروع بازه (شمسی)</span>
+          <BaseDatePicker v-model="filters.startJalali" placeholder="1405/01/01" />
+        </div>
+        <div class="field">
+          <span>پایان بازه (شمسی)</span>
+          <BaseDatePicker v-model="filters.endJalali" placeholder="1405/01/30" />
+        </div>
+        <div class="field">
+          <span>پرسنل</span>
+          <select v-model="filters.workerId">
+            <option value="">همه پرسنل</option>
+            <option v-for="worker in workers" :key="worker.id" :value="String(worker.id)">{{ worker.full_name }}</option>
+          </select>
+        </div>
+        <div class="field plate-field">
+          <span>پلاک خودرو</span>
+          <div class="plate-filter-shell">
+            <div class="plate-filter-row" dir="ltr">
+              <input v-model="filters.plateRight" type="text" maxlength="2" placeholder="67" />
+              <span>-</span>
+              <input v-model="filters.plateMid" type="text" maxlength="3" placeholder="345" />
+              <input v-model="filters.plateLetter" type="text" maxlength="1" placeholder="ب" />
+              <input v-model="filters.plateLeft" type="text" maxlength="2" placeholder="12" />
+            </div>
           </div>
-          <div class="field">
-            <span>از تاریخ (شمسی)</span>
-            <BaseDatePicker v-model="filters.startJalali" placeholder="1405/01/01" />
+        </div>
+        <button class="secondary-btn clear-btn" @click="resetFilters">حذف فیلتر</button>
+      </section>
+
+      <section v-if="visibleSummaryCards.length" class="summary-grid">
+        <article v-for="card in visibleSummaryCards" :key="card.key" class="kpi-card">
+          <p>{{ card.label }}</p>
+          <strong>{{ card.value }}</strong>
+        </article>
+      </section>
+
+      <section class="tabs-bar">
+        <button v-for="tab in tabs" :key="tab.key" class="chip" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">{{ tab.label }}</button>
+      </section>
+
+      <section class="table-card">
+        <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
+
+        <template v-if="activeTab === 'overall'">
+          <h3>گزارش کل</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
+              <tbody>
+                <template v-for="row in data.overall_report" :key="`o-${serviceRowKey(row)}`">
+                  <tr class="clickable-row" :class="{ expanded: isServicesExpanded(row) }" @click="openVehicleDetail(row.vehicle_id)">
+                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
+                  </tr>
+                  <tr v-if="isServicesExpanded(row)" class="services-expanded-row">
+                    <td colspan="13">
+                      <div class="services-expanded-box">
+                        <strong>همه خدمات انجام‌شده</strong>
+                        <p>{{ normalizeServicesValue(row.services) }}</p>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
           </div>
-          <div class="field">
-            <span>تا تاریخ (شمسی)</span>
-            <BaseDatePicker v-model="filters.endJalali" placeholder="1405/01/30" />
-          </div>
-          <button class="secondary-btn clear-btn" @click="resetFilters">حذف فیلتر</button>
-        </section>
+        </template>
 
-        <section class="summary-grid">
-          <article class="kpi-card"><p>تعداد خودرو</p><strong>{{ Number(summary.vehicles_count || 0).toLocaleString('fa-IR') }}</strong></article>
-          <article class="kpi-card"><p>حق کارواش</p><strong>{{ money(summary.carwash_total) }}</strong></article>
-          <article class="kpi-card"><p>حق نیرو</p><strong>{{ money(summary.worker_total) }}</strong></article>
-          <article class="kpi-card"><p>انعام</p><strong>{{ money(summary.tips_total) }}</strong></article>
-        </section>
+        <template v-else-if="activeTab === 'carwash'">
+          <h3>گزارش حق کارواش</h3>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>حق کارواش</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in data.carwash_report" :key="`c-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+          </tbody></table></div>
+        </template>
 
-        <section class="tabs-summary-row">
-          <div class="tabs-bar">
-            <button v-for="tab in tabs" :key="tab.key" class="chip" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key">{{ tab.label }}</button>
-          </div>
-          <div class="payout-boxes">
-            <article class="payout-card">
-              <p>جمع پرداختی حقوق</p>
-              <strong>{{ money(summary.payable_worker_total) }}</strong>
-            </article>
-            <article class="payout-card">
-              <p>جمع انعام</p>
-              <strong>{{ money(summary.payable_tip_total) }}</strong>
-            </article>
-            <button
-              v-if="activeTab === 'worker'"
-              class="primary-btn payout-action-btn"
-              :disabled="settlingPayout"
-              @click="settlePayout('worker')"
-            >
-              {{ settlingPayout ? 'در حال ثبت...' : 'پرداخت شد' }}
-            </button>
-            <button
-              v-else-if="activeTab === 'tips'"
-              class="primary-btn payout-action-btn"
-              :disabled="settlingPayout"
-              @click="settlePayout('tips')"
-            >
-              {{ settlingPayout ? 'در حال ثبت...' : 'پرداخت شد' }}
-            </button>
-          </div>
-        </section>
-
-        <section class="table-card">
-          <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
-
-          <template v-if="activeTab === 'overall'">
-            <h3>گزارش کل</h3>
-            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>حق کارواش</th><th>حق نیرو</th><th>انعام</th><th>نام نیرو</th><th>کالا</th><th>تاریخ</th></tr></thead><tbody>
-              <tr v-for="row in data.overall_report" :key="`o-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
-            </tbody></table></div>
-          </template>
-
-          <template v-else-if="activeTab === 'carwash'">
-            <h3>گزارش حق کارواش</h3>
-            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>حق کارواش</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-              <tr v-for="row in data.carwash_report" :key="`c-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
-            </tbody></table></div>
-          </template>
-
-          <template v-else-if="activeTab === 'worker'">
+        <template v-else-if="activeTab === 'worker'">
+          <div class="worker-head">
             <h3>گزارش حق نیرو</h3>
-            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-              <tr v-for="row in data.worker_report" :key="`w-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+            <button v-if="selectedWorkerSummary" class="primary-btn" @click="openPayoutModal">{{ payoutButtonLabel }}</button>
+          </div>
+          <div v-if="selectedWorkerSummary" class="worker-summary-grid">
+            <article class="payout-card"><p>حق حقوق</p><strong>{{ money(selectedWorkerSummary.wage_total) }}</strong></article>
+            <article class="payout-card"><p>پاداش</p><strong>{{ money(selectedWorkerSummary.bonus_total) }}</strong></article>
+            <article class="payout-card"><p>جریمه</p><strong>{{ money(selectedWorkerSummary.penalty_total) }}</strong></article>
+            <article class="payout-card"><p>پرداخت شده</p><strong>{{ money(selectedWorkerSummary.wage_paid_total) }}</strong></article>
+            <article class="payout-card"><p>مانده حقوق</p><strong>{{ money(selectedWorkerSummary.payable_total) }}</strong></article>
+            <article class="payout-card"><p>مانده انعام</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in data.worker_report" :key="`w-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+          </tbody></table></div>
+          <div v-if="selectedWorkerSummary" class="transactions-shell">
+            <div class="worker-head">
+              <h3>تراکنش‌های حقوق {{ selectedWorkerSummary.worker_name }}</h3>
+              <div class="action-row">
+                <button class="secondary-btn" @click="openAdjustmentModal('bonus')">ثبت پاداش</button>
+                <button class="secondary-btn danger-soft" @click="openAdjustmentModal('penalty')">ثبت جریمه</button>
+              </div>
+            </div>
+            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نوع</th><th>مبلغ</th><th>سفارش</th><th>توضیح</th><th>زمان</th></tr></thead><tbody>
+              <tr v-for="(row, index) in selectedWorkerTransactions" :key="row.id"><td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td><td>{{ payoutKindLabel(row.kind) }}</td><td>{{ money(row.amount) }}</td><td>{{ row.vehicle_job_id || '-' }}</td><td>{{ row.note || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+              <tr v-if="!selectedWorkerTransactions.length"><td colspan="6">تراکنشی ثبت نشده است.</td></tr>
             </tbody></table></div>
-          </template>
+          </div>
+        </template>
 
-          <template v-else-if="activeTab === 'tips'">
-            <h3>گزارش انعام</h3>
-            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>انعام</th><th>نام نیرو</th><th>کالا</th><th>تاریخ</th></tr></thead><tbody>
-              <tr v-for="row in data.tips_report" :key="`t-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
-            </tbody></table></div>
-          </template>
+        <template v-else-if="activeTab === 'tips'">
+          <h3>گزارش انعام</h3>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>انعام</th><th>نام نیرو</th><th>کالا</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in data.tips_report" :key="`t-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+          </tbody></table></div>
+        </template>
 
-          <template v-else>
-            <h3>گزارش ورود و خروج نیروها</h3>
-            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام نیرو</th><th>نوع رویداد</th><th>زمان</th><th>منبع</th></tr></thead><tbody>
-              <tr v-for="row in data.attendance_report" :key="`a-${row.row}`"><td>{{ row.row }}</td><td>{{ row.worker_name }}</td><td>{{ row.event_type === 'in' ? 'ورود' : 'خروج' }}</td><td>{{ dateTime(row.event_at) }}</td><td>{{ row.source }}</td></tr>
-            </tbody></table></div>
-          </template>
-        </section>
+        <template v-else-if="activeTab === 'revenue'">
+          <h3>گزارش درآمد</h3>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>تاریخ</th><th>راننده</th><th>شماره</th><th>مدل خودرو</th><th>رنگ</th><th>پلاک</th><th>روش پرداخت</th><th>وضعیت پرداخت</th><th>خدمات</th><th>محصولات</th><th>تخفیف</th><th>انعام</th><th>مبلغ نهایی</th><th>وصول شده</th><th>مانده</th><th>شماره چک</th><th>سررسید</th></tr></thead><tbody>
+            <tr v-for="row in data.revenue_report" :key="`r-${row.row}`"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td>{{ row.plate_number }}</td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
+          </tbody></table></div>
+        </template>
+
+      </section>
     </div>
   </AppShell>
+
+  <VehicleDetailsModal
+    :open="vehicleModal.open"
+    :loading="vehicleModal.loading"
+    :vehicle="vehicleModal.data"
+    title="جزئیات کامل خودرو"
+    @close="closeVehicleModal"
+    @cancel="cancelVehicle"
+    @block-plate="blockVehiclePlate"
+  />
+
+  <div v-if="payoutModal.open" class="modal-overlay" @click.self="closePayoutModal">
+    <section class="modal-panel action-panel">
+      <header class="modal-head">
+        <h3>پرداخت حقوق {{ selectedWorkerSummary?.worker_name || '' }}</h3>
+        <button class="close-btn" @click="closePayoutModal">✕</button>
+      </header>
+      <div class="modal-body">
+        <label><span>نوع پرداخت</span><select v-model="payoutModal.mode"><option value="full">کل حقوق</option><option value="partial">بخشی از حقوق</option></select></label>
+        <label v-if="payoutModal.mode === 'partial'"><span>مبلغ (هزار تومان)</span><input v-model.number="payoutModal.amount" type="number" min="1" /></label>
+        <label><span>توضیح</span><input v-model="payoutModal.note" type="text" /></label>
+        <button class="primary-btn" :disabled="payoutModal.submitting" @click="submitPayout">{{ payoutModal.submitting ? 'در حال ثبت...' : 'ثبت پرداخت' }}</button>
+      </div>
+    </section>
+  </div>
+
+  <div v-if="adjustmentModal.open" class="modal-overlay" @click.self="closeAdjustmentModal">
+    <section class="modal-panel action-panel">
+      <header class="modal-head">
+        <h3>{{ adjustmentModal.kind === 'bonus' ? 'ثبت پاداش' : 'ثبت جریمه' }} برای {{ selectedWorkerSummary?.worker_name || '' }}</h3>
+        <button class="close-btn" @click="closeAdjustmentModal">✕</button>
+      </header>
+      <div class="modal-body">
+        <label><span>مبلغ</span><input v-model.number="adjustmentModal.amount" type="number" min="1" /></label>
+        <label><span>توضیح</span><input v-model.trim="adjustmentModal.note" type="text" placeholder="ثبت دلیل پاداش یا جریمه" /></label>
+        <button class="primary-btn" :disabled="adjustmentModal.submitting" @click="submitAdjustment">{{ adjustmentModal.submitting ? 'در حال ثبت...' : 'ثبت' }}</button>
+      </div>
+    </section>
+  </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
-import { useAuthStore } from '../../store/auth.store'
-import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import AppShell from '../../components/layout/AppShell.vue'
+import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
+import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
+import { formatJalaliDate } from '../../utils/date'
+import { formatThousandsToman, fromThousandsTomanInput, toThousandsToman } from '../../utils/money'
 
-const authStore = useAuthStore()
 const activeTab = ref('overall')
+const workers = ref([])
 const errorMessage = ref('')
-const filters = reactive({ startJalali: '', endJalali: '', q: '' })
-const summary = reactive({
-  vehicles_count: 0,
-  carwash_total: 0,
-  worker_total: 0,
-  tips_total: 0,
-  payable_worker_total: 0,
-  payable_tip_total: 0
+const rangeOptions = [
+  { key: 'today', label: 'امروز' },
+  { key: 'week', label: 'این هفته' },
+  { key: 'month', label: 'این ماه' },
+  { key: 'all', label: 'کل' }
+]
+const filters = reactive({
+  rangeKey: 'today',
+  startJalali: '',
+  endJalali: '',
+  q: '',
+  workerId: '',
+  plateLeft: '',
+  plateLetter: '',
+  plateMid: '',
+  plateRight: ''
 })
-const data = reactive({ overall_report: [], carwash_report: [], worker_report: [], tips_report: [], attendance_report: [] })
-const settlingPayout = ref(false)
+const summary = reactive({ vehicles_count: 0, carwash_total: 0, worker_total: 0, tips_total: 0, discount_total: 0, payable_worker_total: 0, bonus_total: 0, penalty_total: 0 })
+const sectionTotals = reactive({ overall: {}, carwash: {}, worker: {}, tips: {}, revenue: {}, attendance: {} })
+const data = reactive({ overall_report: [], carwash_report: [], worker_report: [], tips_report: [], attendance_report: [], revenue_report: [] })
+const expandedServiceRows = ref({})
+const selectedWorkerSummary = ref(null)
+const selectedWorkerTransactions = ref([])
+const vehicleModal = reactive({ open: false, loading: false, data: null })
+const payoutModal = reactive({ open: false, submitting: false, mode: 'full', amount: 0, note: '' })
+const adjustmentModal = reactive({ open: false, submitting: false, kind: 'bonus', amount: 0, note: '' })
 
 const tabs = [
   { key: 'overall', label: 'گزارش کل' },
   { key: 'carwash', label: 'حق کارواش' },
   { key: 'worker', label: 'حق نیرو' },
   { key: 'tips', label: 'انعام' },
-  { key: 'attendance', label: 'ورود و خروج نیروها' }
+  { key: 'revenue', label: 'گزارش درآمد' }
 ]
 
-
-const money = (v) => `${Number(v || 0).toLocaleString('fa-IR')} تومان`
-const dateTime = (v) => {
-  if (!v) return '-'
-  return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(v))
+const money = (v) => formatThousandsToman(v)
+const dateTime = (v) => formatJalaliDate(v)
+const dateOnly = (v) => formatJalaliDate(v)
+const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assigned: 'در انتظار تکمیل', in_progress: 'در حال انجام', ready_to_settle: 'در انتظار تکمیل', released: 'ترخیص شده', cancelled: 'لغو' }[value] || '-')
+const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
+const paymentMethodLabel = (value) => ({ cash: 'نقدی', transfer: 'کارت به کارت', cheque: 'چک', credit: 'نسیه', pos: 'کارت‌خوان', manual: 'دستی' }[value] || value || '-')
+const paymentStateLabel = (value) => ({ success: 'تسویه شده', pending: 'در انتظار', failed: 'ناموفق', refunded: 'مرجوعی' }[value] || value || '-')
+const normalizeServicesValue = (value) => {
+  const text = String(value || '').trim()
+  return text || '-'
 }
+const hasExpandableServices = (value) => normalizeServicesValue(value).length > 24
+const servicesPreview = (value) => {
+  const text = normalizeServicesValue(value)
+  if (text === '-' || text.length <= 24) return text
+  return `${text.slice(0, 24).trim()}...`
+}
+const serviceRowKey = (row) => String(row?.vehicle_id || row?.row || '')
+const isServicesExpanded = (row) => Boolean(expandedServiceRows.value[serviceRowKey(row)])
+const toggleServicesRow = (row) => {
+  const key = serviceRowKey(row)
+  if (!key) return
+  expandedServiceRows.value = {
+    ...expandedServiceRows.value,
+    [key]: !expandedServiceRows.value[key]
+  }
+}
+const visibleSummaryCards = computed(() => {
+  if (activeTab.value === 'overall') {
+    return [
+      { key: 'vehicles_count', label: 'تعداد خودرو', value: Number(sectionTotals.overall.vehicles_count || summary.vehicles_count || 0).toLocaleString('fa-IR') },
+      { key: 'carwash_total', label: 'حق کارواش', value: money(sectionTotals.overall.carwash_total || 0) },
+      { key: 'worker_total', label: 'حق نیرو', value: money(sectionTotals.overall.worker_total || 0) },
+      { key: 'tips_total', label: 'انعام', value: money(sectionTotals.overall.tips_total || 0) },
+      { key: 'discount_total', label: 'تخفیف', value: money(sectionTotals.overall.discount_total || summary.discount_total || 0) }
+    ]
+  }
+  if (activeTab.value === 'carwash') {
+    return [
+      { key: 'carwash_total', label: 'حق کارواش', value: money(summary.carwash_total) }
+    ]
+  }
+  if (activeTab.value === 'worker') {
+    return [
+      { key: 'worker_total', label: 'حق نیرو', value: money(summary.worker_total) },
+      { key: 'payable_worker_total', label: 'مانده حق نیرو', value: money(summary.payable_worker_total) },
+      { key: 'bonus_total', label: 'پاداش', value: money(summary.bonus_total) },
+      { key: 'penalty_total', label: 'جریمه', value: money(summary.penalty_total) }
+    ]
+  }
+  if (activeTab.value === 'tips') {
+    return [
+      { key: 'tips_total', label: 'انعام', value: money(summary.tips_total) }
+    ]
+  }
+  if (activeTab.value === 'revenue') {
+    return [
+      { key: 'revenue_total', label: 'درآمد وصول‌شده', value: money(sectionTotals.revenue.revenue_total) }
+    ]
+  }
+  return []
+})
+
+const toIsoDate = (value) => {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const resolveRangeDates = (rangeKey) => {
+  if (rangeKey === 'all') return { start: '', end: '' }
+  const now = new Date()
+  const end = new Date(now)
+  let start = new Date(now)
+  if (rangeKey === 'today') {
+    return { start: toIsoDate(start), end: toIsoDate(end) }
+  }
+  if (rangeKey === 'week') {
+    const day = now.getDay()
+    const offset = day === 0 ? 6 : day - 1
+    start.setDate(now.getDate() - offset)
+    return { start: toIsoDate(start), end: toIsoDate(end) }
+  }
+  if (rangeKey === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { start: toIsoDate(start), end: toIsoDate(end) }
+  }
+  return { start: '', end: '' }
+}
+
+const setRange = (rangeKey) => {
+  filters.rangeKey = rangeKey
+}
+
+const payoutButtonLabel = computed(() => `پرداخت حقوق ${selectedWorkerSummary.value?.worker_name || ''}`)
+
+const normalizeDigits = (value) => String(value || '')
+  .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+  .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
 
 const parseJalaliToIso = (input) => {
   const value = (input || '').trim().replace(/-/g, '/')
@@ -174,8 +366,44 @@ const parseJalaliToIso = (input) => {
     gDayNo -= gdMonth[gm]
     gm += 1
   }
-  const gd = gDayNo + 1
-  return `${gy}-${String(gm + 1).padStart(2, '0')}-${String(gd).padStart(2, '0')}`
+  return `${gy}-${String(gm + 1).padStart(2, '0')}-${String(gDayNo + 1).padStart(2, '0')}`
+}
+
+const normalizePlateLetter = (value) => {
+  const raw = String(value || '').replace(/\s+/g, '').slice(0, 1)
+  const englishMap = { A: 'ا', B: 'ب', D: 'د', H: 'ه', J: 'ج', L: 'ل', M: 'م', N: 'ن', P: 'پ', S: 'س', T: 'ط', V: 'و', Y: 'ی' }
+  const upper = raw.toUpperCase()
+  if (englishMap[upper]) return englishMap[upper]
+  return raw.replace(/[^آابپتثجچحخدذرزسشصضطظعغفقکگلمنوهی]/g, '')
+}
+
+const normalizePlateFilters = () => {
+  filters.plateLeft = normalizeDigits(filters.plateLeft).replace(/\D/g, '').slice(0, 2)
+  filters.plateRight = normalizeDigits(filters.plateRight).replace(/\D/g, '').slice(0, 2)
+  filters.plateMid = normalizeDigits(filters.plateMid).replace(/\D/g, '').slice(0, 3)
+  filters.plateLetter = normalizePlateLetter(filters.plateLetter)
+}
+
+const resolveApiErrorMessage = (error, fallback) => {
+  const payload = error?.response?.data
+  if (typeof payload === 'string' && payload.trim()) return payload
+  if (typeof payload?.detail === 'string' && payload.detail.trim()) return payload.detail
+  if (payload && typeof payload === 'object') {
+    for (const value of Object.values(payload)) {
+      if (typeof value === 'string' && value.trim()) return value
+      if (Array.isArray(value) && value.length) return String(value[0])
+    }
+  }
+  return fallback
+}
+
+const fetchWorkers = async () => {
+  try {
+    const { data } = await api.get('/workers/')
+    workers.value = Array.isArray(data) ? data : []
+  } catch (_error) {
+    workers.value = []
+  }
 }
 
 let fetchToken = 0
@@ -183,118 +411,251 @@ const fetchReports = async () => {
   const token = ++fetchToken
   errorMessage.value = ''
   try {
-    const start = parseJalaliToIso(filters.startJalali)
-    const end = parseJalaliToIso(filters.endJalali)
-    if ((filters.startJalali && !start) || (filters.endJalali && !end)) {
-      errorMessage.value = 'فرمت تاریخ شمسی معتبر نیست.'
-      return
+    const manualStart = parseJalaliToIso(filters.startJalali)
+    const manualEnd = parseJalaliToIso(filters.endJalali)
+    const quickRange = resolveRangeDates(filters.rangeKey)
+    let start = manualStart || quickRange.start
+    let end = manualEnd || quickRange.end
+    if (start && end && start > end) {
+      const temp = start
+      start = end
+      end = temp
     }
+    const workerId = Number.parseInt(filters.workerId, 10)
     const { data: payload } = await api.get('/reports/dashboard/', {
       params: {
         start: start || undefined,
         end: end || undefined,
-        q: (filters.q || '').trim() || undefined
+        q: (filters.q || '').trim() || undefined,
+        worker_id: Number.isInteger(workerId) && workerId > 0 ? workerId : undefined,
+        plate_left: filters.plateLeft || undefined,
+        plate_letter: filters.plateLetter || undefined,
+        plate_mid: filters.plateMid || undefined,
+        plate_right: filters.plateRight || undefined
       }
     })
     if (token !== fetchToken) return
     Object.assign(summary, payload.summary || {})
+    Object.assign(sectionTotals.overall, payload.section_totals?.overall || {})
+    Object.assign(sectionTotals.carwash, payload.section_totals?.carwash || {})
+    Object.assign(sectionTotals.worker, payload.section_totals?.worker || {})
+    Object.assign(sectionTotals.tips, payload.section_totals?.tips || {})
+    Object.assign(sectionTotals.attendance, payload.section_totals?.attendance || {})
+    Object.assign(sectionTotals.revenue, payload.section_totals?.revenue || {})
+    expandedServiceRows.value = {}
     data.overall_report = payload.overall_report || []
     data.carwash_report = payload.carwash_report || []
     data.worker_report = payload.worker_report || []
     data.tips_report = payload.tips_report || []
     data.attendance_report = payload.attendance_report || []
+    data.revenue_report = payload.revenue_report || []
+    selectedWorkerSummary.value = payload.selected_worker_summary || null
+    selectedWorkerTransactions.value = payload.selected_worker_transactions || []
   } catch (error) {
     if (token !== fetchToken) return
     errorMessage.value = error?.response?.data?.detail || 'بارگذاری گزارشات ناموفق بود.'
   }
 }
 
-const settlePayout = async (kind) => {
-  const start = parseJalaliToIso(filters.startJalali)
-  const end = parseJalaliToIso(filters.endJalali)
-  if ((filters.startJalali && !start) || (filters.endJalali && !end)) {
-    errorMessage.value = 'فرمت تاریخ شمسی معتبر نیست.'
-    return
-  }
-  settlingPayout.value = true
+const resetFilters = () => {
+  filters.rangeKey = 'today'
+  filters.startJalali = ''
+  filters.endJalali = ''
+  filters.q = ''
+  filters.workerId = ''
+  filters.plateLeft = ''
+  filters.plateLetter = ''
+  filters.plateMid = ''
+  filters.plateRight = ''
+  expandedServiceRows.value = {}
+}
+
+const openVehicleDetail = async (vehicleId) => {
+  vehicleModal.open = true
+  vehicleModal.loading = true
+  vehicleModal.data = null
   try {
-    await api.post('/reports/payouts/settle/', {
-      kind,
-      start: start || undefined,
-      end: end || undefined,
-      q: (filters.q || '').trim() || undefined
+    const { data } = await api.get(`/vehicles/${vehicleId}/`)
+    vehicleModal.data = data
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.detail || 'بارگذاری جزئیات سفارش ناموفق بود.'
+    closeVehicleModal()
+  } finally {
+    vehicleModal.loading = false
+  }
+}
+const closeVehicleModal = () => {
+  vehicleModal.open = false
+  vehicleModal.loading = false
+  vehicleModal.data = null
+}
+
+const reloadVehicleDetail = async () => {
+  const vehicleId = vehicleModal.data?.id
+  if (!vehicleId) return
+  vehicleModal.loading = true
+  try {
+    const { data } = await api.get(`/vehicles/${vehicleId}/`)
+    vehicleModal.data = data
+  } catch (error) {
+    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری جزئیات سفارش ناموفق بود.')
+    closeVehicleModal()
+  } finally {
+    vehicleModal.loading = false
+  }
+}
+
+const cancelVehicle = async () => {
+  if (!vehicleModal.data?.id) return
+  try {
+    await api.patch(`/vehicles/${vehicleModal.data.id}/status/`, { status: 'cancelled' })
+    await Promise.all([reloadVehicleDetail(), fetchReports()])
+  } catch (error) {
+    errorMessage.value = resolveApiErrorMessage(error, 'لغو سفارش ناموفق بود.')
+  }
+}
+
+const blockVehiclePlate = async () => {
+  if (!vehicleModal.data?.id) return
+  try {
+    await api.post(`/vehicles/${vehicleModal.data.id}/block-plate/`, {})
+    await Promise.all([reloadVehicleDetail(), fetchReports()])
+  } catch (error) {
+    errorMessage.value = resolveApiErrorMessage(error, 'بلاک کردن پلاک ناموفق بود.')
+  }
+}
+
+const openPayoutModal = () => {
+  payoutModal.open = true
+  payoutModal.mode = 'full'
+  payoutModal.amount = Math.max(0, Math.round(toThousandsToman(selectedWorkerSummary.value?.payable_total || 0)))
+  payoutModal.note = ''
+}
+const closePayoutModal = () => {
+  payoutModal.open = false
+  payoutModal.submitting = false
+}
+const submitPayout = async () => {
+  if (!selectedWorkerSummary.value?.worker_id) return
+  payoutModal.submitting = true
+  try {
+    await api.post('/reports/workers/payouts/', {
+      worker_id: selectedWorkerSummary.value.worker_id,
+      mode: payoutModal.mode,
+      amount: payoutModal.mode === 'partial' ? fromThousandsTomanInput(payoutModal.amount || 0) : undefined,
+      note: payoutModal.note || undefined
     })
+    closePayoutModal()
     await fetchReports()
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'ثبت وضعیت پرداخت ناموفق بود.'
+    errorMessage.value = error?.response?.data?.detail || 'ثبت پرداخت ناموفق بود.'
   } finally {
-    settlingPayout.value = false
+    payoutModal.submitting = false
+  }
+}
+
+const openAdjustmentModal = (kind) => {
+  adjustmentModal.open = true
+  adjustmentModal.kind = kind
+  adjustmentModal.amount = 0
+  adjustmentModal.note = ''
+}
+const closeAdjustmentModal = () => {
+  adjustmentModal.open = false
+  adjustmentModal.submitting = false
+}
+const submitAdjustment = async () => {
+  if (!selectedWorkerSummary.value?.worker_id) return
+  if (!adjustmentModal.note.trim()) {
+    errorMessage.value = 'توضیح پاداش یا جریمه الزامی است.'
+    return
+  }
+  adjustmentModal.submitting = true
+  try {
+    await api.post('/reports/workers/adjustments/', {
+      worker_id: selectedWorkerSummary.value.worker_id,
+      kind: adjustmentModal.kind,
+      amount: Number(adjustmentModal.amount || 0),
+      note: adjustmentModal.note.trim()
+    })
+    closeAdjustmentModal()
+    await fetchReports()
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.detail || 'ثبت تعدیل ناموفق بود.'
+  } finally {
+    adjustmentModal.submitting = false
   }
 }
 
 let filterTimer = null
-const scheduleAutoFetch = () => {
+watch(() => [filters.q, filters.rangeKey, filters.startJalali, filters.endJalali, filters.workerId, filters.plateLeft, filters.plateLetter, filters.plateMid, filters.plateRight], () => {
+  normalizePlateFilters()
   if (filterTimer) clearTimeout(filterTimer)
-  filterTimer = setTimeout(() => {
-    fetchReports()
-  }, 280)
-}
-
-watch(() => [filters.q, filters.startJalali, filters.endJalali], () => {
-  scheduleAutoFetch()
+  filterTimer = setTimeout(fetchReports, 280)
 })
 
-const resetFilters = () => {
-  filters.startJalali = ''
-  filters.endJalali = ''
-  filters.q = ''
-}
-
 onMounted(async () => {
-  await authStore.fetchMe()
+  await fetchWorkers()
   await fetchReports()
 })
 </script>
 
 <style scoped>
 .reports-content{font-size:13px}
-.filters-card{display:grid;grid-template-columns:minmax(260px,1.2fr) 1fr 1fr auto;gap:8px;padding:10px;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:10px;align-items:end}
+.range-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.range-chip{border:1px solid #cbd5e1;background:#fff;color:#334155;padding:9px 16px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:700}
+.range-chip.active{background:#2563eb;border-color:#2563eb;color:#fff}
+.filters-card{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;padding:14px;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:10px;align-items:end;background:linear-gradient(180deg,#fff,#f8fbff)}
 .field{display:grid;gap:5px;font-size:12px}
-.field input{height:38px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;font-size:12px}
-.search-field input{background:#f8fbff}
-.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.field input,.field select{height:38px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;font-size:12px;background:#fff}
+.search-field{grid-column:span 2}
+.plate-field{grid-column:span 2}
+.plate-filter-shell{padding:10px;border:1px solid #dbe5f0;border-radius:14px;background:linear-gradient(180deg,#fdfefe,#f3f7fb)}
+.plate-filter-row{display:grid;grid-template-columns:62px auto 86px 62px 62px;gap:8px;align-items:center}
+.plate-filter-row span{display:inline-flex;align-items:center;justify-content:center;height:38px;color:#64748b;font-weight:700}
+.plate-filter-row input{text-align:center;padding:0;border:1px solid #c9d6e5;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.8)}
+.summary-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;margin-bottom:10px}
 .kpi-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fbff}
 .kpi-card p{margin:0;color:#64748b;font-size:12px}
 .kpi-card strong{display:block;margin-top:6px;font-size:15px;color:#0f172a}
-.tabs-bar{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
-.tabs-summary-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start;margin-bottom:10px}
-.payout-boxes{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.payout-card{border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:8px 10px;min-width:150px}
-.payout-card p{margin:0;color:#64748b;font-size:11px}
-.payout-card strong{display:block;margin-top:6px;color:#0f172a;font-size:13px}
-.payout-action-btn{height:40px;white-space:nowrap}
+.tabs-bar{display:flex;gap:6px;flex-wrap:wrap}
 .chip{border:0;background:#e2e8f0;color:#334155;padding:6px 12px;border-radius:999px;cursor:pointer;font-size:12px}
-.chip.active{background:#2563eb;color:#fff}
-.primary-btn{border:0;border-radius:10px;padding:8px 12px;cursor:pointer;background:linear-gradient(90deg,#2563eb,#0891b2);color:#fff}
+.chip.active,.primary-btn{background:#2563eb;color:#fff}
+.primary-btn,.secondary-btn,.close-btn{border:0;border-radius:10px;padding:8px 12px;cursor:pointer}
+.secondary-btn{background:#e2e8f0}
+.danger-soft{background:#fee2e2;color:#991b1b}
 .table-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px}
 .table-card h3{margin:0 0 8px;font-size:15px}
 .table-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px}
 th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-space:normal;vertical-align:top;line-height:1.5;word-break:break-word}
-.secondary-btn{border:0;border-radius:10px;padding:8px 12px;cursor:pointer;background:#e2e8f0;height:38px}
 .error-box{margin-bottom:10px;padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:10px}
-@media (max-width:1200px){
-  .filters-card{grid-template-columns:1fr 1fr}
-  .clear-btn{grid-column:1 / -1}
-  .tabs-summary-row{grid-template-columns:1fr}
-  .payout-boxes{justify-content:flex-start}
-}
-@media (max-width:1100px){
-  .summary-grid{grid-template-columns:repeat(2,1fr)}
-}
-@media (max-width:760px){
-  .filters-card{grid-template-columns:1fr}
-}
+.clickable-row{cursor:pointer}
+.clickable-row.expanded{background:#f8fbff}
+.services-preview-cell{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.services-preview-text{flex:1;min-width:0}
+.services-toggle-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#475569;cursor:pointer;flex-shrink:0;transition:.18s ease}
+.services-toggle-btn:hover,.services-toggle-btn.active{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
+.services-toggle-dots{font-size:15px;line-height:1;transform:translateY(-1px)}
+.services-expanded-row td{padding:0 6px 10px;background:#f8fbff}
+.services-expanded-box{margin:0 0 0 auto;padding:12px 14px;border:1px dashed #bfdbfe;border-radius:14px;background:linear-gradient(180deg,#ffffff,#eff6ff)}
+.services-expanded-box strong{display:block;margin-bottom:6px;color:#0f172a;font-size:12px}
+.services-expanded-box p{margin:0;color:#334155;line-height:1.8}
+.worker-head,.action-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.worker-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.payout-card{border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:8px 10px}
+.payout-card p{margin:0;color:#64748b;font-size:11px}
+.payout-card strong{display:block;margin-top:6px;color:#0f172a;font-size:13px}
+.transactions-shell{margin-top:14px}
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.48);display:flex;align-items:center;justify-content:center;z-index:90;padding:18px}
+.modal-panel{width:min(720px,100%);background:#fff;border-radius:16px;overflow:hidden}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e2e8f0}
+.modal-step{margin:0;color:#64748b;font-size:12px}
+.modal-body{padding:16px}
+.modal-body{display:grid;gap:12px}
+.modal-body label{display:grid;gap:6px}
+.modal-body input,.modal-body select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px}
+@media (max-width:1400px){.summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:1200px){.filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-field,.plate-field{grid-column:span 2}.worker-summary-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.filters-card,.summary-grid,.worker-summary-grid,.plate-filter-row{grid-template-columns:1fr}.search-field,.plate-field{grid-column:span 1}}
 </style>
-
-

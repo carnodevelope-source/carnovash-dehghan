@@ -1,6 +1,25 @@
 from django.urls import path
 
-from .views import CsrfView, LoginView, LogoutView, MeView, TenantRegisterView, UserManagementView
+from .views import (
+    CsrfView,
+    HqOverviewView,
+    HqCarWashListCreateView,
+    HqCarWashUpdateView,
+    HqReportsView,
+    HqSupportUserListCreateView,
+    HqTicketDetailView,
+    HqTicketListView,
+    HqTicketMessageCreateView,
+    LoginView,
+    LogoutView,
+    MeView,
+    SupportTicketDetailView,
+    SupportTicketFeedbackView,
+    SupportTicketListCreateView,
+    SupportTicketMessageCreateView,
+    TenantRegisterView,
+    UserManagementView,
+)
 
 urlpatterns = [
     path('csrf/', CsrfView.as_view(), name='csrf'),
@@ -9,4 +28,16 @@ urlpatterns = [
     path('me/', MeView.as_view(), name='me'),
     path('users/', UserManagementView.as_view(), name='users'),
     path('tenants/register/', TenantRegisterView.as_view(), name='tenant-register'),
+    path('support/tickets/', SupportTicketListCreateView.as_view(), name='support-tickets'),
+    path('support/tickets/<int:pk>/', SupportTicketDetailView.as_view(), name='support-ticket-detail'),
+    path('support/tickets/<int:pk>/messages/', SupportTicketMessageCreateView.as_view(), name='support-ticket-message'),
+    path('support/tickets/<int:pk>/feedback/', SupportTicketFeedbackView.as_view(), name='support-ticket-feedback'),
+    path('hq/overview/', HqOverviewView.as_view(), name='hq-overview'),
+    path('hq/carwashes/', HqCarWashListCreateView.as_view(), name='hq-carwashes'),
+    path('hq/carwashes/<int:pk>/', HqCarWashUpdateView.as_view(), name='hq-carwash-update'),
+    path('hq/team/', HqSupportUserListCreateView.as_view(), name='hq-team'),
+    path('hq/tickets/', HqTicketListView.as_view(), name='hq-tickets'),
+    path('hq/tickets/<int:pk>/', HqTicketDetailView.as_view(), name='hq-ticket-detail'),
+    path('hq/tickets/<int:pk>/messages/', HqTicketMessageCreateView.as_view(), name='hq-ticket-message'),
+    path('hq/reports/', HqReportsView.as_view(), name='hq-reports'),
 ]

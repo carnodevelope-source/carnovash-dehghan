@@ -50,6 +50,7 @@ class Product(TimestampedModel):
     sku = models.CharField(max_length=60, unique=True)
     barcode = models.CharField(max_length=80, blank=True)
     unit = models.CharField(max_length=20, default='unit')
+    description = models.TextField(blank=True)
     sale_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     cost_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     min_stock = models.PositiveIntegerField(default=0)

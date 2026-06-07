@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import CashflowTransaction, Wallet
+from .models import CashflowTransaction, Payment, Wallet
 
 
 class WalletSerializer(serializers.ModelSerializer):
@@ -24,6 +24,34 @@ class CashflowTransactionSerializer(serializers.ModelSerializer):
             'reference_type',
             'reference_id',
             'transacted_at',
+        ]
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = [
+            'id',
+            'vehicle_entry',
+            'method',
+            'status',
+            'amount',
+            'tip_amount',
+            'service_amount',
+            'product_amount',
+            'discount_amount',
+            'tax_amount',
+            'paid_at',
+            'payer_name',
+            'payer_phone',
+            'cheque_number',
+            'cheque_serial_number',
+            'cheque_sayadi_number',
+            'cheque_bank',
+            'cheque_shaba',
+            'cheque_amount',
+            'reminder_due_at',
+            'reminder_sent_at',
         ]
 
 

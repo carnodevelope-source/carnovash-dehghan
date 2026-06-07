@@ -11,6 +11,10 @@ class TimestampedModel(models.Model):
 
 
 class WorkerProfile(TimestampedModel):
+    class PaymentType(models.TextChoices):
+        PERCENT = 'percent', 'Percent'
+        FIXED = 'fixed', 'Fixed'
+        HOURLY = 'hourly', 'Hourly'
     
     class LoadStatus(models.TextChoices):
         FREE = 'free', 'Free'
@@ -33,7 +37,10 @@ class WorkerProfile(TimestampedModel):
         max_digits=5, decimal_places=2, default=0
     )
     default_fixed_wage = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    default_hourly_wage = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    payment_type = models.CharField(max_length=20, choices=PaymentType.choices, default=PaymentType.PERCENT)
     tip_share_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    last_assigned_at = models.DateTimeField(null=True, blank=True)
     is_available = models.BooleanField(default=True)
     load_status = models.CharField(
         max_length=20, choices=LoadStatus.choices, default=LoadStatus.FREE
@@ -41,6 +48,10 @@ class WorkerProfile(TimestampedModel):
     active_jobs_count = models.PositiveIntegerField(default=0)
     attendance_token = models.CharField(max_length=120, unique=True, null=True, blank=True)
     notes = models.TextField(blank=True)
+    has_entrusted_item = models.BooleanField(default=False)
+    entrusted_item_description = models.TextField(blank=True)
+    entrusted_item_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    entrusted_item_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     class Meta:
         ordering = ['user__full_name', 'user__username']

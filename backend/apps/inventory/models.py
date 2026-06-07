@@ -53,6 +53,7 @@ class StockMovement(TimestampedModel):
     movement_type = models.CharField(max_length=20, choices=MovementType.choices)
     quantity = models.DecimalField(max_digits=12, decimal_places=2)
     unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    sale_price_snapshot = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     note = models.TextField(blank=True)
     reference_type = models.CharField(max_length=40, blank=True)
     reference_id = models.PositiveBigIntegerField(null=True, blank=True)

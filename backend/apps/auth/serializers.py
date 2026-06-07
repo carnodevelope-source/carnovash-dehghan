@@ -1,5 +1,7 @@
-from django.contrib.auth import authenticate, get_user_model
+﻿from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
+
+from .models import CarWash, SupportTicket, SupportTicketMessage
 
 
 class LoginSerializer(serializers.Serializer):
@@ -19,7 +21,7 @@ class LoginSerializer(serializers.Serializer):
 
         user = authenticate(username=resolved_username, password=password)
         if not user:
-            raise serializers.ValidationError('نام کاربری/شماره همراه یا رمز عبور اشتباه است.')
+            raise serializers.ValidationError('نام کاربری یا رمز عبور اشتباه است.')
         if not user.is_active:
             raise serializers.ValidationError('حساب کاربری غیرفعال است.')
 
@@ -30,7 +32,38 @@ class LoginSerializer(serializers.Serializer):
 class UserListSerializer(serializers.ModelSerializer):
     class Meta:
         model = get_user_model()
-        fields = ['id', 'username', 'full_name', 'first_name', 'last_name', 'phone', 'role', 'is_active']
+        fields = [
+            'id',
+            'username',
+            'full_name',
+            'first_name',
+            'last_name',
+            'phone',
+            'role',
+            'platform_role',
+            'is_active',
+        ]
+
+
+class HqSupportUserListSerializer(UserListSerializer):
+    support_star_rating = serializers.DecimalField(max_digits=4, decimal_places=2, read_only=True)
+    support_rating_count = serializers.IntegerField(read_only=True)
+    support_customer_satisfaction_avg = serializers.DecimalField(max_digits=4, decimal_places=2, read_only=True)
+    support_response_quality_avg = serializers.DecimalField(max_digits=4, decimal_places=2, read_only=True)
+    support_first_response_minutes_avg = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
+    support_total_responses = serializers.IntegerField(read_only=True)
+    support_resolved_tickets_count = serializers.IntegerField(read_only=True)
+
+    class Meta(UserListSerializer.Meta):
+        fields = UserListSerializer.Meta.fields + [
+            'support_star_rating',
+            'support_rating_count',
+            'support_customer_satisfaction_avg',
+            'support_response_quality_avg',
+            'support_first_response_minutes_avg',
+            'support_total_responses',
+            'support_resolved_tickets_count',
+        ]
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -40,14 +73,22 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = get_user_model()
-        fields = ['username', 'full_name', 'first_name', 'last_name', 'phone', 'role', 'password', 'is_active']
+        fields = [
+            'username',
+            'full_name',
+            'first_name',
+            'last_name',
+            'phone',
+            'role',
+            'password',
+            'is_active',
+        ]
 
     def validate_role(self, value):
         request = self.context.get('request')
         if not request or not request.user:
             return value
 
-        # Managers can create only non-privileged users.
         if getattr(request.user, 'role', '') == 'manager' and value in ['admin', 'owner']:
             raise serializers.ValidationError('مدیر نمی‌تواند کاربر ادمین یا مالک ایجاد کند.')
         return value
@@ -76,3 +117,252 @@ class TenantRegisterSerializer(serializers.Serializer):
     manager_username = serializers.CharField(max_length=150)
     manager_phone = serializers.CharField(max_length=20)
     manager_password = serializers.CharField(write_only=True, min_length=6)
+
+
+class CarWashManagerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = get_user_model()
+        fields = [
+            'id',
+            'username',
+            'full_name',
+            'first_name',
+            'last_name',
+            'phone',
+            'is_active',
+        ]
+
+
+class CarWashListSerializer(serializers.ModelSerializer):
+    manager = serializers.SerializerMethodField()
+    tickets_open_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CarWash
+        fields = [
+            'id',
+            'name',
+            'slug',
+            'address',
+            'is_active',
+            'created_at',
+            'updated_at',
+            'manager',
+            'tickets_open_count',
+        ]
+
+    def get_manager(self, obj):
+        manager = get_user_model().objects.filter(tenant=obj, role='manager').order_by('id').first()
+        if not manager:
+            return None
+        return CarWashManagerSerializer(manager).data
+
+    def get_tickets_open_count(self, obj):
+        return obj.support_tickets.exclude(status=SupportTicket.Status.CLOSED).count()
+
+
+class CarWashCreateSerializer(serializers.Serializer):
+    carwash_name = serializers.CharField(max_length=150)
+    carwash_address = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    manager_first_name = serializers.CharField(max_length=150)
+    manager_last_name = serializers.CharField(max_length=150)
+    manager_username = serializers.CharField(max_length=150)
+    manager_phone = serializers.CharField(max_length=20)
+    manager_password = serializers.CharField(min_length=6, write_only=True)
+
+
+class CarWashUpdateSerializer(serializers.Serializer):
+    carwash_name = serializers.CharField(max_length=150, required=False)
+    carwash_address = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    is_active = serializers.BooleanField(required=False)
+    manager_first_name = serializers.CharField(max_length=150, required=False)
+    manager_last_name = serializers.CharField(max_length=150, required=False)
+    manager_phone = serializers.CharField(max_length=20, required=False)
+    manager_password = serializers.CharField(min_length=6, required=False, write_only=True)
+
+
+class HqSupportUserCreateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    username = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    def validate_first_name(self, value):
+        value = str(value or '').strip()
+        return value
+
+    def validate_last_name(self, value):
+        value = str(value or '').strip()
+        return value
+
+    def validate_username(self, value):
+        value = str(value or '').strip()
+        return value
+
+    def validate_phone(self, value):
+        value = str(value or '').strip()
+        return value
+
+    def create(self, validated_data):
+        first_name = validated_data.get('first_name') or 'پشتیبان'
+        last_name = validated_data.get('last_name') or 'مرکزی'
+        full_name = f'{first_name} {last_name}'.strip()[:150]
+        user_model = get_user_model()
+        username = (validated_data.get('username') or '').strip()
+        if not username:
+            username = f"support_{first_name}_{last_name}".strip('_').replace(' ', '_')
+        base_username = username[:150] or 'support_user'
+        counter = 1
+        while user_model.objects.filter(username__iexact=username).exists():
+            counter += 1
+            suffix = f'_{counter}'
+            username = f"{base_username[: max(1, 150 - len(suffix))]}{suffix}"
+        phone = (validated_data.get('phone') or '').strip()
+        if not phone:
+            phone = f'0999{user_model.objects.count() + 1:07d}'
+        base_phone = phone[:20] or '09990000000'
+        phone_counter = 1
+        while user_model.objects.filter(phone=phone).exists():
+            phone_counter += 1
+            suffix = str(phone_counter)
+            trimmed = base_phone[: max(1, 20 - len(suffix))]
+            phone = f'{trimmed}{suffix}'
+        password = str(validated_data.get('password') or '').strip()
+        if len(password) < 6:
+            password = f'Support@{phone[-6:]}'
+        user = user_model.objects.create(
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            full_name=full_name,
+            phone=phone,
+            tenant=None,
+            role='admin',
+            platform_role='hq_support',
+            is_active=True,
+            is_staff=True,
+            is_superuser=False,
+        )
+        user.set_password(password)
+        user.save(update_fields=['password'])
+        return user
+
+
+class SupportTicketMessageSerializer(serializers.ModelSerializer):
+    sender_name = serializers.SerializerMethodField()
+    sender_role = serializers.SerializerMethodField()
+    sender_platform_role = serializers.CharField(source='sender.platform_role', read_only=True)
+
+    class Meta:
+        model = SupportTicketMessage
+        fields = [
+            'id',
+            'sender',
+            'sender_name',
+            'sender_role',
+            'sender_platform_role',
+            'body',
+            'is_internal',
+            'created_at',
+        ]
+
+    def get_sender_name(self, obj):
+        if not obj.sender:
+            return '-'
+        return obj.sender.full_name or obj.sender.username
+
+    def get_sender_role(self, obj):
+        if not obj.sender:
+            return ''
+        if obj.sender.platform_role:
+            return obj.sender.get_platform_role_display()
+        return obj.sender.get_role_display()
+
+
+class SupportTicketListSerializer(serializers.ModelSerializer):
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+    responded_by_name = serializers.SerializerMethodField()
+    assigned_to_name = serializers.SerializerMethodField()
+    messages_count = serializers.SerializerMethodField()
+    last_message_preview = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupportTicket
+        fields = [
+            'id',
+            'tenant',
+            'tenant_name',
+            'created_by',
+            'created_by_name',
+            'subject',
+            'message',
+            'category',
+            'priority',
+            'status',
+            'response_text',
+            'assigned_to',
+            'assigned_to_name',
+            'responded_by_name',
+            'first_response_at',
+            'responded_at',
+            'response_quality_score',
+            'customer_satisfaction',
+            'customer_feedback',
+            'last_message_at',
+            'messages_count',
+            'last_message_preview',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_created_by_name(self, obj):
+        if not obj.created_by:
+            return '-'
+        return obj.created_by.full_name or obj.created_by.username
+
+    def get_responded_by_name(self, obj):
+        if not obj.responded_by:
+            return '-'
+        return obj.responded_by.full_name or obj.responded_by.username
+
+    def get_assigned_to_name(self, obj):
+        if not obj.assigned_to:
+            return '-'
+        return obj.assigned_to.full_name or obj.assigned_to.username
+
+    def get_messages_count(self, obj):
+        return getattr(obj, 'messages_count', None) or obj.messages.count()
+
+    def get_last_message_preview(self, obj):
+        last_message = getattr(obj, 'last_message_obj', None) or obj.messages.order_by('-created_at', '-id').first()
+        if not last_message:
+            return (obj.message or '')[:120]
+        return (last_message.body or '')[:120]
+
+
+class SupportTicketDetailSerializer(SupportTicketListSerializer):
+    messages = SupportTicketMessageSerializer(many=True, read_only=True)
+
+    class Meta(SupportTicketListSerializer.Meta):
+        fields = SupportTicketListSerializer.Meta.fields + ['messages']
+
+
+class SupportTicketCreateSerializer(serializers.Serializer):
+    subject = serializers.CharField(max_length=180)
+    message = serializers.CharField()
+    category = serializers.ChoiceField(choices=SupportTicket.Category.choices, required=False)
+    priority = serializers.ChoiceField(choices=SupportTicket.Priority.choices, required=False)
+
+
+class SupportTicketReplySerializer(serializers.Serializer):
+    body = serializers.CharField()
+    status = serializers.ChoiceField(choices=SupportTicket.Status.choices, required=False)
+    assign_to_user_id = serializers.IntegerField(required=False)
+    is_internal = serializers.BooleanField(required=False, default=False)
+
+
+class SupportTicketFeedbackSerializer(serializers.Serializer):
+    customer_satisfaction = serializers.IntegerField(min_value=1, max_value=5)
+    customer_feedback = serializers.CharField(required=False, allow_blank=True, max_length=1000)

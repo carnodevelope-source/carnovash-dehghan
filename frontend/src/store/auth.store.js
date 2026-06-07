@@ -5,6 +5,9 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({ user: null }),
   getters: {
     role: (state) => state.user?.role || '',
+    platformRole: (state) => state.user?.platform_role || '',
+    isHq: (state) => state.user?.is_hq === true || ['hq_admin', 'hq_support'].includes(state.user?.platform_role),
+    isHqAdmin: (state) => state.user?.is_hq_admin === true || state.user?.platform_role === 'hq_admin',
     isAccountant: (state) => state.user?.role === 'accountant',
     canAccessManagerSettings: (state) => ['manager', 'admin'].includes(state.user?.role),
     canAccessWallet: (state) => ['accountant', 'manager', 'admin'].includes(state.user?.role),

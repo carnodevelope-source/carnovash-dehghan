@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import InventoryItem, StockMovement
-from .serializers import InventoryItemSerializer
+from .serializers import InventoryItemSerializer, StockMovementHistorySerializer
 from apps.products.models import Product
 
 
@@ -83,6 +83,7 @@ class InventoryPurchaseView(APIView):
             movement_type=StockMovement.MovementType.IN,
             quantity=quantity,
             unit_cost=unit_cost,
+            sale_price_snapshot=sale_price,
             note=note or 'Manual purchase from manager panel',
             reference_type='manager_purchase',
             reference_id=product.id,
@@ -90,3 +91,38 @@ class InventoryPurchaseView(APIView):
         )
 
         return Response(InventoryItemSerializer(inventory_item).data, status=status.HTTP_201_CREATED)
+
+
+class ProductPurchaseHistoryView(APIView):
+    def get(self, request, product_id):
+        tenant = getattr(request.user, 'tenant', None)
+        product = Product.objects.filter(pk=product_id, tenant=tenant).first()
+        if not product:
+            return Response({'detail': 'محصول یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        history = (
+            StockMovement.objects
+            .select_related('inventory_item__product', 'created_by')
+            .filter(
+                tenant=tenant,
+                inventory_item__product_id=product_id,
+                reference_type='manager_purchase',
+                movement_type=StockMovement.MovementType.IN,
+            )
+            .order_by('-moved_at', '-id')
+        )
+        rows = []
+        for item in history:
+            row = StockMovementHistorySerializer(item).data
+            if not row.get('sale_price_snapshot'):
+                row['sale_price_snapshot'] = product.sale_price
+            rows.append(row)
+        return Response({
+            'product': {
+                'id': product.id,
+                'name': product.name,
+                'sale_price': product.sale_price,
+                'cost_price': product.cost_price,
+            },
+            'history': rows,
+        }, status=status.HTTP_200_OK)

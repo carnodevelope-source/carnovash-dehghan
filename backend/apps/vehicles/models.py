@@ -45,6 +45,14 @@ class VehicleEntry(TimestampedModel):
         PAID = 'paid', 'Paid'
         REFUNDED = 'refunded', 'Refunded'
 
+    class PaymentMethod(models.TextChoices):
+        POS = 'pos', 'POS'
+        CASH = 'cash', 'Cash'
+        TRANSFER = 'transfer', 'Transfer'
+        CHEQUE = 'cheque', 'Cheque'
+        CREDIT = 'credit', 'Credit'
+        MANUAL = 'manual', 'Manual'
+
     class SourceType(models.TextChoices):
         MANUAL = 'manual', 'Manual'
         AI = 'ai', 'AI'
@@ -66,6 +74,8 @@ class VehicleEntry(TimestampedModel):
     car_color = models.CharField(max_length=60)
     driver_name = models.CharField(max_length=120)
     driver_phone = models.CharField(max_length=20, db_index=True)
+    is_piece_wash = models.BooleanField(default=False)
+    piece_details = models.TextField(blank=True)
     customer = models.ForeignKey(
         CustomerProfile,
         on_delete=models.SET_NULL,
@@ -77,6 +87,9 @@ class VehicleEntry(TimestampedModel):
     status = models.CharField(max_length=30, choices=Status.choices, default=Status.ENTERED)
     payment_status = models.CharField(
         max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.UNPAID
+    )
+    payment_method = models.CharField(
+        max_length=20, choices=PaymentMethod.choices, blank=True, default=''
     )
     intake_source = models.CharField(
         max_length=20, choices=SourceType.choices, default=SourceType.MANUAL
@@ -105,10 +118,46 @@ class VehicleEntry(TimestampedModel):
         indexes = [
             models.Index(fields=['status', 'check_in_at']),
             models.Index(fields=['payment_status', 'check_in_at']),
+            models.Index(fields=['payment_method', 'check_in_at'], name='vehicles_ve_payment_5cc23d_idx'),
         ]
 
     def __str__(self) -> str:
         return f'{self.plate_number} - {self.driver_name}'
+
+
+class BlockedPlate(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='blocked_plates',
+        null=True,
+        blank=True,
+    )
+    plate_number = models.CharField(max_length=20, db_index=True)
+    plate_left = models.CharField(max_length=2, blank=True)
+    plate_letter = models.CharField(max_length=5, blank=True)
+    plate_mid = models.CharField(max_length=3, blank=True)
+    plate_right = models.CharField(max_length=2, blank=True)
+    note = models.CharField(max_length=255, blank=True)
+    blocked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='blocked_vehicle_plates',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant', 'plate_number'],
+                name='uniq_blocked_plate_per_tenant',
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.plate_number
 
 
 class VehicleStatusLog(TimestampedModel):
@@ -141,6 +190,7 @@ class VehicleJob(TimestampedModel):
     class WorkerPaymentType(models.TextChoices):
         PERCENT = 'percent', 'Percent'
         FIXED = 'fixed', 'Fixed'
+        HOURLY = 'hourly', 'Hourly'
 
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
@@ -174,6 +224,7 @@ class VehicleJob(TimestampedModel):
     services_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     products_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    manual_discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     tax_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     final_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     worker_share_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -204,11 +255,17 @@ class VehicleJobService(models.Model):
         VehicleJob, on_delete=models.CASCADE, related_name='service_lines'
     )
     service = models.ForeignKey(
-        'services.Service', on_delete=models.PROTECT, related_name='vehicle_job_lines'
+        'services.Service',
+        on_delete=models.PROTECT,
+        related_name='vehicle_job_lines',
+        null=True,
+        blank=True,
     )
+    custom_service_name = models.CharField(max_length=120, blank=True)
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
     unit_price = models.DecimalField(max_digits=12, decimal_places=2)
     line_total = models.DecimalField(max_digits=12, decimal_places=2)
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     is_completed = models.BooleanField(default=False)
     note = models.CharField(max_length=255, blank=True)
 

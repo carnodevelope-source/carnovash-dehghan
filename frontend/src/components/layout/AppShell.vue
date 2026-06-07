@@ -50,7 +50,10 @@
             :class="{ active: isActive(item.route) }"
             :to="item.route"
           >
-            {{ item.label }}
+            <span class="menu-item-label">{{ item.label }}</span>
+            <span v-if="item.route === '/manager/wallet' && walletWarning.active" class="menu-warning-badge">
+              {{ walletWarning.label }}
+            </span>
           </RouterLink>
         </nav>
 
@@ -83,6 +86,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
 import { navigationByRole } from '../../config/navigation'
+import api from '../../services/api'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -100,6 +104,7 @@ const authStore = useAuthStore()
 const isProfileMenuOpen = ref(false)
 const isLoggingOut = ref(false)
 const profileMenuRef = ref(null)
+const walletWarning = ref({ active: false, label: '' })
 
 const navItems = computed(() => (navigationByRole[authStore.role] || []).flatMap((group) => group.items || []))
 const tenantName = computed(() => authStore.user?.tenant_name || 'CarWash')
@@ -119,7 +124,7 @@ const roleLabel = computed(() => ({
   manager: 'مدیر',
   owner: 'مالک',
   operator: 'اپراتور',
-  worker: 'نیرو'
+  worker: 'پرسنل'
 }[authStore.role] || 'کاربر'))
 
 const isActive = (target) => {
@@ -161,8 +166,26 @@ const onLogoutClick = async () => {
   }
 }
 
+const loadWalletWarning = async () => {
+  if (!['admin', 'manager', 'accountant'].includes(authStore.role)) return
+  try {
+    const { data } = await api.get('/payments/wallet/dashboard/')
+    const regularBalance = Number(data?.summary?.regular_balance || 0)
+    const smsBalance = Number(data?.summary?.sms_balance || 0)
+    const regularLow = regularBalance <= 100000
+    const smsLow = smsBalance <= 50000
+    walletWarning.value = {
+      active: regularLow || smsLow,
+      label: regularLow && smsLow ? 'کمبود موجودی' : regularLow ? 'موجودی کم' : 'شارژ پیامک کم'
+    }
+  } catch (_error) {
+    walletWarning.value = { active: false, label: '' }
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
+  loadWalletWarning()
 })
 
 onBeforeUnmount(() => {
@@ -305,12 +328,28 @@ onBeforeUnmount(() => {
 }
 
 .menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 12px 14px;
   border-radius: 12px;
   text-decoration: none;
   color: #475569;
   font-weight: 600;
+}
+.menu-item-label { display: inline-flex; align-items: center; }
+.menu-warning-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .menu-item.active {

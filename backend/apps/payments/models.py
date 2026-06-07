@@ -15,6 +15,7 @@ class Wallet(TimestampedModel):
         CASH = 'cash', 'Cash'
         POS = 'pos', 'POS'
         BANK = 'bank', 'Bank'
+        SMS = 'sms', 'SMS'
 
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
@@ -40,6 +41,8 @@ class Payment(TimestampedModel):
         POS = 'pos', 'POS'
         CASH = 'cash', 'Cash'
         TRANSFER = 'transfer', 'Transfer'
+        CHEQUE = 'cheque', 'Cheque'
+        CREDIT = 'credit', 'Credit'
         MANUAL = 'manual', 'Manual'
 
     class Status(models.TextChoices):
@@ -73,6 +76,16 @@ class Payment(TimestampedModel):
     wallet = models.ForeignKey(
         Wallet, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments'
     )
+    payer_name = models.CharField(max_length=120, blank=True)
+    payer_phone = models.CharField(max_length=20, blank=True)
+    cheque_number = models.CharField(max_length=60, blank=True)
+    cheque_serial_number = models.CharField(max_length=80, blank=True)
+    cheque_sayadi_number = models.CharField(max_length=80, blank=True)
+    cheque_bank = models.CharField(max_length=120, blank=True)
+    cheque_shaba = models.CharField(max_length=40, blank=True)
+    cheque_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reminder_due_at = models.DateTimeField(null=True, blank=True)
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -118,3 +131,39 @@ class CashflowTransaction(TimestampedModel):
     class Meta:
         ordering = ['-transacted_at']
         indexes = [models.Index(fields=['wallet', 'transacted_at'])]
+
+
+class WalletGatewayRequest(TimestampedModel):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        PAID = 'paid', 'Paid'
+        CANCELLED = 'cancelled', 'Cancelled'
+        EXPIRED = 'expired', 'Expired'
+
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='wallet_gateway_requests',
+        null=True,
+        blank=True,
+    )
+    wallet = models.ForeignKey(
+        Wallet,
+        on_delete=models.CASCADE,
+        related_name='gateway_requests',
+    )
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    description = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='wallet_gateway_requests_created',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
