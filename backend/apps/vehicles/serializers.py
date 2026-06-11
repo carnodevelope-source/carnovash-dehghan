@@ -58,24 +58,67 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
     assigned_workers_snapshot = serializers.JSONField(read_only=True)
     service_lines = VehicleJobServiceLineSerializer(many=True, read_only=True)
 
-    def get_assigned_worker_name(self, obj):
-        if not obj.assigned_worker or not obj.assigned_worker.user:
-            return None
-        return obj.assigned_worker.user.full_name or obj.assigned_worker.user.username
-
-    def get_assigned_workers_names(self, obj):
-        names = []
+    def _resolve_snapshot_worker_names(self, obj):
         snapshot = obj.assigned_workers_snapshot if isinstance(obj.assigned_workers_snapshot, list) else []
+        ordered_ids = []
+        names_by_ref = {}
         for item in snapshot:
             if not isinstance(item, dict):
                 continue
-            name = (item.get('name') or '').strip()
-            if name and name not in names:
-                names.append(name)
+            try:
+                ref_id = int(item.get('id'))
+            except (TypeError, ValueError):
+                continue
+            if ref_id <= 0:
+                continue
+            if ref_id not in ordered_ids:
+                ordered_ids.append(ref_id)
+            raw_name = str(item.get('name') or '').strip()
+            if raw_name:
+                names_by_ref[ref_id] = raw_name
+
+        if obj.assigned_worker_id and obj.assigned_worker_id not in ordered_ids:
+            ordered_ids.insert(0, int(obj.assigned_worker_id))
+
+        if not ordered_ids:
+            return []
+
+        profiles = list(
+            WorkerProfile.objects.select_related('user').filter(
+                Q(id__in=ordered_ids) | Q(user_id__in=ordered_ids),
+                tenant=obj.tenant,
+            )
+        )
+        profiles_by_id = {profile.id: profile for profile in profiles}
+        profiles_by_user_id = {profile.user_id: profile for profile in profiles if profile.user_id}
+
+        names = []
+        seen = set()
+        for ref_id in ordered_ids:
+            resolved_name = names_by_ref.get(ref_id, '')
+            profile = profiles_by_id.get(ref_id) or profiles_by_user_id.get(ref_id)
+            if not resolved_name and profile and getattr(profile, 'user', None):
+                resolved_name = (profile.user.full_name or profile.user.username or '').strip()
+            if not resolved_name:
+                continue
+            if resolved_name in seen:
+                continue
+            seen.add(resolved_name)
+            names.append(resolved_name)
+        return names
+
+    def get_assigned_worker_name(self, obj):
+        if not obj.assigned_worker or not obj.assigned_worker.user:
+            names = self._resolve_snapshot_worker_names(obj)
+            return names[0] if names else None
+        return obj.assigned_worker.user.full_name or obj.assigned_worker.user.username
+
+    def get_assigned_workers_names(self, obj):
+        names = self._resolve_snapshot_worker_names(obj)
         if obj.assigned_worker and obj.assigned_worker.user:
             primary_name = (obj.assigned_worker.user.full_name or obj.assigned_worker.user.username or '').strip()
             if primary_name and primary_name not in names:
-                names.append(primary_name)
+                names.insert(0, primary_name)
         return names
 
     class Meta:

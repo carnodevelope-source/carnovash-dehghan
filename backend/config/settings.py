@@ -110,3 +110,8 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
 }
+
+IRANPAYAMAK_BASE_URL = config('IRANPAYAMAK_BASE_URL', default='https://api.iranpayamak.com')
+IRANPAYAMAK_API_KEY = config('IRANPAYAMAK_API_KEY', default='')
+IRANPAYAMAK_LINE_NUMBER = config('IRANPAYAMAK_LINE_NUMBER', default='')
+SMS_PRICE_PER_SEGMENT = config('SMS_PRICE_PER_SEGMENT', default=500, cast=int)

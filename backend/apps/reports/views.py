@@ -103,6 +103,11 @@ def _job_worker_tip_for(job, worker_id):
     return distributed / Decimal(str(len(worker_ids)))
 
 
+def _get_worker_jobs(tenant, worker_id):
+    jobs = list(VehicleJob.objects.select_related('vehicle').filter(tenant=tenant))
+    return [job for job in jobs if _job_has_worker(job, worker_id)]
+
+
 def _compute_worker_financials(worker, jobs):
     job_ids = [job.id for job in jobs if job]
     transactions = WorkerPayoutTransaction.objects.filter(worker=worker)
@@ -469,13 +474,7 @@ class ReportsWorkerPayoutView(APIView):
         if not worker:
             return Response({'worker_id': ['Worker not found.']}, status=status.HTTP_404_NOT_FOUND)
 
-        jobs = list(
-            VehicleJob.objects.select_related('vehicle').filter(
-                tenant=tenant,
-                vehicle__status=VehicleEntry.Status.RELEASED,
-            )
-        )
-        jobs = [job for job in jobs if _job_has_worker(job, worker_id)]
+        jobs = _get_worker_jobs(tenant, worker_id)
         worker_state = _compute_worker_financials(worker, jobs)
         payable_total = worker_state['payable_total']
         if payable_total <= 0:
@@ -537,13 +536,7 @@ class ReportsWorkerAdjustmentView(APIView):
             vehicle_job = VehicleJob.objects.filter(id=vehicle_job_id, tenant=tenant).first()
 
         if kind == WorkerPayoutTransaction.Kind.PENALTY:
-            jobs = list(
-                VehicleJob.objects.select_related('vehicle').filter(
-                    tenant=tenant,
-                    vehicle__status=VehicleEntry.Status.RELEASED,
-                )
-            )
-            jobs = [job for job in jobs if _job_has_worker(job, worker_id)]
+            jobs = _get_worker_jobs(tenant, worker_id)
             worker_state = _compute_worker_financials(worker, jobs)
             amount = min(amount, worker_state['payable_total'])
 

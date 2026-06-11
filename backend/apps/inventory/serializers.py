@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import InventoryItem, StockMovement
+from .models import ExpenseEntry, InventoryItem, StockMovement
 
 
 class InventoryItemSerializer(serializers.ModelSerializer):
@@ -45,6 +45,30 @@ class StockMovementHistorySerializer(serializers.ModelSerializer):
             'moved_at',
             'created_by_name',
         ]
+
+    def get_created_by_name(self, obj):
+        if not obj.created_by:
+            return '-'
+        return obj.created_by.full_name or obj.created_by.username
+
+
+class ExpenseEntrySerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExpenseEntry
+        fields = [
+            'id',
+            'title',
+            'amount',
+            'details',
+            'source_type',
+            'spent_at',
+            'created_at',
+            'updated_at',
+            'created_by_name',
+        ]
+        read_only_fields = ['source_type', 'spent_at', 'created_at', 'updated_at', 'created_by_name']
 
     def get_created_by_name(self, obj):
         if not obj.created_by:

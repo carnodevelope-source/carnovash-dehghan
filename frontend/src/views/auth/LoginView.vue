@@ -73,7 +73,7 @@ const onSubmit = async () => {
     })
     await authStore.fetchMe()
 
-    await router.push(defaultRouteByRole[authStore.role] || '/')
+    await router.push(authStore.isHq ? '/hq' : (defaultRouteByRole[authStore.role] || '/'))
   } catch (error) {
     errorMessage.value =
       error?.response?.data?.detail ||

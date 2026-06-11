@@ -31,7 +31,6 @@
           <span class="pulse"></span>
           <span>در حال تخصیص</span>
         </div>
-        <button type="button" class="back-btn-header" @click="emit('back')">??????</button>
         <button type="button" class="icon-btn" @click="emit('close')" aria-label="بستن">
           ×
         </button>
@@ -176,13 +175,22 @@
             <div v-if="selectedWorkers.length" class="selected-worker-list">
               <div v-for="worker in selectedWorkers" :key="worker.id" class="selected-worker-box">
                 <div class="avatar small">{{ workerAvatar(worker) }}</div>
-                <div>
+                <div class="selected-worker-copy">
                   <p>{{ worker.full_name }}</p>
-                  <small v-if="isPrimaryWorker(worker.id)">
-                    سهم:
-                    {{ shareType === 'percent' ? `${toFaNumber(clampedPercent)}` : formatMoney(shareValueNumeric) }}
-                  </small>
-                  <small v-else>همکار اجرا</small>
+                  <small>{{ selectedWorkers.length > 1 ? 'درصد سهم اجرا' : 'سهم اجرا: ۱۰۰٪' }}</small>
+                </div>
+                <label v-if="selectedWorkers.length > 1" class="worker-share-input">
+                  <input
+                    :value="getWorkerSharePercent(worker.id)"
+                    type="number"
+                    min="0"
+                    max="100"
+                    @input="setWorkerSharePercent(worker.id, $event.target.value)"
+                  />
+                  <span>٪</span>
+                </label>
+                <div v-else class="worker-share-pill">
+                  {{ toFaNumber(getWorkerSharePercent(worker.id)) }}٪
                 </div>
               </div>
             </div>
@@ -223,9 +231,12 @@
             <input v-model="blockedPlatePaymentConfirmed" type="checkbox" />
             <span>پرداخت شد</span>
           </label>
-          <button type="button" class="primary-btn" :disabled="!canAssign" @click="onAssign">
-            تایید و تخصیص کار
-          </button>
+          <div class="summary-foot-actions">
+            <button type="button" class="secondary-foot-btn" @click="emit('back')">بازگشت</button>
+            <button type="button" class="primary-btn" :disabled="!canAssign" @click="onAssign">
+              تایید و تخصیص کار
+            </button>
+          </div>
         </footer>
       </aside>
     </div>
@@ -257,6 +268,7 @@ const workerSearch = ref('')
 const activeCategory = ref('همه موارد')
 const manualDiscountTotal = ref(0)
 const serviceDiscountPercents = ref({})
+const workerSharePercents = ref({})
 const blockedPlatePaymentConfirmed = ref(false)
 const pieceWashPrice = ref(0)
 const pieceDetails = ref('')
@@ -378,6 +390,7 @@ const selectedWorkers = computed(() => {
   return workers.value.filter((item) => idSet.has(Number(item.id)))
 })
 const primarySelectedWorker = computed(() => selectedWorkers.value[0] || null)
+const selectedWorkerPercentIds = computed(() => selectedWorkers.value.map((worker) => Number(worker.id)))
 
 const servicesTotal = computed(() => selectedServices.value.reduce((sum, item) => sum + Number(item.base_price || 0), 0))
 const serviceDiscountAmount = (service) => {
@@ -404,6 +417,54 @@ const workerShareAmount = computed(() => {
 })
 
 const carwashShareAmount = computed(() => Math.max(0, servicesTotal.value - workerShareAmount.value))
+const defaultWorkerSharePercents = (count) => {
+  const workerCount = Math.max(0, Number(count || 0))
+  if (!workerCount) return []
+  const base = Math.floor(100 / workerCount)
+  let remainder = 100 - (base * workerCount)
+  return Array.from({ length: workerCount }, () => {
+    const value = base + (remainder > 0 ? 1 : 0)
+    if (remainder > 0) remainder -= 1
+    return value
+  })
+}
+const allocatePercentByWeights = (total, weights) => {
+  const normalizedTotal = Math.max(0, Math.floor(Number(total || 0)))
+  if (!weights.length) return []
+  const safeWeights = weights.map((weight) => Math.max(0, Number(weight || 0)))
+  const weightTotal = safeWeights.reduce((sum, weight) => sum + weight, 0)
+  if (weightTotal <= 0) return defaultWorkerSharePercents(weights.length)
+
+  const rawValues = safeWeights.map((weight) => (normalizedTotal * weight) / weightTotal)
+  const baseValues = rawValues.map((value) => Math.floor(value))
+  let remainder = normalizedTotal - baseValues.reduce((sum, value) => sum + value, 0)
+  const fractionIndexes = rawValues
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction)
+
+  for (let i = 0; i < fractionIndexes.length && remainder > 0; i += 1) {
+    baseValues[fractionIndexes[i].index] += 1
+    remainder -= 1
+  }
+
+  return baseValues
+}
+const normalizeWorkerSharePercents = (ids, source = workerSharePercents.value) => {
+  const normalizedIds = ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+  if (!normalizedIds.length) return {}
+  if (normalizedIds.length === 1) return { [normalizedIds[0]]: 100 }
+
+  const currentValues = normalizedIds.map((id) => Math.max(0, Math.floor(Number(source?.[id] || 0))))
+  const hasAnyValue = currentValues.some((value) => value > 0)
+  const nextValues = hasAnyValue
+    ? allocatePercentByWeights(100, currentValues)
+    : defaultWorkerSharePercents(normalizedIds.length)
+
+  return normalizedIds.reduce((accumulator, id, index) => {
+    accumulator[id] = nextValues[index] ?? 0
+    return accumulator
+  }, {})
+}
 const setServiceDiscountPercent = (serviceId, value) => {
   const nextValue = Math.max(0, Math.min(100, Math.floor(Number(normalizeDigits(value) || 0))))
   serviceDiscountPercents.value = {
@@ -453,6 +514,7 @@ const workerStatus = (worker) => {
 
 const isWorkerSelected = (id) => selectedWorkerIds.value.includes(Number(id))
 const isPrimaryWorker = (id) => Number(primarySelectedWorker.value?.id) === Number(id)
+const getWorkerSharePercent = (id) => Math.max(0, Math.min(100, Number(workerSharePercents.value[Number(id)] || 0)))
 const toggleWorker = (id) => {
   const normalizedId = Number(id)
   if (isWorkerSelected(normalizedId)) {
@@ -460,6 +522,31 @@ const toggleWorker = (id) => {
     return
   }
   selectedWorkerIds.value = [...selectedWorkerIds.value, normalizedId]
+}
+const setWorkerSharePercent = (id, rawValue) => {
+  const workerId = Number(id)
+  const selectedIds = selectedWorkerPercentIds.value
+  if (!selectedIds.includes(workerId)) return
+  if (selectedIds.length === 1) {
+    workerSharePercents.value = { [workerId]: 100 }
+    return
+  }
+
+  const parsed = Math.max(0, Math.min(100, Math.floor(Number(normalizeDigits(rawValue) || 0))))
+  const otherIds = selectedIds.filter((selectedId) => selectedId !== workerId)
+  const remaining = Math.max(0, 100 - parsed)
+  const otherWeights = otherIds.map((otherId) => Math.max(0, Number(workerSharePercents.value[otherId] || 0)))
+  const distributedOthers = otherWeights.some((weight) => weight > 0)
+    ? allocatePercentByWeights(remaining, otherWeights)
+    : defaultWorkerSharePercents(otherIds.length).map((value) => Math.floor((value * remaining) / 100))
+  const balancedOthers = allocatePercentByWeights(remaining, distributedOthers)
+  const nextPercents = { [workerId]: parsed }
+
+  otherIds.forEach((otherId, index) => {
+    nextPercents[otherId] = balancedOthers[index] ?? 0
+  })
+
+  workerSharePercents.value = nextPercents
 }
 
 const workerAvatar = (worker) => {
@@ -527,7 +614,8 @@ const buildPayload = () => {
       : null,
     staffMembers: selectedWorkers.value.map((worker) => ({
       id: worker.id,
-      name: worker.full_name
+      name: worker.full_name,
+      worker_share_percent: getWorkerSharePercent(worker.id)
     })),
     share: {
       type: shareType.value,
@@ -551,6 +639,7 @@ const hydrateFromVehicleInfo = () => {
   serviceDiscountPercents.value = {}
   pieceDetails.value = vehicle.pieceDetails || ''
   pieceWashPrice.value = isPieceWash.value ? Math.max(0, Number(vehicle.pieceWashPrice || 0)) : 0
+  workerSharePercents.value = normalizeWorkerSharePercents(selectedWorkerIds.value)
 }
 
 const loadInitialData = async () => {
@@ -589,6 +678,9 @@ const loadInitialData = async () => {
 
 watch(() => props.vehicleInfo, hydrateFromVehicleInfo, { immediate: true, deep: true })
 watch(primarySelectedWorker, applyWorkerPaymentDefaults, { immediate: true })
+watch(selectedWorkerPercentIds, (ids) => {
+  workerSharePercents.value = normalizeWorkerSharePercents(ids, workerSharePercents.value)
+}, { immediate: true })
 
 onMounted(loadInitialData)
 </script>
@@ -706,22 +798,6 @@ onMounted(loadInitialData)
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.back-btn-header {
-  height: 40px;
-  border: 1px solid #c7d8f4;
-  border-radius: 999px;
-  padding: 0 16px;
-  background: #ffffff;
-  color: #1e3a5f;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.back-btn-header:hover {
-  background: #eef4ff;
 }
 
 .assigning-badge {
@@ -1224,6 +1300,7 @@ onMounted(loadInitialData)
 .selected-worker-box {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   background: #e6f1ff;
   border-radius: 12px;
@@ -1241,8 +1318,52 @@ onMounted(loadInitialData)
   font-weight: 700;
 }
 
+.selected-worker-copy {
+  flex: 1;
+  min-width: 0;
+}
+
 .selected-worker-box small {
   color: #424754;
+}
+
+.worker-share-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(104, 135, 187, 0.2);
+}
+
+.worker-share-input input {
+  width: 54px;
+  border: none;
+  background: transparent;
+  color: #14532d;
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+}
+
+.worker-share-input span,
+.worker-share-pill {
+  color: #14532d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.worker-share-pill {
+  min-width: 68px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(104, 135, 187, 0.18);
 }
 
 .summary-body hr {
@@ -1294,6 +1415,12 @@ onMounted(loadInitialData)
   gap: 10px;
 }
 
+.summary-foot-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 132px) minmax(0, 1fr);
+  gap: 10px;
+}
+
 .blocked-payment-check {
   display: flex;
   align-items: center;
@@ -1327,6 +1454,22 @@ onMounted(loadInitialData)
 .primary-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.secondary-foot-btn {
+  width: 100%;
+  height: 48px;
+  border: 1px solid #c7d8f4;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1e3a5f;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary-foot-btn:hover {
+  background: #eef4ff;
 }
 
 .empty,

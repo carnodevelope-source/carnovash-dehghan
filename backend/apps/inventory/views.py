@@ -5,8 +5,8 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import InventoryItem, StockMovement
-from .serializers import InventoryItemSerializer, StockMovementHistorySerializer
+from .models import ExpenseEntry, InventoryItem, StockMovement
+from .serializers import ExpenseEntrySerializer, InventoryItemSerializer, StockMovementHistorySerializer
 from apps.products.models import Product
 
 
@@ -126,3 +126,75 @@ class ProductPurchaseHistoryView(APIView):
             },
             'history': rows,
         }, status=status.HTTP_200_OK)
+
+
+class ExpenseEntryListCreateView(APIView):
+    def get(self, request):
+        tenant = getattr(request.user, 'tenant', None)
+        manual_entries = [
+            {
+                **ExpenseEntrySerializer(item).data,
+                'row_id': f'manual-{item.id}',
+                'source_label': 'ثبت دستی',
+                'can_edit': True,
+                'can_delete': True,
+            }
+            for item in ExpenseEntry.objects.filter(tenant=tenant).select_related('created_by').order_by('-spent_at', '-id')
+        ]
+
+        purchase_entries = []
+        purchase_rows = (
+            StockMovement.objects
+            .select_related('inventory_item__product', 'created_by')
+            .filter(
+                tenant=tenant,
+                reference_type='manager_purchase',
+                movement_type=StockMovement.MovementType.IN,
+            )
+            .order_by('-moved_at', '-id')
+        )
+        for item in purchase_rows:
+            amount = Decimal(str(item.quantity or 0)) * Decimal(str(item.unit_cost or 0))
+            purchase_entries.append({
+                'id': item.id,
+                'row_id': f'purchase-{item.id}',
+                'title': f'خرید محصول: {item.inventory_item.product.name}',
+                'amount': amount,
+                'details': item.note or '',
+                'source_type': 'purchase',
+                'source_label': 'خرید محصول',
+                'spent_at': item.moved_at,
+                'created_at': item.created_at,
+                'updated_at': item.updated_at,
+                'created_by_name': item.created_by.full_name or item.created_by.username if item.created_by else '-',
+                'can_edit': False,
+                'can_delete': False,
+                'product_id': item.inventory_item.product_id,
+                'quantity': item.quantity,
+                'unit_cost': item.unit_cost,
+            })
+
+        rows = sorted(
+            [*manual_entries, *purchase_entries],
+            key=lambda item: item.get('spent_at') or item.get('created_at'),
+            reverse=True,
+        )
+        return Response(rows, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = ExpenseEntrySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(
+            tenant=getattr(request.user, 'tenant', None),
+            created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+            source_type=ExpenseEntry.SourceType.MANUAL,
+        )
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ExpenseEntryRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ExpenseEntrySerializer
+
+    def get_queryset(self):
+        tenant = getattr(self.request.user, 'tenant', None)
+        return ExpenseEntry.objects.filter(tenant=tenant, source_type=ExpenseEntry.SourceType.MANUAL).order_by('-spent_at', '-id')

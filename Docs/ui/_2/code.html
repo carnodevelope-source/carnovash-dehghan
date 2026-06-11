@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+
+<html dir="rtl" lang="fa"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            scroll-behavior: smooth;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .shadow-glow {
+            box-shadow: 0px 8px 20px rgba(0, 88, 190, 0.15);
+        }
+        .shadow-md {
+            box-shadow: 0px 10px 25px -5px rgba(15, 23, 42, 0.05);
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        .priority-selected-1 { border-color: #22c55e; background-color: #f0fdf4; }
+        .priority-selected-2 { border-color: #eab308; background-color: #fefce8; }
+        .priority-selected-3 { border-color: #f97316; background-color: #fff7ed; }
+        .priority-selected-4 { border-color: #ef4444; background-color: #fef2f2; }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary-fixed": "#001a42",
+                      "surface-container-high": "#e6e8ea",
+                      "surface-container": "#eceef0",
+                      "background": "#f7f9fb",
+                      "secondary-fixed": "#acedff",
+                      "surface-bright": "#f7f9fb",
+                      "inverse-surface": "#2d3133",
+                      "on-tertiary-fixed-variant": "#5516be",
+                      "tertiary": "#6b38d4",
+                      "on-error": "#ffffff",
+                      "on-background": "#191c1e",
+                      "primary": "#0058be",
+                      "on-primary-container": "#fefcff",
+                      "surface-container-low": "#f2f4f6",
+                      "secondary-container": "#57dffe",
+                      "surface-dim": "#d8dadc",
+                      "outline": "#727785",
+                      "outline-variant": "#c2c6d6",
+                      "on-secondary-fixed": "#001f26",
+                      "surface-tint": "#005ac2",
+                      "inverse-primary": "#adc6ff",
+                      "secondary-fixed-dim": "#4cd7f6",
+                      "on-tertiary": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "tertiary-fixed": "#e9ddff",
+                      "error": "#ba1a1a",
+                      "on-secondary-fixed-variant": "#004e5c",
+                      "primary-fixed": "#d8e2ff",
+                      "on-primary": "#ffffff",
+                      "primary-fixed-dim": "#adc6ff",
+                      "on-primary-fixed-variant": "#004395",
+                      "tertiary-fixed-dim": "#d0bcff",
+                      "on-tertiary-container": "#fffbff",
+                      "on-surface-variant": "#424754",
+                      "surface-container-highest": "#e0e3e5",
+                      "primary-container": "#2170e4",
+                      "on-surface": "#191c1e",
+                      "tertiary-container": "#8455ef",
+                      "on-secondary-container": "#006172",
+                      "surface": "#f7f9fb",
+                      "secondary": "#00687a",
+                      "on-tertiary-fixed": "#23005c",
+                      "on-error-container": "#93000a",
+                      "surface-variant": "#e0e3e5",
+                      "on-secondary": "#ffffff",
+                      "inverse-on-surface": "#eff1f3"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "gutter": "24px",
+                      "container-padding-mobile": "16px",
+                      "container-padding-desktop": "32px",
+                      "card-gap": "20px",
+                      "base": "8px"
+              },
+              "fontFamily": {
+                      "headline-md": ["Inter", "Vazirmatn"],
+                      "display-lg": ["Inter", "Vazirmatn"],
+                      "headline-sm": ["Inter", "Vazirmatn"],
+                      "body-lg": ["Inter", "Vazirmatn"],
+                      "body-md": ["Inter", "Vazirmatn"],
+                      "body-sm": ["Inter", "Vazirmatn"],
+                      "label-mono": ["JetBrains Mono"]
+              }
+            }
+          }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface min-h-screen">
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 dark:bg-surface-dim/80 backdrop-blur-xl border-b border-outline-variant/30 shadow-md h-16 flex flex-row-reverse justify-between items-center px-container-desktop">
+<div class="flex items-center gap-4 flex-row-reverse">
+<div class="font-headline-md text-headline-md font-bold text-primary">Lumina Wash Enterprise</div>
+<div class="hidden md:flex items-center bg-surface-container rounded-full px-4 py-1.5 gap-2">
+<span class="material-symbols-outlined text-outline">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-body-sm w-48 text-right" placeholder="جستجو در پنل..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-full hover:bg-surface-container-high transition-colors duration-200 cursor-pointer active:scale-95">
+<span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-container-high transition-colors duration-200 cursor-pointer active:scale-95">
+<span class="material-symbols-outlined text-on-surface-variant">help</span>
+</button>
+<div class="h-8 w-8 rounded-full overflow-hidden border border-outline-variant">
+<img alt="پروفایل مدیر" data-alt="A professional portrait of a business manager in a high-end corporate setting. The lighting is soft and cinematic, highlighting a modern office environment with glass walls and minimalist furniture in the background. The overall aesthetic is clean and professional, using a cool blue and white color palette to evoke a sense of trust and efficiency." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWCRgmy8QE0j098NE6r-WERIZZedAnP3hLrWImFkmQw7AakFRBTm9XbmUVBVhNcF63mmIS4Jvae9_Cv7yJdJqsfpgcX4gF1p0tlVsQnEmruksn2cqvgVdnZzZ1haYD8r0rgEzlAW2sVEGz4rEy-hL8kSLMItlhTP-jf52-EGVtcWfHkvOdp5GTVsnfCbe_2WGrvv_Hevyr_8J8eQnOaR7usoNdXD_aKYPFfEMWkJf3zJ_T0n3BJxkJAck48l8XCg_UVNX1GEGczOIh"/>
+</div>
+</div>
+</header>
+<!-- Side Navigation Bar -->
+<aside class="fixed right-0 top-0 h-full w-64 z-40 bg-surface-container-low border-l border-outline-variant/20 shadow-md hidden md:flex flex-col p-4 pt-20">
+<div class="flex items-center gap-3 px-3 py-4 mb-6">
+<div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-glow">
+<span class="material-symbols-outlined text-white" style="font-variation-settings: 'FILL' 1;">local_car_wash</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm font-black text-primary leading-tight">مدیریت لومینا</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">پنل مدیریت پیشرفته</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-body-md text-body-md">داشبورد</span>
+</a>
+<a class="group flex items-center gap-3 p-3 mb-2 bg-secondary-container text-on-secondary-container rounded-xl font-bold shadow-glow" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">confirmation_number</span>
+<span class="font-body-md text-body-md">ثبت تیکت</span>
+</a>
+<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="font-body-md text-body-md">گزارشات مالی</span>
+</a>
+<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">badge</span>
+<span class="font-body-md text-body-md">مدیریت کارکنان</span>
+</a>
+<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-md text-body-md">تنظیمات سیستم</span>
+</a>
+</nav>
+<div class="mt-auto pt-4 border-t border-outline-variant/20">
+<a class="group flex items-center gap-3 p-3 text-error hover:bg-error-container/20 rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-body-md text-body-md">خروج</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="md:pr-64 pt-24 pb-12 px-container-padding-mobile md:px-container-padding-desktop">
+<div class="max-w-6xl mx-auto">
+<!-- Header Section -->
+<div class="mb-8">
+<h1 class="font-headline-lg text-headline-lg text-on-surface mb-2">ثبت تیکت جدید پشتیبانی</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant">ما اینجا هستیم تا در سریع‌ترین زمان ممکن به سوالات و مشکلات شما پاسخ دهیم.</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<!-- Main Form Section -->
+<div class="lg:col-span-8">
+<div class="bg-surface-container-lowest rounded-[20px] shadow-md p-8 glass-card border border-white/40">
+<form class="space-y-6" id="ticketForm">
+<!-- Subject -->
+<div class="space-y-2">
+<label class="block font-body-md text-body-md font-bold text-on-surface">موضوع تیکت</label>
+<input class="w-full h-12 px-4 rounded-[14px] bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all text-body-md" placeholder="عنوان کوتاه و گویای درخواست خود را وارد کنید" type="text"/>
+</div>
+<!-- Department & Priority Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-2">
+<label class="block font-body-md text-body-md font-bold text-on-surface">واحد مربوطه</label>
+<select class="w-full h-12 px-4 rounded-[14px] bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all text-body-md appearance-none">
+<option value="">انتخاب واحد...</option>
+<option value="tech">پشتیبانی فنی</option>
+<option value="sales">واحد فروش و تمدید</option>
+<option value="billing">امور مالی و فاکتور</option>
+<option value="management">ارتباط مستقیم با مدیریت</option>
+</select>
+</div>
+<div class="space-y-2">
+<label class="block font-body-md text-body-md font-bold text-on-surface">اولویت درخواست</label>
+<div class="grid grid-cols-4 gap-2">
+<button class="priority-btn flex flex-col items-center justify-center p-2 rounded-xl border border-outline-variant hover:bg-surface-container transition-all group" data-priority="1" onclick="setPriority(1)" type="button">
+<span class="text-[12px] font-bold text-green-600">کم</span>
+</button>
+<button class="priority-btn flex flex-col items-center justify-center p-2 rounded-xl border border-outline-variant hover:bg-surface-container transition-all group" data-priority="2" onclick="setPriority(2)" type="button">
+<span class="text-[12px] font-bold text-yellow-600">متوسط</span>
+</button>
+<button class="priority-btn flex flex-col items-center justify-center p-2 rounded-xl border border-outline-variant hover:bg-surface-container transition-all group" data-priority="3" onclick="setPriority(3)" type="button">
+<span class="text-[12px] font-bold text-orange-600">زیاد</span>
+</button>
+<button class="priority-btn flex flex-col items-center justify-center p-2 rounded-xl border border-outline-variant hover:bg-surface-container transition-all group" data-priority="4" onclick="setPriority(4)" type="button">
+<span class="text-[12px] font-bold text-red-600">بحرانی</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Message Content -->
+<div class="space-y-2">
+<label class="block font-body-md text-body-md font-bold text-on-surface">متن درخواست</label>
+<textarea class="w-full p-4 rounded-[14px] bg-surface-container-low border-none focus:ring-2 focus:ring-primary transition-all text-body-md resize-none" placeholder="جزئیات درخواست یا مشکل خود را در اینجا بنویسید..." rows="6"></textarea>
+</div>
+<!-- File Upload -->
+<div class="space-y-2">
+<label class="block font-body-md text-body-md font-bold text-on-surface">پیوست مدارک</label>
+<div class="border-2 border-dashed border-outline-variant rounded-[14px] p-8 text-center bg-surface-container-low/50 hover:bg-primary-container/5 hover:border-primary transition-all cursor-pointer group" id="dropzone">
+<span class="material-symbols-outlined text-4xl text-primary mb-2 group-hover:scale-110 transition-transform">cloud_upload</span>
+<p class="font-body-md text-on-surface-variant">فایل‌ها را به اینجا بکشید یا برای انتخاب کلیک کنید</p>
+<p class="text-[12px] text-outline mt-1">فرمت‌های مجاز: JPG, PNG, PDF (حداکثر ۱۰ مگابایت)</p>
+<input class="hidden" id="fileInput" multiple="" type="file"/>
+</div>
+<div class="flex flex-wrap gap-2 mt-2" id="fileList"></div>
+</div>
+<!-- Actions -->
+<div class="flex items-center justify-between pt-6">
+<button class="px-8 h-12 rounded-xl text-primary border border-outline-variant hover:bg-surface-container-high transition-all font-bold" type="button">انصراف</button>
+<button class="px-10 h-12 rounded-xl bg-gradient-to-r from-primary to-secondary text-white font-bold shadow-glow hover:scale-[1.02] active:scale-95 transition-all" type="submit">ارسال تیکت</button>
+</div>
+</form>
+</div>
+</div>
+<!-- Sidebar Content -->
+<div class="lg:col-span-4 space-y-6">
+<!-- Quick Guide -->
+<div class="bg-surface-container-lowest rounded-[20px] shadow-md p-6 border border-white/40">
+<div class="flex items-center gap-2 mb-4 text-primary">
+<span class="material-symbols-outlined">lightbulb</span>
+<h3 class="font-headline-sm text-headline-sm">راهنمای سریع</h3>
+</div>
+<ul class="space-y-4">
+<li class="flex gap-3 text-body-sm text-on-surface-variant">
+<span class="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0"></span>
+<p>برای تسریع در پاسخگویی، واحد صحیح را انتخاب نمایید.</p>
+</li>
+<li class="flex gap-3 text-body-sm text-on-surface-variant">
+<span class="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0"></span>
+<p>در صورت نیاز به ارسال چند تصویر، آن‌ها را در یک فایل ZIP قرار دهید.</p>
+</li>
+<li class="flex gap-3 text-body-sm text-on-surface-variant">
+<span class="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0"></span>
+<p>پاسخ تیکت‌ها حداکثر ظرف ۲۴ ساعت کاری ارسال می‌شود.</p>
+</li>
+</ul>
+</div>
+<!-- Related Articles -->
+<div class="bg-surface-container-lowest rounded-[20px] shadow-md p-6 border border-white/40 overflow-hidden relative">
+<div class="flex items-center gap-2 mb-4 text-primary">
+<span class="material-symbols-outlined">auto_stories</span>
+<h3 class="font-headline-sm text-headline-sm">مقالات پیشنهادی</h3>
+</div>
+<div class="space-y-4">
+<a class="block group p-3 rounded-xl hover:bg-surface-container-low transition-all" href="#">
+<h4 class="font-body-md text-primary font-bold group-hover:underline underline-offset-4">چگونه فاکتور خود را پرداخت کنم؟</h4>
+<p class="text-[12px] text-on-surface-variant mt-1">آموزش گام به گام پرداخت آنلاین و ثبت فیش نقدی...</p>
+</a>
+<div class="h-px bg-outline-variant/30 mx-3"></div>
+<a class="block group p-3 rounded-xl hover:bg-surface-container-low transition-all" href="#">
+<h4 class="font-body-md text-primary font-bold group-hover:underline underline-offset-4">تغییر اطلاعات کاربری و خودرو</h4>
+<p class="text-[12px] text-on-surface-variant mt-1">راهنمای ویرایش پروفایل و اضافه کردن پلاک جدید...</p>
+</a>
+<div class="h-px bg-outline-variant/30 mx-3"></div>
+<a class="block group p-3 rounded-xl hover:bg-surface-container-low transition-all" href="#">
+<h4 class="font-body-md text-primary font-bold group-hover:underline underline-offset-4">قوانین لغو نوبت و بازگشت وجه</h4>
+<p class="text-[12px] text-on-surface-variant mt-1">شرایط استرداد وجه در صورت انصراف از خدمات...</p>
+</a>
+</div>
+<button class="w-full mt-4 py-2 text-center text-primary font-bold text-body-sm hover:bg-primary/5 rounded-lg transition-all">مشاهده تمامی مقالات</button>
+</div>
+<!-- Promo Banner -->
+<div class="rounded-[20px] overflow-hidden relative h-48 group shadow-md">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" data-alt="A macro shot of a shiny, clean car surface with water droplets reflecting blue and white neon lights. The focus is sharp on the water beads, creating a high-end luxury car wash atmosphere. The lighting is moody yet bright, showcasing a professional detailing service aesthetic with clinical precision." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDPAkQSJAsfM7Y-YCsUBWNIfvx1nstkclJWkoGyJMFvIux805PaRXZXzeSbmsKGccKFBkQUlZKGsKKxzD6ygqQzc38xcnVTvmCHIH7LTQSizxrpup10fQJ1KsFJ-8Gp7EMAGKvghYo0Pex17lN1AbybhrVfkQl3QDQYvwMWe710arFdgz_hAkriq_krZ_hWCiBxrLRfe_EpUBHeC7ZFO7vfjYQLslTrRH69HzzYaDhVwo4dGS2kv3HjnmMVqWrBhfp52aIkSmXRUXQi"/>
+<div class="absolute inset-0 bg-gradient-to-t from-primary/90 to-transparent flex flex-col justify-end p-6">
+<span class="text-white/80 text-[12px] font-bold">پیشنهاد ویژه</span>
+<h4 class="text-white font-headline-sm">اشتراک ماهانه VIP لومینا</h4>
+<p class="text-white/70 text-body-sm">۲۰٪ تخفیف روی تمامی سرویس‌ها</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Priority Selection Logic
+        function setPriority(level) {
+            const btns = document.querySelectorAll('.priority-btn');
+            btns.forEach(btn => {
+                const p = btn.getAttribute('data-priority');
+                btn.classList.remove('priority-selected-1', 'priority-selected-2', 'priority-selected-3', 'priority-selected-4', 'shadow-glow');
+            });
+            
+            const selected = document.querySelector(`.priority-btn[data-priority="${level}"]`);
+            selected.classList.add(`priority-selected-${level}`, 'shadow-glow');
+        }
+
+        // File Upload Drag & Drop
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('fileList');
+
+        dropzone.addEventListener('click', () => fileInput.click());
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('bg-primary-container/10', 'border-primary');
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('bg-primary-container/10', 'border-primary');
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('bg-primary-container/10', 'border-primary');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', () => {
+            handleFiles(fileInput.files);
+        });
+
+        function handleFiles(files) {
+            Array.from(files).forEach(file => {
+                const chip = document.createElement('div');
+                chip.className = 'flex items-center gap-2 bg-surface-container-high px-3 py-1 rounded-full text-body-sm text-on-surface-variant border border-outline-variant/30';
+                chip.innerHTML = `
+                    <span class="material-symbols-outlined text-[18px]">description</span>
+                    <span>${file.name.length > 20 ? file.name.substring(0, 17) + '...' : file.name}</span>
+                    <button type="button" class="hover:text-error" onclick="this.parentElement.remove()">
+                        <span class="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                `;
+                fileList.appendChild(chip);
+            });
+        }
+
+        // Form Submission Animation
+        document.getElementById('ticketForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> در حال ارسال...';
+            
+            setTimeout(() => {
+                submitBtn.innerHTML = '<span class="material-symbols-outlined">check_circle</span> با موفقیت ارسال شد';
+                submitBtn.classList.replace('from-primary', 'from-green-600');
+                submitBtn.classList.replace('to-secondary', 'to-green-500');
+                
+                setTimeout(() => {
+                    alert('تیکت شما با موفقیت در سیستم ثبت شد. شماره پیگیری: LUM-84521');
+                    location.reload();
+                }, 1000);
+            }, 2000);
+        });
+    </script>
+</body></html>

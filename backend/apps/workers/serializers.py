@@ -1,8 +1,9 @@
 ﻿from django.contrib.auth import get_user_model
 from rest_framework import serializers
+import secrets
 
 from apps.auth.models import CarWash
-from .models import WorkerProfile
+from .models import WorkerAttendance, WorkerProfile
 
 
 def _resolve_request_tenant(request):
@@ -17,13 +18,25 @@ def _resolve_request_tenant(request):
     return fallback_tenant
 
 
+def ensure_attendance_token(profile):
+    if not profile.attendance_token:
+        profile.attendance_token = secrets.token_urlsafe(24)
+        profile.save(update_fields=['attendance_token', 'updated_at'])
+    return profile.attendance_token
+
+
 class WorkerProfileListSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
+    role_key = serializers.CharField(source='user.role', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
     avatar = serializers.SerializerMethodField()
     phone = serializers.CharField(source='user.phone', read_only=True)
     payment_type = serializers.SerializerMethodField()
     payment_value = serializers.SerializerMethodField()
+    entrusted_items = serializers.SerializerMethodField()
+    attendance_token = serializers.SerializerMethodField()
+    attendance_path = serializers.SerializerMethodField()
 
     def get_full_name(self, obj):
         return obj.user.full_name or obj.user.username
@@ -52,13 +65,34 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
             return obj.default_fixed_wage
         return obj.default_commission_percent
 
+    def get_entrusted_items(self, obj):
+        raw_items = obj.entrusted_items if isinstance(obj.entrusted_items, list) else []
+        if raw_items:
+            return raw_items
+        if obj.has_entrusted_item and str(obj.entrusted_item_description or '').strip():
+            return [{
+                'title': str(obj.entrusted_item_description or '').strip(),
+                'quantity': float(obj.entrusted_item_quantity or 0),
+                'price': float(obj.entrusted_item_price or 0),
+            }]
+        return []
+
+    def get_attendance_token(self, obj):
+        return ensure_attendance_token(obj)
+
+    def get_attendance_path(self, obj):
+        token = ensure_attendance_token(obj)
+        return f'/attendance/{token}'
+
     class Meta:
         model = WorkerProfile
         fields = [
             'id',
             'full_name',
+            'username',
             'phone',
             'role',
+            'role_key',
             'avatar',
             'is_available',
             'load_status',
@@ -71,21 +105,60 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
             'default_hourly_wage',
             'last_assigned_at',
             'has_entrusted_item',
+            'entrusted_items',
             'entrusted_item_description',
             'entrusted_item_quantity',
             'entrusted_item_price',
+            'attendance_token',
+            'attendance_path',
             'updated_at',
+        ]
+
+
+class WorkerAttendanceEventSerializer(serializers.ModelSerializer):
+    worker_name = serializers.SerializerMethodField()
+    worker_avatar = serializers.SerializerMethodField()
+
+    def get_worker_name(self, obj):
+        if not obj.worker or not obj.worker.user:
+            return '-'
+        return obj.worker.user.full_name or obj.worker.user.username or '-'
+
+    def get_worker_avatar(self, obj):
+        if not obj.worker or not obj.worker.user:
+            return '--'
+        name = obj.worker.user.full_name or obj.worker.user.username or ''
+        parts = [part for part in name.split(' ') if part]
+        if len(parts) >= 2:
+            return f'{parts[0][0]}{parts[1][0]}'
+        return name[:2] or '--'
+
+    class Meta:
+        model = WorkerAttendance
+        fields = [
+            'id',
+            'worker',
+            'worker_name',
+            'worker_avatar',
+            'event_type',
+            'event_at',
+            'source',
+            'note',
         ]
 
 
 class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=150)
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(max_length=128, required=False, allow_blank=True, write_only=True)
     phone = serializers.CharField(max_length=20)
+    role = serializers.ChoiceField(choices=['operator', 'worker'], default='worker')
     is_available = serializers.BooleanField(default=True)
     payment_type = serializers.ChoiceField(choices=['percent', 'fixed', 'hourly'], default='percent')
     payment_value = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
     tip_share_percent = serializers.DecimalField(max_digits=5, decimal_places=2, default=0)
     has_entrusted_item = serializers.BooleanField(default=False)
+    entrusted_items = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     entrusted_item_description = serializers.CharField(required=False, allow_blank=True)
     entrusted_item_quantity = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, default=0)
     entrusted_item_price = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=0)
@@ -113,7 +186,24 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError('این شماره موبایل قبلا در یک کارواش دیگر ثبت شده است.')
         return value
 
+    def validate_username(self, value):
+        value = str(value or '').strip()
+        if not value:
+            raise serializers.ValidationError('نام کاربری الزامی است.')
+        user_model = get_user_model()
+        instance = getattr(self, 'instance', None)
+        existing_user = user_model.objects.filter(username__iexact=value).first()
+        if instance and getattr(instance, 'user_id', None) == getattr(existing_user, 'id', None):
+            return value
+        if existing_user:
+            raise serializers.ValidationError('این نام کاربری قبلا ثبت شده است.')
+        return value
+
     def validate(self, attrs):
+        instance = getattr(self, 'instance', None)
+        password = str(attrs.get('password') or '')
+        if instance is None and not password.strip():
+            raise serializers.ValidationError({'password': 'رمز عبور برای پرسنل جدید الزامی است.'})
         payment_type = attrs.get('payment_type', 'percent')
         payment_value = attrs.get('payment_value', 0) or 0
         if payment_value < 0:
@@ -124,15 +214,50 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         if tip_share_percent < 0 or tip_share_percent > 100:
             raise serializers.ValidationError({'tip_share_percent': 'درصد انعام باید بین ۰ تا ۱۰۰ باشد.'})
         has_entrusted_item = bool(attrs.get('has_entrusted_item', False))
-        entrusted_item_quantity = attrs.get('entrusted_item_quantity', 0) or 0
-        entrusted_item_price = attrs.get('entrusted_item_price', 0) or 0
-        entrusted_item_description = str(attrs.get('entrusted_item_description', '') or '').strip()
-        if has_entrusted_item and not entrusted_item_description:
-            raise serializers.ValidationError({'entrusted_item_description': 'شرح امانت الزامی است.'})
-        if entrusted_item_quantity < 0:
-            raise serializers.ValidationError({'entrusted_item_quantity': 'تعداد امانت نمی‌تواند منفی باشد.'})
-        if entrusted_item_price < 0:
-            raise serializers.ValidationError({'entrusted_item_price': 'قیمت امانت نمی‌تواند منفی باشد.'})
+        entrusted_items = attrs.get('entrusted_items', []) or []
+        normalized_items = []
+        for index, item in enumerate(entrusted_items):
+            title = str(item.get('title') or item.get('description') or '').strip()
+            quantity = item.get('quantity', 0) or 0
+            price = item.get('price', 0) or 0
+            try:
+                quantity = float(quantity)
+                price = float(price)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'entrusted_items': f'اطلاعات ردیف {index + 1} نامعتبر است.'})
+            if not title and quantity <= 0 and price <= 0:
+                continue
+            if not title:
+                raise serializers.ValidationError({'entrusted_items': f'شرح ردیف {index + 1} الزامی است.'})
+            if quantity < 0:
+                raise serializers.ValidationError({'entrusted_items': f'تعداد ردیف {index + 1} نمی‌تواند منفی باشد.'})
+            if price < 0:
+                raise serializers.ValidationError({'entrusted_items': f'قیمت ردیف {index + 1} نمی‌تواند منفی باشد.'})
+            normalized_items.append({
+                'title': title,
+                'quantity': quantity,
+                'price': price,
+            })
+        if has_entrusted_item and not normalized_items:
+            entrusted_item_description = str(attrs.get('entrusted_item_description', '') or '').strip()
+            entrusted_item_quantity = attrs.get('entrusted_item_quantity', 0) or 0
+            entrusted_item_price = attrs.get('entrusted_item_price', 0) or 0
+            if entrusted_item_description:
+                normalized_items.append({
+                    'title': entrusted_item_description,
+                    'quantity': float(entrusted_item_quantity),
+                    'price': float(entrusted_item_price),
+                })
+        attrs['entrusted_items'] = normalized_items
+        attrs['has_entrusted_item'] = bool(normalized_items) if has_entrusted_item else False
+        if normalized_items:
+            attrs['entrusted_item_description'] = normalized_items[0]['title']
+            attrs['entrusted_item_quantity'] = normalized_items[0]['quantity']
+            attrs['entrusted_item_price'] = normalized_items[0]['price']
+        else:
+            attrs['entrusted_item_description'] = ''
+            attrs['entrusted_item_quantity'] = 0
+            attrs['entrusted_item_price'] = 0
         return attrs
 
     def create(self, validated_data):
@@ -144,35 +269,37 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         user_model = get_user_model()
         phone = validated_data['phone']
         full_name = validated_data['full_name']
+        username = validated_data['username']
+        password = str(validated_data.get('password') or '').strip()
+        role = validated_data.get('role', 'worker')
         user = user_model.objects.filter(phone=phone, tenant=tenant).first()
         if not user:
-            username = phone
-            base = username
-            counter = 1
-            while user_model.objects.filter(username__iexact=username).exists():
-                counter += 1
-                username = f'{base}_{counter}'
             user = user_model.objects.create(
                 username=username,
                 full_name=full_name,
                 phone=phone,
                 tenant=tenant,
-                role='worker',
+                role=role,
                 is_active=True,
             )
-            user.set_password('Worker@12345')
+            user.set_password(password)
             user.save()
         else:
             user.full_name = full_name
-            if user.role != 'worker':
-                user.role = 'worker'
-            user.save(update_fields=['full_name', 'role'])
+            user.username = username
+            user.role = role
+            update_fields = ['full_name', 'username', 'role']
+            if password:
+                user.set_password(password)
+                update_fields.append('password')
+            user.save(update_fields=update_fields)
 
         profile, _ = WorkerProfile.objects.get_or_create(user=user, defaults={'tenant': tenant})
         if profile.tenant_id is None:
             profile.tenant = tenant
         profile.is_available = validated_data.get('is_available', True)
         profile.has_entrusted_item = bool(validated_data.get('has_entrusted_item', False))
+        profile.entrusted_items = validated_data.get('entrusted_items', [])
         profile.entrusted_item_description = (validated_data.get('entrusted_item_description') or '').strip()
         profile.entrusted_item_quantity = validated_data.get('entrusted_item_quantity', 0) or 0
         profile.entrusted_item_price = validated_data.get('entrusted_item_price', 0) or 0
@@ -194,19 +321,31 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             profile.default_fixed_wage = 0
             profile.default_hourly_wage = 0
             profile.payment_type = 'percent'
-        profile.save(update_fields=['tenant', 'is_available', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
+        profile.save(update_fields=['tenant', 'is_available', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
 
         return profile
 
     def update(self, instance, validated_data):
+        user_model = get_user_model()
         next_phone = validated_data.get('phone', instance.user.phone)
-        if get_user_model().objects.exclude(id=instance.user_id).filter(phone=next_phone).exists():
+        next_username = validated_data.get('username', instance.user.username)
+        if user_model.objects.exclude(id=instance.user_id).filter(phone=next_phone).exists():
             raise serializers.ValidationError({'phone': 'این شماره موبایل قبلا ثبت شده است.'})
+        if user_model.objects.exclude(id=instance.user_id).filter(username__iexact=next_username).exists():
+            raise serializers.ValidationError({'username': 'این نام کاربری قبلا ثبت شده است.'})
         instance.user.full_name = validated_data.get('full_name', instance.user.full_name)
+        instance.user.username = next_username
         instance.user.phone = next_phone
-        instance.user.save(update_fields=['full_name', 'phone'])
+        instance.user.role = validated_data.get('role', instance.user.role or 'worker')
+        password = str(validated_data.get('password') or '').strip()
+        update_fields = ['full_name', 'username', 'phone', 'role']
+        if password:
+            instance.user.set_password(password)
+            update_fields.append('password')
+        instance.user.save(update_fields=update_fields)
         instance.is_available = validated_data.get('is_available', instance.is_available)
         instance.has_entrusted_item = bool(validated_data.get('has_entrusted_item', instance.has_entrusted_item))
+        instance.entrusted_items = validated_data.get('entrusted_items', instance.entrusted_items)
         instance.entrusted_item_description = (validated_data.get('entrusted_item_description', instance.entrusted_item_description) or '').strip()
         instance.entrusted_item_quantity = validated_data.get('entrusted_item_quantity', instance.entrusted_item_quantity) or 0
         instance.entrusted_item_price = validated_data.get('entrusted_item_price', instance.entrusted_item_price) or 0
@@ -228,6 +367,6 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             instance.default_fixed_wage = 0
             instance.default_hourly_wage = 0
             instance.payment_type = 'percent'
-        instance.save(update_fields=['is_available', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
+        instance.save(update_fields=['is_available', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
 
         return instance

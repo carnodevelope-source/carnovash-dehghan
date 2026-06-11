@@ -2,7 +2,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
-from django.db.models import F, Sum
+from django.db.models import F, Q, Sum
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
@@ -283,13 +283,18 @@ class VehicleReleaseCheckoutView(APIView):
         if not ordered_ids:
             return []
 
-        profiles = {
-            item.id: item
-            for item in WorkerProfile.objects.select_related('user').filter(id__in=ordered_ids, tenant=job.tenant)
-        }
+        profiles = list(
+            WorkerProfile.objects.select_related('user').filter(
+                tenant=job.tenant,
+            ).filter(
+                Q(id__in=ordered_ids) | Q(user_id__in=ordered_ids)
+            )
+        )
+        profiles_by_id = {item.id: item for item in profiles}
+        profiles_by_user_id = {item.user_id: item for item in profiles if item.user_id}
         workers = []
         for worker_id in ordered_ids:
-            profile = profiles.get(worker_id)
+            profile = profiles_by_id.get(worker_id) or profiles_by_user_id.get(worker_id)
             if not profile:
                 continue
             name = (
@@ -650,7 +655,9 @@ class VehicleReleaseCheckoutView(APIView):
         bonus_amount = Decimal(str(request.data.get('bonus', 0) or 0))
         penalty_amount = Decimal(str(request.data.get('penalty', 0) or 0))
         bonus_penalty_worker_id = request.data.get('bonus_penalty_worker_id')
+        bonus_penalty_adjustments = request.data.get('bonus_penalty_adjustments', [])
         bonus_penalty_note = str(request.data.get('bonus_penalty_note', '') or '').strip()
+        normalized_adjustments = []
         if tip_amount < 0:
             return Response(
                 {'tip_amount': ['Invalid tip value.']},
@@ -661,7 +668,48 @@ class VehicleReleaseCheckoutView(APIView):
                 {'detail': 'Bonus and penalty must be positive values.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if (bonus_amount > 0 or penalty_amount > 0) and not bonus_penalty_note:
+        if isinstance(bonus_penalty_adjustments, list):
+            for item in bonus_penalty_adjustments:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    worker_id = int(item.get('worker_id') or 0)
+                except (TypeError, ValueError):
+                    continue
+                if worker_id <= 0:
+                    continue
+                item_bonus = Decimal(str(item.get('bonus', 0) or 0))
+                item_penalty = Decimal(str(item.get('penalty', 0) or 0))
+                if item_bonus < 0 or item_penalty < 0:
+                    return Response(
+                        {'detail': 'Bonus and penalty must be positive values.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if item_bonus <= 0 and item_penalty <= 0:
+                    continue
+                normalized_adjustments.append(
+                    {
+                        'worker_id': worker_id,
+                        'bonus': item_bonus,
+                        'penalty': item_penalty,
+                    }
+                )
+
+        if not normalized_adjustments and bonus_penalty_worker_id and (bonus_amount > 0 or penalty_amount > 0):
+            try:
+                normalized_worker_id = int(bonus_penalty_worker_id or 0)
+            except (TypeError, ValueError):
+                normalized_worker_id = 0
+            if normalized_worker_id > 0:
+                normalized_adjustments.append(
+                    {
+                        'worker_id': normalized_worker_id,
+                        'bonus': bonus_amount,
+                        'penalty': penalty_amount,
+                    }
+                )
+
+        if normalized_adjustments and not bonus_penalty_note:
             return Response(
                 {'detail': 'توضیح پاداش یا جریمه الزامی است.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -996,29 +1044,35 @@ class VehicleReleaseCheckoutView(APIView):
         vehicle.released_at = timezone.now()
         vehicle.save(update_fields=['status', 'payment_status', 'payment_method', 'released_at', 'updated_at'])
 
-        if bonus_penalty_worker_id and (bonus_amount > 0 or penalty_amount > 0):
-            worker = WorkerProfile.objects.filter(
-                id=bonus_penalty_worker_id,
-                tenant=tenant,
-            ).first()
-            if worker:
-                if bonus_amount > 0:
+        if normalized_adjustments:
+            workers_map = {
+                worker.id: worker
+                for worker in WorkerProfile.objects.filter(
+                    tenant=tenant,
+                    id__in=[item['worker_id'] for item in normalized_adjustments],
+                )
+            }
+            for item in normalized_adjustments:
+                worker = workers_map.get(item['worker_id'])
+                if not worker:
+                    continue
+                if item['bonus'] > 0:
                     WorkerPayoutTransaction.objects.create(
                         tenant=tenant,
                         worker=worker,
                         vehicle_job=vehicle.job,
                         kind=WorkerPayoutTransaction.Kind.BONUS,
-                        amount=bonus_amount,
+                        amount=item['bonus'],
                         note=bonus_penalty_note,
                         created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
                     )
-                if penalty_amount > 0:
+                if item['penalty'] > 0:
                     WorkerPayoutTransaction.objects.create(
                         tenant=tenant,
                         worker=worker,
                         vehicle_job=vehicle.job,
                         kind=WorkerPayoutTransaction.Kind.PENALTY,
-                        amount=penalty_amount,
+                        amount=item['penalty'],
                         note=bonus_penalty_note,
                         created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
                     )

@@ -34,6 +34,8 @@
                 <tr>
                   <th>ردیف</th>
                   <th>نام</th>
+                  <th>نقش</th>
+                  <th>نام کاربری</th>
                   <th>شماره</th>
                   <th>نوع پرداخت</th>
                   <th>مقدار پرداخت</th>
@@ -47,6 +49,8 @@
                 <tr v-for="(item, index) in filteredWorkers" :key="item.id">
                   <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
                   <td>{{ item.full_name }}</td>
+                  <td>{{ item.role || '-' }}</td>
+                  <td>{{ item.username || '-' }}</td>
                   <td>{{ item.phone || '-' }}</td>
                   <td>{{ item.payment_type === 'fixed' ? 'تومانی' : item.payment_type === 'hourly' ? 'ساعتی' : 'درصدی' }}</td>
                   <td>{{ formatWorkerPayment(item) }}</td>
@@ -97,6 +101,57 @@
                   <td>
                     <button class="table-btn" @click.stop="openProductModal(item)">ویرایش</button>
                     <button class="table-btn danger" @click.stop="deleteProduct(item)">حذف</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <template v-else-if="activeTab === 'expenses'">
+          <div class="head-row">
+            <h2>هزینه‌ها</h2>
+            <button class="primary-btn" @click="openExpenseModal()">ثبت هزینه جدید</button>
+          </div>
+          <div class="expense-summary-strip">
+            <article>
+              <span>تعداد ردیف‌ها</span>
+              <strong>{{ Number(filteredExpenses.length || 0).toLocaleString('fa-IR') }}</strong>
+            </article>
+            <article>
+              <span>جمع هزینه‌ها</span>
+              <strong>{{ money(expensesTotal) }}</strong>
+            </article>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ردیف</th>
+                  <th>شرح</th>
+                  <th>مبلغ</th>
+                  <th>نوع ثبت</th>
+                  <th>جزئیات</th>
+                  <th>ثبت‌کننده</th>
+                  <th>تاریخ</th>
+                  <th>عملیات</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, index) in filteredExpenses" :key="item.row_id">
+                  <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
+                  <td>{{ item.title }}</td>
+                  <td>{{ money(item.amount) }}</td>
+                  <td>
+                    <span class="source-badge" :class="`source-${item.source_type}`">{{ item.source_label }}</span>
+                  </td>
+                  <td class="details-cell">{{ item.details || '-' }}</td>
+                  <td>{{ item.created_by_name || '-' }}</td>
+                  <td>{{ dateTime(item.spent_at || item.created_at) }}</td>
+                  <td>
+                    <button v-if="item.can_edit" class="table-btn" @click="openExpenseModal(item)">ویرایش</button>
+                    <button v-if="item.can_delete" class="table-btn danger" @click="deleteExpense(item)">حذف</button>
+                    <span v-if="!item.can_edit && !item.can_delete" class="table-meta-note">خودکار</span>
                   </td>
                 </tr>
               </tbody>
@@ -268,6 +323,18 @@
         <form class="modal-form" @submit.prevent="submitModal">
           <template v-if="modal.type === 'workers'">
             <label><span>نام کامل</span><input v-model="forms.worker.full_name" required /></label>
+            <label>
+              <span>نقش پرسنل</span>
+              <select v-model="forms.worker.role">
+                <option value="worker">پرسنل</option>
+                <option value="operator">اپراتور</option>
+              </select>
+            </label>
+            <label><span>نام کاربری</span><input v-model.trim="forms.worker.username" required /></label>
+            <label>
+              <span>{{ modal.id ? 'رمز عبور جدید (اختیاری)' : 'رمز عبور' }}</span>
+              <input v-model="forms.worker.password" type="text" :required="!modal.id" />
+            </label>
             <label><span>شماره موبایل</span><input v-model="forms.worker.phone" required /></label>
             <label>
               <span>نوع پرداخت پرسنل</span>
@@ -295,18 +362,35 @@
                 </label>
               </div>
               <div v-if="forms.worker.has_entrusted_item" class="entrusted-grid">
-                <label class="full">
-                  <span>شرح</span>
-                  <textarea v-model="forms.worker.entrusted_item_description" rows="3" placeholder="مثلا: کاردک، دستگاه، لباس کار یا هر مورد امانی" />
-                </label>
-                <label>
-                  <span>تعداد</span>
-                  <input type="number" min="0" step="0.01" v-model.number="forms.worker.entrusted_item_quantity" />
-                </label>
-                <label>
-                  <span>قیمت (هزار تومان)</span>
-                  <input type="number" min="0" v-model.number="forms.worker.entrusted_item_price" />
-                </label>
+                <div class="full entrusted-list-head">
+                  <strong>لیست امانات</strong>
+                  <button type="button" class="secondary-btn small-btn" @click="addEntrustedItem">افزودن ردیف</button>
+                </div>
+                <div
+                  v-for="(entrustedItem, entrustedIndex) in forms.worker.entrusted_items"
+                  :key="`entrusted-${entrustedIndex}`"
+                  class="entrusted-item-row"
+                >
+                  <label class="full">
+                    <span>شرح</span>
+                    <textarea v-model.trim="entrustedItem.title" rows="2" placeholder="مثلا: کاردک، دستگاه، لباس کار یا هر مورد امانی" />
+                  </label>
+                  <label>
+                    <span>تعداد</span>
+                    <input type="number" min="0" step="0.01" v-model.number="entrustedItem.quantity" />
+                  </label>
+                  <label>
+                    <span>قیمت (هزار تومان)</span>
+                    <input type="number" min="0" v-model.number="entrustedItem.price" />
+                  </label>
+                  <button
+                    type="button"
+                    class="table-btn danger entrusted-remove-btn"
+                    @click="removeEntrustedItem(entrustedIndex)"
+                  >
+                    حذف
+                  </button>
+                </div>
               </div>
             </section>
           </template>
@@ -333,6 +417,12 @@
             <label><span>قیمت خرید واحد (هزار تومان)</span><input type="number" min="0" v-model.number="forms.purchase.unit_cost" /></label>
             <label><span>قیمت فروش واحد (هزار تومان)</span><input type="number" min="0" v-model.number="forms.purchase.sale_price" /></label>
             <label><span>توضیح</span><input v-model="forms.purchase.note" placeholder="اختیاری" /></label>
+          </template>
+
+          <template v-else-if="modal.type === 'expenses'">
+            <label><span>شرح هزینه</span><input v-model.trim="forms.expense.title" required placeholder="مثلا تعمیر کولر" /></label>
+            <label><span>مبلغ (هزار تومان)</span><input type="number" min="0" v-model.number="forms.expense.amount" required /></label>
+            <label class="full"><span>جزئیات</span><textarea v-model.trim="forms.expense.details" rows="4" placeholder="کجا، چرا و برای چه موردی هزینه شده است" /></label>
           </template>
 
           <template v-else>
@@ -470,12 +560,14 @@ const errorMessage = ref('')
 const tabs = [
   { key: 'workers', label: 'پرسنل' },
   { key: 'products', label: 'محصولات' },
+  { key: 'expenses', label: 'هزینه‌ها' },
   { key: 'services', label: 'خدمات' },
   { key: 'general', label: 'تنظیمات عمومی' }
 ]
 
 const workers = ref([])
 const products = ref([])
+const expenses = ref([])
 const services = ref([])
 const inventoryItems = ref([])
 const generalSettings = reactive({
@@ -504,18 +596,23 @@ const serviceHistoryModal = reactive({ open: false, loading: false, service: nul
 const forms = reactive({
   worker: {
     full_name: '',
+    role: 'worker',
+    username: '',
+    password: '',
     phone: '',
     payment_type: 'percent',
     payment_value: 0,
     tip_share_percent: 0,
     is_available: true,
     has_entrusted_item: false,
+    entrusted_items: [],
     entrusted_item_description: '',
     entrusted_item_quantity: 0,
     entrusted_item_price: 0
   },
   product: { name: '', description: '', sale_price: 0, cost_price: 0, unit: 'unit', min_stock: 0, is_active: true },
   purchase: { product_id: 0, quantity: 1, unit_cost: 0, sale_price: 0, note: '' },
+  expense: { title: '', amount: 0, details: '' },
   service: { name: '', description: '', base_price: 0, estimated_duration_minutes: 30, is_active: true }
 })
 
@@ -533,6 +630,7 @@ const t = (msg, type = 'success') => {
 const money = (v) => formatThousandsToman(v)
 const toThousandsDisplay = (value) => Math.round(Number(value || 0) / 1000)
 const fromThousandsInput = (value) => fromThousandsTomanInput(value)
+const createEntrustedItem = () => ({ title: '', quantity: 1, price: 0 })
 
 const apiErrorText = (error) => {
   const data = error?.response?.data
@@ -583,10 +681,12 @@ const productsWithStock = computed(() => products.value.map((item) => ({
   stock_qty: stockByProductId.value[Number(item.id)] ?? 0
 })))
 
-const filteredWorkers = computed(() => workers.value.filter((i) => (`${i.full_name} ${i.phone || ''}`).includes(search.value)))
+const filteredWorkers = computed(() => workers.value.filter((i) => (`${i.full_name} ${i.username || ''} ${i.phone || ''} ${i.role || ''}`).includes(search.value)))
 const filteredProducts = computed(() => productsWithStock.value.filter((i) => (`${i.name} ${i.description || ''} ${i.unit || ''}`).includes(search.value)))
+const filteredExpenses = computed(() => expenses.value.filter((i) => (`${i.title || ''} ${i.details || ''} ${i.source_label || ''}`).includes(search.value)))
 const filteredServices = computed(() => services.value.filter((i) => (`${i.name} ${i.description || ''}`).includes(search.value)))
 const fullStarDiscountLabel = computed(() => `${Number((Number(generalSettings.discount_percent_per_half_star || 0) * 2).toFixed(2)).toLocaleString('fa-IR')}٪`)
+const expensesTotal = computed(() => filteredExpenses.value.reduce((sum, item) => sum + Number(item.amount || 0), 0))
 
 watch(() => forms.purchase.product_id, (newProductId) => {
   const selected = products.value.find((item) => Number(item.id) === Number(newProductId))
@@ -595,16 +695,26 @@ watch(() => forms.purchase.product_id, (newProductId) => {
   forms.purchase.sale_price = toThousandsDisplay(selected.sale_price || 0)
 })
 
+watch(() => forms.worker.has_entrusted_item, (enabled) => {
+  if (enabled && !forms.worker.entrusted_items.length) {
+    forms.worker.entrusted_items = [createEntrustedItem()]
+    return
+  }
+  if (!enabled) forms.worker.entrusted_items = []
+})
+
 const loadAll = async () => {
   try {
-    const [w, p, s, inv] = await Promise.all([
+    const [w, p, e, s, inv] = await Promise.all([
       api.get('/workers/'),
       api.get('/products/'),
+      api.get('/inventory/expenses/'),
       api.get('/services/'),
       api.get('/inventory/')
     ])
     workers.value = Array.isArray(w.data) ? w.data : []
     products.value = Array.isArray(p.data) ? p.data : []
+    expenses.value = Array.isArray(e.data) ? e.data : []
     services.value = Array.isArray(s.data) ? s.data : []
     inventoryItems.value = Array.isArray(inv.data) ? inv.data : []
     try {
@@ -694,12 +804,24 @@ const saveGeneralSettings = async () => {
   }
 }
 
+const addEntrustedItem = () => {
+  forms.worker.entrusted_items.push(createEntrustedItem())
+}
+
+const removeEntrustedItem = (index) => {
+  forms.worker.entrusted_items.splice(index, 1)
+  if (!forms.worker.entrusted_items.length) forms.worker.has_entrusted_item = false
+}
+
 const openWorkerModal = (item = null) => {
   modal.open = true
   modal.type = 'workers'
   modal.id = item?.id || null
   modal.title = modal.id ? 'ویرایش پرسنل' : 'افزودن پرسنل'
   forms.worker.full_name = item?.full_name || ''
+  forms.worker.role = item?.role_key || 'worker'
+  forms.worker.username = item?.username || ''
+  forms.worker.password = ''
   forms.worker.phone = item?.phone || ''
   forms.worker.payment_type = item?.payment_type || 'percent'
   forms.worker.payment_value = forms.worker.payment_type === 'fixed'
@@ -708,9 +830,23 @@ const openWorkerModal = (item = null) => {
   forms.worker.tip_share_percent = Number(item?.tip_share_percent || 0)
   forms.worker.is_available = item?.is_available ?? true
   forms.worker.has_entrusted_item = Boolean(item?.has_entrusted_item)
+  forms.worker.entrusted_items = Array.isArray(item?.entrusted_items) && item.entrusted_items.length
+    ? item.entrusted_items.map((entrustedItem) => ({
+        title: entrustedItem?.title || '',
+        quantity: Number(entrustedItem?.quantity || 0),
+        price: toThousandsDisplay(entrustedItem?.price || 0)
+      }))
+    : (forms.worker.has_entrusted_item
+        ? [{
+            title: item?.entrusted_item_description || '',
+            quantity: Number(item?.entrusted_item_quantity || 0),
+            price: toThousandsDisplay(item?.entrusted_item_price || 0)
+          }]
+        : [])
   forms.worker.entrusted_item_description = item?.entrusted_item_description || ''
   forms.worker.entrusted_item_quantity = Number(item?.entrusted_item_quantity || 0)
   forms.worker.entrusted_item_price = toThousandsDisplay(item?.entrusted_item_price || 0)
+  if (forms.worker.has_entrusted_item && !forms.worker.entrusted_items.length) forms.worker.entrusted_items = [createEntrustedItem()]
 }
 
 const openProductModal = (item = null) => {
@@ -740,6 +876,18 @@ const openProductPurchaseModal = (item = null) => {
     unit_cost: toThousandsDisplay(item?.cost_price || 0),
     sale_price: toThousandsDisplay(item?.sale_price || 0),
     note: ''
+  })
+}
+
+const openExpenseModal = (item = null) => {
+  modal.open = true
+  modal.type = 'expenses'
+  modal.id = item?.can_edit ? item.id : null
+  modal.title = modal.id ? 'ویرایش هزینه' : 'ثبت هزینه جدید'
+  Object.assign(forms.expense, {
+    title: item?.title || '',
+    amount: toThousandsDisplay(item?.amount || 0),
+    details: item?.details || ''
   })
 }
 
@@ -822,17 +970,29 @@ const submitModal = async () => {
       const paymentValueNormalized = forms.worker.payment_type === 'fixed'
         ? fromThousandsInput(forms.worker.payment_value)
         : Number(forms.worker.payment_value || 0)
+      const entrustedItemsPayload = forms.worker.has_entrusted_item
+        ? forms.worker.entrusted_items.map((item) => ({
+            title: (item?.title || '').trim(),
+            quantity: Number(item?.quantity || 0),
+            price: fromThousandsInput(item?.price || 0)
+          }))
+        : []
+      const primaryEntrustedItem = entrustedItemsPayload[0] || null
       const workerPayload = {
         full_name: forms.worker.full_name,
+        role: forms.worker.role || 'worker',
+        username: forms.worker.username,
+        password: forms.worker.password,
         phone: forms.worker.phone,
         is_available: forms.worker.is_available,
         payment_type: forms.worker.payment_type,
         payment_value: Number.isFinite(Number(paymentValueNormalized)) ? Number(paymentValueNormalized) : 0,
         tip_share_percent: Number(forms.worker.tip_share_percent || 0),
         has_entrusted_item: Boolean(forms.worker.has_entrusted_item),
-        entrusted_item_description: forms.worker.has_entrusted_item ? (forms.worker.entrusted_item_description || '').trim() : '',
-        entrusted_item_quantity: forms.worker.has_entrusted_item ? Number(forms.worker.entrusted_item_quantity || 0) : 0,
-        entrusted_item_price: forms.worker.has_entrusted_item ? fromThousandsInput(forms.worker.entrusted_item_price || 0) : 0
+        entrusted_items: entrustedItemsPayload,
+        entrusted_item_description: primaryEntrustedItem?.title || '',
+        entrusted_item_quantity: Number(primaryEntrustedItem?.quantity || 0),
+        entrusted_item_price: Number(primaryEntrustedItem?.price || 0)
       }
       if (modal.id) await api.patch(`/workers/${modal.id}/`, workerPayload)
       else await api.post('/workers/', workerPayload)
@@ -856,6 +1016,15 @@ const submitModal = async () => {
       }
       await api.post('/inventory/purchase/', payload)
       t('خرید محصول ثبت شد')
+    } else if (modal.type === 'expenses') {
+      const payload = {
+        title: forms.expense.title || '',
+        amount: fromThousandsInput(forms.expense.amount || 0),
+        details: forms.expense.details || ''
+      }
+      if (modal.id) await api.patch(`/inventory/expenses/${modal.id}/`, payload)
+      else await api.post('/inventory/expenses/', payload)
+      t(modal.id ? 'هزینه ویرایش شد' : 'هزینه ثبت شد')
     } else {
       const payload = {
         ...forms.service,
@@ -875,6 +1044,7 @@ const submitModal = async () => {
 
 const deleteWorker = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/workers/${item.id}/`); t('حذف شد'); await loadAll() }
 const deleteProduct = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/products/${item.id}/`); t('حذف شد'); await loadAll() }
+const deleteExpense = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/inventory/expenses/${item.id}/`); t('حذف شد'); await loadAll() }
 const deleteService = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/services/${item.id}/`); t('حذف شد'); await loadAll() }
 
 onMounted(async () => {
@@ -892,14 +1062,23 @@ onMounted(async () => {
 .head-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; }
 .head-actions { display: flex; gap: 8px; }
 h2 { margin: 0; font-size: 20px; }
+.expense-summary-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 10px; margin-bottom: 14px; }
+.expense-summary-strip article { border: 1px solid #dbe7f5; border-radius: 14px; padding: 12px 14px; background: linear-gradient(180deg, #fbfdff 0%, #f3f8ff 100%); display: grid; gap: 6px; }
+.expense-summary-strip span { color: #64748b; font-size: 12px; }
+.expense-summary-strip strong { color: #0f172a; font-size: 16px; }
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; white-space: nowrap; }
+.details-cell { white-space: normal; min-width: 240px; line-height: 1.8; }
 .primary-btn, .secondary-btn { border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
 .primary-btn { background: linear-gradient(90deg,#2563eb,#0891b2); color: #fff; }
 .secondary-btn { background: #e2e8f0; }
 .table-btn { border: 0; background: #e2e8f0; padding: 6px 10px; border-radius: 8px; cursor: pointer; margin-left: 6px; }
 .table-btn.danger { background: #fee2e2; color: #991b1b; }
+.table-meta-note { color: #64748b; font-size: 12px; font-weight: 700; }
+.source-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 84px; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+.source-manual { background: #dbeafe; color: #1d4ed8; }
+.source-purchase { background: #dcfce7; color: #166534; }
 .clickable-row { cursor: pointer; }
 .clickable-row:hover td { background: #f8fbff; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 99; }
@@ -938,8 +1117,31 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .entrusted-toggle { white-space: nowrap; }
 .entrusted-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+.entrusted-list-head {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.small-btn {
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+.entrusted-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.75);
+}
+.entrusted-remove-btn {
+  height: 42px;
+  margin-left: 0;
 }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; grid-column: 1 / -1; }
 .history-loading, .history-body { padding: 14px; }
@@ -1020,6 +1222,8 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 @media (max-width: 960px) {
   .modal-form, .history-summary { grid-template-columns: 1fr; }
   .entrusted-head, .entrusted-grid { grid-template-columns: 1fr; display: grid; }
+  .entrusted-item-row { grid-template-columns: 1fr; }
+  .entrusted-list-head { align-items: stretch; }
   .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: 1fr; }
 }
 </style>

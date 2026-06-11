@@ -207,32 +207,87 @@
                 فاکتور
               </button>
             </div>
-            <div class="summary-rows">
-              <p><span>جمع خدمات</span><strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong></p>
-              <p><span>جمع محصولات</span><strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong></p>
-              <p><span>تخفیف مشتری ({{ formatPercent(releaseSummary.customerDiscountPercent) }})</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
-              <p><span>جمع انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
+            <div class="release-summary-hero">
+              <div>
+                <small>مبلغ قابل دریافت</small>
+                <strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong>
+                <p>ترخیص، پرداخت و سهم پرسنل را از همین بخش نهایی کنید.</p>
+              </div>
+              <div class="release-summary-badge">{{ paymentMethodLabel(releaseForm.paymentMethod) }}</div>
             </div>
-            <label class="tip-input-row">
+            <div class="summary-stat-grid">
+              <article class="summary-stat-card">
+                <span>جمع خدمات</span>
+                <strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong>
+              </article>
+              <article class="summary-stat-card">
+                <span>محصولات جانبی</span>
+                <strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong>
+              </article>
+              <article class="summary-stat-card">
+                <span>تخفیف مشتری</span>
+                <strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong>
+                <small>{{ formatPercent(releaseSummary.customerDiscountPercent) }}</small>
+              </article>
+              <article class="summary-stat-card accent-card">
+                <span>انعام</span>
+                <strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong>
+              </article>
+            </div>
+            <label class="tip-input-row modern-input-row">
               <span>انعام (هزار تومان)</span>
               <input v-model.number="releaseForm.tipAmount" type="number" min="0" step="1" />
             </label>
-            <div class="summary-share">
-              <div v-if="releaseForm.assignedWorkers.length" class="worker-share-editor">
-                <label
-                  v-for="(worker, index) in releaseForm.assignedWorkers"
-                  :key="`share-${worker.id || index}`"
-                  class="worker-share-input"
+            <div class="worker-selection-panel">
+              <div class="worker-selection-head">
+                <div>
+                  <h4>انتخاب نیروها</h4>
+                  <p>هر نیرو را جداگانه فعال کنید. فقط نیروهای فعال در سهم این تسویه محاسبه می‌شوند.</p>
+                </div>
+                <button
+                  v-if="releaseForm.assignedWorkers.length > 1 && selectedAssignedWorkers.length !== releaseForm.assignedWorkers.length"
+                  type="button"
+                  class="secondary-btn small-btn"
+                  @click="activateAllReleaseWorkers"
                 >
-                  <span class="worker-share-name">{{ worker.name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</span>
-                  <div class="worker-share-controls">
+                  انتخاب همه
+                </button>
+              </div>
+              <div v-if="releaseForm.assignedWorkers.length" class="worker-selection-grid">
+                <button
+                  v-for="(worker, index) in releaseForm.assignedWorkers"
+                  :key="`worker-toggle-${worker.id || index}`"
+                  type="button"
+                  class="worker-select-card"
+                  :class="{ selected: worker.isSelected !== false }"
+                  @click="toggleReleaseWorkerSelection(index)"
+                >
+                  <span class="worker-select-check">{{ worker.isSelected !== false ? '✓' : '+' }}</span>
+                  <strong>{{ worker.name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</strong>
+                  <small>{{ worker.isSelected !== false ? 'فعال در این تسویه' : 'غیرفعال در این تسویه' }}</small>
+                </button>
+              </div>
+              <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است.</p>
+            </div>
+            <div class="summary-share">
+              <div v-if="selectedAssignedWorkers.length" class="worker-share-editor modern-worker-share-editor">
+                <article
+                  v-for="worker in selectedAssignedWorkers"
+                  :key="`share-${worker.id || worker.sourceIndex}`"
+                  class="worker-share-card"
+                >
+                  <div class="worker-share-card-head">
+                    <span class="worker-share-name">{{ worker.name || `نیروی ${Number(worker.sourceIndex + 1).toLocaleString('fa-IR')}` }}</span>
+                    <small>سهم پایه و درصد این نیرو</small>
+                  </div>
+                  <div class="worker-share-controls modern-worker-share-controls">
                     <div class="worker-share-control amount-control">
                       <input
-                        :value="getReleaseWorkerShareAmountInput(index)"
+                        :value="getReleaseWorkerShareAmountInput(worker.sourceIndex)"
                         type="number"
                         min="0"
                         step="1"
-                        @input="setReleaseWorkerShareAmount(index, $event.target.value)"
+                        @input="setReleaseWorkerShareAmount(worker.sourceIndex, $event.target.value)"
                       />
                       <small>هزار تومان</small>
                     </div>
@@ -243,12 +298,12 @@
                         min="0"
                         max="100"
                         step="1"
-                        @input="setReleaseWorkerSharePercent(index, $event.target.value)"
+                        @input="setReleaseWorkerSharePercent(worker.sourceIndex, $event.target.value)"
                       />
                       <small>٪</small>
                     </div>
                   </div>
-                </label>
+                </article>
               </div>
               <p
                 v-for="(worker, index) in releaseSummary.workerShares"
@@ -256,7 +311,7 @@
               >
                 <span>
                   سهم {{ worker.name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}
-                  <small v-if="releaseForm.assignedWorkers.length > 1">({{ Number(worker.percent || 0).toLocaleString('fa-IR') }}٪)</small>
+                  <small v-if="selectedAssignedWorkers.length > 1">({{ Number(worker.percent || 0).toLocaleString('fa-IR') }}٪)</small>
                 </span>
                 <strong>{{ formatMoney(worker.amount) }}</strong>
               </p>
@@ -270,56 +325,7 @@
               </p>
             </div>
             <p class="summary-final"><span>جمع کل</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
-            <section class="release-secondary-section">
-              <div class="release-secondary-head">
-                <h4>پرداخت و ثبت‌های تکمیلی</h4>
-                <small>این بخش جدا از خلاصه اصلی نگه داشته شده است.</small>
-              </div>
-              <label class="tip-input-row">
-                <span>شیوه پرداخت</span>
-                <select v-model="releaseForm.paymentMethod">
-                  <option value="pos">دستگاه پوز</option>
-                  <option value="cash">نقدی</option>
-                  <option value="transfer">کارت به کارت</option>
-                  <option value="cheque">چک</option>
-                  <option value="credit">نسیه</option>
-                </select>
-              </label>
-              <div v-if="releaseForm.paymentMethod === 'cheque'" class="cheque-inline-card">
-                <div class="cheque-inline-head">
-                  <div>
-                    <strong>جزئیات چک</strong>
-                    <small>{{ chequeDetailsSummary }}</small>
-                  </div>
-                  <button type="button" class="secondary-btn" @click="openChequeDetailsModal">ثبت جزئیات چک</button>
-                </div>
-              </div>
-              <label v-if="releaseForm.paymentMethod === 'credit'" class="tip-input-row">
-                <span>تاریخ سررسید نسیه</span>
-                <BaseDatePicker v-model="releaseForm.creditDueDate" placeholder="1405/01/30" />
-              </label>
-              <label class="tip-input-row">
-                <span>نیرو برای پاداش/جریمه</span>
-                <select v-model.number="releaseForm.bonusPenaltyWorkerId">
-                  <option :value="0">انتخاب نیرو</option>
-                  <option v-for="worker in releaseForm.assignedWorkers" :key="worker.id" :value="worker.id">{{ worker.name }}</option>
-                </select>
-              </label>
-              <div class="bonus-penalty-row">
-                <label class="tip-input-row">
-                  <span>پاداش (هزار تومان)</span>
-                  <input v-model.number="releaseForm.bonusAmount" type="number" min="0" step="1" />
-                </label>
-                <label class="tip-input-row">
-                  <span>جریمه (هزار تومان)</span>
-                  <input v-model.number="releaseForm.penaltyAmount" type="number" min="0" step="1" />
-                </label>
-              </div>
-              <label v-if="hasReleaseBonusOrPenalty" class="tip-input-row">
-                <span>توضیح پاداش/جریمه</span>
-                <textarea v-model.trim="releaseForm.bonusPenaltyNote" rows="3" placeholder="دلیل ثبت پاداش یا جریمه را وارد کنید"></textarea>
-              </label>
-            </section>
+            
             <div class="release-actions">
               <button type="button" class="back-btn" @click="closeReleaseModal">انصراف</button>
               <button type="button" class="confirm-release-btn" :disabled="releaseSubmitting" @click="confirmReleaseVehicle">
@@ -328,22 +334,117 @@
             </div>
           </div>
         </div>
+        <section class="release-secondary-section">
+          <div class="release-secondary-head">
+            <div>
+              <h4>پرداخت و ثبت‌های تکمیلی</h4>
+              <small>روش پرداخت، چک، نسیه و پاداش یا جریمه را اینجا نهایی کنید.</small>
+            </div>
+            <div class="release-secondary-chip">{{ paymentMethodLabel(releaseForm.paymentMethod) }}</div>
+          </div>
+          <div class="release-secondary-grid">
+            <label class="tip-input-row detail-field">
+              <span>شیوه پرداخت</span>
+              <select v-model="releaseForm.paymentMethod">
+                <option value="pos">دستگاه پوز</option>
+                <option value="cash">نقدی</option>
+                <option value="transfer">کارت به کارت</option>
+                <option value="cheque">چک</option>
+                <option value="credit">نسیه</option>
+              </select>
+            </label>
+            <div class="payment-method-preview">
+              <strong>ثبت پرداخت</strong>
+              <p>پرداخت فعلی با روش <span>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</span> نهایی می‌شود.</p>
+            </div>
+            <div v-if="releaseForm.paymentMethod === 'cheque'" class="cheque-inline-card detail-field-wide">
+              <div class="cheque-inline-head">
+                <div>
+                  <strong>جزئیات چک</strong>
+                  <small>{{ chequeDetailsSummary }}</small>
+                </div>
+                <button type="button" class="secondary-btn" @click="openChequeDetailsModal">ثبت جزئیات چک</button>
+              </div>
+            </div>
+            <label v-if="releaseForm.paymentMethod === 'credit'" class="tip-input-row detail-field">
+              <span>تاریخ سررسید نسیه</span>
+              <BaseDatePicker v-model="releaseForm.creditDueDate" placeholder="1405/01/30" />
+            </label>
+            <div class="detail-field detail-field-wide bonus-penalty-table">
+              <div class="bonus-penalty-table-head">
+                <span>نیرو برای پاداش/جریمه</span>
+                <small>برای هر نیروی این سفارش، مبلغ جدا ثبت کنید.</small>
+              </div>
+              <div v-if="releaseForm.bonusPenaltyAdjustments.length" class="bonus-penalty-list">
+                <div v-for="(adjustment, index) in releaseForm.bonusPenaltyAdjustments" :key="`adjustment-${adjustment.worker_id || index}`" class="bonus-penalty-item">
+                  <strong>{{ adjustment.worker_name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</strong>
+                  <label class="tip-input-row">
+                    <span>پاداش (هزار تومان)</span>
+                    <input v-model.number="adjustment.bonus" type="number" min="0" step="1" />
+                  </label>
+                  <label class="tip-input-row">
+                    <span>جریمه (هزار تومان)</span>
+                    <input v-model.number="adjustment.penalty" type="number" min="0" step="1" />
+                  </label>
+                </div>
+              </div>
+              <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است.</p>
+            </div>
+            <label v-if="hasReleaseBonusOrPenalty" class="tip-input-row detail-field detail-field-wide">
+              <span>توضیح پاداش/جریمه</span>
+              <textarea v-model.trim="releaseForm.bonusPenaltyNote" rows="3" placeholder="دلیل ثبت پاداش یا جریمه را وارد کنید"></textarea>
+            </label>
+          </div>
+        </section>
       </section>
     </div>
     <div v-if="showChequeDetailsModal" class="modal-overlay" @click.self="closeChequeDetailsModal">
       <section class="modal-panel action-panel cheque-modal-panel">
-        <header class="modal-head">
-          <h3>جزئیات چک</h3>
+        <header class="modal-head cheque-modal-head">
+          <div>
+            <p class="modal-step">پرداخت با چک</p>
+            <h3>ثبت جزئیات چک</h3>
+            <p class="cheque-modal-subtitle">اطلاعات چک را کامل وارد کنید تا در فاکتور و ثبت نهایی ذخیره شود.</p>
+          </div>
           <button class="close-btn" @click="closeChequeDetailsModal">✕</button>
         </header>
         <div class="modal-body cheque-modal-body">
-          <label><span>تاریخ وصول</span><BaseDatePicker v-model="releaseForm.creditDueDate" placeholder="1405/01/30" /></label>
-          <label><span>شماره سریال</span><input v-model.trim="releaseForm.chequeSerialNumber" type="text" /></label>
-          <label><span>شماره صیادی</span><input v-model.trim="releaseForm.chequeSayadiNumber" type="text" /></label>
-          <label><span>بانک</span><input v-model.trim="releaseForm.chequeBank" type="text" /></label>
-          <label><span>شبا</span><input v-model.trim="releaseForm.chequeShaba" type="text" /></label>
-          <label><span>مبلغ (هزار تومان)</span><input v-model.number="releaseForm.chequeAmount" type="number" min="1" step="1" /></label>
-          <button class="primary-btn" type="button" @click="closeChequeDetailsModal">تایید جزئیات چک</button>
+          <div class="cheque-modal-summary">
+            <small>مبلغ چک</small>
+            <strong>{{ formatMoney(Number(releaseForm.chequeAmount || 0) * 1000 || releaseSummary.finalTotal) }}</strong>
+            <p>جمع قابل ثبت برای این سفارش</p>
+            <span>{{ chequeDetailsSummary }}</span>
+          </div>
+          <div class="cheque-fields-grid">
+            <label class="cheque-field">
+              <span>تاریخ وصول</span>
+              <BaseDatePicker v-model="releaseForm.creditDueDate" placeholder="1405/01/30" />
+            </label>
+            <label class="cheque-field">
+              <span>شماره سریال</span>
+              <input v-model.trim="releaseForm.chequeSerialNumber" type="text" />
+            </label>
+            <label class="cheque-field">
+              <span>شماره صیادی</span>
+              <input v-model.trim="releaseForm.chequeSayadiNumber" type="text" />
+            </label>
+            <label class="cheque-field">
+              <span>بانک</span>
+              <input v-model.trim="releaseForm.chequeBank" type="text" />
+            </label>
+            <label class="cheque-field cheque-field-wide">
+              <span>شبا</span>
+              <input v-model.trim="releaseForm.chequeShaba" type="text" />
+            </label>
+            <label class="cheque-field">
+              <span>مبلغ (هزار تومان)</span>
+              <input v-model.number="releaseForm.chequeAmount" type="number" min="1" step="1" />
+            </label>
+          </div>
+          <div class="cheque-modal-actions">
+            <button type="button" class="secondary-btn" @click="closeChequeDetailsModal">بستن</button>
+            <button class="primary-btn" type="button" @click="closeChequeDetailsModal">تایید جزئیات چک</button>
+          </div>
         </div>
       </section>
     </div>
@@ -369,7 +470,7 @@
             <BaseSpinner size="56px" color="#1d4ed8" ball-color="#60a5fa" label="در حال ساخت فایل PDF فاکتور..." />
           </div>
           <div v-else-if="invoicePdfUrl" class="invoice-preview-frame-wrap">
-            <iframe :src="invoicePdfUrl" title="invoice-pdf-preview" class="invoice-preview-frame"></iframe>
+            <iframe :src="invoicePreviewUrl" title="invoice-pdf-preview" class="invoice-preview-frame"></iframe>
           </div>
           <div v-else class="invoice-preview-empty">
             {{ invoiceErrorMessage || 'فاکتور هنوز ساخته نشده است.' }}
@@ -494,7 +595,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import VehicleEntryStepOne from '../../components/operator/VehicleEntryStepOne.vue'
 import VehicleEntryStepTwo from '../../components/operator/VehicleEntryStepTwo.vue'
@@ -542,9 +643,7 @@ const releaseForm = ref({
   chequeAmount: 0,
   creditDueDate: '',
   receiptFooterNote: '',
-  bonusAmount: 0,
-  penaltyAmount: 0,
-  bonusPenaltyWorkerId: 0,
+  bonusPenaltyAdjustments: [],
   bonusPenaltyNote: '',
   newServiceLines: [],
   availableServicesToAdd: [],
@@ -731,9 +830,7 @@ const closeReleaseModal = () => {
     chequeAmount: 0,
     creditDueDate: '',
     receiptFooterNote: '',
-    bonusAmount: 0,
-    penaltyAmount: 0,
-    bonusPenaltyWorkerId: 0,
+    bonusPenaltyAdjustments: [],
     bonusPenaltyNote: '',
     newServiceLines: [],
     availableServicesToAdd: [],
@@ -795,20 +892,132 @@ const normalizeReleaseAssignedWorkers = (workers) => {
   const fallbackPercents = defaultWorkerSharePercents(items.length)
   return items.map((item, index) => ({
     ...item,
-    worker_share_percent: Number(item.worker_share_percent ?? fallbackPercents[index] ?? 0)
+    worker_share_percent: Number(item.worker_share_percent ?? fallbackPercents[index] ?? 0),
+    isSelected: true
   }))
+}
+const extractReleaseAssignedWorkers = (payload) => {
+  const assignedWorkers = Array.isArray(payload?.job?.assigned_workers)
+    ? payload.job.assigned_workers
+      .map((item) => ({
+        id: Number(item?.id || 0),
+        name: String(item?.name || '').trim(),
+        tip_share_percent: Number(item?.tip_share_percent || 0),
+        worker_share_percent: Number(item?.worker_share_percent || 0)
+      }))
+      .filter((item) => item.id > 0 && item.name.length > 0)
+    : []
+  if (assignedWorkers.length) return assignedWorkers
+
+  const snapshotWorkers = Array.isArray(payload?.job?.assigned_workers_snapshot)
+    ? payload.job.assigned_workers_snapshot
+      .map((item, index) => ({
+        id: Number(item?.id || index + 1),
+        name: String(item?.name || '').trim(),
+        tip_share_percent: Number(item?.tip_share_percent || 0),
+        worker_share_percent: Number(item?.worker_share_percent || 0)
+      }))
+      .filter((item) => item.id > 0 && item.name.length > 0)
+    : []
+  if (snapshotWorkers.length) return snapshotWorkers
+
+  return Array.isArray(payload?.job?.assigned_workers_names)
+    ? payload.job.assigned_workers_names
+      .filter((item) => String(item || '').trim().length > 0)
+      .map((name, index) => ({
+        id: index + 1,
+        name: String(name || '').trim(),
+        tip_share_percent: 0,
+        worker_share_percent: 0
+      }))
+    : []
+}
+const getSelectedWorkerIndexes = (workers) => (
+  Array.isArray(workers)
+    ? workers
+      .map((worker, index) => ((worker?.isSelected !== false && String(worker?.name || '').trim().length > 0) ? index : -1))
+      .filter((index) => index >= 0)
+    : []
+)
+const applyEqualDistributionToSelectedWorkers = (workers) => {
+  const selectedIndexes = getSelectedWorkerIndexes(workers)
+  if (!selectedIndexes.length) {
+    return workers.map((worker) => ({ ...worker, worker_share_percent: 0 }))
+  }
+  const percents = defaultWorkerSharePercents(selectedIndexes.length)
+  return workers.map((worker, index) => {
+    const selectedPosition = selectedIndexes.indexOf(index)
+    return {
+      ...worker,
+      worker_share_percent: selectedPosition >= 0 ? percents[selectedPosition] : 0
+    }
+  })
+}
+const selectedAssignedWorkers = computed(() => (
+  Array.isArray(releaseForm.value.assignedWorkers)
+    ? releaseForm.value.assignedWorkers
+      .map((worker, index) => ({ ...worker, sourceIndex: index }))
+      .filter((worker) => worker.isSelected !== false && String(worker.name || '').trim().length > 0)
+    : []
+))
+const bonusPenaltyWorkers = computed(() => (
+  Array.isArray(releaseForm.value.assignedWorkers)
+    ? releaseForm.value.assignedWorkers
+      .map((worker, index) => ({ ...worker, sourceIndex: index }))
+      .filter((worker) => Number(worker.id || 0) > 0 && String(worker.name || '').trim().length > 0)
+    : []
+))
+const syncBonusPenaltyAdjustments = () => {
+  const workers = bonusPenaltyWorkers.value
+  const current = Array.isArray(releaseForm.value.bonusPenaltyAdjustments) ? releaseForm.value.bonusPenaltyAdjustments : []
+  const currentMap = new Map(current.map((item) => [Number(item.worker_id || 0), item]))
+  releaseForm.value.bonusPenaltyAdjustments = workers.map((worker) => {
+    const existing = currentMap.get(Number(worker.id || 0))
+    return {
+      worker_id: Number(worker.id || 0),
+      worker_name: worker.name || '',
+      bonus: Number(existing?.bonus || 0),
+      penalty: Number(existing?.penalty || 0)
+    }
+  })
+}
+const activateAllReleaseWorkers = () => {
+  const workers = Array.isArray(releaseForm.value.assignedWorkers) ? [...releaseForm.value.assignedWorkers] : []
+  if (!workers.length) return
+  releaseForm.value.assignedWorkers = applyEqualDistributionToSelectedWorkers(
+    workers.map((worker) => ({ ...worker, isSelected: true }))
+  )
+}
+const toggleReleaseWorkerSelection = (index) => {
+  const workers = Array.isArray(releaseForm.value.assignedWorkers) ? [...releaseForm.value.assignedWorkers] : []
+  if (index < 0 || index >= workers.length) return
+  const selectedIndexes = getSelectedWorkerIndexes(workers)
+  const isSelected = workers[index]?.isSelected !== false
+  if (isSelected && selectedIndexes.length <= 1) return
+
+  workers[index] = {
+    ...workers[index],
+    isSelected: !isSelected,
+    worker_share_percent: !isSelected ? Number(workers[index]?.worker_share_percent || 0) : 0
+  }
+
+  releaseForm.value.assignedWorkers = applyEqualDistributionToSelectedWorkers(workers)
+  syncBonusPenaltyAdjustments()
 }
 const setReleaseWorkerSharePercent = (index, rawValue) => {
   const workers = Array.isArray(releaseForm.value.assignedWorkers) ? [...releaseForm.value.assignedWorkers] : []
   if (index < 0 || index >= workers.length) return
+  if (workers[index]?.isSelected === false) return
+  const selectedIndexes = getSelectedWorkerIndexes(workers)
+  if (!selectedIndexes.includes(index)) return
   const parsed = Math.max(0, Math.min(100, Math.floor(Number(rawValue || 0))))
-  if (workers.length === 1) {
-    workers[0] = { ...workers[0], worker_share_percent: 100 }
+  if (selectedIndexes.length === 1) {
+    workers[selectedIndexes[0]] = { ...workers[selectedIndexes[0]], worker_share_percent: 100 }
     releaseForm.value.assignedWorkers = workers
     return
   }
 
-  const otherIndexes = workers.map((_item, idx) => idx).filter((idx) => idx !== index)
+  const otherIndexes = selectedIndexes.filter((idx) => idx !== index)
   const remaining = Math.max(0, 100 - parsed)
   const base = otherIndexes.length ? Math.floor(remaining / otherIndexes.length) : 0
   let remainder = otherIndexes.length ? remaining - (base * otherIndexes.length) : 0
@@ -822,23 +1031,27 @@ const setReleaseWorkerSharePercent = (index, rawValue) => {
   releaseForm.value.assignedWorkers = workers
 }
 const getReleaseWorkerShareAmountInput = (index) => {
-  const worker = releaseSummary.value.workerShares?.[index]
+  const selectedIndex = getSelectedWorkerIndexes(releaseForm.value.assignedWorkers).indexOf(index)
+  const worker = selectedIndex >= 0 ? releaseSummary.value.workerShares?.[selectedIndex] : null
   if (!worker) return 0
   return Math.round(Number(worker.baseAmount || 0) / 1000)
 }
 const setReleaseWorkerShareAmount = (index, rawValue) => {
   const workers = Array.isArray(releaseForm.value.assignedWorkers) ? [...releaseForm.value.assignedWorkers] : []
   if (index < 0 || index >= workers.length) return
+  if (workers[index]?.isSelected === false) return
   const totalAmount = Math.max(0, Number(releaseSummary.value.workerShareBase || 0))
-  if (workers.length === 1 || totalAmount <= 0) {
-    workers[0] = { ...workers[0], worker_share_percent: 100 }
+  const selectedIndexes = getSelectedWorkerIndexes(workers)
+  if (!selectedIndexes.includes(index)) return
+  if (selectedIndexes.length === 1 || totalAmount <= 0) {
+    workers[selectedIndexes[0]] = { ...workers[selectedIndexes[0]], worker_share_percent: 100 }
     releaseForm.value.assignedWorkers = workers
     return
   }
 
   const inputAmount = Math.round(Math.max(0, Number(rawValue || 0)) * 1000)
   const assignedAmount = Math.max(0, Math.min(totalAmount, inputAmount))
-  const otherIndexes = workers.map((_item, idx) => idx).filter((idx) => idx !== index)
+  const otherIndexes = selectedIndexes.filter((idx) => idx !== index)
   const remaining = Math.max(0, totalAmount - assignedAmount)
   const base = otherIndexes.length ? Math.floor(remaining / otherIndexes.length) : 0
   let remainder = otherIndexes.length ? remaining - (base * otherIndexes.length) : 0
@@ -852,15 +1065,12 @@ const setReleaseWorkerShareAmount = (index, rawValue) => {
   })
 
   let percentSum = 0
-  workers.forEach((_worker, workerIndex) => {
-    const percent = workerIndex === workers.length - 1
+  selectedIndexes.forEach((workerIndex, selectedPosition) => {
+    const percent = selectedPosition === selectedIndexes.length - 1
       ? Math.max(0, Number((100 - percentSum).toFixed(2)))
       : Number((((distributedAmounts[workerIndex] || 0) / totalAmount) * 100).toFixed(2))
-    if (workerIndex !== workers.length - 1) percentSum = Number((percentSum + percent).toFixed(2))
-    workers[workerIndex] = {
-      ...workers[workerIndex],
-      worker_share_percent: percent
-    }
+    if (selectedPosition !== selectedIndexes.length - 1) percentSum = Number((percentSum + percent).toFixed(2))
+    workers[workerIndex] = { ...workers[workerIndex], worker_share_percent: percent }
   })
   releaseForm.value.assignedWorkers = workers
 }
@@ -911,25 +1121,7 @@ const openReleaseModal = async (car) => {
       productLinesByProductId,
       productSearch: '',
       tipAmount: Math.max(0, Number(data?.job?.tip_amount || 0) / 1000),
-      assignedWorkers: normalizeReleaseAssignedWorkers(Array.isArray(data?.job?.assigned_workers)
-        ? data.job.assigned_workers
-          .map((item) => ({
-            id: Number(item?.id || 0),
-            name: String(item?.name || '').trim(),
-            tip_share_percent: Number(item?.tip_share_percent || 0),
-            worker_share_percent: Number(item?.worker_share_percent || 0)
-          }))
-          
-        : (Array.isArray(data?.job?.assigned_workers_names)
-          ? data.job.assigned_workers_names
-            .filter((item) => String(item || '').trim().length > 0)
-            .map((name, index) => ({
-              id: index + 1,
-              name: String(name || '').trim(),
-              tip_share_percent: 0,
-              worker_share_percent: 0
-            }))
-          : [])),
+      assignedWorkers: normalizeReleaseAssignedWorkers(extractReleaseAssignedWorkers(data)),
       workerShareAmount: Number(data?.job?.worker_share_amount || 0),
       customerScore: Math.max(0, Number(data?.vehicle?.customer_score || releaseCandidate.value?.customerScore || 0)),
       discountPercentPerHalfStar,
@@ -942,9 +1134,7 @@ const openReleaseModal = async (car) => {
       chequeAmount: 0,
       creditDueDate: '',
       receiptFooterNote: settingsResponse?.data?.receipt_footer_note || '',
-      bonusAmount: 0,
-      penaltyAmount: 0,
-      bonusPenaltyWorkerId: 0,
+      bonusPenaltyAdjustments: [],
       bonusPenaltyNote: '',
       newServiceLines: [],
       availableServicesToAdd: Array.isArray(data?.job?.available_services) ? data.job.available_services.map((item) => ({
@@ -954,6 +1144,7 @@ const openReleaseModal = async (car) => {
       })) : [],
       selectedServiceToAdd: 0
     }
+    syncBonusPenaltyAdjustments()
   } catch (error) {
     console.error('openReleaseModal error:', error?.response?.data || error)
     alert('بارگذاری اطلاعات ترخیص ناموفق بود.')
@@ -966,6 +1157,11 @@ const invoiceServiceLines = computed(() => (
   Array.isArray(releaseForm.value.serviceLines)
     ? releaseForm.value.serviceLines.filter((line) => Boolean(line?.is_completed))
     : []
+))
+const invoicePreviewUrl = computed(() => (
+  invoicePdfUrl.value
+    ? `${invoicePdfUrl.value}#view=FitH&zoom=page-width`
+    : ''
 ))
 const invoiceProductLines = computed(() => (
   Array.isArray(releaseForm.value.availableProducts)
@@ -1062,7 +1258,7 @@ const releaseSummary = computed(() => {
   const workerShareBase = Math.min(shareBaseTotal, Number(releaseForm.value.workerShareAmount || 0))
   const finalTotalWithProducts = Math.max(0, servicesTotal + productsTotal - discountAmount + tipAmount)
   const assignedWorkers = Array.isArray(releaseForm.value.assignedWorkers)
-    ? releaseForm.value.assignedWorkers.filter((item) => String(item?.name || '').trim().length > 0)
+    ? releaseForm.value.assignedWorkers.filter((item) => item?.isSelected !== false && String(item?.name || '').trim().length > 0)
     : []
   const workerCount = assignedWorkers.length
   const distributionPercents = workerCount
@@ -1147,8 +1343,10 @@ const releaseSummary = computed(() => {
   }
 })
 const hasReleaseBonusOrPenalty = computed(() => (
-  Number(releaseForm.value.bonusAmount || 0) > 0 || Number(releaseForm.value.penaltyAmount || 0) > 0
+  Array.isArray(releaseForm.value.bonusPenaltyAdjustments)
+    && releaseForm.value.bonusPenaltyAdjustments.some((item) => Number(item?.bonus || 0) > 0 || Number(item?.penalty || 0) > 0)
 ))
+watch(bonusPenaltyWorkers, syncBonusPenaltyAdjustments, { deep: true })
 const chequeDetailsSummary = computed(() => {
   if (releaseForm.value.paymentMethod !== 'cheque') return 'جزئیات ثبت نشده'
   const parts = []
@@ -1206,6 +1404,10 @@ const downloadInvoicePdf = () => {
 }
 const confirmReleaseVehicle = async () => {
   if (!releaseCandidate.value?.id) return
+  if (releaseForm.value.assignedWorkers.length && !selectedAssignedWorkers.value.length) {
+    alert('حداقل یک نیرو را برای این تسویه انتخاب کنید.')
+    return
+  }
   if (releaseForm.value.paymentMethod === 'cheque') {
     if (!releaseForm.value.creditDueDate || !releaseForm.value.chequeSerialNumber || !releaseForm.value.chequeSayadiNumber || !releaseForm.value.chequeBank || !releaseForm.value.chequeShaba || Number(releaseForm.value.chequeAmount || 0) <= 0) {
       alert('همه جزئیات چک را کامل کنید.')
@@ -1250,9 +1452,13 @@ const confirmReleaseVehicle = async () => {
       cheque_shaba: releaseForm.value.paymentMethod === 'cheque' ? releaseForm.value.chequeShaba : undefined,
       cheque_amount: releaseForm.value.paymentMethod === 'cheque' ? Number(releaseForm.value.chequeAmount || 0) * 1000 : undefined,
       credit_due_date: ['credit', 'cheque'].includes(releaseForm.value.paymentMethod) ? parseJalaliToIso(releaseForm.value.creditDueDate) || undefined : undefined,
-      bonus: Math.max(0, Number(releaseForm.value.bonusAmount || 0) * 1000),
-      penalty: Math.max(0, Number(releaseForm.value.penaltyAmount || 0) * 1000),
-      bonus_penalty_worker_id: Number(releaseForm.value.bonusPenaltyWorkerId || 0) || undefined,
+      bonus_penalty_adjustments: (releaseForm.value.bonusPenaltyAdjustments || [])
+        .map((item) => ({
+          worker_id: Number(item.worker_id || 0),
+          bonus: Math.max(0, Number(item.bonus || 0) * 1000),
+          penalty: Math.max(0, Number(item.penalty || 0) * 1000)
+        }))
+        .filter((item) => item.worker_id > 0 && (item.bonus > 0 || item.penalty > 0)),
       bonus_penalty_note: String(releaseForm.value.bonusPenaltyNote || '').trim() || undefined
     })
     const idx = vehicleStore.vehicles.findIndex((item) => item.id === releaseCandidate.value.id)
@@ -1518,111 +1724,171 @@ onBeforeUnmount(() => {
 .danger-btn{background:#fee2e2;color:#b91c1c}
 .danger-btn:disabled{background:#e5e7eb;color:#94a3b8;cursor:not-allowed}
 .small-btn{padding:6px 10px}
-.release-panel { width: min(1380px, 100%); }
+.release-panel { width: min(1420px, 100%); background: linear-gradient(180deg,#fdfefe,#f6fbff); }
 .release-loading { min-height: 280px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 14px; }
-.release-layout { padding: 24px; display: grid; gap: 20px; grid-template-columns: repeat(3, minmax(0, 1fr)); background: #edf5ff; }
-.release-col { background: #f8fbff; border: 1px solid #d4e4ff; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; min-height: 620px; box-shadow: 0 10px 24px -18px rgba(0,88,190,.35); }
-.release-products-col, .release-summary-col { border-right: 1px solid #d4e4ff; }
+.release-layout { padding: 24px; display: grid; gap: 20px; grid-template-columns: minmax(0,1.05fr) minmax(0,.95fr) minmax(0,1.08fr); background:
+  radial-gradient(circle at top right, rgba(34,197,94,.10), transparent 24%),
+  radial-gradient(circle at top left, rgba(14,165,233,.14), transparent 28%),
+  linear-gradient(180deg,#edf7ff,#eef5ff); }
+.release-col { background: rgba(255,255,255,.88); border: 1px solid rgba(191,215,255,.9); border-radius: 24px; padding: 18px; display: flex; flex-direction: column; min-height: 620px; box-shadow: 0 22px 45px -32px rgba(15,23,42,.45); backdrop-filter: blur(10px); }
+.release-products-col, .release-summary-col { border-right: 1px solid rgba(191,215,255,.85); }
 .release-title-inline{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .add-service-row{display:flex;gap:8px;align-items:center}
 .plus-btn{width:42px;height:42px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;line-height:1}
 .bonus-penalty-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:end}
 .bonus-penalty-row .tip-input-row{margin-top:0;min-width:0}
-.add-service-row select,.tip-input-row select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;background:#fff}
-.cheque-inline-card{margin-top:10px;padding:14px;border:1px solid #c7dcff;border-radius:14px;background:linear-gradient(180deg,#fefefe,#eef6ff)}
+.bonus-penalty-table{display:grid;gap:12px}
+.bonus-penalty-table-head{display:grid;gap:4px}
+.bonus-penalty-table-head small{color:#64748b;font-size:12px}
+.bonus-penalty-list{display:grid;gap:10px}
+.bonus-penalty-item{display:grid;grid-template-columns:minmax(180px,.9fr) minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:end;padding:12px;border:1px solid #d6e6ff;border-radius:16px;background:#fff}
+.bonus-penalty-item strong{color:#0f172a;font-size:14px}
+.add-service-row select,.tip-input-row select{height:46px;border:1px solid #cbd5e1;border-radius:14px;padding:0 12px;background:#fff}
+.cheque-inline-card{margin-top:10px;padding:16px;border:1px solid #c7dcff;border-radius:18px;background:linear-gradient(180deg,#ffffff,#eef6ff);box-shadow:inset 0 1px 0 rgba(255,255,255,.7)}
 .cheque-inline-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .cheque-inline-head strong{display:block;color:#0f172a;font-size:14px}
 .cheque-inline-head small{display:block;color:#64748b;font-size:12px;line-height:1.8}
-.release-title { padding-bottom: 10px; border-bottom: 1px solid #d4e4ff; margin-bottom: 12px; }
+.release-title { padding-bottom: 12px; border-bottom: 1px solid #dbe9ff; margin-bottom: 14px; }
 .release-title h3 { margin: 0; font-size: 20px; color: #111827; }
 .release-list { display: grid; gap: 10px; overflow: auto; }
-.service-check-item { border: 1px solid #d4e4ff; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; gap: 12px; background: #eef5ff; }
+.service-check-item { border: 1px solid #d4e4ff; border-radius: 18px; padding: 14px; display: flex; justify-content: space-between; gap: 12px; background: linear-gradient(180deg,#f9fcff,#eef5ff); }
 .service-check-item h4 { margin: 0 0 4px; font-size: 15px; color: #0f172a; }
 .service-check-item p { margin: 0; font-size: 12px; color: #64748b; }
 .service-check-action { display: grid; justify-items: end; gap: 8px; align-content: center; }
 .service-check-action span { font-size: 13px; font-weight: 700; color: #0058be; }
 .service-check-action label { font-size: 12px; color: #475569; display: inline-flex; align-items: center; gap: 6px; }
 .release-product-search { margin-bottom: 10px; }
-.release-product-search input { width: 100%; height: 42px; border: 1px solid #bfd7ff; border-radius: 12px; padding: 0 12px; background: #edf5ff; }
+.release-product-search input { width: 100%; height: 46px; border: 1px solid #bfd7ff; border-radius: 14px; padding: 0 14px; background: #f4f9ff; }
 .products-scroll { max-height: 520px; padding-right: 4px; }
-.product-item { border: 1px solid #d4e4ff; border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; align-items: center; background: #fdfefe; }
+.product-item { border: 1px solid #d4e4ff; border-radius: 18px; padding: 14px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(180deg,#ffffff,#f7fbff); }
 .product-item h4 { margin: 0 0 4px; font-size: 14px; color: #111827; }
 .product-item p { margin: 0; font-size: 12px; color: #64748b; }
 .product-item span { font-size: 13px; color: #00687a; font-weight: 700; }
 .product-item.unavailable { opacity: .55; }
 .product-item p.stock-empty { color: #ba1a1a; }
-.qty-controls { display: inline-flex; align-items: center; gap: 10px; border: 1px solid #d4e4ff; border-radius: 10px; padding: 4px 6px; background: #edf5ff; }
+.qty-controls { display: inline-flex; align-items: center; gap: 10px; border: 1px solid #d4e4ff; border-radius: 14px; padding: 6px 8px; background: #edf5ff; }
 .qty-controls button { width: 28px; height: 28px; border: 1px solid #bfd7ff; border-radius: 8px; background: #fff; cursor: pointer; }
 .qty-controls button:disabled { opacity: .45; cursor: not-allowed; }
 .qty-controls input { width: 72px; height: 28px; border: 1px solid #bfd7ff; border-radius: 8px; text-align: center; background: #fff; }
-.summary-rows { display: grid; gap: 10px; }
-.summary-rows p { margin: 0; display: flex; justify-content: space-between; font-size: 14px; color: #475569; }
-.summary-rows p strong { color: #0f172a; }
+.release-summary-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px;border-radius:22px;background:
+ linear-gradient(135deg,#082f49 0%,#0f4c81 40%,#0ea5e9 100%);color:#fff;box-shadow:0 22px 36px -24px rgba(8,47,73,.78)}
+.release-summary-hero small{display:block;font-size:12px;color:rgba(255,255,255,.78);margin-bottom:6px}
+.release-summary-hero strong{display:block;font-size:28px;line-height:1.1}
+.release-summary-hero p{margin:8px 0 0;font-size:12px;line-height:1.9;color:rgba(255,255,255,.82)}
+.release-summary-badge{padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);font-size:12px;font-weight:700;white-space:nowrap}
+.summary-stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.summary-stat-card{padding:14px;border-radius:18px;border:1px solid #d9e8ff;background:linear-gradient(180deg,#ffffff,#f5faff);display:grid;gap:6px}
+.summary-stat-card span{font-size:12px;color:#64748b}
+.summary-stat-card strong{font-size:15px;color:#0f172a}
+.summary-stat-card small{font-size:11px;color:#0f766e;font-weight:700}
+.summary-stat-card.accent-card{background:linear-gradient(180deg,#f0fdf9,#ecfeff);border-color:#b8ece6}
 .tip-input-row { margin-top: 10px; display: grid; gap: 6px; }
 .tip-input-row span { color: #64748b; font-size: 12px; }
-.tip-input-row input,.tip-input-row textarea { width:100%; max-width:100%; box-sizing:border-box; border: 1px solid #bfd7ff; border-radius: 10px; background: #f7fbff; }
-.tip-input-row input { height: 40px; padding: 0 10px; }
+.tip-input-row input,.tip-input-row textarea { width:100%; max-width:100%; box-sizing:border-box; border: 1px solid #bfd7ff; border-radius: 14px; background: #f7fbff; }
+.tip-input-row input { height: 46px; padding: 0 12px; }
 .tip-input-row textarea { padding: 10px; resize: vertical; min-height: 84px; font-family: inherit; }
-.cheque-modal-panel{width:min(680px,100%)}
-.cheque-modal-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.cheque-modal-body label:last-of-type{grid-column:span 2}
-.cheque-modal-body .primary-btn{margin-right:0}
-.summary-share { margin-top: 12px; border: 1px dashed #bfd7ff; border-radius: 12px; padding: 10px; background: #edf5ff; display: grid; gap: 8px; }
+.modern-input-row{margin-top:14px;padding:12px 14px;border:1px solid #d6e7ff;border-radius:18px;background:linear-gradient(180deg,#ffffff,#f4f9ff)}
+.cheque-modal-panel{width:min(780px,100%);overflow:hidden}
+.cheque-modal-head{align-items:flex-start;background:linear-gradient(180deg,#f8fbff,#eef6ff)}
+.cheque-modal-subtitle{margin:6px 0 0;color:#64748b;font-size:12px;line-height:1.8}
+.cheque-modal-body{display:grid;gap:16px;padding:18px;background:
+ radial-gradient(circle at top right, rgba(14,165,233,.12), transparent 26%),
+ linear-gradient(180deg,#f9fcff,#edf5ff)}
+.cheque-modal-summary{padding:18px;border-radius:22px;background:linear-gradient(135deg,#0f172a 0%,#0f4c81 58%,#38bdf8 100%);color:#fff;display:grid;gap:6px}
+.cheque-modal-summary small{font-size:12px;color:rgba(255,255,255,.72)}
+.cheque-modal-summary strong{font-size:24px}
+.cheque-modal-summary p{margin:0;color:rgba(255,255,255,.84);font-size:12px}
+.cheque-modal-summary span{font-size:12px;line-height:1.9;color:rgba(255,255,255,.8)}
+.cheque-fields-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cheque-field{display:grid;gap:6px;padding:14px;border:1px solid #d5e5ff;border-radius:18px;background:rgba(255,255,255,.85)}
+.cheque-field span{font-size:12px;color:#475569}
+.cheque-field-wide{grid-column:span 2}
+.cheque-field :deep(input),.cheque-field input{width:100%;height:46px;border:1px solid #bfd7ff;border-radius:14px;padding:0 12px;background:#fff;box-sizing:border-box}
+.cheque-modal-actions{display:flex;justify-content:flex-end;gap:10px}
+.cheque-modal-actions .primary-btn{margin-right:0}
+.worker-selection-panel{margin-top:14px;padding:14px;border:1px solid #d7e7ff;border-radius:20px;background:linear-gradient(180deg,#ffffff,#f4f9ff);display:grid;gap:12px}
+.worker-selection-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.worker-selection-head h4{margin:0;font-size:15px;color:#0f172a}
+.worker-selection-head p{margin:6px 0 0;font-size:12px;color:#64748b;line-height:1.8}
+.worker-selection-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.worker-select-card{border:1px solid #d5e5ff;border-radius:18px;padding:14px;background:#fff;display:grid;justify-items:start;gap:8px;text-align:right;transition:.2s ease;cursor:pointer}
+.worker-select-card.selected{background:linear-gradient(180deg,#eff8ff,#dcf2ff);border-color:#7dd3fc;box-shadow:0 14px 28px -24px rgba(14,165,233,.7)}
+.worker-select-card strong{font-size:14px;color:#0f172a}
+.worker-select-card small{font-size:12px;color:#64748b}
+.worker-select-check{width:28px;height:28px;border-radius:10px;background:#e2e8f0;color:#334155;display:inline-flex;align-items:center;justify-content:center;font-weight:800}
+.worker-select-card.selected .worker-select-check{background:#0ea5e9;color:#fff}
+.summary-share { margin-top: 12px; border: 1px dashed #bfd7ff; border-radius: 20px; padding: 12px; background: linear-gradient(180deg,#f9fcff,#edf5ff); display: grid; gap: 10px; }
 .worker-share-editor { display: grid; gap: 10px; padding-bottom: 8px; border-bottom: 1px dashed #bfd7ff; }
+.modern-worker-share-editor{grid-template-columns:repeat(2,minmax(0,1fr))}
+.worker-share-card{padding:12px;border-radius:18px;border:1px solid #d5e5ff;background:#fff;display:grid;gap:10px}
+.worker-share-card-head{display:grid;gap:4px}
+.worker-share-card-head small{font-size:11px;color:#64748b}
 .worker-share-input { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 1.6fr); align-items: center; gap: 10px; font-size: 13px; color: #334155; }
 .worker-share-name { font-weight: 700; color: #0f172a; }
 .worker-share-controls { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 8px; }
+.modern-worker-share-controls{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
 .worker-share-control { display: flex; align-items: center; gap: 6px; }
-.worker-share-control input { width: 100%; height: 36px; border: 1px solid #bfd7ff; border-radius: 10px; padding: 0 10px; background: #fff; text-align: center; }
+.worker-share-control input { width: 100%; height: 40px; border: 1px solid #bfd7ff; border-radius: 12px; padding: 0 10px; background: #fff; text-align: center; }
 .worker-share-control small { color: #64748b; font-size: 12px; font-weight: 700; }
 .summary-share p { margin: 0; display: flex; justify-content: space-between; font-size: 13px; color: #334155; }
 .summary-share p span small { color: #64748b; font-size: 11px; margin-right: 4px; }
 .summary-share .summary-share-total { border-top: 1px dashed #bfd7ff; padding-top: 8px; margin-top: 4px; font-weight: 700; }
-.summary-final { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid #d4e4ff; display: flex; justify-content: space-between; font-size: 18px; font-weight: 800; color: #111827; }
-.release-secondary-section{margin-top:14px;padding:14px;border:1px solid #d6e3f5;border-radius:14px;background:linear-gradient(180deg,#ffffff,#f6f9fd);display:grid;gap:10px}
-.release-secondary-head h4{margin:0;color:#0f172a;font-size:14px}
+.summary-final { margin: 14px 0 0; padding:16px 18px; border:1px solid #d7e8ff; border-radius:18px; background:linear-gradient(180deg,#ffffff,#f7fbff); display: flex; justify-content: space-between; font-size: 20px; font-weight: 800; color: #111827; }
+.release-secondary-section{margin:14px 24px 24px;padding:18px;border:1px solid #d6e3f5;border-radius:24px;background:
+ radial-gradient(circle at top left, rgba(34,197,94,.10), transparent 22%),
+ linear-gradient(180deg,#ffffff,#f6f9fd);display:grid;gap:14px}
+.release-secondary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.release-secondary-head h4{margin:0;color:#0f172a;font-size:16px}
 .release-secondary-head small{display:block;margin-top:4px;color:#64748b;font-size:12px}
+.release-secondary-chip{padding:8px 12px;border-radius:999px;background:#eaf5ff;color:#0f4c81;font-size:12px;font-weight:700;border:1px solid #c7dcff}
+.release-secondary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.detail-field{margin-top:0;padding:14px;border:1px solid #d6e6ff;border-radius:18px;background:rgba(255,255,255,.8)}
+.detail-field-wide{grid-column:span 2}
+.payment-method-preview{padding:14px;border-radius:18px;border:1px dashed #bcd8ff;background:linear-gradient(180deg,#f5fbff,#edf7ff);display:grid;gap:6px}
+.payment-method-preview strong{font-size:14px;color:#0f172a}
+.payment-method-preview p{margin:0;font-size:12px;line-height:1.9;color:#475569}
+.payment-method-preview p span{color:#0f4c81;font-weight:700}
 .invoice-preview-btn{min-width:88px}
 .mark-paid { margin-top: 12px; display: inline-flex; align-items: center; gap: 8px; color: #334155; font-size: 13px; }
 .mark-paid.forced-paid { opacity: .85; }
-.release-actions { margin-top: auto; padding-top: 14px; display: flex; gap: 8px; }
+.release-actions { margin-top: auto; padding-top: 16px; display: flex; gap: 8px; }
 .back-btn { flex: 1; height: 44px; border: 1px solid #bfd7ff; border-radius: 12px; background: #fff; color: #334155; font-weight: 700; cursor: pointer; }
 .confirm-release-btn { flex: 1; height: 44px; border: none; border-radius: 12px; font-weight: 700; color: #ffffff; background: linear-gradient(90deg,#0058be,#2170e4); cursor: pointer; box-shadow: 0 8px 20px rgba(0,88,190,.2); }
 .confirm-release-btn:disabled { opacity: .65; cursor: not-allowed; }
 .invoice-modal-overlay{z-index:75}
-.invoice-modal-panel{width:min(1120px,100%);height:calc(100vh - 40px);display:flex;flex-direction:column;overflow:hidden}
+.invoice-modal-panel{width:min(1120px,100%);max-width:100%;height:calc(100vh - 40px);display:flex;flex-direction:column;overflow:hidden}
 .invoice-modal-head{align-items:flex-start}
 .invoice-modal-subtitle{margin:6px 0 0;color:#64748b;font-size:12px}
-.invoice-modal-body{display:grid;gap:14px;padding:16px;min-height:0;flex:1;background:linear-gradient(180deg,#f8fbff,#edf5ff)}
-.invoice-modal-actions{display:flex;justify-content:flex-end;gap:8px}
+.invoice-modal-body{display:grid;grid-template-rows:auto minmax(0,1fr);gap:14px;padding:16px;min-height:0;min-width:0;flex:1;background:linear-gradient(180deg,#f8fbff,#edf5ff)}
+.invoice-modal-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .invoice-preview-loading,.invoice-preview-empty{min-height:380px;border:1px dashed #bfd7ff;border-radius:18px;background:#fff;display:flex;align-items:center;justify-content:center;color:#64748b;padding:20px}
-.invoice-preview-frame-wrap{min-height:0;border-radius:18px;overflow:hidden;border:1px solid #dbe7f5;background:#fff;box-shadow:0 16px 36px rgba(15,23,42,.08);height:100%}
-.invoice-preview-frame{width:100%;height:100%;min-height:620px;border:0;background:#fff}
+.invoice-preview-frame-wrap{min-height:0;min-width:0;border-radius:18px;overflow:auto;border:1px solid #dbe7f5;background:#fff;box-shadow:0 16px 36px rgba(15,23,42,.08);height:100%}
+.invoice-preview-frame{display:block;width:100%;height:100%;min-height:0;min-width:0;border:0;background:#fff}
 .invoice-print-stage{position:fixed;left:-99999px;top:0;width:794px;pointer-events:none}
-.invoice-template{width:794px;background:#fff;padding:0}
-.invoice-sheet{direction:rtl;background:#fff;color:#0f172a;padding:28px;font-family:Tahoma,Arial,sans-serif;display:grid;gap:18px}
+.invoice-template{width:794px;max-width:794px;background:#fff;padding:0}
+.invoice-sheet{direction:rtl;background:#fff;color:#0f172a;padding:28px;font-family:Tahoma,Arial,sans-serif;display:grid;gap:18px;width:100%;max-width:100%;box-sizing:border-box}
 .invoice-sheet-head{display:flex;justify-content:space-between;gap:18px;padding-bottom:14px;border-bottom:2px solid #dbe7f5}
 .invoice-sheet-head strong{display:block;font-size:22px}
 .invoice-sheet-head span{display:block;margin-top:6px;color:#475569;font-size:13px}
-.invoice-sheet-meta{display:grid;gap:8px;justify-items:end}
+.invoice-sheet-meta{display:grid;gap:8px;justify-items:end;min-width:0}
 .invoice-sheet-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.invoice-sheet-grid article{border:1px solid #dbe7f5;border-radius:16px;padding:14px;background:#f8fbff;display:grid;gap:6px}
+.invoice-sheet-grid article{border:1px solid #dbe7f5;border-radius:16px;padding:14px;background:#f8fbff;display:grid;gap:6px;min-width:0}
 .invoice-sheet-grid article span{font-size:12px;color:#64748b}
-.invoice-sheet-grid article strong{font-size:14px}
+.invoice-sheet-grid article strong{font-size:14px;min-width:0;overflow-wrap:anywhere}
 .invoice-sheet-section{display:grid;gap:10px}
 .invoice-section-head strong{font-size:15px}
-.invoice-table{width:100%;border-collapse:collapse;border:1px solid #dbe7f5;border-radius:16px;overflow:hidden}
-.invoice-table th,.invoice-table td{padding:12px 14px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:13px}
+.invoice-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;border:1px solid #dbe7f5;border-radius:16px;overflow:hidden}
+.invoice-table th,.invoice-table td{padding:12px 14px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:13px;overflow-wrap:anywhere;word-break:break-word}
 .invoice-table th{background:#eff6ff;color:#334155}
 .invoice-table tr:last-child td{border-bottom:0}
 .invoice-total-section{border:1px solid #dbe7f5;border-radius:18px;padding:14px;background:linear-gradient(180deg,#ffffff,#f8fbff)}
 .invoice-totals{display:grid;gap:10px}
-.invoice-totals p{margin:0;display:flex;justify-content:space-between;color:#334155;font-size:13px}
+.invoice-totals p{margin:0;display:flex;justify-content:space-between;gap:12px;color:#334155;font-size:13px}
 .invoice-grand-total{padding-top:10px;border-top:1px dashed #bfd7ff;font-size:16px;font-weight:800;color:#0f172a}
 .invoice-workers{display:grid;gap:8px}
-.invoice-workers p{margin:0;display:flex;justify-content:space-between;padding:10px 12px;border-radius:14px;background:#f8fbff;border:1px solid #dbe7f5;font-size:13px}
+.invoice-workers p{margin:0;display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:14px;background:#f8fbff;border:1px solid #dbe7f5;font-size:13px}
 .invoice-sheet-footer{padding-top:10px;border-top:1px dashed #cbd5e1;display:grid;gap:6px}
-.invoice-sheet-footer p{margin:0;color:#475569;font-size:12px;line-height:1.9}
+.invoice-sheet-footer p{margin:0;color:#475569;font-size:12px;line-height:1.9;overflow-wrap:anywhere}
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .modal-panel { width: min(1280px, 100%); max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow: auto; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
 .step-one-modal-panel { overflow: hidden; }
@@ -1638,8 +1904,12 @@ onBeforeUnmount(() => {
   .release-layout { grid-template-columns: 1fr; }
   .release-col { min-height: auto; }
   .bonus-penalty-row { grid-template-columns: 1fr; }
+  .summary-stat-grid,.worker-selection-grid,.modern-worker-share-editor,.release-secondary-grid,.cheque-fields-grid { grid-template-columns: 1fr; }
+  .detail-field-wide,.cheque-field-wide { grid-column: auto; }
+  .release-secondary-section { margin: 14px 20px 20px; }
   .invoice-sheet-head,.invoice-sheet-grid{grid-template-columns:1fr;display:grid}
   .invoice-sheet-meta{justify-items:start}
+  .invoice-totals p,.invoice-workers p{align-items:flex-start}
 }
 @media (max-width: 768px) {
   .cards-grid { grid-template-columns: 1fr; }
@@ -1647,12 +1917,13 @@ onBeforeUnmount(() => {
   .modal-panel { max-height: calc(100vh - 16px); border-radius: 14px; }
   .step-two-modal-panel { height: calc(100vh - 16px); max-height: calc(100vh - 16px); }
   .release-title-inline, .add-service-row { flex-direction: column; align-items: stretch; }
+  .release-summary-hero,.worker-selection-head,.release-secondary-head,.cheque-inline-head,.cheque-modal-actions { flex-direction: column; align-items: stretch; }
+  .release-layout { padding: 14px; }
+  .release-secondary-section { margin: 10px 14px 14px; padding: 14px; border-radius: 18px; }
   .plus-btn { width: 100%; }
   .worker-share-input, .worker-share-controls { grid-template-columns: 1fr; }
   .invoice-modal-panel{height:calc(100vh - 16px)}
   .invoice-modal-actions{flex-direction:column}
-  .invoice-preview-frame{min-height:480px}
+  .invoice-totals p,.invoice-workers p{flex-direction:column}
 }
 </style>
-
-

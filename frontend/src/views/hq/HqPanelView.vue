@@ -1,9 +1,9 @@
 <template>
-  <div class="hq-page" dir="rtl">
+  <div class="hq-page" :class="{ 'support-only': !authStore.isHqAdmin }" dir="rtl">
     <div class="hq-bg hq-bg-one"></div>
     <div class="hq-bg hq-bg-two"></div>
 
-    <aside class="hq-sidebar">
+    <aside v-if="authStore.isHqAdmin" class="hq-sidebar">
       <div class="hq-brand">
         <span class="hq-brand-badge">HQ</span>
         <div>
@@ -36,14 +36,15 @@
     </aside>
 
     <main class="hq-main">
-      <header class="hq-header">
+      <header class="hq-header" :class="{ 'hq-header-compact': !authStore.isHqAdmin }">
         <div>
-          <p class="hq-kicker">مرکز کنترل پلتفرم</p>
+          <p class="hq-kicker">{{ authStore.isHqAdmin ? 'مرکز کنترل پلتفرم' : 'Ticket Desk' }}</p>
           <h1>{{ currentTabTitle }}</h1>
         </div>
         <div class="hq-header-tools">
           <span class="hq-role-badge">{{ authStore.isHqAdmin ? 'HQ Admin' : 'HQ Support' }}</span>
           <button v-if="activeTab === 'overview'" type="button" class="primary-btn" @click="loadOverview">به‌روزرسانی</button>
+          <button v-if="!authStore.isHqAdmin" type="button" class="ghost-btn" @click="logout">خروج</button>
         </div>
       </header>
 
@@ -203,122 +204,326 @@
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'tickets'" class="ticket-center">
-        <article class="ticket-list-shell">
-          <div class="card-head">
-            <h3>مرکز تیکت</h3>
-            <span>{{ tickets.length.toLocaleString('fa-IR') }} گفتگو</span>
-          </div>
-          <div class="ticket-filter-grid ticket-filter-grid-wide">
-            <input v-model.trim="ticketQuery" placeholder="جستجو در عنوان، متن، نام کارواش یا کاربر..." @input="loadTickets" />
-            <select v-model="ticketStatus" @change="loadTickets">
-              <option value="all">همه وضعیت‌ها</option>
-              <option value="open">باز</option>
-              <option value="pending">در انتظار پیگیری</option>
-              <option value="answered">پاسخ داده شده</option>
-              <option value="closed">بسته شده</option>
-            </select>
-            <select v-model="ticketPriority" @change="loadTickets">
-              <option value="all">همه اولویت‌ها</option>
-              <option value="low">کم</option>
-              <option value="medium">متوسط</option>
-              <option value="high">بالا</option>
-              <option value="urgent">فوری</option>
-            </select>
-            <select v-model="ticketTenantId" @change="loadTickets">
-              <option value="">همه کارواش‌ها</option>
-              <option v-for="item in carwashes" :key="item.id" :value="item.id">{{ item.name }}</option>
-            </select>
-          </div>
-          <div class="ticket-list">
-            <button
-              v-for="item in tickets"
-              :key="item.id"
-              type="button"
-              class="ticket-thread"
-              :class="{ active: selectedTicket?.id === item.id }"
-              @click="selectTicket(item.id)"
-            >
-              <div class="ticket-thread-top">
-                <strong>{{ item.subject }}</strong>
-                <span class="ticket-mini-status" :class="`ticket-${item.status}`">{{ statusLabel(item.status) }}</span>
+      <section v-else-if="activeTab === 'tickets'" class="ticket-command-center" :class="{ 'support-ticket-mode': !authStore.isHqAdmin }">
+        <div class="command-top-grid" :class="{ compact: !authStore.isHqAdmin }">
+          <article class="ticket-modern-shell command-focus-card">
+            <div class="command-focus-copy">
+              <span class="desk-kicker">{{ authStore.isHqAdmin ? 'HQ Ticket Center' : 'Assigned Support Desk' }}</span>
+              <h3>{{ authStore.isHqAdmin ? 'مرکز عملیاتی تیکت‌های کل شبکه' : 'مرکز عملیاتی تیکت‌های کارواش شما' }}</h3>
+              <p>
+                {{ authStore.isHqAdmin
+                  ? 'فیلتر، اولویت‌بندی، ارجاع و پاسخ‌گویی به همه تیکت‌ها از یک workspace یکپارچه انجام می‌شود.'
+                  : 'پاسخ‌گویی سریع، برداشت تیکت‌های آزاد و مدیریت صف کارواش تحت پوشش از همین بخش انجام می‌شود.' }}
+              </p>
+            </div>
+            <div v-if="authStore.isHqAdmin" class="command-focus-side">
+              <div class="desk-focus-box">
+                <small>نمای فعال</small>
+                <strong>{{ activeTicketScopeLabel }}</strong>
               </div>
-              <div class="ticket-thread-meta">
-                <span>{{ item.tenant_name }}</span>
-                <span>{{ priorityLabel(item.priority) }}</span>
+              <button type="button" class="link-btn desk-refresh-btn" @click="loadTickets">بروزرسانی</button>
+            </div>
+          </article>
+
+          <article v-if="authStore.isHqAdmin" class="ticket-modern-shell command-health-card">
+            <div class="card-head">
+              <h3>وضعیت پاسخ‌گویی</h3>
+              <span>{{ toFa(ticketSlaSummary.compliance) }}٪</span>
+            </div>
+            <div class="command-health-grid">
+              <div class="health-tile spotlight">
+                <small>رعایت SLA</small>
+                <strong>{{ toFa(ticketSlaSummary.compliance) }}٪</strong>
+                <span>{{ toFa(ticketSlaSummary.breached) }} مورد نقض‌شده</span>
               </div>
-              <p>{{ item.last_message_preview || item.message }}</p>
-            </button>
-          </div>
-        </article>
-
-        <article class="ticket-chat-shell" v-if="selectedTicket">
-          <div class="chat-head">
-            <div>
-              <h3>{{ selectedTicket.subject }}</h3>
-              <p>{{ selectedTicket.tenant_name }} | {{ selectedTicket.created_by_name }}</p>
-            </div>
-            <div class="chat-head-badges">
-              <span class="meta-chip">{{ categoryLabel(selectedTicket.category) }}</span>
-              <span class="meta-chip">{{ priorityLabel(selectedTicket.priority) }}</span>
-              <span class="ticket-mini-status" :class="`ticket-${selectedTicket.status}`">{{ statusLabel(selectedTicket.status) }}</span>
-            </div>
-          </div>
-
-          <div class="chat-head-actions">
-            <select v-model="ticketReply.status">
-              <option value="">بدون تغییر وضعیت</option>
-              <option value="answered">پاسخ داده شده</option>
-              <option value="pending">در انتظار پیگیری</option>
-              <option value="closed">بستن تیکت</option>
-            </select>
-            <select v-if="authStore.isHqAdmin" v-model="ticketReply.assign_to_user_id">
-              <option :value="0">بدون ارجاع</option>
-              <option v-for="member in teamAssignable" :key="member.id" :value="member.id">
-                {{ member.full_name || member.username }}
-              </option>
-            </select>
-          </div>
-
-          <div class="chat-stream">
-            <div
-              v-for="message in selectedTicket.messages"
-              :key="message.id"
-              class="chat-bubble"
-              :class="{ mine: message.sender === authStore.user?.id, internal: message.is_internal }"
-            >
-              <div class="chat-meta">
-                <strong>{{ message.sender_name }}</strong>
-                <span>{{ roleLabel(message) }}</span>
+              <div class="health-tile">
+                <small>میانگین پاسخ اول</small>
+                <strong>{{ ticketSlaSummary.firstResponseLabel }}</strong>
+                <span>بر اساس تیکت‌های دارای پاسخ</span>
               </div>
-              <p>{{ message.body }}</p>
-              <small>{{ dateTime(message.created_at) }}</small>
+              <div class="health-tile">
+                <small>تیکت‌های بدون مسئول</small>
+                <strong>{{ toFa(ticketSlaSummary.unassigned) }}</strong>
+                <span>نیازمند برداشت یا ارجاع</span>
+              </div>
             </div>
-          </div>
+          </article>
+        </div>
 
-          <div class="chat-reply">
-            <textarea v-model.trim="ticketReply.body" placeholder="پاسخ کامل، دقیق و حرفه‌ای بنویس..." />
-            <div class="chat-tools">
-              <label v-if="authStore.isHqAdmin" class="internal-toggle">
-                <input v-model="ticketReply.is_internal" type="checkbox" />
-                <span>یادداشت داخلی</span>
-              </label>
-              <button type="button" class="primary-btn" @click="sendTicketReply">ارسال پاسخ</button>
+        <div class="command-body-grid" :class="{ compact: !authStore.isHqAdmin }">
+          <article class="ticket-list-shell ticket-inbox-shell ticket-modern-shell command-inbox-card">
+            <div class="card-head ticket-inbox-head">
+              <div>
+                <h3>اینباکس و صف تیکت‌ها</h3>
+                <span>{{ visibleTickets.length.toLocaleString('fa-IR') }} مورد در نمای فعلی</span>
+              </div>
             </div>
-          </div>
-        </article>
 
-        <article v-else class="ticket-placeholder">
-          <strong>یک تیکت را انتخاب کن</strong>
-          <span>گفتگو، ارجاع، وضعیت و تاریخچه کامل از اینجا مدیریت می‌شود.</span>
-        </article>
+            <div class="hq-ticket-summary-grid desk-summary-grid">
+              <article
+                v-for="card in ticketSummaryCards"
+                :key="card.key"
+                class="hq-ticket-summary-card desk-summary-card"
+                :class="card.tone"
+              >
+                <span>{{ card.label }}</span>
+                <strong>{{ toFa(card.value) }}</strong>
+                <small>{{ ticketSummaryHint(card.key) }}</small>
+              </article>
+            </div>
+
+            <div class="ticket-filter-grid ticket-filter-grid-wide ticket-filter-grid-desk" :class="{ compact: !authStore.isHqAdmin }">
+              <input v-model.trim="ticketQuery" placeholder="جستجو در عنوان، متن، نام کارواش یا کاربر..." @input="loadTickets" />
+              <select v-if="authStore.isHqAdmin" v-model="ticketStatus" @change="loadTickets">
+                <option value="all">همه وضعیت‌ها</option>
+                <option value="open">باز</option>
+                <option value="pending">در انتظار پیگیری</option>
+                <option value="answered">پاسخ داده شده</option>
+                <option value="closed">بسته شده</option>
+              </select>
+              <select v-model="ticketPriority" @change="loadTickets">
+                <option value="all">همه اولویت‌ها</option>
+                <option value="low">کم</option>
+                <option value="medium">متوسط</option>
+                <option value="high">بالا</option>
+                <option value="urgent">فوری</option>
+              </select>
+              <select v-if="authStore.isHqAdmin" v-model="ticketTenantId" @change="loadTickets">
+                <option value="">همه کارواش‌ها</option>
+                <option v-for="item in carwashes" :key="item.id" :value="item.id">{{ item.name }}</option>
+              </select>
+            </div>
+
+            <div class="hq-ticket-scope-row">
+              <button
+                v-for="scope in ticketScopeOptions"
+                :key="scope.key"
+                type="button"
+                class="scope-chip"
+                :class="{ active: ticketScope === scope.key }"
+                @click="ticketScope = scope.key"
+              >
+                {{ scope.label }}
+              </button>
+            </div>
+
+            <div class="ticket-list ticket-list-modern">
+              <button
+                v-for="item in visibleTickets"
+                :key="item.id"
+                type="button"
+                class="ticket-thread ticket-thread-rich desk-ticket-thread"
+                :class="{ active: selectedTicket?.id === item.id }"
+                @click="selectTicket(item.id)"
+              >
+                <div class="ticket-thread-top">
+                  <strong>{{ item.subject }}</strong>
+                  <span class="ticket-mini-status" :class="`ticket-${item.status}`">{{ statusLabel(item.status) }}</span>
+                </div>
+                <div class="ticket-thread-meta">
+                  <span>{{ item.tenant_name }}</span>
+                  <span>{{ priorityLabel(item.priority) }}</span>
+                </div>
+                <p>{{ item.last_message_preview || item.message }}</p>
+                <div class="ticket-thread-foot">
+                  <small>#{{ item.id }}</small>
+                  <small>{{ ticketSlaShortLabel(item) }}</small>
+                </div>
+              </button>
+              <div v-if="!visibleTickets.length" class="ticket-list-empty desk-empty">
+                <strong>تیکتی در این نما پیدا نشد</strong>
+                <span>فیلترها را تغییر دهید یا دوباره بروزرسانی کنید.</span>
+              </div>
+            </div>
+          </article>
+
+          <article v-if="selectedTicket" class="ticket-chat-shell ticket-chat-shell-rich ticket-modern-shell command-chat-card">
+            <div class="desk-detail-head">
+              <div class="chat-head ticket-chat-head desk-ticket-chat-head">
+                <div>
+                  <div class="ticket-chat-title">
+                    <h3>{{ selectedTicket.subject }}</h3>
+                    <span class="ticket-mini-status" :class="`ticket-${selectedTicket.status}`">{{ statusLabel(selectedTicket.status) }}</span>
+                  </div>
+                  <p>{{ selectedTicket.tenant_name }}</p>
+                </div>
+                <div class="chat-head-badges">
+                  <span class="meta-chip">{{ categoryLabel(selectedTicket.category) }}</span>
+                  <span class="meta-chip">{{ priorityLabel(selectedTicket.priority) }}</span>
+                  <span class="meta-chip">#{{ selectedTicket.id }}</span>
+                </div>
+              </div>
+
+              <div class="hq-ticket-meta-grid">
+                <article v-if="authStore.isHqAdmin" class="hq-ticket-meta-card">
+                  <span>مسئول رسیدگی</span>
+                  <strong>{{ selectedTicket.assigned_to_name || 'بدون مسئول' }}</strong>
+                  <small>ارجاع فعلی این پرونده</small>
+                </article>
+                <article class="hq-ticket-meta-card">
+                  <span>پیام‌ها</span>
+                  <strong>{{ toFa(selectedTicket.messages?.length || 0) }} پیام</strong>
+                  <small>{{ toFa(selectedTicketInternalNotesCount) }} یادداشت داخلی</small>
+                </article>
+                <article class="hq-ticket-meta-card">
+                  <span>آخرین بروزرسانی</span>
+                  <strong>{{ dateTime(selectedTicket.updated_at) }}</strong>
+                  <small>{{ selectedTicketLastResponder }}</small>
+                </article>
+                <article class="hq-ticket-meta-card" :class="selectedTicketSla.state">
+                  <span>SLA</span>
+                  <strong>{{ selectedTicketSla.label }}</strong>
+                  <small>{{ selectedTicketSla.description }}</small>
+                </article>
+              </div>
+            </div>
+
+            <div class="chat-head-actions ticket-chat-actions desk-ticket-actions">
+              <select v-model="ticketReply.status">
+                <option value="">بدون تغییر وضعیت</option>
+                <option value="answered">پاسخ داده شده</option>
+                <option value="pending">در انتظار پیگیری</option>
+                <option value="closed">بستن تیکت</option>
+              </select>
+              <select v-if="authStore.isHqAdmin" v-model="ticketReply.assign_to_user_id">
+                <option :value="0">بدون ارجاع</option>
+                <option v-for="member in teamAssignable" :key="member.id" :value="member.id">
+                  {{ member.full_name || member.username }}
+                </option>
+              </select>
+            </div>
+
+            <div class="quick-status-row">
+              <button type="button" class="scope-chip" @click="ticketReply.status = 'answered'">علامت‌گذاری پاسخ داده شده</button>
+              <button type="button" class="scope-chip" @click="ticketReply.status = 'pending'">در انتظار پیگیری</button>
+              <button type="button" class="scope-chip danger-chip" @click="ticketReply.status = 'closed'">بستن تیکت</button>
+            </div>
+
+            <div class="chat-stream ticket-chat-stream desk-ticket-stream">
+              <div
+                v-for="message in selectedTicket.messages"
+                :key="message.id"
+                class="chat-bubble ticket-chat-bubble desk-ticket-bubble"
+                :class="{ mine: message.sender === authStore.user?.id, internal: message.is_internal }"
+              >
+                <div class="chat-meta">
+                  <strong>{{ message.sender_name }}</strong>
+                  <span>{{ roleLabel(message) }}</span>
+                </div>
+                <p>{{ message.body }}</p>
+                <small>{{ dateTime(message.created_at) }}</small>
+              </div>
+            </div>
+
+            <div class="chat-reply ticket-chat-reply desk-ticket-reply">
+              <div class="template-chip-row" :class="{ compact: !authStore.isHqAdmin }">
+                <button
+                  v-for="template in ticketResponseTemplates"
+                  :key="template.id"
+                  type="button"
+                  class="template-chip"
+                  @click="applyTicketTemplate(template.body)"
+                >
+                  {{ template.title }}
+                </button>
+              </div>
+              <textarea v-model.trim="ticketReply.body" placeholder="پاسخ کامل، ساختاریافته و حرفه‌ای برای کارواش بنویس..." />
+              <div class="chat-tools">
+                <label v-if="authStore.isHqAdmin" class="internal-toggle">
+                  <input v-model="ticketReply.is_internal" type="checkbox" />
+                  <span>یادداشت داخلی</span>
+                </label>
+                <button type="button" class="primary-btn" @click="sendTicketReply">ارسال پاسخ</button>
+              </div>
+            </div>
+          </article>
+
+          <article v-else class="ticket-placeholder ticket-placeholder-rich ticket-modern-shell desk-placeholder command-chat-card">
+            <strong>یک تیکت را از اینباکس انتخاب کنید</strong>
+            <span>جزئیات کامل، گفتگو، ارجاع، وضعیت و پاسخ‌گویی از همین بخش انجام می‌شود.</span>
+          </article>
+
+          <aside v-if="authStore.isHqAdmin" class="ticket-modern-shell ticket-side-rail">
+            <section class="rail-block">
+              <div class="card-head">
+                <h3>صف اولویت‌دار</h3>
+                <span>{{ priorityQueue.length.toLocaleString('fa-IR') }} مورد</span>
+              </div>
+              <div class="priority-queue-list">
+                <article v-for="item in priorityQueue.slice(0, 5)" :key="item.id" class="priority-queue-item">
+                  <strong>{{ item.subject }}</strong>
+                  <p>{{ item.tenant_name }}</p>
+                  <small>{{ ticketSlaShortLabel(item) }}</small>
+                </article>
+              </div>
+            </section>
+
+            <section class="rail-block">
+              <div class="card-head">
+                <h3>ترند ورود تیکت</h3>
+                <span>۶ بازه اخیر</span>
+              </div>
+              <div class="trend-bars">
+                <div v-for="item in ticketTrendBars" :key="item.label" class="trend-bar-item">
+                  <div class="trend-bar-shell">
+                    <div class="trend-bar-fill" :style="{ height: `${item.height}%` }"></div>
+                  </div>
+                  <strong>{{ toFa(item.count) }}</strong>
+                  <small>{{ item.label }}</small>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="selectedTicket" class="rail-block">
+              <div class="card-head">
+                <h3>جزئیات تیکت منتخب</h3>
+                <span>{{ selectedTicket.tenant_name }}</span>
+              </div>
+              <div class="ticket-side-detail-list">
+                <div class="detail-row">
+                  <span>ثبت‌کننده</span>
+                  <strong>{{ selectedTicket.created_by_name || '-' }}</strong>
+                </div>
+                <div class="detail-row">
+                  <span>پاسخ‌دهنده</span>
+                  <strong>{{ selectedTicket.responded_by_name || 'هنوز ندارد' }}</strong>
+                </div>
+                <div class="detail-row">
+                  <span>کیفیت پاسخ</span>
+                  <strong>{{ formatSupportScore(selectedTicket.response_quality_score || 0) }} / ۵</strong>
+                </div>
+                <div class="detail-row">
+                  <span>رضایت مشتری</span>
+                  <strong>{{ selectedTicket.customer_satisfaction ? `${toFa(selectedTicket.customer_satisfaction)} / ۵` : 'ثبت نشده' }}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="selectedTicket" class="rail-block">
+              <div class="card-head">
+                <h3>تاریخچه فعالیت</h3>
+                <span>{{ selectedTicketActivityFeed.length.toLocaleString('fa-IR') }} رویداد</span>
+              </div>
+              <div class="ticket-activity-list">
+                <article v-for="item in selectedTicketActivityFeed.slice(0, 8)" :key="item.id" class="ticket-activity-row">
+                  <div class="ticket-activity-dot" :class="item.tone"></div>
+                  <div>
+                    <strong>{{ item.title }}</strong>
+                    <p>{{ item.description }}</p>
+                    <small>{{ dateTime(item.created_at) }}</small>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </aside>
+        </div>
       </section>
 
       <section v-else-if="activeTab === 'team'" class="workspace-grid">
         <article class="glass-card create-card">
           <div class="card-head">
             <h3>افزودن پشتیبان ساده</h3>
-            <span>دسترسی: کارواش‌ها + تیکت‌ها</span>
+            <span>دسترسی: فقط مرکز تیکت</span>
           </div>
           <form class="form-grid" @submit.prevent="createSupportUser">
             <label>
@@ -338,8 +543,15 @@
               <input v-model.trim="supportForm.phone" required placeholder="09xxxxxxxxx" />
             </label>
             <label class="wide">
+              <span>کارواش تحت پوشش</span>
+              <select v-model="supportForm.tenant_id" required>
+                <option :value="0" disabled>انتخاب کارواش</option>
+                <option v-for="item in carwashes" :key="item.id" :value="item.id">{{ item.name }}</option>
+              </select>
+            </label>
+            <label class="wide">
               <span>رمز عبور</span>
-              <input v-model="supportForm.password" type="password" required placeholder="حداقل 6 کاراکتر" />
+              <input v-model="supportForm.password" type="password" minlength="6" required placeholder="حداقل 6 کاراکتر" />
             </label>
             <p v-if="supportFormError" class="form-error wide">{{ supportFormError }}</p>
             <div class="wide form-actions">
@@ -360,6 +572,7 @@
                 <strong>{{ member.full_name || member.username }}</strong>
                 <p>{{ member.platform_role === 'hq_admin' ? 'مدیرکل' : 'پشتیبان مرکزی' }}</p>
                 <small>{{ member.phone }}</small>
+                <small v-if="member.platform_role === 'hq_support'">{{ member.tenant_name || 'بدون کارواش' }}</small>
                 <div v-if="member.platform_role === 'hq_support'" class="team-rating">
                   <div class="team-stars" :title="`امتیاز ${formatSupportScore(member.support_star_rating)} از 5`">
                     <span class="team-stars-base">★★★★★</span>
@@ -372,6 +585,10 @@
                   <small>کیفیت پاسخ: {{ formatSupportScore(member.support_response_quality_avg) }} / ۵</small>
                   <small>پاسخ‌ اول: {{ formatResponseMinutes(member.support_first_response_minutes_avg) }}</small>
                   <small>تعداد رضایت: {{ toFa(member.support_rating_count || 0) }}</small>
+                </div>
+                <div v-if="member.platform_role === 'hq_support'" class="team-actions">
+                  <button type="button" class="ghost-btn" @click="openEditSupportUser(member)">ویرایش</button>
+                  <button type="button" class="danger-btn" @click="deleteSupportUser(member)">حذف</button>
                 </div>
               </div>
             </div>
@@ -695,6 +912,52 @@
         </div>
       </section>
     </main>
+
+    <div v-if="editSupportModal.open" class="modal-overlay" @click.self="closeEditSupportModal">
+      <div class="modal-card" dir="rtl">
+        <div class="card-head">
+          <h3>ویرایش پشتیبان</h3>
+          <button type="button" class="ghost-btn" @click="closeEditSupportModal">بستن</button>
+        </div>
+        <form class="form-grid" @submit.prevent="updateSupportUser">
+          <label>
+            <span>نام</span>
+            <input v-model.trim="editSupportModal.first_name" required />
+          </label>
+          <label>
+            <span>نام خانوادگی</span>
+            <input v-model.trim="editSupportModal.last_name" required />
+          </label>
+          <label>
+            <span>نام کاربری</span>
+            <input v-model.trim="editSupportModal.username" required />
+          </label>
+          <label>
+            <span>موبایل</span>
+            <input v-model.trim="editSupportModal.phone" required />
+          </label>
+          <label class="wide">
+            <span>کارواش تحت پوشش</span>
+            <select v-model="editSupportModal.tenant_id" required>
+              <option :value="0" disabled>انتخاب کارواش</option>
+              <option v-for="item in carwashes" :key="item.id" :value="item.id">{{ item.name }}</option>
+            </select>
+          </label>
+          <label class="wide">
+            <span>رمز عبور جدید</span>
+            <input v-model="editSupportModal.password" type="password" minlength="6" placeholder="خالی بماند یعنی بدون تغییر" />
+          </label>
+          <label class="wide inline-toggle">
+            <input v-model="editSupportModal.is_active" type="checkbox" />
+            <span>پشتیبان فعال باشد</span>
+          </label>
+          <p v-if="editSupportModal.error" class="form-error wide">{{ editSupportModal.error }}</p>
+          <div class="wide form-actions">
+            <button type="submit" class="primary-btn">ذخیره تغییرات</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -710,19 +973,21 @@ import { formatThousandsToman } from '../../utils/money'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const activeTab = ref('overview')
-const tabs = [
+const allTabs = [
   { key: 'overview', label: 'داشبورد مرکزی', meta: 'نمای کل' },
   { key: 'carwashes', label: 'کارواش‌ها', meta: 'ثبت و نظارت' },
   { key: 'tickets', label: 'مرکز تیکت', meta: 'پاسخ چت‌محور' },
   { key: 'team', label: 'تیم مرکزی', meta: 'ساخت پشتیبان' },
   { key: 'reports', label: 'گزارشات', meta: 'تحلیل تاریخی و مالی' }
 ]
-
-const visibleTabs = computed(() => tabs.filter((tab) => {
-  if (tab.key === 'reports' || tab.key === 'team') return authStore.isHqAdmin
-  return true
-}))
+const activeTab = ref(authStore.isHqAdmin ? 'overview' : 'tickets')
+const visibleTabs = computed(() => {
+  if (!authStore.isHqAdmin) return allTabs.filter((tab) => tab.key === 'tickets')
+  return allTabs.filter((tab) => {
+    if (tab.key === 'reports' || tab.key === 'team') return authStore.isHqAdmin
+    return true
+  })
+})
 const currentTabTitle = computed(() => visibleTabs.value.find((tab) => tab.key === activeTab.value)?.label || 'پنل مرکزی')
 
 const overview = reactive({ summary: {}, recent_carwashes: [], recent_tickets: [] })
@@ -745,6 +1010,7 @@ const ticketQuery = ref('')
 const ticketStatus = ref('all')
 const ticketPriority = ref('all')
 const ticketTenantId = ref('')
+const ticketScope = ref('all')
 const ticketReply = reactive({
   body: '',
   status: '',
@@ -773,7 +1039,20 @@ const supportForm = reactive({
   last_name: '',
   username: '',
   phone: '',
-  password: ''
+  password: '',
+  tenant_id: 0
+})
+const editSupportModal = reactive({
+  open: false,
+  id: 0,
+  first_name: '',
+  last_name: '',
+  username: '',
+  phone: '',
+  password: '',
+  tenant_id: 0,
+  is_active: true,
+  error: ''
 })
 
 const filteredCarwashes = computed(() => {
@@ -786,6 +1065,208 @@ const filteredCarwashes = computed(() => {
 })
 
 const teamAssignable = computed(() => hqTeam.value.filter((item) => ['hq_admin', 'hq_support'].includes(item.platform_role)))
+const ticketScopeOptions = computed(() => (authStore.isHqAdmin
+  ? [
+    { key: 'all', label: 'همه تیکت‌ها' },
+    { key: 'mine', label: 'ارجاع‌شده به من' },
+    { key: 'unassigned', label: 'بدون مسئول' },
+    { key: 'urgent', label: 'فوری و حساس' }
+  ]
+  : [
+    { key: 'all', label: 'صف فعال' },
+    { key: 'answered', label: 'پاسخ داده شده' },
+    { key: 'urgent', label: 'فوری و حساس' }
+  ]))
+const ticketSummaryCards = computed(() => {
+  const items = Array.isArray(tickets.value) ? tickets.value : []
+  const counts = items.reduce((acc, item) => {
+    acc.total += 1
+    if (item.status === 'open') acc.open += 1
+    if (item.status === 'pending') acc.pending += 1
+    if (item.status === 'answered') acc.answered += 1
+    if (item.status === 'closed') acc.closed += 1
+    if (!item.assigned_to) acc.unassigned += 1
+    if (Number(item.assigned_to || 0) === Number(authStore.user?.id || 0)) acc.mine += 1
+    if (['urgent', 'high'].includes(item.priority)) acc.urgent += 1
+    return acc
+  }, { total: 0, open: 0, pending: 0, answered: 0, closed: 0, unassigned: 0, mine: 0, urgent: 0 })
+  if (!authStore.isHqAdmin) {
+    return [
+      { key: 'open', label: 'جدید / باز', value: counts.open, tone: 'open' },
+      { key: 'pending', label: 'در حال پیگیری', value: counts.pending, tone: 'pending' },
+      { key: 'answered', label: 'پاسخ داده شده', value: counts.answered, tone: 'mine' },
+      { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' }
+    ]
+  }
+  return [
+    { key: 'open', label: 'باز', value: counts.open, tone: 'open' },
+    { key: 'pending', label: 'در انتظار', value: counts.pending, tone: 'pending' },
+    { key: 'mine', label: 'ارجاع به من', value: counts.mine, tone: 'mine' },
+    { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' }
+  ]
+})
+const activeTicketScopeLabel = computed(() => {
+  const match = ticketScopeOptions.value.find((item) => item.key === ticketScope.value)
+  return match?.label || 'همه تیکت‌ها'
+})
+const visibleTickets = computed(() => {
+  const items = Array.isArray(tickets.value) ? tickets.value : []
+  return items.filter((item) => {
+    if (!authStore.isHqAdmin && item.status === 'closed') return false
+    if (!authStore.isHqAdmin && ticketScope.value === 'answered') return item.status === 'answered'
+    if (ticketScope.value === 'mine') return Number(item.assigned_to || 0) === Number(authStore.user?.id || 0)
+    if (ticketScope.value === 'urgent') return ['urgent', 'high'].includes(item.priority)
+    if (ticketScope.value === 'unassigned') return !item.assigned_to
+    return true
+  })
+})
+const selectedTicketLastResponder = computed(() => {
+  if (!selectedTicket.value?.messages?.length) return 'بدون پاسخ'
+  const lastMessage = selectedTicket.value.messages[selectedTicket.value.messages.length - 1]
+  return roleLabel(lastMessage)
+})
+const ticketResponseTemplates = [
+  { id: 'need-info', title: 'درخواست اطلاعات بیشتر', body: 'برای بررسی دقیق‌تر، لطفا جزئیات تکمیلی، زمان رخداد و در صورت نیاز شماره سفارش یا تراکنش را ارسال کنید.' },
+  { id: 'under-review', title: 'در حال بررسی', body: 'موضوع شما دریافت شد و در حال بررسی توسط تیم مربوطه است. نتیجه بررسی به‌محض جمع‌بندی از همین تیکت اعلام می‌شود.' },
+  { id: 'resolved', title: 'جمع‌بندی و حل', body: 'بررسی انجام شد و مورد از سمت ما رفع شده است. لطفا یک‌بار مجدد بررسی کنید و اگر هنوز مشکل باقی بود همین تیکت را ادامه دهید.' }
+]
+const ticketSlaRules = {
+  low: { firstResponseMinutes: 24 * 60 },
+  medium: { firstResponseMinutes: 12 * 60 },
+  high: { firstResponseMinutes: 4 * 60 },
+  urgent: { firstResponseMinutes: 30 }
+}
+const ticketDeadlineAt = (ticket) => {
+  if (!ticket?.created_at) return null
+  const minutes = ticketSlaRules[ticket.priority]?.firstResponseMinutes || ticketSlaRules.medium.firstResponseMinutes
+  return new Date(new Date(ticket.created_at).getTime() + minutes * 60 * 1000)
+}
+const ticketSlaMeta = (ticket) => {
+  if (!ticket?.created_at) return { state: 'neutral', label: 'بدون داده', description: 'زمان‌بندی این تیکت قابل محاسبه نیست.' }
+  if (ticket.first_response_at) {
+    return {
+      state: 'resolved',
+      label: 'پاسخ ثبت شده',
+      description: `پاسخ اول در ${dateTime(ticket.first_response_at)} ثبت شده است.`
+    }
+  }
+  const deadline = ticketDeadlineAt(ticket)
+  const remainingMs = deadline ? deadline.getTime() - Date.now() : 0
+  if (remainingMs <= 0) {
+    return {
+      state: 'breached',
+      label: 'نقض شده',
+      description: 'زمان پاسخ اولیه از SLA عبور کرده است.'
+    }
+  }
+  const remainingMinutes = Math.ceil(remainingMs / 60000)
+  if (remainingMinutes <= 60) {
+    return {
+      state: 'risk',
+      label: `${toFa(remainingMinutes)} دقیقه مانده`,
+      description: 'زمان پاسخ اولیه نزدیک به پایان است.'
+    }
+  }
+  const remainingHours = Math.ceil(remainingMinutes / 60)
+  return {
+    state: 'safe',
+    label: `${toFa(remainingHours)} ساعت مانده`,
+    description: 'این تیکت هنوز داخل بازه مجاز پاسخ اولیه است.'
+  }
+}
+const selectedTicketSla = computed(() => ticketSlaMeta(selectedTicket.value))
+const selectedTicketInternalNotesCount = computed(() => {
+  const items = selectedTicket.value?.messages || []
+  return items.filter((item) => item.is_internal).length
+})
+const selectedTicketActivityFeed = computed(() => {
+  const ticket = selectedTicket.value
+  if (!ticket) return []
+  const events = [
+    {
+      id: `created-${ticket.id}`,
+      created_at: ticket.created_at,
+      tone: 'primary',
+      title: 'تیکت ایجاد شد',
+      description: `پرونده با عنوان «${ticket.subject}» برای ${ticket.tenant_name} ثبت شد.`
+    }
+  ]
+  if (ticket.assigned_to_name && ticket.assigned_to_name !== '-') {
+    events.push({
+      id: `assigned-${ticket.id}`,
+      created_at: ticket.updated_at,
+      tone: 'info',
+      title: 'ارجاع فعال',
+      description: `مسئول فعلی رسیدگی: ${ticket.assigned_to_name}`
+    })
+  }
+  ;(ticket.messages || []).forEach((message) => {
+    events.push({
+      id: `message-${message.id}`,
+      created_at: message.created_at,
+      tone: message.is_internal ? 'muted' : message.sender_platform_role ? 'success' : 'neutral',
+      title: message.is_internal ? 'یادداشت داخلی' : roleLabel(message),
+      description: String(message.body || '').slice(0, 120)
+    })
+  })
+  if (ticket.closed_at) {
+    events.push({
+      id: `closed-${ticket.id}`,
+      created_at: ticket.closed_at,
+      tone: 'muted',
+      title: 'تیکت بسته شد',
+      description: 'پرونده از سمت تیم پشتیبانی بسته شده است.'
+    })
+  }
+  return events.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+})
+const priorityQueue = computed(() => {
+  const items = [...visibleTickets.value]
+  return items
+    .sort((a, b) => {
+      const aUrgent = ['urgent', 'high'].includes(a.priority) ? 1 : 0
+      const bUrgent = ['urgent', 'high'].includes(b.priority) ? 1 : 0
+      if (bUrgent !== aUrgent) return bUrgent - aUrgent
+      const aDeadline = ticketDeadlineAt(a)?.getTime() || Number.MAX_SAFE_INTEGER
+      const bDeadline = ticketDeadlineAt(b)?.getTime() || Number.MAX_SAFE_INTEGER
+      return aDeadline - bDeadline
+    })
+})
+const ticketSlaSummary = computed(() => {
+  const items = Array.isArray(tickets.value) ? tickets.value : []
+  const openItems = items.filter((item) => item.status !== 'closed')
+  const breached = openItems.filter((item) => ticketSlaMeta(item).state === 'breached').length
+  const compliant = Math.max(openItems.length - breached, 0)
+  const compliance = openItems.length ? Math.round((compliant / openItems.length) * 100) : 100
+  const responded = items.filter((item) => item.first_response_at)
+  const avgMinutes = responded.length
+    ? Math.round(responded.reduce((sum, item) => {
+      const minutes = Math.max((new Date(item.first_response_at).getTime() - new Date(item.created_at).getTime()) / 60000, 0)
+      return sum + minutes
+    }, 0) / responded.length)
+    : 0
+  return {
+    compliance,
+    breached,
+    unassigned: items.filter((item) => !item.assigned_to).length,
+    firstResponseLabel: avgMinutes ? `${toFa(avgMinutes)} دقیقه` : 'بدون داده'
+  }
+})
+const ticketTrendBars = computed(() => {
+  const days = Array.from({ length: 6 }).map((_, index) => {
+    const date = new Date()
+    date.setDate(date.getDate() - (5 - index))
+    const label = new Intl.DateTimeFormat('fa-IR', { month: 'numeric', day: 'numeric' }).format(date)
+    return { key: date.toISOString().slice(0, 10), label, count: 0 }
+  })
+  const map = new Map(days.map((item) => [item.key, item]))
+  ;(tickets.value || []).forEach((ticket) => {
+    const key = String(ticket.created_at || '').slice(0, 10)
+    if (map.has(key)) map.get(key).count += 1
+  })
+  const max = Math.max(...days.map((item) => item.count), 1)
+  return days.map((item) => ({ ...item, height: Math.max(18, Math.round((item.count / max) * 100)) }))
+})
 const reportRows = computed(() => {
   const items = Array.isArray(reports.rows) ? [...reports.rows] : []
   if (reportTab.value === 'wallet') {
@@ -885,6 +1366,21 @@ const categoryLabel = (value) => ({
   account: 'حساب',
   other: 'سایر'
 }[value] || 'سایر')
+const ticketSummaryHint = (key) => ({
+  open: 'تیکت‌های تازه یا دوباره بازشده',
+  pending: 'در حال پیگیری توسط پشتیبانی',
+  answered: 'منتظر واکنش کاربر',
+  mine: 'در صف پاسخ شما',
+  urgent: 'پرونده‌های حساس و فوری'
+}[key] || '')
+const ticketSlaShortLabel = (ticket) => {
+  const meta = ticketSlaMeta(ticket)
+  return meta.label
+}
+const applyTicketTemplate = (body) => {
+  const tenantName = selectedTicket.value?.tenant_name || 'کارواش'
+  ticketReply.body = String(body || '').replaceAll('{{tenant_name}}', tenantName)
+}
 const roleLabel = (message) => {
   if (message.sender_platform_role === 'hq_admin') return 'مدیرکل'
   if (message.sender_platform_role === 'hq_support') return 'پشتیبان مرکزی'
@@ -985,21 +1481,32 @@ const toggleCarwashState = async (row) => {
 }
 
 const loadTickets = async () => {
-  if (!carwashes.value.length) await loadCarwashes()
+  if (authStore.isHqAdmin && !carwashes.value.length) await loadCarwashes()
   const { data } = await api.get('/auth/hq/tickets/', {
     params: {
       q: ticketQuery.value || undefined,
       status: ticketStatus.value,
       priority: ticketPriority.value,
-      tenant_id: ticketTenantId.value || undefined
+      tenant_id: authStore.isHqAdmin ? (ticketTenantId.value || undefined) : undefined
     }
   })
   tickets.value = Array.isArray(data) ? data : []
-  if (selectedTicket.value?.id) {
-    const stillExists = tickets.value.some((item) => item.id === selectedTicket.value.id)
-    if (stillExists) await selectTicket(selectedTicket.value.id)
-    else selectedTicket.value = null
+  await ensureSelectedTicket()
+}
+
+const ensureSelectedTicket = async () => {
+  if (!visibleTickets.value.length) {
+    selectedTicket.value = null
+    return
   }
+  if (selectedTicket.value?.id && visibleTickets.value.some((item) => item.id === selectedTicket.value.id)) {
+    const stillExists = tickets.value.some((item) => item.id === selectedTicket.value.id)
+    if (stillExists) {
+      await selectTicket(selectedTicket.value.id)
+      return
+    }
+  }
+  await selectTicket(visibleTickets.value[0].id)
 }
 
 const selectTicket = async (ticketId) => {
@@ -1054,7 +1561,8 @@ const createSupportUser = async () => {
       last_name: '',
       username: '',
       phone: '',
-      password: ''
+      password: '',
+      tenant_id: 0
     })
     await loadTeam()
     await loadOverview()
@@ -1073,14 +1581,79 @@ const createSupportUser = async () => {
   }
 }
 
+const openEditSupportUser = async (member) => {
+  if (!carwashes.value.length) await loadCarwashes()
+  editSupportModal.open = true
+  editSupportModal.id = Number(member.id || 0)
+  editSupportModal.first_name = member.first_name || ''
+  editSupportModal.last_name = member.last_name || ''
+  editSupportModal.username = member.username || ''
+  editSupportModal.phone = member.phone || ''
+  editSupportModal.password = ''
+  editSupportModal.tenant_id = Number(member.tenant || 0)
+  editSupportModal.is_active = Boolean(member.is_active)
+  editSupportModal.error = ''
+}
+
+const closeEditSupportModal = () => {
+  editSupportModal.open = false
+  editSupportModal.id = 0
+  editSupportModal.first_name = ''
+  editSupportModal.last_name = ''
+  editSupportModal.username = ''
+  editSupportModal.phone = ''
+  editSupportModal.password = ''
+  editSupportModal.tenant_id = 0
+  editSupportModal.is_active = true
+  editSupportModal.error = ''
+}
+
+const updateSupportUser = async () => {
+  editSupportModal.error = ''
+  try {
+    await api.patch(`/auth/hq/team/${editSupportModal.id}/`, {
+      first_name: editSupportModal.first_name,
+      last_name: editSupportModal.last_name,
+      username: editSupportModal.username,
+      phone: editSupportModal.phone,
+      password: editSupportModal.password || undefined,
+      tenant_id: Number(editSupportModal.tenant_id || 0),
+      is_active: editSupportModal.is_active
+    })
+    closeEditSupportModal()
+    await loadTeam()
+    await loadOverview()
+  } catch (error) {
+    const data = error?.response?.data
+    if (typeof data?.detail === 'string' && data.detail) {
+      editSupportModal.error = data.detail
+      return
+    }
+    if (data && typeof data === 'object') {
+      const firstFieldError = Object.values(data).flat().find(Boolean)
+      editSupportModal.error = String(firstFieldError || 'ویرایش پشتیبان انجام نشد. دوباره تلاش کنید.')
+      return
+    }
+    editSupportModal.error = 'ویرایش پشتیبان انجام نشد. دوباره تلاش کنید.'
+  }
+}
+
+const deleteSupportUser = async (member) => {
+  if (!window.confirm(`پشتیبان «${member.full_name || member.username}» حذف شود؟`)) return
+  await api.delete(`/auth/hq/team/${member.id}/`)
+  await loadTeam()
+  await loadTickets()
+  await loadOverview()
+}
+
 const logout = async () => {
   await authStore.logout()
   await router.push('/login')
 }
 
 watch(activeTab, async (tab) => {
-  if ((tab === 'team' || tab === 'reports') && !authStore.isHqAdmin) {
-    activeTab.value = 'overview'
+  if (!visibleTabs.value.some((item) => item.key === tab)) {
+    activeTab.value = visibleTabs.value[0]?.key || 'tickets'
     return
   }
   if (tab === 'overview') await loadOverview()
@@ -1094,11 +1667,20 @@ watch(() => [reportFilter.start, reportFilter.end], async () => {
   if (activeTab.value === 'reports' && authStore.isHqAdmin) await loadReports()
 })
 
+watch(ticketScope, async () => {
+  await ensureSelectedTicket()
+})
+
 onMounted(async () => {
-  await loadOverview()
-  await loadCarwashes()
-  if (authStore.isHqAdmin) await loadTeam()
+  if (authStore.isHqAdmin) {
+    await loadOverview()
+    await loadCarwashes()
+    await loadTeam()
+  } else {
+    activeTab.value = 'tickets'
+  }
   setReportRange('month')
+  if (activeTab.value === 'tickets') await loadTickets()
 })
 </script>
 
@@ -1111,9 +1693,9 @@ onMounted(async () => {
 }
 
 .hq-page {
-  --bg-card: rgba(255, 255, 255, 0.82);
-  --bg-soft: rgba(255, 255, 255, 0.58);
-  --line: rgba(148, 163, 184, 0.22);
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --bg-soft: rgba(255, 255, 255, 0.7);
+  --line: rgba(148, 163, 184, 0.14);
   --text: #0f172a;
   --muted: #64748b;
   --primary: #0f5dd7;
@@ -1125,6 +1707,10 @@ onMounted(async () => {
   grid-template-columns: 300px minmax(0, 1fr);
   position: relative;
   color: var(--text);
+}
+
+.hq-page.support-only {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .hq-bg {
@@ -1159,9 +1745,9 @@ onMounted(async () => {
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: 18px;
-  background: rgba(255, 255, 255, 0.74);
+  background: rgba(255, 255, 255, 0.84);
   backdrop-filter: blur(16px);
-  border-left: 1px solid var(--line);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.06);
   z-index: 2;
 }
 
@@ -1217,8 +1803,8 @@ onMounted(async () => {
 
 .hq-nav-item:hover,
 .hq-nav-item.active {
-  background: linear-gradient(135deg, rgba(15, 93, 215, 0.14), rgba(14, 165, 233, 0.1));
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+  background: linear-gradient(135deg, rgba(15, 93, 215, 0.1), rgba(14, 165, 233, 0.08));
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
 }
 
 .hq-nav-title {
@@ -1247,11 +1833,21 @@ onMounted(async () => {
 }
 
 .hq-main {
-  padding: 26px;
+  padding: 28px;
   display: grid;
   gap: 18px;
   position: relative;
   z-index: 1;
+}
+
+.hq-page.support-only .hq-main {
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 100vh;
+  height: auto;
+  grid-template-rows: auto auto;
+  overflow: visible;
 }
 
 .hq-header {
@@ -1259,6 +1855,11 @@ onMounted(async () => {
   align-items: end;
   justify-content: space-between;
   gap: 16px;
+}
+
+.hq-header-compact {
+  align-items: center;
+  padding: 4px 2px 0;
 }
 
 .hq-kicker {
@@ -1269,7 +1870,7 @@ onMounted(async () => {
 
 .hq-header h1 {
   margin: 0;
-  font-size: 34px;
+  font-size: 30px;
   font-weight: 800;
 }
 
@@ -1277,13 +1878,13 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .hq-role-badge,
 .meta-chip {
   border-radius: 999px;
   background: var(--bg-soft);
-  border: 1px solid var(--line);
   color: var(--muted);
   padding: 8px 12px;
   font-size: 12px;
@@ -1306,10 +1907,9 @@ onMounted(async () => {
 .ticket-chat-shell,
 .ticket-placeholder {
   background: var(--bg-card);
-  border: 1px solid var(--line);
-  border-radius: 26px;
+  border-radius: 30px;
   backdrop-filter: blur(18px);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.07);
 }
 
 .overview-grid {
@@ -1344,12 +1944,12 @@ onMounted(async () => {
 }
 
 .metric-box {
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.84);
+  border-radius: 22px;
   padding: 14px 16px;
   display: grid;
   gap: 5px;
+  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.8);
 }
 
 .metric-box small {
@@ -1485,21 +2085,36 @@ onMounted(async () => {
 }
 
 .form-grid input,
+.form-grid select,
 .ticket-filter-grid input,
 .ticket-filter-grid select,
 .table-search,
 .chat-head-actions select,
 .report-filters input,
 .chat-reply textarea {
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(255, 255, 255, 0.82);
-  border-radius: 14px;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  background: rgba(248, 251, 255, 0.94);
+  border-radius: 16px;
   padding: 0 12px;
   font: inherit;
   color: var(--text);
 }
 
+.form-grid input:focus,
+.form-grid select:focus,
+.ticket-filter-grid input:focus,
+.ticket-filter-grid select:focus,
+.table-search:focus,
+.chat-head-actions select:focus,
+.report-filters input:focus,
+.chat-reply textarea:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08);
+}
+
 .form-grid input,
+.form-grid select,
 .ticket-filter-grid input,
 .ticket-filter-grid select,
 .table-search,
@@ -1567,6 +2182,22 @@ td strong {
   grid-template-columns: 390px minmax(0, 1fr);
   gap: 16px;
   min-height: calc(100vh - 170px);
+  min-width: 0;
+}
+
+.ticket-command-center {
+  display: grid;
+  gap: 18px;
+  min-height: calc(100vh - 170px);
+}
+
+.hq-page.support-only .ticket-center {
+  min-height: 0;
+  height: 100%;
+}
+
+.ticket-desk {
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
 }
 
 .ticket-list-shell,
@@ -1574,39 +2205,367 @@ td strong {
 .ticket-placeholder {
   padding: 20px;
   min-height: 0;
+  min-width: 0;
+}
+
+.ticket-modern-shell {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 251, 255, 0.96));
+  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.06);
+}
+
+.command-top-grid,
+.command-body-grid,
+.command-health-grid,
+.priority-queue-list,
+.ticket-side-detail-list,
+.ticket-activity-list,
+.template-chip-row {
+  display: grid;
+  gap: 14px;
+}
+
+.command-top-grid {
+  grid-template-columns: minmax(0, 1.25fr) 420px;
+}
+
+.command-top-grid.compact {
+  grid-template-columns: 1fr;
+}
+
+.command-body-grid {
+  grid-template-columns: 390px minmax(0, 1fr) 320px;
+  align-items: start;
+}
+
+.command-body-grid.compact {
+  grid-template-columns: 320px minmax(0, 1fr);
+}
+
+.command-focus-card,
+.command-health-card,
+.command-inbox-card,
+.command-chat-card,
+.ticket-side-rail {
+  padding: 20px;
+}
+
+.command-focus-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) 220px;
+  gap: 16px;
+}
+
+.support-ticket-mode .command-focus-card {
+  grid-template-columns: minmax(0, 1fr) 200px;
+}
+
+.command-focus-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.command-focus-copy h3,
+.command-health-card h3,
+.ticket-side-rail h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+.command-focus-copy p,
+.priority-queue-item p,
+.priority-queue-item small,
+.ticket-activity-row p,
+.ticket-activity-row small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.85;
+}
+
+.command-focus-side {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.command-health-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.health-tile {
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.84);
+  display: grid;
+  gap: 8px;
+}
+
+.health-tile.spotlight {
+  background: linear-gradient(135deg, rgba(15, 93, 215, 0.14), rgba(14, 165, 233, 0.08));
+  box-shadow: 0 18px 38px rgba(15, 93, 215, 0.12);
+}
+
+.health-tile small,
+.priority-queue-item small,
+.trend-bar-item small,
+.ticket-activity-row small,
+.ticket-side-detail-list .detail-row span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.health-tile strong,
+.trend-bar-item strong,
+.ticket-side-detail-list .detail-row strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.hq-page.support-only .ticket-list-shell,
+.hq-page.support-only .ticket-chat-shell,
+.hq-page.support-only .ticket-placeholder {
+  height: 100%;
+  overflow: hidden;
+}
+
+.ticket-inbox-shell {
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.desk-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 220px;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 28%),
+    linear-gradient(135deg, rgba(15, 93, 215, 0.08), rgba(255, 255, 255, 0.94));
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.desk-kicker {
+  display: inline-flex;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(15, 93, 215, 0.1);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.desk-hero-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.desk-hero-copy h3,
+.desk-focus-box strong,
+.desk-placeholder strong {
+  margin: 0;
+  color: var(--text);
+}
+
+.desk-hero-copy p,
+.desk-focus-box small,
+.desk-focus-box strong,
+.desk-summary-card small,
+.desk-placeholder span {
+  line-height: 1.85;
+}
+
+.desk-hero-actions {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.desk-refresh-btn {
+  justify-self: stretch;
+  text-align: center;
+}
+
+.desk-focus-box {
+  padding: 16px;
+  border-radius: 22px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  display: grid;
+  gap: 8px;
+}
+
+.desk-focus-box small {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.desk-focus-box strong {
+  color: #fff;
+  font-size: 18px;
+}
+
+.ticket-inbox-head {
+  margin-bottom: 0;
+}
+
+.ticket-inbox-head h3 {
+  margin: 0;
 }
 
 .ticket-filter-grid {
   display: grid;
-  gap: 10px;
-  margin: 12px 0 14px;
+  gap: 8px;
+  margin: 6px 0 10px;
 }
 
 .ticket-filter-grid-wide {
   grid-template-columns: 1.2fr 0.8fr 0.8fr 0.8fr;
 }
 
+.ticket-filter-grid-wide.compact {
+  grid-template-columns: 1.3fr 0.7fr;
+}
+
+.ticket-filter-grid input,
+.ticket-filter-grid select {
+  min-width: 0;
+}
+
 .ticket-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   max-height: calc(100vh - 320px);
+  overflow: auto;
+  padding: 2px;
+}
+
+.hq-page.support-only .ticket-list {
+  max-height: calc(100vh - 340px);
+  min-height: 0;
   overflow: auto;
 }
 
-.ticket-thread {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(255, 255, 255, 0.78);
+.hq-ticket-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.desk-summary-grid {
+  gap: 12px;
+}
+
+.hq-ticket-summary-card,
+.hq-ticket-meta-card {
+  padding: 12px 13px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.desk-summary-card {
+  gap: 6px;
+  min-height: 104px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.04);
+}
+
+.desk-summary-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.priority-queue-item {
+  padding: 14px;
   border-radius: 20px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(226, 232, 240, 0.84);
+  display: grid;
+  gap: 6px;
+}
+
+.hq-ticket-summary-card span,
+.hq-ticket-meta-card span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.hq-ticket-summary-card strong,
+.hq-ticket-meta-card strong {
+  font-size: 16px;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.hq-ticket-summary-card.open { background: rgba(219, 234, 254, 0.58); }
+.hq-ticket-summary-card.pending { background: rgba(254, 243, 199, 0.6); }
+.hq-ticket-summary-card.mine { background: rgba(220, 252, 231, 0.62); }
+.hq-ticket-summary-card.urgent { background: rgba(254, 226, 226, 0.68); }
+
+.hq-ticket-scope-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scope-chip {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.scope-chip.active {
+  background: linear-gradient(135deg, rgba(15, 93, 215, 0.14), rgba(14, 165, 233, 0.16));
+  color: var(--primary);
+  border-color: rgba(15, 93, 215, 0.22);
+}
+
+.ticket-thread {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 24px;
   padding: 14px;
   text-align: right;
   cursor: pointer;
   display: grid;
   gap: 8px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.04);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.ticket-thread:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.06);
 }
 
 .ticket-thread.active {
-  border-color: rgba(15, 93, 215, 0.35);
   background: linear-gradient(135deg, rgba(15, 93, 215, 0.1), rgba(14, 165, 233, 0.08));
+  box-shadow:
+    0 18px 40px rgba(15, 93, 215, 0.12),
+    inset 0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+
+.desk-ticket-thread {
+  border: 1px solid rgba(226, 232, 240, 0.84);
+}
+
+.ticket-thread-rich {
+  gap: 8px;
+  border-radius: 22px;
 }
 
 .ticket-thread-top,
@@ -1619,6 +2578,7 @@ td strong {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
 }
 
 .ticket-thread p,
@@ -1628,9 +2588,47 @@ td strong {
   line-height: 1.7;
 }
 
+.ticket-thread-top strong,
+.chat-head h3,
+.chat-head p {
+  min-width: 0;
+}
+
+.ticket-thread p {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .ticket-thread-meta {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.ticket-thread-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.ticket-list-empty {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 8px;
+  color: var(--muted);
+  padding: 18px;
+}
+
+.desk-empty {
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px dashed rgba(148, 163, 184, 0.4);
 }
 
 .ticket-mini-status.ticket-open {
@@ -1654,8 +2652,82 @@ td strong {
 }
 
 .chat-head {
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 2px 0 12px;
+}
+
+.ticket-chat-shell-rich {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 14px;
+}
+
+.support-ticket-mode .ticket-chat-shell-rich {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+}
+
+.desk-detail-head {
+  display: grid;
+  gap: 14px;
+}
+
+.hq-page.support-only .ticket-chat-shell-rich {
+  height: 100%;
+}
+
+.ticket-chat-head {
+  padding: 0 0 14px;
+  margin: 0;
+}
+
+.ticket-chat-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ticket-chat-actions {
+  padding: 0;
+  border: 0;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.ticket-chat-actions select {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.hq-ticket-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.desk-ticket-chat-head {
+  padding: 0;
+}
+
+.hq-ticket-meta-card.safe {
+  background: rgba(219, 234, 254, 0.58);
+}
+
+.hq-ticket-meta-card.risk {
+  background: rgba(254, 243, 199, 0.72);
+}
+
+.hq-ticket-meta-card.breached {
+  background: rgba(254, 226, 226, 0.76);
+}
+
+.hq-ticket-meta-card.resolved {
+  background: rgba(220, 252, 231, 0.72);
+}
+
+.hq-ticket-meta-card small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .chat-head h3 {
@@ -1669,23 +2741,42 @@ td strong {
   overflow: auto;
   display: grid;
   gap: 12px;
-  padding: 18px 0;
+  padding: 18px;
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(247, 250, 255, 0.94), rgba(255, 255, 255, 0.98));
+}
+
+.hq-page.support-only .chat-stream {
+  max-height: calc(100vh - 420px);
+  min-height: 0;
+  overflow: auto;
+}
+
+.ticket-chat-stream {
+  padding: 18px;
+}
+
+.desk-ticket-stream {
+  border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .chat-bubble {
   width: min(82%, 560px);
   border-radius: 22px 22px 8px 22px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   background: rgba(255, 255, 255, 0.88);
-  border: 1px solid rgba(148, 163, 184, 0.18);
   display: grid;
   gap: 8px;
+}
+
+.ticket-chat-bubble {
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.05);
 }
 
 .chat-bubble.mine {
   margin-right: auto;
   border-radius: 22px 22px 22px 8px;
-  background: linear-gradient(135deg, rgba(15, 93, 215, 0.12), rgba(14, 165, 233, 0.08));
+  background: linear-gradient(135deg, rgba(15, 93, 215, 0.14), rgba(14, 165, 233, 0.09));
 }
 
 .chat-bubble.internal {
@@ -1713,16 +2804,72 @@ td strong {
 }
 
 .chat-reply {
-  border-top: 1px solid rgba(226, 232, 240, 0.9);
-  padding-top: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.96);
   display: grid;
   gap: 12px;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.05);
+}
+
+.ticket-chat-reply {
+  padding: 18px;
+}
+
+.desk-ticket-reply {
+  border: 1px solid rgba(226, 232, 240, 0.86);
+}
+
+.template-chip-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.template-chip-row.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.template-chip {
+  border: 0;
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: rgba(219, 234, 254, 0.84);
+  color: var(--primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.quick-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.support-ticket-mode .desk-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.support-ticket-mode .command-inbox-card,
+.support-ticket-mode .command-chat-card {
+  align-self: stretch;
+}
+
+.danger-chip {
+  background: rgba(254, 226, 226, 0.82);
+  color: #b91c1c;
+}
+
+.hq-page.support-only .ticket-chat-reply {
+  position: sticky;
+  bottom: 0;
 }
 
 .chat-reply textarea {
   min-height: 120px;
   padding: 12px;
   resize: vertical;
+  min-width: 0;
 }
 
 .internal-toggle {
@@ -1732,12 +2879,110 @@ td strong {
   color: var(--muted);
 }
 
+.chat-head-badges,
+.chat-tools,
+.ticket-thread-meta {
+  flex-wrap: wrap;
+}
+
+.ticket-chat-shell-rich > * {
+  min-width: 0;
+}
+
 .ticket-placeholder {
   display: grid;
   place-items: center;
   text-align: center;
   gap: 8px;
   color: var(--muted);
+}
+
+.ticket-placeholder-rich {
+  min-height: 100%;
+}
+
+.desk-placeholder {
+  border-style: dashed;
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.1), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.96));
+}
+
+.ticket-side-rail {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.rail-block {
+  display: grid;
+  gap: 12px;
+}
+
+.ticket-side-detail-list .detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.trend-bars {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.trend-bar-item {
+  display: grid;
+  gap: 8px;
+  text-align: center;
+}
+
+.trend-bar-shell {
+  height: 116px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(226, 232, 240, 0.28), rgba(241, 245, 249, 0.76));
+  display: flex;
+  align-items: end;
+  padding: 8px;
+}
+
+.trend-bar-fill {
+  width: 100%;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #38bdf8, #0f5dd7);
+  box-shadow: 0 16px 30px rgba(15, 93, 215, 0.16);
+}
+
+.ticket-activity-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.ticket-activity-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 6px;
+}
+
+.ticket-activity-dot.primary,
+.ticket-activity-dot.info {
+  background: #2563eb;
+}
+
+.ticket-activity-dot.success {
+  background: #16a34a;
+}
+
+.ticket-activity-dot.neutral,
+.ticket-activity-dot.muted {
+  background: #94a3b8;
 }
 
 .team-grid {
@@ -1776,6 +3021,37 @@ td strong {
 .team-card small {
   margin: 4px 0 0;
   color: var(--muted);
+}
+
+.team-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 40;
+}
+
+.modal-card {
+  width: min(680px, 100%);
+  padding: 20px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+}
+
+.inline-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
 }
 
 .team-rating {
@@ -2222,6 +3498,8 @@ td strong {
   .overview-grid,
   .workspace-grid,
   .ticket-center,
+  .command-top-grid,
+  .command-body-grid,
   .report-top-grid,
   .report-body-grid {
     grid-template-columns: 1fr;
@@ -2233,6 +3511,37 @@ td strong {
 
   .report-insight-grid {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 1560px) {
+  .ticket-desk {
+    grid-template-columns: 1fr;
+  }
+
+  .desk-hero-card {
+    grid-template-columns: 1fr;
+  }
+
+  .command-focus-card,
+  .command-health-grid,
+  .template-chip-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-filter-grid-wide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hq-ticket-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ticket-list {
+    max-height: 520px;
+  }
+
+  .chat-stream {
+    max-height: 560px;
   }
 }
 
@@ -2248,7 +3557,8 @@ td strong {
   .team-grid,
   .report-kpi-grid,
   .report-side-stats,
-  .report-glance-strip {
+  .report-glance-strip,
+  .trend-bars {
     grid-template-columns: 1fr;
   }
 
@@ -2262,6 +3572,18 @@ td strong {
   .hq-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .ticket-filter-grid-wide {
+    grid-template-columns: 1fr;
+  }
+
+  .hq-ticket-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hq-ticket-meta-grid {
+    grid-template-columns: 1fr;
   }
 
   .chat-bubble {

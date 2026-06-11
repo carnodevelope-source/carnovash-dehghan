@@ -72,3 +72,34 @@ class StockMovement(TimestampedModel):
             models.Index(fields=['movement_type', 'moved_at']),
             models.Index(fields=['reference_type', 'reference_id']),
         ]
+
+
+class ExpenseEntry(TimestampedModel):
+    class SourceType(models.TextChoices):
+        MANUAL = 'manual', 'Manual'
+
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='expense_entries',
+        null=True,
+        blank=True,
+    )
+    title = models.CharField(max_length=180)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    details = models.TextField(blank=True)
+    source_type = models.CharField(max_length=20, choices=SourceType.choices, default=SourceType.MANUAL)
+    spent_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='expense_entries_created',
+    )
+
+    class Meta:
+        ordering = ['-spent_at', '-id']
+        indexes = [
+            models.Index(fields=['source_type', 'spent_at']),
+        ]

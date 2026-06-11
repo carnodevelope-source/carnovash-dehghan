@@ -49,6 +49,7 @@
             class="menu-item"
             :class="{ active: isActive(item.route) }"
             :to="item.route"
+            @click="onMenuItemClick(item, $event)"
           >
             <span class="menu-item-label">{{ item.label }}</span>
             <span v-if="item.route === '/manager/wallet' && walletWarning.active" class="menu-warning-badge">
@@ -58,7 +59,7 @@
         </nav>
 
         <div class="premium-actions">
-          <button type="button" class="menu-item menu-button" @click="showPremiumFeatureMessage">ورود و خروج</button>
+          <button v-if="!canAccessAttendance" type="button" class="menu-item menu-button" @click="goToAttendance">ورود و خروج</button>
           <button type="button" class="menu-item menu-button" @click="showPremiumFeatureMessage">حسابداری</button>
         </div>
       </aside>
@@ -87,6 +88,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
 import { navigationByRole } from '../../config/navigation'
 import api from '../../services/api'
+import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess } from '../../utils/attendanceAccess'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -106,7 +108,12 @@ const isLoggingOut = ref(false)
 const profileMenuRef = ref(null)
 const walletWarning = ref({ active: false, label: '' })
 
-const navItems = computed(() => (navigationByRole[authStore.role] || []).flatMap((group) => group.items || []))
+const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
+const navItems = computed(() => (
+  (navigationByRole[authStore.role] || [])
+    .flatMap((group) => group.items || [])
+    .filter((item) => item.route !== ATTENDANCE_ROUTE || canAccessAttendance.value)
+))
 const tenantName = computed(() => authStore.user?.tenant_name || 'CarWash')
 const profileDisplayName = computed(() => {
   const full = String(authStore.user?.full_name || '').trim()
@@ -138,6 +145,25 @@ const onSearchInput = (event) => {
 
 const showPremiumFeatureMessage = () => {
   alert('برای فعال‌سازی این قابلیت باید اشتراک ویژه را خریداری کنید.')
+}
+
+const showAttendanceAccessMessage = () => {
+  alert(getAttendanceUpgradeMessage())
+}
+
+const onMenuItemClick = (item, event) => {
+  if (item?.route !== ATTENDANCE_ROUTE) return
+  if (canAccessAttendance.value) return
+  event?.preventDefault?.()
+  showAttendanceAccessMessage()
+}
+
+const goToAttendance = () => {
+  if (canAccessAttendance.value) {
+    router.push(ATTENDANCE_ROUTE)
+    return
+  }
+  showAttendanceAccessMessage()
 }
 
 const toggleProfileMenu = () => {

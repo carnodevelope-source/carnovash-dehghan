@@ -54,3 +54,72 @@ class NotificationLog(TimestampedModel):
     class Meta:
         ordering = ['-created_at']
         indexes = [models.Index(fields=['channel', 'status', 'created_at'])]
+
+
+class SmsTemplate(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='sms_templates',
+        null=True,
+        blank=True,
+    )
+    code = models.CharField(max_length=60)
+    title = models.CharField(max_length=120)
+    body = models.TextField()
+    display_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sms_templates_created',
+    )
+
+    class Meta:
+        ordering = ['display_order', 'title', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant', 'code'],
+                name='uniq_sms_template_code_per_tenant',
+            ),
+        ]
+
+
+class CustomerGroup(TimestampedModel):
+    class Mode(models.TextChoices):
+        MANUAL = 'manual', 'Manual'
+        SMART = 'smart', 'Smart'
+
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='customer_groups',
+    )
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.MANUAL)
+    member_keys = models.JSONField(default=list, blank=True)
+    rules = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='customer_groups_created',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='customer_groups_updated',
+    )
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['tenant', 'is_active', 'created_at']),
+        ]

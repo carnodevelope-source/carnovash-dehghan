@@ -30,6 +30,8 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserListSerializer(serializers.ModelSerializer):
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+
     class Meta:
         model = get_user_model()
         fields = [
@@ -39,6 +41,8 @@ class UserListSerializer(serializers.ModelSerializer):
             'first_name',
             'last_name',
             'phone',
+            'tenant',
+            'tenant_name',
             'role',
             'platform_role',
             'is_active',
@@ -187,6 +191,7 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    tenant_id = serializers.IntegerField(required=True)
 
     def validate_first_name(self, value):
         value = str(value or '').strip()
@@ -204,7 +209,20 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
         value = str(value or '').strip()
         return value
 
+    def validate_password(self, value):
+        value = str(value or '').strip()
+        if len(value) < 6:
+            raise serializers.ValidationError('رمز عبور پشتیبان باید حداقل ۶ کاراکتر باشد.')
+        return value
+
+    def validate_tenant_id(self, value):
+        tenant = CarWash.objects.filter(pk=value, is_active=True).first()
+        if not tenant:
+            raise serializers.ValidationError('کارواش انتخاب‌شده معتبر نیست.')
+        return tenant.id
+
     def create(self, validated_data):
+        tenant = CarWash.objects.get(pk=validated_data['tenant_id'])
         first_name = validated_data.get('first_name') or 'پشتیبان'
         last_name = validated_data.get('last_name') or 'مرکزی'
         full_name = f'{first_name} {last_name}'.strip()[:150]
@@ -229,15 +247,13 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
             trimmed = base_phone[: max(1, 20 - len(suffix))]
             phone = f'{trimmed}{suffix}'
         password = str(validated_data.get('password') or '').strip()
-        if len(password) < 6:
-            password = f'Support@{phone[-6:]}'
         user = user_model.objects.create(
             username=username,
             first_name=first_name,
             last_name=last_name,
             full_name=full_name,
             phone=phone,
-            tenant=None,
+            tenant=tenant,
             role='admin',
             platform_role='hq_support',
             is_active=True,
@@ -247,6 +263,34 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
         user.set_password(password)
         user.save(update_fields=['password'])
         return user
+
+
+class HqSupportUserUpdateSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    username = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    tenant_id = serializers.IntegerField(required=False)
+    is_active = serializers.BooleanField(required=False)
+
+    def validate_username(self, value):
+        return str(value or '').strip()
+
+    def validate_phone(self, value):
+        return str(value or '').strip()
+
+    def validate_password(self, value):
+        value = str(value or '').strip()
+        if value and len(value) < 6:
+            raise serializers.ValidationError('رمز عبور پشتیبان باید حداقل ۶ کاراکتر باشد.')
+        return value
+
+    def validate_tenant_id(self, value):
+        tenant = CarWash.objects.filter(pk=value, is_active=True).first()
+        if not tenant:
+            raise serializers.ValidationError('کارواش انتخاب‌شده معتبر نیست.')
+        return tenant.id
 
 
 class SupportTicketMessageSerializer(serializers.ModelSerializer):

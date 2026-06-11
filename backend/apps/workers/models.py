@@ -49,6 +49,7 @@ class WorkerProfile(TimestampedModel):
     attendance_token = models.CharField(max_length=120, unique=True, null=True, blank=True)
     notes = models.TextField(blank=True)
     has_entrusted_item = models.BooleanField(default=False)
+    entrusted_items = models.JSONField(default=list, blank=True)
     entrusted_item_description = models.TextField(blank=True)
     entrusted_item_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     entrusted_item_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)

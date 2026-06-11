@@ -14,7 +14,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.inventory.models import StockMovement
+from apps.inventory.models import ExpenseEntry, StockMovement
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
 from apps.vehicles.models import VehicleEntry
 from .models import CarWash, SupportTicket, SupportTicketMessage, User
@@ -25,6 +25,7 @@ from .serializers import (
     HqSupportUserListSerializer,
     HqSupportUserCreateSerializer,
     LoginSerializer,
+    HqSupportUserUpdateSerializer,
     SupportTicketCreateSerializer,
     SupportTicketDetailSerializer,
     SupportTicketFeedbackSerializer,
@@ -388,7 +389,7 @@ class SupportTicketMessageCreateView(APIView):
             body=data['body'],
             is_internal=False,
         )
-        ticket.status = SupportTicket.Status.PENDING if ticket.responded_by_id else SupportTicket.Status.OPEN
+        ticket.status = SupportTicket.Status.OPEN
         ticket.last_message_at = message.created_at
         ticket.save(update_fields=['status', 'last_message_at', 'updated_at'])
         return Response(SupportTicketMessageSerializer(message).data, status=status.HTTP_201_CREATED)
@@ -540,7 +541,11 @@ class HqSupportUserListCreateView(HqBaseView):
         forbidden = self.forbid_if_not_hq(request)
         if forbidden:
             return forbidden
-        users = User.objects.filter(platform_role__in=[User.PlatformRoles.HQ_ADMIN, User.PlatformRoles.HQ_SUPPORT]).order_by('platform_role', 'first_name', 'last_name')
+        users = (
+            User.objects.filter(platform_role__in=[User.PlatformRoles.HQ_ADMIN, User.PlatformRoles.HQ_SUPPORT])
+            .select_related('tenant')
+            .order_by('platform_role', 'first_name', 'last_name')
+        )
         return Response(HqSupportUserListSerializer(users, many=True).data, status=status.HTTP_200_OK)
 
     @transaction.atomic
@@ -553,6 +558,69 @@ class HqSupportUserListCreateView(HqBaseView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(HqSupportUserListSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+class HqSupportUserDetailView(HqBaseView):
+    def patch(self, request, pk):
+        forbidden = self.forbid_if_not_hq_admin(request)
+        if forbidden:
+            return forbidden
+
+        user = User.objects.filter(pk=pk, platform_role=User.PlatformRoles.HQ_SUPPORT).select_related('tenant').first()
+        if not user:
+            return Response({'detail': 'پشتیبان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = HqSupportUserUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        if 'username' in data and data['username'] and User.objects.exclude(pk=user.pk).filter(username__iexact=data['username']).exists():
+            return Response({'username': ['این نام کاربری قبلا ثبت شده است.']}, status=status.HTTP_400_BAD_REQUEST)
+        if 'phone' in data and data['phone'] and User.objects.exclude(pk=user.pk).filter(phone=data['phone']).exists():
+            return Response({'phone': ['این شماره موبایل قبلا ثبت شده است.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        changed_fields = []
+        if 'first_name' in data:
+            user.first_name = data['first_name']
+            changed_fields.append('first_name')
+        if 'last_name' in data:
+            user.last_name = data['last_name']
+            changed_fields.append('last_name')
+        if 'username' in data and data['username']:
+            user.username = data['username']
+            changed_fields.append('username')
+        if 'phone' in data and data['phone']:
+            user.phone = data['phone']
+            changed_fields.append('phone')
+        if 'tenant_id' in data:
+            user.tenant_id = data['tenant_id']
+            changed_fields.append('tenant')
+        if 'is_active' in data:
+            user.is_active = data['is_active']
+            changed_fields.append('is_active')
+        if any(field in data for field in ['first_name', 'last_name']):
+            user.full_name = f'{user.first_name} {user.last_name}'.strip()
+            changed_fields.append('full_name')
+        if data.get('password'):
+            user.set_password(data['password'])
+            changed_fields.append('password')
+
+        if changed_fields:
+            user.save(update_fields=list(dict.fromkeys(changed_fields)))
+        return Response(HqSupportUserListSerializer(user).data, status=status.HTTP_200_OK)
+
+    def delete(self, request, pk):
+        forbidden = self.forbid_if_not_hq_admin(request)
+        if forbidden:
+            return forbidden
+
+        user = User.objects.filter(pk=pk, platform_role=User.PlatformRoles.HQ_SUPPORT).first()
+        if not user:
+            return Response({'detail': 'پشتیبان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        SupportTicket.objects.filter(assigned_to=user).update(assigned_to=None)
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class HqTicketListView(HqBaseView):
@@ -571,6 +639,11 @@ class HqTicketListView(HqBaseView):
             .prefetch_related('messages__sender')
             .order_by('-last_message_at', '-created_at')
         )
+        if not _is_hq_admin(request.user):
+            tenant = getattr(request.user, 'tenant', None)
+            if not tenant:
+                return Response([], status=status.HTTP_200_OK)
+            queryset = queryset.filter(tenant=tenant)
         if status_filter in {choice[0] for choice in SupportTicket.Status.choices}:
             queryset = queryset.filter(status=status_filter)
         if priority_filter in {choice[0] for choice in SupportTicket.Priority.choices}:
@@ -595,12 +668,17 @@ class HqTicketDetailView(HqBaseView):
         if forbidden:
             return forbidden
 
-        ticket = (
+        queryset = (
             SupportTicket.objects.filter(pk=pk)
             .select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
             .prefetch_related('messages__sender')
-            .first()
         )
+        if not _is_hq_admin(request.user):
+            tenant = getattr(request.user, 'tenant', None)
+            if not tenant:
+                return Response({'detail': 'کارواش پشتیبان مشخص نشده است.'}, status=status.HTTP_403_FORBIDDEN)
+            queryset = queryset.filter(tenant=tenant)
+        ticket = queryset.first()
         if not ticket:
             return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(SupportTicketDetailSerializer(ticket).data, status=status.HTTP_200_OK)
@@ -613,7 +691,13 @@ class HqTicketMessageCreateView(HqBaseView):
         if forbidden:
             return forbidden
 
-        ticket = SupportTicket.objects.filter(pk=pk).select_related('assigned_to').first()
+        queryset = SupportTicket.objects.filter(pk=pk).select_related('assigned_to', 'tenant')
+        if not _is_hq_admin(request.user):
+            tenant = getattr(request.user, 'tenant', None)
+            if not tenant:
+                return Response({'detail': 'کارواش پشتیبان مشخص نشده است.'}, status=status.HTTP_403_FORBIDDEN)
+            queryset = queryset.filter(tenant=tenant)
+        ticket = queryset.first()
         if not ticket:
             return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -805,6 +889,27 @@ def _build_hq_report_snapshot(start=None, end=None):
         trend = trend_map[trend_key]
         trend['date'] = trend_key
         trend['expense_total'] += cost_total
+
+    manual_expenses = ExpenseEntry.objects.select_related('tenant').filter(source_type=ExpenseEntry.SourceType.MANUAL)
+    if start:
+        manual_expenses = manual_expenses.filter(spent_at__gte=start)
+    if end:
+        manual_expenses = manual_expenses.filter(spent_at__lte=end)
+
+    for expense in manual_expenses:
+        tenant = expense.tenant
+        if not tenant or tenant.id not in grouped:
+            continue
+        amount = Decimal(str(expense.amount or 0))
+        row = grouped[tenant.id]
+        row['expense_total'] += amount
+        if not row['last_activity_at'] or expense.spent_at > row['last_activity_at']:
+            row['last_activity_at'] = expense.spent_at
+
+        trend_key = timezone.localtime(expense.spent_at).date().isoformat()
+        trend = trend_map[trend_key]
+        trend['date'] = trend_key
+        trend['expense_total'] += amount
 
     wallets = Wallet.objects.filter(is_active=True).only('tenant_id', 'wallet_type', 'balance')
     for wallet in wallets:

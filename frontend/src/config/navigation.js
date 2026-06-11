@@ -19,7 +19,9 @@ export const navigationByRole = {
       label: 'عملیات',
       items: [
         item('مدیریت خودروها', '/'),
+        item('باشگاه مشتریان', '/manager/customer-club'),
         item('گزارشات', '/manager/reports'),
+        item('ورود و خروج', '/manager/attendance'),
         item('تنظیمات', '/manager/settings'),
         item('کیف پول', '/manager/wallet'),
         supportItem
@@ -32,7 +34,9 @@ export const navigationByRole = {
       label: 'عملیات',
       items: [
         item('مدیریت خودروها', '/'),
+        item('باشگاه مشتریان', '/manager/customer-club'),
         item('گزارشات', '/manager/reports'),
+        item('ورود و خروج', '/manager/attendance'),
         item('تنظیمات', '/manager/settings'),
         item('کیف پول', '/manager/wallet'),
         supportItem
