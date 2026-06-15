@@ -583,6 +583,26 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         return instance
 
     def _normalize_staff_members_payload(self, payload, assigned_worker=None):
+        def _normalized_percent(value):
+            try:
+                numeric = Decimal(str(value or 0))
+            except Exception:
+                return None
+            if numeric < 0:
+                numeric = Decimal('0')
+            if numeric > 100:
+                numeric = Decimal('100')
+            return float(numeric)
+
+        def _normalized_money(value):
+            try:
+                numeric = Decimal(str(value or 0))
+            except Exception:
+                return None
+            if numeric < 0:
+                numeric = Decimal('0')
+            return float(numeric)
+
         result = []
         seen_ids = set()
 
@@ -591,9 +611,17 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 if isinstance(item, dict):
                     worker_id = item.get('id')
                     worker_name = (item.get('name') or '').strip()
+                    worker_share_percent = _normalized_percent(item.get('worker_share_percent'))
+                    worker_share_amount = _normalized_money(item.get('worker_share_amount'))
+                    tip_share_percent = _normalized_percent(item.get('tip_share_percent'))
+                    tip_share_amount = _normalized_money(item.get('tip_share_amount'))
                 else:
                     worker_id = item
                     worker_name = ''
+                    worker_share_percent = None
+                    worker_share_amount = None
+                    tip_share_percent = None
+                    tip_share_amount = None
                 try:
                     normalized_id = int(worker_id)
                 except (TypeError, ValueError):
@@ -601,7 +629,16 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 if normalized_id in seen_ids:
                     continue
                 seen_ids.add(normalized_id)
-                result.append({'id': normalized_id, 'name': worker_name})
+                payload_item = {'id': normalized_id, 'name': worker_name}
+                if worker_share_percent is not None:
+                    payload_item['worker_share_percent'] = worker_share_percent
+                if worker_share_amount is not None:
+                    payload_item['worker_share_amount'] = worker_share_amount
+                if tip_share_percent is not None:
+                    payload_item['tip_share_percent'] = tip_share_percent
+                if tip_share_amount is not None:
+                    payload_item['tip_share_amount'] = tip_share_amount
+                result.append(payload_item)
 
         if assigned_worker:
             primary_id = int(assigned_worker.id)

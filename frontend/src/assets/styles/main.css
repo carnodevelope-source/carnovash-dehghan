@@ -26,6 +26,14 @@
 *::after {
   font-family: Vazirmatn, Tahoma, sans-serif;
 }
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
 body {
   margin: 0;
   background:
@@ -33,15 +41,56 @@ body {
     radial-gradient(circle at 88% 18%, rgba(14, 116, 144, 0.08), rgba(14, 116, 144, 0) 30%),
     var(--bg-main);
   color: var(--text-primary);
+  min-width: 320px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 #app {
   zoom: 0.9;
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 button,
 input,
 select,
 textarea {
   font: inherit;
+}
+img,
+svg,
+video,
+canvas,
+iframe {
+  display: block;
+  max-width: 100%;
+}
+input,
+select,
+textarea,
+button {
+  min-width: 0;
+  max-width: 100%;
+}
+#app :where(main, section, article, aside, div, header, footer) {
+  min-width: 0;
+}
+.table-wrap,
+.customer-table-wrap,
+.report-table-wrap {
+  width: 100%;
+  max-width: 100%;
+}
+body.mobile-menu-open {
+  overflow: hidden;
+}
+html.modal-open,
+body.modal-open {
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 .page {
   padding: 24px;
@@ -52,4 +101,180 @@ textarea {
   padding: 16px;
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-soft);
+}
+
+@media (max-width: 1024px) {
+  #app {
+    zoom: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px;
+  }
+
+  body {
+    font-size: 12px;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font-size: 13px;
+  }
+
+  #app :where(.page, .content, .card, .surface-card, .history-panel, .wallet-shortcuts, .wallet-hero, .section-card) {
+    max-width: 100%;
+  }
+
+  #app :where(.topbar, .page-head, .page-actions, .head-row, .head-actions, .history-head, .history-controls, .hero-actions, .hero-top, .worker-actions, .conversation-title, .conversation-tags, .reply-actions, .block-head, .detail-row, .message-meta, .modal-actions) {
+    row-gap: 10px;
+  }
+
+  #app :where(.filters, .tabs-bar, .chip-row, .category-row, .hero-actions, .history-controls, .head-actions) {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  #app :where(.filters > .primary-btn, .filters > .secondary-btn, .head-actions > .primary-btn, .head-actions > .secondary-btn, .hero-actions > .primary-btn, .hero-actions > .secondary-btn, .hero-actions > .ghost-btn) {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  #app :where(.table-wrap, .customer-table-wrap, .report-table-wrap) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    padding-bottom: 4px;
+  }
+
+  #app :where(table) {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  #app :where(th, td) {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: 12px;
+  }
+
+  #app :where(.modal-overlay, .wallet-modal-overlay, .vehicle-details-modal-overlay) {
+    align-items: flex-end;
+    padding: 8px;
+    overflow-x: hidden;
+  }
+
+  #app :where(.modal-panel, .wallet-modal, .vehicle-details-modal-panel) {
+    width: 100% !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: calc(100dvh - 16px);
+    border-radius: 18px 18px 14px 14px;
+    overflow-x: hidden;
+  }
+
+  #app :where(.modal-head, .wallet-modal-head, .vehicle-details-modal-head, .wallet-modal-body, .vehicle-details-grid) {
+    padding-right: 16px !important;
+    padding-left: 16px !important;
+  }
+
+  #app :where(.summary-grid, .filters-card, .worker-summary-grid, .hero-mini-grid, .stats-grid, .metric-strip, .inbox-summary-grid, .wallet-summary-board, .shortcut-grid, .summary-stat-grid, .worker-selection-grid, .modern-worker-share-editor, .release-secondary-grid, .cheque-fields-grid, .worker-meta, .kpi-grid) {
+    grid-template-columns: 1fr !important;
+  }
+
+  #app :where(.modal-form, .history-summary, .payment-settings-grid, .printer-settings-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #app :where(.printer-checks) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #app :where(.modal-form .full, .modal-form .full-width, .payment-settings-grid .full-width, .printer-settings-grid .full-width, .printer-checks .full-width) {
+    grid-column: 1 / -1 !important;
+  }
+
+  #app :where(.modal-form input, .modal-form select, .modal-form textarea, .modal-body input, .modal-body select, .modal-body textarea, .payment-settings-grid input, .payment-settings-grid textarea, .printer-settings-grid input, .printer-settings-grid select, .printer-settings-grid textarea) {
+    font-size: 12px !important;
+  }
+
+  #app :where(.modal-form input, .modal-form select, .modal-body input, .modal-body select, .payment-settings-grid input, .printer-settings-grid input, .printer-settings-grid select) {
+    height: 36px !important;
+    min-height: 36px;
+  }
+
+  #app :where(.modal-form textarea, .modal-body textarea, .payment-settings-grid textarea, .printer-settings-grid textarea) {
+    min-height: 72px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+
+  #app :where(.modal-head h2, .modal-head h3, .wallet-modal-head h3, .vehicle-details-modal-head h2) {
+    font-size: 16px !important;
+  }
+
+  #app :where(.modal-step, .modal-subtitle, .helper-text, .modal-form label span, .modal-body label span) {
+    font-size: 10px !important;
+  }
+
+  #app :where(.primary-btn, .secondary-btn, .close-btn, .table-btn, .small-btn, .icon-action, .ghost-btn, .mini-btn) {
+    font-size: 11px !important;
+    min-height: 34px;
+  }
+
+  #app :where(h1) {
+    font-size: clamp(1.2rem, 5vw, 1.8rem);
+  }
+
+  #app :where(h2) {
+    font-size: clamp(1.1rem, 4.4vw, 1.55rem);
+  }
+
+  #app :where(h3) {
+    font-size: clamp(1rem, 4vw, 1.35rem);
+  }
+
+  #app :where(p, li, label, small, span) {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+
+  #app :where(.card, .surface-card, .history-panel, .wallet-shortcuts, .wallet-hero, .section-card) {
+    border-radius: 18px;
+  }
+
+  #app :where(.modal-panel, .wallet-modal, .vehicle-details-modal-panel) {
+    max-height: calc(100dvh - 12px);
+    width: 100% !important;
+    max-width: calc(100vw - 12px) !important;
+    border-radius: 16px 16px 12px 12px;
+  }
+
+  #app :where(.close-btn, .mobile-sidebar-close, .mobile-menu-toggle) {
+    width: 40px;
+    height: 40px;
+  }
+
+  #app :where(.modal-form, .history-summary, .payment-settings-grid, .printer-settings-grid, .printer-checks) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  #app :where(.modal-form input, .modal-form select, .modal-body input, .modal-body select, .payment-settings-grid input, .printer-settings-grid input, .printer-settings-grid select) {
+    height: 34px !important;
+    min-height: 34px;
+    padding-inline: 8px !important;
+  }
+
+  #app :where(.modal-form textarea, .modal-body textarea, .payment-settings-grid textarea, .printer-settings-grid textarea) {
+    min-height: 64px !important;
+  }
 }

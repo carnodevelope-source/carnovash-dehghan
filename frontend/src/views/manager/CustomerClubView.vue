@@ -1927,7 +1927,42 @@ onMounted(async () => {
   }
 
   .club-hero-copy h2 {
-    font-size: 28px;
+    font-size: 22px;
+  }
+
+  .club-hero-copy p,
+  .hero-kicker,
+  .section-count,
+  .customer-table th,
+  .customer-table td,
+  .group-chip,
+  .group-chip small,
+  .score-pill,
+  .status-badge,
+  .customer-name-cell small {
+    font-size: 10px;
+  }
+
+  .customer-section-head h3,
+  .modal-head h3,
+  .side-card-head h3,
+  .hero-side-card strong,
+  .sms-credit-panel strong {
+    font-size: 18px;
+  }
+
+  .club-stats-grid article strong,
+  .side-metrics strong {
+    font-size: 16px;
+  }
+
+  .club-hero-actions button,
+  .customer-section-actions button,
+  .table-actions button,
+  .icon-action,
+  .group-chip {
+    font-size: 10px;
+    padding: 7px 9px;
   }
 
   .club-stats-grid,
@@ -1947,9 +1982,93 @@ onMounted(async () => {
     align-items: stretch;
   }
 
+  .customer-section-actions,
+  .club-hero-actions,
+  .side-card-head,
+  .sms-log-row,
+  .preview-list-item,
+  .manual-picker-item,
+  .assign-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .customer-table th,
+  .customer-table td {
+    padding-inline: 8px;
+    padding-block: 10px;
+  }
+
   .phone-preview {
     width: min(280px, 100%);
     height: 560px;
+  }
+}
+
+@media (max-width: 480px) {
+  .club-hero,
+  .club-filter-shell,
+  .customer-section,
+  .modal-card,
+  .side-card {
+    padding: 12px;
+  }
+
+  .club-hero-copy h2 {
+    font-size: 18px;
+  }
+
+  .club-hero-copy p,
+  .hero-kicker,
+  .section-count,
+  .customer-table th,
+  .customer-table td,
+  .group-chip,
+  .group-chip small,
+  .score-pill,
+  .status-badge,
+  .customer-name-cell small,
+  .sms-log-row,
+  .preview-list-item,
+  .assign-item,
+  .manual-picker-item {
+    font-size: 9px;
+  }
+
+  .customer-section-head h3,
+  .modal-head h3,
+  .side-card-head h3,
+  .hero-side-card strong,
+  .sms-credit-panel strong {
+    font-size: 15px;
+  }
+
+  .club-stats-grid article strong,
+  .side-metrics strong,
+  .customer-name-cell strong {
+    font-size: 13px;
+  }
+
+  .club-hero-actions button,
+  .customer-section-actions button,
+  .table-actions button,
+  .icon-action,
+  .group-chip {
+    font-size: 9px;
+    padding: 6px 8px;
+  }
+
+  .customer-table th,
+  .customer-table td {
+    padding-inline: 6px;
+    padding-block: 8px;
+  }
+
+  .avatar-badge {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    font-size: 10px;
   }
 }
 </style>

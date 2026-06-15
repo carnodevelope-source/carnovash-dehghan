@@ -1055,7 +1055,7 @@ onMounted(async () => {
 
 <style scoped>
 .settings-content { min-width: 0; }
-.tabs-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+.tabs-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 .chip { border: 0; background: #e2e8f0; color: #334155; padding: 8px 14px; border-radius: 999px; cursor: pointer; }
 .chip.active { background: #2563eb; color: #fff; }
 .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; }
@@ -1082,7 +1082,7 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .clickable-row { cursor: pointer; }
 .clickable-row:hover td { background: #f8fbff; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 99; }
-.modal-panel { width: min(980px,100%); background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; }
+.modal-panel { width: min(980px,100%); max-height: calc(100vh - 36px); background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: auto; }
 .history-panel { width: min(1100px,100%); }
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
 .modal-subtitle { display: block; margin-top: 4px; color: #64748b; font-size: 12px; }
@@ -1220,11 +1220,21 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .toast.success { background: #16a34a; }
 .toast.error { background: #dc2626; }
 @media (max-width: 960px) {
-  .modal-form, .history-summary { grid-template-columns: 1fr; }
+  .head-row,
+  .head-actions,
+  .tabs-bar,
+  .modal-actions,
+  .general-settings-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .modal-form, .history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .entrusted-head, .entrusted-grid { grid-template-columns: 1fr; display: grid; }
   .entrusted-item-row { grid-template-columns: 1fr; }
   .entrusted-list-head { align-items: stretch; }
-  .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: 1fr; }
+  .expense-summary-strip { grid-template-columns: 1fr; }
+  .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
 

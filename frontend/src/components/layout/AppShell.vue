@@ -1,7 +1,19 @@
 ﻿<template>
   <div class="dashboard-page" dir="rtl">
-    <header class="topbar">
+    <header ref="topbarRef" class="topbar">
       <div class="topbar-left">
+        <button
+          type="button"
+          class="mobile-menu-toggle"
+          :class="{ open: isMobileMenuOpen }"
+          :aria-expanded="isMobileMenuOpen"
+          aria-label="باز کردن منو"
+          @click="toggleMobileMenu"
+        >
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
         <div class="brand-wrap">
           <span class="brand">{{ tenantName }}</span>
           <span class="brand-sub">پنل مدیریت</span>
@@ -41,7 +53,33 @@
     </header>
 
     <div class="layout">
-      <aside class="sidebar">
+      <div
+        v-if="isMobileMenuOpen"
+        class="mobile-sidebar-overlay"
+        :style="mobileShellStyle"
+        @click="closeMobileMenu"
+      ></div>
+
+      <aside
+        class="sidebar"
+        :class="{ 'mobile-open': isMobileMenuOpen }"
+        :style="mobileShellStyle"
+      >
+        <div class="mobile-sidebar-head">
+          <div class="mobile-sidebar-brand">
+            <strong>{{ tenantName }}</strong>
+            <span>{{ roleLabel }}</span>
+          </div>
+          <button
+            type="button"
+            class="mobile-sidebar-close"
+            aria-label="بستن منو"
+            @click="closeMobileMenu"
+          >
+            ✕
+          </button>
+        </div>
+
         <nav>
           <RouterLink
             v-for="item in navItems"
@@ -65,7 +103,7 @@
       </aside>
 
       <main class="content">
-        <header class="page-head">
+        <header v-if="!hidePageHeader" class="page-head">
           <div>
             <p v-if="subtitle" class="page-subtitle">{{ subtitle }}</p>
             <h1>{{ title }}</h1>
@@ -83,7 +121,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
 import { navigationByRole } from '../../config/navigation'
@@ -93,6 +131,7 @@ import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess } fr
 const props = defineProps({
   title: { type: String, required: true },
   subtitle: { type: String, default: '' },
+  hidePageHeader: { type: Boolean, default: false },
   showSearch: { type: Boolean, default: false },
   searchPlaceholder: { type: String, default: 'جستجو...' },
   searchQuery: { type: String, default: '' }
@@ -107,6 +146,9 @@ const isProfileMenuOpen = ref(false)
 const isLoggingOut = ref(false)
 const profileMenuRef = ref(null)
 const walletWarning = ref({ active: false, label: '' })
+const isMobileMenuOpen = ref(false)
+const topbarRef = ref(null)
+const topbarHeight = ref(64)
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const navItems = computed(() => (
@@ -114,6 +156,9 @@ const navItems = computed(() => (
     .flatMap((group) => group.items || [])
     .filter((item) => item.route !== ATTENDANCE_ROUTE || canAccessAttendance.value)
 ))
+const mobileShellStyle = computed(() => ({
+  '--mobile-topbar-offset': `${topbarHeight.value}px`
+}))
 const tenantName = computed(() => authStore.user?.tenant_name || 'CarWash')
 const profileDisplayName = computed(() => {
   const full = String(authStore.user?.full_name || '').trim()
@@ -152,18 +197,30 @@ const showAttendanceAccessMessage = () => {
 }
 
 const onMenuItemClick = (item, event) => {
-  if (item?.route !== ATTENDANCE_ROUTE) return
-  if (canAccessAttendance.value) return
-  event?.preventDefault?.()
-  showAttendanceAccessMessage()
+  if (item?.route === ATTENDANCE_ROUTE && !canAccessAttendance.value) {
+    event?.preventDefault?.()
+    showAttendanceAccessMessage()
+    return
+  }
+  closeMobileMenu()
 }
 
 const goToAttendance = () => {
   if (canAccessAttendance.value) {
+    closeMobileMenu()
     router.push(ATTENDANCE_ROUTE)
     return
   }
   showAttendanceAccessMessage()
+}
+
+const toggleMobileMenu = () => {
+  closeProfileMenu()
+  isMobileMenuOpen.value = !isMobileMenuOpen.value
+}
+
+const closeMobileMenu = () => {
+  isMobileMenuOpen.value = false
 }
 
 const toggleProfileMenu = () => {
@@ -178,6 +235,26 @@ const onDocumentClick = (event) => {
   if (!profileMenuRef.value) return
   if (profileMenuRef.value.contains(event.target)) return
   closeProfileMenu()
+}
+
+const syncTopbarHeight = () => {
+  topbarHeight.value = Math.max(64, Math.round(topbarRef.value?.offsetHeight || 64))
+}
+
+const syncBodyScroll = () => {
+  document.body.classList.toggle('mobile-menu-open', isMobileMenuOpen.value)
+}
+
+const onWindowResize = () => {
+  syncTopbarHeight()
+  if (window.innerWidth > 900) closeMobileMenu()
+}
+
+const onWindowKeydown = (event) => {
+  if (event.key === 'Escape') {
+    closeMobileMenu()
+    closeProfileMenu()
+  }
 }
 
 const onLogoutClick = async () => {
@@ -211,26 +288,47 @@ const loadWalletWarning = async () => {
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
+  window.addEventListener('resize', onWindowResize)
+  window.addEventListener('keydown', onWindowKeydown)
+  syncTopbarHeight()
+  syncBodyScroll()
   loadWalletWarning()
+})
+
+watch(() => route.fullPath, () => {
+  closeMobileMenu()
+  closeProfileMenu()
+})
+
+watch(isMobileMenuOpen, () => {
+  syncBodyScroll()
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('resize', onWindowResize)
+  window.removeEventListener('keydown', onWindowKeydown)
+  document.body.classList.remove('mobile-menu-open')
 })
 </script>
 
 <style scoped>
 .dashboard-page {
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
   background: #f7f9fb;
   color: #191c1e;
+  overflow-x: hidden;
 }
 
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 40;
   height: 64px;
+  width: 100%;
+  max-width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -245,17 +343,63 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .brand {
   color: #0058be;
   font-weight: 700;
 }
+.mobile-menu-toggle {
+  display: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #d8e0ea;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mobile-menu-toggle span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.mobile-menu-toggle.open {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
+.mobile-menu-toggle.open span:nth-child(1) {
+  transform: translateY(6px) rotate(45deg);
+}
+
+.mobile-menu-toggle.open span:nth-child(2) {
+  opacity: 0;
+}
+
+.mobile-menu-toggle.open span:nth-child(3) {
+  transform: translateY(-6px) rotate(-45deg);
+}
 .brand-wrap { display: flex; align-items: center; gap: 8px; }
 .brand-sub { font-size: 12px; color: #64748b; border-right: 1px solid #cbd5e1; padding-right: 8px; }
 
 .search-box input {
   width: 260px;
+  max-width: 100%;
   height: 40px;
   border: none;
   border-radius: 12px;
@@ -337,14 +481,53 @@ onBeforeUnmount(() => {
 
 .layout {
   display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .sidebar {
+  flex-shrink: 0;
   width: 240px;
   min-height: calc(100vh - 64px);
   padding: 24px 12px;
   background: #f2f4f6;
   border-left: 1px solid #e3e6ed;
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.mobile-sidebar-head {
+  display: none;
+}
+
+.mobile-sidebar-brand {
+  display: grid;
+  gap: 3px;
+}
+
+.mobile-sidebar-brand strong {
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.mobile-sidebar-brand span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mobile-sidebar-close {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #d8e0ea;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
 }
 
 .sidebar nav {
@@ -400,7 +583,14 @@ onBeforeUnmount(() => {
 
 .content {
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
   padding: 24px;
+  overflow-x: hidden;
+}
+
+.mobile-sidebar-overlay {
+  display: none;
 }
 
 .page-head {
@@ -427,25 +617,129 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .topbar {
+    height: auto;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .topbar-left,
+  .topbar-right {
+    width: auto;
+  }
+
+  .topbar-left {
+    flex-wrap: wrap;
+    flex: 1;
+    justify-content: flex-start;
+    gap: 10px;
+  }
+
+  .search-box {
+    width: 100%;
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .search-box input {
+    width: 100%;
+  }
+
+  .page-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .layout {
+    display: block;
+  }
+
+  .mobile-menu-toggle {
+    display: inline-grid;
+    place-items: center;
+  }
+
+  .sidebar {
+    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    min-height: 0;
+    height: 100dvh;
+    padding: calc(var(--mobile-topbar-offset, 64px) + 10px) 12px 16px;
+    margin-top: 0;
+    border-left: 1px solid #e3e6ed;
+    border-bottom: 0;
+    border-radius: 0;
+    box-shadow: 0 22px 50px rgba(15, 23, 42, 0.16);
+    z-index: 30;
+    overflow: auto;
+    overflow-x: hidden;
+    background: rgba(242, 244, 246, 0.98);
+    backdrop-filter: blur(12px);
+  }
+
+  .mobile-sidebar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 2px 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(203, 213, 225, 0.7);
+  }
+
+  .sidebar nav,
+  .premium-actions {
+    display: grid;
+    gap: 8px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .menu-item,
+  .menu-button {
+    flex: unset;
+    white-space: normal;
+  }
+
+  .sidebar.mobile-open {
+    display: block;
+  }
+
+  .mobile-sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.28);
+    z-index: 25;
+  }
 }
 
 @media (max-width: 768px) {
   .topbar {
-    padding: 0 12px;
-  }
-
-  .search-box input {
-    width: 170px;
-  }
-
-  .layout {
-    flex-direction: row;
+    padding: 12px;
   }
 
   .sidebar {
-    width: 170px;
-    padding: 14px 8px;
-    min-height: calc(100vh - 64px);
+    padding: 10px;
   }
 
   .menu-item {
@@ -460,6 +754,82 @@ onBeforeUnmount(() => {
 
   .content {
     padding: 12px;
+  }
+
+  .brand-wrap {
+    display: grid;
+    gap: 3px;
+  }
+
+  .brand {
+    font-size: 14px;
+  }
+
+  .brand-sub {
+    font-size: 11px;
+    border-right: 0;
+    padding-right: 0;
+  }
+
+  .profile-button {
+    width: auto;
+    min-width: 0;
+    justify-content: space-between;
+  }
+
+  .page-head h1 {
+    font-size: 20px;
+  }
+
+  .page-subtitle {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar-left,
+  .topbar-right {
+    gap: 10px;
+  }
+
+  .profile-button {
+    padding: 0 10px;
+  }
+
+  .profile-name {
+    font-size: 12px;
+  }
+
+  .profile-role {
+    font-size: 10px;
+  }
+
+  .search-box input,
+  .profile-button {
+    height: 42px;
+  }
+
+  .content {
+    padding: 10px;
+  }
+
+  .sidebar {
+    width: auto;
+    max-width: none;
+    padding: calc(var(--mobile-topbar-offset, 64px) + 8px) 10px 14px;
+  }
+
+  .menu-item {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+
+  .page-head {
+    gap: 10px;
+  }
+
+  .page-head h1 {
+    font-size: 18px;
   }
 }
 </style>

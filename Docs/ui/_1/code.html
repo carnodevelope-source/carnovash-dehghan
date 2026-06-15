@@ -2,423 +2,322 @@
 
 <html dir="rtl" lang="fa"><head>
 <meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>لومینا واش - تخصیص خدمات</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<script id="tailwind-config">
-      tailwind.config = {
-        darkMode: "class",
-        theme: {
-          extend: {
-            "colors": {
-                "on-primary-fixed": "#001a42",
-                "surface-container-high": "#e6e8ea",
-                "surface-container": "#eceef0",
-                "background": "#f7f9fb",
-                "secondary-fixed": "#acedff",
-                "surface-bright": "#f7f9fb",
-                "inverse-surface": "#2d3133",
-                "on-tertiary-fixed-variant": "#5516be",
-                "tertiary": "#6b38d4",
-                "on-error": "#ffffff",
-                "on-background": "#191c1e",
-                "primary": "#0058be",
-                "on-primary-container": "#fefcff",
-                "surface-container-low": "#f2f4f6",
-                "secondary-container": "#57dffe",
-                "surface-dim": "#d8dadc",
-                "outline": "#727785",
-                "surface-variant": "#e0e3e5",
-                "outline-variant": "#c2c6d6",
-                "on-secondary-fixed": "#001f26",
-                "surface-tint": "#005ac2",
-                "inverse-primary": "#adc6ff",
-                "secondary-fixed-dim": "#4cd7f6",
-                "on-tertiary": "#ffffff",
-                "error-container": "#ffdad6",
-                "tertiary-fixed": "#e9ddff",
-                "error": "#ba1a1a",
-                "on-secondary-fixed-variant": "#004e5c",
-                "primary-fixed": "#d8e2ff",
-                "on-primary": "#ffffff",
-                "primary-fixed-dim": "#adc6ff",
-                "on-primary-fixed-variant": "#004395",
-                "tertiary-fixed-dim": "#d0bcff",
-                "on-tertiary-container": "#fffbff",
-                "on-surface-variant": "#424754",
-                "surface-container-highest": "#e0e3e5",
-                "primary-container": "#2170e4",
-                "on-surface": "#191c1e",
-                "tertiary-container": "#8455ef",
-                "on-secondary-container": "#006172",
-                "surface": "#f7f9fb",
-                "secondary": "#00687a",
-                "on-tertiary-fixed": "#23005c",
-                "on-error-container": "#93000a",
-                "inverse-on-surface": "#eff1f3"
-            },
-            "borderRadius": {
-                "DEFAULT": "0.25rem",
-                "lg": "0.5rem",
-                "xl": "0.75rem",
-                "full": "9999px"
-            },
-            "spacing": {
-                "gutter": "24px",
-                "container-padding-mobile": "16px",
-                "container-padding-desktop": "32px",
-                "card-gap": "20px",
-                "base": "8px"
-            },
-            "fontFamily": {
-                "headline-md": ["Inter", "system-ui"],
-                "display-lg": ["Inter", "system-ui"],
-                "headline-sm": ["Inter", "system-ui"],
-                "body-lg": ["Inter", "system-ui"],
-                "body-md": ["Inter", "system-ui"],
-                "body-sm": ["Inter", "system-ui"],
-                "label-mono": ["JetBrains Mono", "monospace"]
-            },
-            "fontSize": {
-                "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
-                "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
-                "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
-                "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
-                "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
-                "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
-                "label-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "500"}],
-                "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "600"}]
-            },
-            "boxShadow": {
-                "glow": "0px 8px 20px rgba(0, 88, 190, 0.25)",
-                "soft": "0px 10px 25px -5px rgba(15, 23, 42, 0.05)"
-            }
-          }
-        }
-      }
-    </script>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@100;300;400;500;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <style>
         body {
-            background-color: #f7f9fb;
-            font-family: 'Tahoma', 'Arial', sans-serif; /* Fallback for Vazir while rendering */
+            font-family: 'Vazirmatn', sans-serif;
+            -webkit-tap-highlight-color: transparent;
         }
         .glass-card {
             background: rgba(255, 255, 255, 0.7);
             backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 10px 30px rgba(30, 111, 217, 0.05);
+        }
+        .scroll-hide::-webkit-scrollbar {
+            display: none;
         }
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-            vertical-align: middle;
         }
-        .btn-gradient {
-            background: linear-gradient(135deg, #0058be 0%, #00d2ff 100%);
+        .active-pill {
+            background: #0056b3;
+            color: white;
         }
     </style>
-</head>
-<body class="text-on-surface">
-<!-- TopNavBar -->
-<nav class="fixed top-0 w-full z-50 bg-surface/80 dark:bg-surface-dim/80 backdrop-blur-xl border-b border-outline-variant/30 shadow-md flex flex-row-reverse justify-between items-center px-container-desktop h-16">
-<div class="flex items-center gap-4">
-<span class="font-headline-md text-headline-md font-bold text-primary">Lumina Wash Enterprise</span>
-<div class="hidden md:flex items-center gap-6 mr-8">
-<a class="text-primary font-bold border-b-2 border-primary py-1 font-body-md text-body-md" href="#">مرکز پشتیبانی</a>
-<a class="text-on-surface-variant hover:bg-surface-container-high transition-colors duration-200 p-2 rounded-lg font-body-md text-body-md" href="#">داشبورد</a>
-</div>
-</div>
-<div class="flex items-center gap-4">
-<div class="flex items-center gap-2">
-<button class="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-all">
-<span class="material-symbols-outlined">help</span>
-</button>
-<button class="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-all relative">
-<span class="material-symbols-outlined">notifications</span>
-<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
-</button>
-</div>
-<img alt="پروفایل مدیر" class="w-10 h-10 rounded-full border-2 border-primary-fixed shadow-sm" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDHpQ5nxgjFcNlKLiN9PDftrKcMPwnlJrAh4X0vm2Qp6RJvp-wUcAPGk9Df982VAaYrauur_KFGWgGcRLbnNjs-MuQPIcrOyaBVitH2brgFHLrg4qzqzdrNKwtdRVQ5lXN8cVemfro9x58EKiq_G6v2WbOF20skoc_LYTd22-IvlMihMhEb2CPEIhmrnmsIliWR6wtVpp0ym80ljlrIxwWLt_KVWatUdn4KHqF590vkzlsa-5EH0SnucXvQDOC_SSGWzpqsODUpoC1t"/>
-</div>
-</nav>
-<!-- SideNavBar -->
-<aside class="fixed right-0 top-0 h-full w-64 z-40 bg-surface-container-low dark:bg-surface-container border-l border-outline-variant/20 shadow-md flex flex-col p-4 pt-20">
-<div class="mb-8 px-2">
-<h2 class="font-headline-sm text-headline-sm font-black text-primary mb-1">مدیریت لومینا</h2>
-<p class="text-on-surface-variant text-xs">پنل مدیریت پیشرفته</p>
-</div>
-<nav class="flex-1 space-y-1">
-<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
-<span class="material-symbols-outlined">dashboard</span>
-<span class="font-body-md text-body-md">داشبورد</span>
-</a>
-<a class="group flex items-center gap-3 p-3 mb-2 bg-secondary-container text-on-secondary-container rounded-xl font-bold shadow-glow" href="#">
-<span class="material-symbols-outlined">support_agent</span>
-<span class="font-body-md text-body-md">مدیریت تیکت‌ها</span>
-</a>
-<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
-<span class="material-symbols-outlined">local_car_wash</span>
-<span class="font-body-md text-body-md">مدیریت شستشو</span>
-</a>
-<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
-<span class="material-symbols-outlined">analytics</span>
-<span class="font-body-md text-body-md">گزارشات مالی</span>
-</a>
-<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
-<span class="material-symbols-outlined">badge</span>
-<span class="font-body-md text-body-md">مدیریت کارکنان</span>
-</a>
-<a class="group flex items-center gap-3 p-3 mb-2 text-on-surface-variant hover:bg-surface-container-highest rounded-xl transition-all" href="#">
-<span class="material-symbols-outlined">settings</span>
-<span class="font-body-md text-body-md">تنظیمات سیستم</span>
-</a>
-</nav>
-<button class="mt-auto group flex items-center gap-3 p-3 mb-2 text-error hover:bg-error-container/20 rounded-xl transition-all">
-<span class="material-symbols-outlined">logout</span>
-<span class="font-body-md text-body-md">خروج از حساب</span>
-</button>
-</aside>
-<!-- Main Content -->
-<main class="mr-64 pt-24 px-container-desktop pb-12">
-<!-- Header Section -->
-<header class="flex justify-between items-center mb-10">
-<div>
-<h1 class="font-headline-lg text-headline-lg text-on-surface mb-2">مرکز پشتیبانی</h1>
-<p class="text-on-surface-variant font-body-md text-body-md">درخواست‌های خود را پیگیری کنید یا تیکت جدید ثبت نمایید.</p>
-</div>
-<button class="btn-gradient px-6 py-3 rounded-xl text-white font-bold flex items-center gap-2 shadow-glow hover:scale-[1.02] transition-transform active:scale-95">
-<span class="material-symbols-outlined">add_circle</span>
-<span class="font-body-md text-body-md">ثبت تیکت جدید</span>
-</button>
-</header>
-<!-- Stats Bento Grid -->
-<section class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-<!-- Open Tickets -->
-<div class="glass-card p-6 rounded-[20px] shadow-soft flex items-center justify-between border-r-4 border-primary">
-<div>
-<p class="text-on-surface-variant font-body-sm text-body-sm mb-1">تیکت‌های باز</p>
-<h3 class="font-headline-md text-headline-md text-on-surface">۱۲</h3>
-</div>
-<div class="bg-primary/10 p-4 rounded-2xl text-primary">
-<span class="material-symbols-outlined text-3xl">confirmation_number</span>
-</div>
-</div>
-<!-- Pending Tickets -->
-<div class="glass-card p-6 rounded-[20px] shadow-soft flex items-center justify-between border-r-4 border-tertiary">
-<div>
-<p class="text-on-surface-variant font-body-sm text-body-sm mb-1">در انتظار پاسخ</p>
-<h3 class="font-headline-md text-headline-md text-on-surface">۴</h3>
-</div>
-<div class="bg-tertiary/10 p-4 rounded-2xl text-tertiary">
-<span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;">pending_actions</span>
-</div>
-</div>
-<!-- Solved Tickets -->
-<div class="glass-card p-6 rounded-[20px] shadow-soft flex items-center justify-between border-r-4 border-secondary">
-<div>
-<p class="text-on-surface-variant font-body-sm text-body-sm mb-1">حل شده</p>
-<h3 class="font-headline-md text-headline-md text-on-surface">۱۸۵</h3>
-</div>
-<div class="bg-secondary/10 p-4 rounded-2xl text-secondary">
-<span class="material-symbols-outlined text-3xl">task_alt</span>
-</div>
-</div>
-</section>
-<!-- Filters & Table Section -->
-<section class="glass-card rounded-[24px] shadow-soft overflow-hidden">
-<!-- Filters Toolbar -->
-<div class="p-6 border-b border-outline-variant/20 flex flex-wrap items-center justify-between gap-4">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#00586e",
+                        "tertiary-container": "#00833d",
+                        "surface-container": "#eceef0",
+                        "outline": "#727784",
+                        "primary-fixed": "#d7e2ff",
+                        "on-secondary": "#ffffff",
+                        "background": "#f7f9fb",
+                        "surface-container-high": "#e6e8ea",
+                        "secondary": "#006780",
+                        "primary-container": "#1e6fd9",
+                        "primary": "#0056b3",
+                        "on-primary-container": "#f7f7ff",
+                        "surface": "#f7f9fb",
+                        "surface-variant": "#e0e3e5",
+                        "on-surface": "#191c1e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter-mobile": "0.75rem",
+                        "touch-target-min": "48px",
+                        "margin-mobile": "1rem",
+                        "card-padding": "1rem"
+                    },
+                    "fontFamily": {
+                        "label-lg": ["Vazirmatn"],
+                        "headline-md": ["Vazirmatn"],
+                        "body-lg": ["Vazirmatn"],
+                        "body-md": ["Vazirmatn"],
+                        "headline-lg": ["Vazirmatn"],
+                        "license-plate": ["Vazirmatn"]
+                    },
+                    "fontSize": {
+                        "label-lg": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "headline-lg": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                        "license-plate": ["22px", {"lineHeight": "24px", "letterSpacing": "1px", "fontWeight": "700"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen pb-40">
+<!-- Top App Bar (Shared Component Logic) -->
+<header class="bg-surface/80 backdrop-blur-xl sticky top-0 z-40 border-b border-outline-variant/10 shadow-sm flex flex-row-reverse justify-between items-center w-full px-margin-mobile h-touch-target-min">
 <div class="flex items-center gap-3">
-<span class="material-symbols-outlined text-on-surface-variant">filter_list</span>
-<button class="px-4 py-2 bg-primary/10 text-primary rounded-full font-bold text-sm">همه تیکت‌ها</button>
-<button class="px-4 py-2 hover:bg-surface-container text-on-surface-variant rounded-full text-sm transition-all">فقط باز</button>
-<button class="px-4 py-2 hover:bg-surface-container text-on-surface-variant rounded-full text-sm transition-all">مالی</button>
-<button class="px-4 py-2 hover:bg-surface-container text-on-surface-variant rounded-full text-sm transition-all">فنی</button>
+<span class="font-headline-lg text-headline-lg font-bold text-primary">لومینا واش</span>
 </div>
-<div class="relative w-full md:w-64">
-<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
-<input class="w-full pr-10 pl-4 py-2 bg-surface-container-low border-none rounded-xl focus:ring-2 focus:ring-primary/20 text-sm" placeholder="جستجو در موضوع تیکت..." type="text"/>
-</div>
-</div>
-<!-- Ticket List Table -->
-<div class="overflow-x-auto">
-<table class="w-full text-right border-collapse">
-<thead>
-<tr class="bg-surface-container-low text-on-surface-variant">
-<th class="px-6 py-4 font-bold text-sm">شناسه (#)</th>
-<th class="px-6 py-4 font-bold text-sm">موضوع</th>
-<th class="px-6 py-4 font-bold text-sm">واحد مربوطه</th>
-<th class="px-6 py-4 font-bold text-sm">وضعیت</th>
-<th class="px-6 py-4 font-bold text-sm">اولویت</th>
-<th class="px-6 py-4 font-bold text-sm">آخرین بروزرسانی</th>
-<th class="px-6 py-4 font-bold text-sm">عملیات</th>
-</tr>
-</thead>
-<tbody class="divide-y divide-outline-variant/10">
-<!-- Row 1 -->
-<tr class="hover:bg-surface-container/50 transition-colors cursor-pointer group">
-<td class="px-6 py-5 font-label-mono text-label-mono text-primary font-bold">#TK-2048</td>
-<td class="px-6 py-5">
-<div class="font-bold text-on-surface">خطا در درگاه پرداخت بانکی</div>
-<div class="text-xs text-on-surface-variant mt-1">سرویس VIP شستشوی نانو</div>
-</td>
-<td class="px-6 py-5 text-on-surface-variant text-sm">واحد مالی</td>
-<td class="px-6 py-5">
-<span class="px-3 py-1 bg-error/10 text-error rounded-full text-[10px] font-bold uppercase tracking-wider">در انتظار پاسخ</span>
-</td>
-<td class="px-6 py-5">
-<div class="flex items-center gap-1 text-error">
-<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">priority_high</span>
-<span class="text-xs font-bold">بسیار بالا</span>
-</div>
-</td>
-<td class="px-6 py-5 text-on-surface-variant text-xs">۲ ساعت پیش</td>
-<td class="px-6 py-5">
-<button class="p-2 hover:bg-surface-container-highest rounded-lg text-primary transition-all">
-<span class="material-symbols-outlined">visibility</span>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors text-primary">
+<span class="material-symbols-outlined">notifications</span>
 </button>
-</td>
-</tr>
-<!-- Row 2 -->
-<tr class="hover:bg-surface-container/50 transition-colors cursor-pointer">
-<td class="px-6 py-5 font-label-mono text-label-mono text-primary font-bold">#TK-1982</td>
-<td class="px-6 py-5">
-<div class="font-bold text-on-surface">درخواست تغییر شیفت کارکنان</div>
-<div class="text-xs text-on-surface-variant mt-1">تیم بخش نظافت داخلی</div>
-</td>
-<td class="px-6 py-5 text-on-surface-variant text-sm">منابع انسانی</td>
-<td class="px-6 py-5">
-<span class="px-3 py-1 bg-primary/10 text-primary rounded-full text-[10px] font-bold uppercase tracking-wider">باز</span>
-</td>
-<td class="px-6 py-5">
-<div class="flex items-center gap-1 text-on-surface-variant">
-<span class="material-symbols-outlined text-sm">low_priority</span>
-<span class="text-xs font-bold">متوسط</span>
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20">
+<span class="text-primary font-bold text-xs">مدیر</span>
 </div>
-</td>
-<td class="px-6 py-5 text-on-surface-variant text-xs">دیروز، ۱۰:۴۵</td>
-<td class="px-6 py-5">
-<button class="p-2 hover:bg-surface-container-highest rounded-lg text-primary transition-all">
-<span class="material-symbols-outlined">visibility</span>
-</button>
-</td>
-</tr>
-<!-- Row 3 -->
-<tr class="hover:bg-surface-container/50 transition-colors cursor-pointer">
-<td class="px-6 py-5 font-label-mono text-label-mono text-primary font-bold">#TK-1850</td>
-<td class="px-6 py-5">
-<div class="font-bold text-on-surface">خرابی دستگاه کارواش تونلی شماره ۲</div>
-<div class="text-xs text-on-surface-variant mt-1">بخش سخت‌افزار عملیاتی</div>
-</td>
-<td class="px-6 py-5 text-on-surface-variant text-sm">پشتیبانی فنی</td>
-<td class="px-6 py-5">
-<span class="px-3 py-1 bg-secondary/10 text-secondary rounded-full text-[10px] font-bold uppercase tracking-wider">حل شده</span>
-</td>
-<td class="px-6 py-5">
-<div class="flex items-center gap-1 text-tertiary">
-<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">keyboard_double_arrow_up</span>
-<span class="text-xs font-bold">بالا</span>
 </div>
-</td>
-<td class="px-6 py-5 text-on-surface-variant text-xs">۳ روز پیش</td>
-<td class="px-6 py-5">
-<button class="p-2 hover:bg-surface-container-highest rounded-lg text-primary transition-all">
-<span class="material-symbols-outlined">visibility</span>
-</button>
-</td>
-</tr>
-<!-- Row 4 -->
-<tr class="hover:bg-surface-container/50 transition-colors cursor-pointer">
-<td class="px-6 py-5 font-label-mono text-label-mono text-primary font-bold">#TK-1722</td>
-<td class="px-6 py-5">
-<div class="font-bold text-on-surface">گزارش کسر از شارژ حساب مشتری</div>
-<div class="text-xs text-on-surface-variant mt-1">اشتراک ماهیانه نقره‌ای</div>
-</td>
-<td class="px-6 py-5 text-on-surface-variant text-sm">واحد مالی</td>
-<td class="px-6 py-5">
-<span class="px-3 py-1 bg-secondary/10 text-secondary rounded-full text-[10px] font-bold uppercase tracking-wider">حل شده</span>
-</td>
-<td class="px-6 py-5">
-<div class="flex items-center gap-1 text-on-surface-variant">
-<span class="material-symbols-outlined text-sm">low_priority</span>
-<span class="text-xs font-bold">کم</span>
+</header>
+<!-- Page Header & Vehicle Info -->
+<section class="px-margin-mobile mt-4">
+<div class="glass-card rounded-xl p-4 flex flex-row-reverse justify-between items-center mb-6">
+<div class="text-right">
+<div class="flex items-center gap-2 mb-1 flex-row-reverse">
+<h1 class="font-headline-md text-headline-md">پژو ۲۰۶ سفید</h1>
+<span class="bg-secondary-container text-on-secondary-container text-[10px] px-2 py-0.5 rounded-full font-bold">عادی</span>
 </div>
-</td>
-<td class="px-6 py-5 text-on-surface-variant text-xs">۵ روز پیش</td>
-<td class="px-6 py-5">
-<button class="p-2 hover:bg-surface-container-highest rounded-lg text-primary transition-all">
-<span class="material-symbols-outlined">visibility</span>
-</button>
-</td>
-</tr>
-</tbody>
-</table>
+<p class="text-on-surface-variant font-body-md text-body-md">بدون نام راننده • ۰۹۱۳۴۲۷۹۸۴۸</p>
 </div>
-<!-- Pagination -->
-<div class="p-6 bg-surface-container-lowest flex items-center justify-between">
-<span class="text-xs text-on-surface-variant font-body-sm">نمایش ۱ تا ۱۰ از ۱۸۵ تیکت</span>
-<div class="flex items-center gap-2">
-<button class="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container">
-<span class="material-symbols-outlined text-sm">chevron_right</span>
-</button>
-<button class="w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-white font-bold text-xs">۱</button>
-<button class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant text-xs">۲</button>
-<button class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant text-xs">۳</button>
-<button class="w-8 h-8 flex items-center justify-center rounded-lg border border-outline-variant/30 text-on-surface-variant hover:bg-surface-container">
-<span class="material-symbols-outlined text-sm">chevron_left</span>
-</button>
+<!-- License Plate Badge -->
+<div class="flex flex-row items-stretch border-2 border-on-surface rounded-md overflow-hidden bg-white h-12">
+<div class="bg-[#003399] text-white flex flex-col items-center justify-center px-1">
+<span class="text-[8px] font-bold">IR</span>
+</div>
+<div class="flex items-center px-2 font-license-plate text-license-plate">
+<span>۱۲</span>
+<span class="mx-1">ب</span>
+<span>۳۴۵</span>
+</div>
+<div class="border-r-2 border-on-surface flex items-center px-2 font-license-plate text-license-plate">
+<span>۶۷</span>
+</div>
 </div>
 </div>
 </section>
-<!-- Promotional/Support Banner -->
-<section class="mt-10 glass-card p-8 rounded-[24px] relative overflow-hidden group">
-<div class="absolute inset-0 opacity-10 pointer-events-none transition-transform duration-700 group-hover:scale-110">
-<div class="absolute inset-0" style="background-image: radial-gradient(circle at 20% 50%, #0058be 0%, transparent 50%);"></div>
-</div>
-<div class="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-<div class="flex items-center gap-6">
-<div class="w-16 h-16 bg-primary-container/20 rounded-2xl flex items-center justify-center text-primary">
-<span class="material-symbols-outlined text-4xl" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
-</div>
+<!-- Main Assignment Flow -->
+<main class="px-margin-mobile space-y-8">
+<!-- Section 1: Service Selection -->
 <div>
-<h4 class="font-headline-sm text-headline-sm text-on-surface mb-1">دستیار هوشمند لومینا در کنار شماست</h4>
-<p class="text-on-surface-variant font-body-sm text-body-sm">قبل از ثبت تیکت، می‌توانید از راهنمای هوشمند ما برای حل سریع مشکلات رایج استفاده کنید.</p>
+<div class="flex justify-between items-center mb-4 flex-row-reverse">
+<h2 class="font-headline-md text-headline-md text-primary">۱. انتخاب خدمات</h2>
+<div class="relative">
+<input class="bg-surface-container border-none rounded-full px-4 py-2 text-right text-sm focus:ring-2 focus:ring-primary w-40" placeholder="جستجوی خدمات..." type="text"/>
 </div>
 </div>
-<button class="px-8 py-3 bg-white border border-primary text-primary rounded-xl font-bold shadow-soft hover:bg-primary hover:text-white transition-all">مشاهده راهنما</button>
+<div class="grid grid-cols-1 gap-3">
+<!-- Service Card 1 -->
+<label class="glass-card rounded-xl p-4 flex flex-row-reverse items-center justify-between cursor-pointer border-r-4 border-r-primary transition-all active:scale-95">
+<input checked="" class="hidden peer" type="checkbox"/>
+<div class="text-right flex-1 px-4">
+<div class="flex flex-row-reverse justify-between items-center">
+<h3 class="font-bold text-on-surface">روشویی ویژه نانو</h3>
+<span class="text-primary font-bold">۱۳۰ هزار تومان</span>
 </div>
-</section>
+<p class="text-xs text-on-surface-variant mt-1">بدون توضیحات</p>
+</div>
+<div class="w-6 h-6 rounded border-2 border-outline-variant peer-checked:bg-primary peer-checked:border-primary flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-white text-sm" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+<!-- Service Card 2 -->
+<label class="glass-card rounded-xl p-4 flex flex-row-reverse items-center justify-between cursor-pointer border-r-4 border-r-transparent transition-all active:scale-95">
+<input class="hidden peer" type="checkbox"/>
+<div class="text-right flex-1 px-4">
+<div class="flex flex-row-reverse justify-between items-center">
+<h3 class="font-bold text-on-surface">قطعه‌شویی</h3>
+<span class="text-primary font-bold">۲ هزار تومان</span>
+</div>
+<p class="text-xs text-on-surface-variant mt-1">بدون توضیحات</p>
+</div>
+<div class="w-6 h-6 rounded border-2 border-outline-variant peer-checked:bg-primary peer-checked:border-primary flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-white text-sm" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+<!-- Service Card 3 -->
+<label class="glass-card rounded-xl p-4 flex flex-row-reverse items-center justify-between cursor-pointer border-r-4 border-r-transparent transition-all active:scale-95">
+<input class="hidden peer" type="checkbox"/>
+<div class="text-right flex-1 px-4">
+<div class="flex flex-row-reverse justify-between items-center">
+<h3 class="font-bold text-on-surface">موتورشویی با بخار</h3>
+<span class="text-primary font-bold">۱۵۰ هزار تومان</span>
+</div>
+<p class="text-xs text-on-surface-variant mt-1">بدون توضیحات</p>
+</div>
+<div class="w-6 h-6 rounded border-2 border-outline-variant peer-checked:bg-primary peer-checked:border-primary flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-white text-sm" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+</label>
+</div>
+</div>
+<!-- Section 2: Personnel Assignment -->
+<div>
+<div class="flex justify-between items-center mb-4 flex-row-reverse">
+<div class="flex items-center gap-2 flex-row-reverse">
+<h2 class="font-headline-md text-headline-md text-primary">۲. تخصیص پرسنل</h2>
+<span class="text-xs bg-surface-container-high px-2 py-1 rounded-full text-on-surface-variant">۳ نفر حاضر</span>
+</div>
+<div class="relative">
+<input class="bg-surface-container border-none rounded-full px-4 py-2 text-right text-sm focus:ring-2 focus:ring-primary w-40" placeholder="نام پرسنل..." type="text"/>
+</div>
+</div>
+<div class="flex flex-col gap-3">
+<!-- Personnel Card 1 (Busy) -->
+<div class="glass-card rounded-xl p-4 flex flex-col gap-3 border-r-4 border-r-error transition-all active:scale-[0.98]">
+<div class="flex flex-row-reverse justify-between items-center">
+<div class="flex flex-row-reverse items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary font-bold">سک</div>
+<div class="text-right">
+<h4 class="font-bold text-on-surface">سعید کریمی</h4>
+<span class="text-[10px] text-outline">Worker</span>
+</div>
+</div>
+<span class="text-[10px] flex items-center gap-1 flex-row-reverse text-error font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse"></span>
+                            مشغول
+                        </span>
+</div>
+<div class="flex flex-row-reverse justify-between text-xs bg-surface-container-low p-2 rounded-lg">
+<span class="text-outline">سفارشات در حال انجام:</span>
+<span class="font-bold text-primary">۲ مورد</span>
+</div>
+</div>
+<!-- Personnel Card 2 (Free) -->
+<div class="glass-card rounded-xl p-4 flex flex-col gap-3 border-r-4 border-r-tertiary-container transition-all active:scale-[0.98]">
+<div class="flex flex-row-reverse justify-between items-center">
+<div class="flex flex-row-reverse items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary font-bold">عم</div>
+<div class="text-right">
+<h4 class="font-bold text-on-surface">علی محمدی</h4>
+<span class="text-[10px] text-outline">Worker</span>
+</div>
+</div>
+<span class="text-[10px] flex items-center gap-1 flex-row-reverse text-tertiary-container font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary-container"></span>
+                            آزاد
+                        </span>
+</div>
+<div class="flex flex-row-reverse justify-between text-xs bg-surface-container-low p-2 rounded-lg">
+<span class="text-outline">سفارشات در حال انجام:</span>
+<span class="font-bold text-primary">۰ مورد</span>
+</div>
+</div>
+<!-- Personnel Card 3 (Free) -->
+<div class="glass-card rounded-xl p-4 flex flex-col gap-3 border-r-4 border-r-tertiary-container transition-all active:scale-[0.98]">
+<div class="flex flex-row-reverse justify-between items-center">
+<div class="flex flex-row-reverse items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary font-bold">مر</div>
+<div class="text-right">
+<h4 class="font-bold text-on-surface">محمد رضایی</h4>
+<span class="text-[10px] text-outline">Worker</span>
+</div>
+</div>
+<span class="text-[10px] flex items-center gap-1 flex-row-reverse text-tertiary-container font-bold">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary-container"></span>
+                            آزاد
+                        </span>
+</div>
+<div class="flex flex-row-reverse justify-between text-xs bg-surface-container-low p-2 rounded-lg">
+<span class="text-outline">سفارشات در حال انجام:</span>
+<span class="font-bold text-primary">۰ مورد</span>
+</div>
+</div>
+</div>
+</div>
 </main>
-<!-- Micro-interactions Script -->
+<!-- Floating Sticky Bottom Summary (Replaces standard BottomNavBar for this task) -->
+<div class="fixed bottom-0 inset-x-0 z-50 p-margin-mobile bg-gradient-to-t from-background via-background/95 to-transparent">
+<div class="glass-card rounded-2xl p-5 shadow-2xl border border-primary/20">
+<div class="flex flex-col gap-4">
+<!-- Calculations Summary -->
+<div class="flex flex-col gap-2">
+<div class="flex flex-row-reverse justify-between items-center text-sm">
+<span class="text-outline">مبلغ کل خدمات:</span>
+<span class="font-bold text-on-surface">۱۳۰,۰۰۰ تومان</span>
+</div>
+<div class="flex flex-row-reverse justify-between items-center text-sm">
+<span class="text-outline">سهم پرسنل (۱۰۰٪):</span>
+<span class="font-bold text-secondary">۱۳۰,۰۰۰ تومان</span>
+</div>
+<div class="flex flex-row-reverse justify-between items-center pt-2 border-t border-outline-variant/20">
+<span class="font-bold text-on-surface">جمع نهایی:</span>
+<span class="text-xl font-black text-primary">۱۳۰,۰۰۰ تومان</span>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="grid grid-cols-5 gap-3">
+<button class="col-span-1 h-touch-target-min rounded-xl border-2 border-outline-variant text-outline flex items-center justify-center transition-all active:scale-90">
+<span class="material-symbols-outlined">arrow_forward</span>
+</button>
+<button class="col-span-4 h-touch-target-min bg-primary text-on-primary font-bold rounded-xl shadow-lg shadow-primary/20 flex items-center justify-center gap-2 transition-all active:scale-95">
+<span class="material-symbols-outlined">check_circle</span>
+<span>تایید و تخصیص کار</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Decorative Atmosphere (Glassmorphism Accents) -->
+<div class="fixed top-20 -right-20 w-64 h-64 bg-primary/10 rounded-full blur-3xl -z-10"></div>
+<div class="fixed bottom-40 -left-20 w-64 h-64 bg-secondary/10 rounded-full blur-3xl -z-10"></div>
 <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // Add a subtle parallax effect to glass cards
-            const cards = document.querySelectorAll('.glass-card');
-            window.addEventListener('mousemove', (e) => {
-                const mouseX = e.clientX;
-                const mouseY = e.clientY;
-                
-                cards.forEach(card => {
-                    const rect = card.getBoundingClientRect();
-                    const cardX = rect.left + rect.width / 2;
-                    const cardY = rect.top + rect.height / 2;
-                    
-                    const angleX = (mouseY - cardY) / 100;
-                    const angleY = (cardX - mouseX) / 100;
-                    
-                    // Only apply a tiny tilt
-                    card.style.transform = `perspective(1000px) rotateX(${angleX * 0.2}deg) rotateY(${angleY * 0.2}deg)`;
-                });
+        // Simple Interaction logic
+        document.querySelectorAll('label.glass-card').forEach(card => {
+            card.addEventListener('click', function() {
+                const checkbox = this.querySelector('input');
+                if (checkbox.checked) {
+                    this.classList.add('border-r-primary');
+                    this.classList.remove('border-r-transparent');
+                } else {
+                    this.classList.remove('border-r-primary');
+                    this.classList.add('border-r-transparent');
+                }
             });
-            
-            // Interaction for search
-            const searchInput = document.querySelector('input[type="text"]');
-            searchInput.addEventListener('focus', () => {
-                searchInput.parentElement.classList.add('scale-[1.02]');
-                searchInput.parentElement.style.transition = 'all 0.3s ease';
-            });
-            searchInput.addEventListener('blur', () => {
-                searchInput.parentElement.classList.remove('scale-[1.02]');
+        });
+
+        // Feedback on personnel selection
+        document.querySelectorAll('main > div:last-child .glass-card').forEach(card => {
+            card.addEventListener('click', function() {
+                document.querySelectorAll('main > div:last-child .glass-card').forEach(c => c.classList.remove('ring-2', 'ring-primary'));
+                this.classList.add('ring-2', 'ring-primary');
             });
         });
     </script>

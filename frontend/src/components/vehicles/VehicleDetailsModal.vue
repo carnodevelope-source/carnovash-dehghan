@@ -197,15 +197,15 @@ const workerTotalWithTip = (job) => {
 </script>
 
 <style scoped>
-.vehicle-details-modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.vehicle-details-modal-panel { width: min(1280px, 100%); max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow: auto; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
+.vehicle-details-modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.vehicle-details-modal-panel { width: min(1280px, 100%); height: calc(100vh - 40px); max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
 .vehicle-details-details-panel { width: min(1100px, 100%); }
 .vehicle-details-modal-head { padding: 18px 22px; border-bottom: 1px solid #e3e6ed; display: flex; align-items: center; justify-content: space-between; }
 .vehicle-details-modal-head h2 { margin: 0; font-size: 22px; }
 .vehicle-details-modal-step { margin: 0 0 6px; color: #64748b; font-size: 12px; }
 .vehicle-details-close-btn { width: 38px; height: 38px; border: 1px solid #dbe3ef; border-radius: 10px; background: #fff; cursor: pointer; }
 .vehicle-details-modal-loading { padding: 16px 22px; }
-.vehicle-details-grid { padding: 18px 22px 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.vehicle-details-grid { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 18px 22px 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .vehicle-details-card { border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; background: #fff; }
 .vehicle-details-card h3 { margin: 0 0 10px; font-size: 16px; }
 .vehicle-details-full { grid-column: 1 / -1; }
@@ -241,6 +241,11 @@ const workerTotalWithTip = (job) => {
 }
 @media (max-width: 768px) {
   .vehicle-details-modal-overlay { padding: 8px; }
-  .vehicle-details-modal-panel { max-height: calc(100vh - 16px); border-radius: 14px; }
+  .vehicle-details-modal-panel { height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); border-radius: 14px; }
+  .vehicle-details-grid { padding: 14px; }
+  .vehicle-details-summary-strip,
+  .vehicle-details-info-grid-four { grid-template-columns: 1fr; }
+  .vehicle-details-list-item,
+  .vehicle-details-actions { flex-direction: column; align-items: stretch; }
 }
 </style>

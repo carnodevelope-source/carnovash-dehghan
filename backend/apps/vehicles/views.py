@@ -466,6 +466,7 @@ class VehicleReleaseCheckoutView(APIView):
             service_lines.append(
                 {
                     'id': line.id,
+                    'service_id': line.service_id,
                     'service_name': line.custom_service_name or (line.service.name if line.service else 'خدمت'),
                     'custom_service_name': line.custom_service_name,
                     'quantity': line.quantity,

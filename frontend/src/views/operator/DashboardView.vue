@@ -2,6 +2,7 @@
   <AppShell
     title="مدیریت خودروها"
     subtitle="پذیرش، تخصیص و ترخیص خودروها"
+    :hide-page-header="true"
     :show-search="true"
     search-placeholder="جستجوی پلاک یا نام..."
     :search-query="search"
@@ -51,7 +52,7 @@
 
             <div class="car-info">
               <h3>{{ car.model }} - {{ car.colorName }}</h3>
-              <p>{{ car.service }}</p>
+              <p class="service-line">{{ car.service }}</p>
               <p>راننده: {{ car.driverName }} | {{ car.driverPhone }}</p>
               <p>نیرو: {{ car.workerName }}</p>
               <p class="customer-score-row">
@@ -87,11 +88,13 @@
             </div>
             <button class="close-btn" @click="closeVehicleModal">✕</button>
           </header>
-          <VehicleEntryStepOne
-            :vehicle-info="vehicleDraft"
-            @continue="handleStepOneContinue"
-            @refer="handleStepOneRefer"
-          />
+          <div class="step-one-scroll-body">
+            <VehicleEntryStepOne
+              :vehicle-info="vehicleDraft"
+              @continue="handleStepOneContinue"
+              @refer="handleStepOneRefer"
+            />
+          </div>
         </template>
 
         <VehicleEntryStepTwo
@@ -114,18 +117,25 @@
     />
     <div v-if="showReleaseModal" class="modal-overlay" @click.self="closeReleaseModal">
       <section class="modal-panel release-panel">
-        <header class="modal-head">
-          <div>
+        <header class="modal-head release-modal-head">
+          <div class="release-modal-copy">
             <p class="modal-step">ترخیص خودرو</p>
             <h2>اتمام کار و فروش محصولات</h2>
           </div>
-          <button class="close-btn" @click="closeReleaseModal">✕</button>
+          <div class="release-modal-tools">
+            <div v-if="releaseVehiclePlateLabel || releaseVehicleHeaderLabel" class="release-modal-vehicle">
+              <strong v-if="releaseVehicleHeaderLabel">{{ releaseVehicleHeaderLabel }}</strong>
+              <span v-if="releaseVehiclePlateLabel">{{ releaseVehiclePlateLabel }}</span>
+            </div>
+            <button class="close-btn" @click="closeReleaseModal">✕</button>
+          </div>
         </header>
         <div v-if="releaseCheckoutLoading" class="release-loading">
           <BaseSpinner size="66px" color="#1d4ed8" ball-color="#60a5fa" label="در حال بارگذاری اطلاعات ترخیص..." />
         </div>
-        <div v-else class="release-layout">
-          <div class="release-col">
+        <div v-else class="release-modal-body">
+          <div class="release-layout">
+            <div class="release-col">
             <div class="release-title release-title-inline">
               <h3>تایید خدمات</h3>
               <div class="add-service-row">
@@ -156,9 +166,9 @@
               <p v-if="!releaseForm.serviceLines.length" class="empty-row">خدمتی برای این خودرو ثبت نشده است.</p>
             </div>
             
-          </div>
+            </div>
 
-          <div class="release-col release-products-col">
+            <div class="release-col release-products-col">
             <div class="release-title">
               <h3>محصولات جانبی</h3>
             </div>
@@ -198,9 +208,9 @@
                 </div>
               </article>
             </div>
-          </div>
+            </div>
 
-          <div class="release-col release-summary-col">
+            <div class="release-col release-summary-col">
             <div class="release-title release-title-inline">
               <h3>خلاصه نهایی</h3>
               <button type="button" class="secondary-btn invoice-preview-btn" @click="openInvoicePreviewModal">
@@ -333,69 +343,70 @@
               </button>
             </div>
           </div>
-        </div>
-        <section class="release-secondary-section">
-          <div class="release-secondary-head">
-            <div>
-              <h4>پرداخت و ثبت‌های تکمیلی</h4>
-              <small>روش پرداخت، چک، نسیه و پاداش یا جریمه را اینجا نهایی کنید.</small>
-            </div>
-            <div class="release-secondary-chip">{{ paymentMethodLabel(releaseForm.paymentMethod) }}</div>
           </div>
-          <div class="release-secondary-grid">
-            <label class="tip-input-row detail-field">
-              <span>شیوه پرداخت</span>
-              <select v-model="releaseForm.paymentMethod">
-                <option value="pos">دستگاه پوز</option>
-                <option value="cash">نقدی</option>
-                <option value="transfer">کارت به کارت</option>
-                <option value="cheque">چک</option>
-                <option value="credit">نسیه</option>
-              </select>
-            </label>
-            <div class="payment-method-preview">
-              <strong>ثبت پرداخت</strong>
-              <p>پرداخت فعلی با روش <span>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</span> نهایی می‌شود.</p>
+          <section class="release-secondary-section">
+            <div class="release-secondary-head">
+              <div>
+                <h4>پرداخت و ثبت‌های تکمیلی</h4>
+                <small>روش پرداخت، چک، نسیه و پاداش یا جریمه را اینجا نهایی کنید.</small>
+              </div>
+              <div class="release-secondary-chip">{{ paymentMethodLabel(releaseForm.paymentMethod) }}</div>
             </div>
-            <div v-if="releaseForm.paymentMethod === 'cheque'" class="cheque-inline-card detail-field-wide">
-              <div class="cheque-inline-head">
+            <div class="release-secondary-grid">
+              <label class="tip-input-row detail-field">
+                <span>شیوه پرداخت</span>
+                <select v-model="releaseForm.paymentMethod">
+                  <option value="pos">دستگاه پوز</option>
+                  <option value="cash">نقدی</option>
+                  <option value="transfer">کارت به کارت</option>
+                  <option value="cheque">چک</option>
+                  <option value="credit">نسیه</option>
+                </select>
+              </label>
+              <div class="payment-method-preview">
+                <strong>ثبت پرداخت</strong>
+                <p>پرداخت فعلی با روش <span>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</span> نهایی می‌شود.</p>
+              </div>
+              <div v-if="releaseForm.paymentMethod === 'cheque'" class="cheque-inline-card detail-field-wide">
+                <div class="cheque-inline-head">
                 <div>
                   <strong>جزئیات چک</strong>
                   <small>{{ chequeDetailsSummary }}</small>
                 </div>
                 <button type="button" class="secondary-btn" @click="openChequeDetailsModal">ثبت جزئیات چک</button>
               </div>
-            </div>
-            <label v-if="releaseForm.paymentMethod === 'credit'" class="tip-input-row detail-field">
-              <span>تاریخ سررسید نسیه</span>
-              <BaseDatePicker v-model="releaseForm.creditDueDate" placeholder="1405/01/30" />
-            </label>
-            <div class="detail-field detail-field-wide bonus-penalty-table">
-              <div class="bonus-penalty-table-head">
-                <span>نیرو برای پاداش/جریمه</span>
-                <small>برای هر نیروی این سفارش، مبلغ جدا ثبت کنید.</small>
               </div>
-              <div v-if="releaseForm.bonusPenaltyAdjustments.length" class="bonus-penalty-list">
-                <div v-for="(adjustment, index) in releaseForm.bonusPenaltyAdjustments" :key="`adjustment-${adjustment.worker_id || index}`" class="bonus-penalty-item">
-                  <strong>{{ adjustment.worker_name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</strong>
-                  <label class="tip-input-row">
-                    <span>پاداش (هزار تومان)</span>
-                    <input v-model.number="adjustment.bonus" type="number" min="0" step="1" />
-                  </label>
-                  <label class="tip-input-row">
-                    <span>جریمه (هزار تومان)</span>
-                    <input v-model.number="adjustment.penalty" type="number" min="0" step="1" />
-                  </label>
+              <label v-if="releaseForm.paymentMethod === 'credit'" class="tip-input-row detail-field">
+                <span>تاریخ سررسید نسیه</span>
+                <BaseDatePicker v-model="releaseForm.creditDueDate" placeholder="1405/01/30" />
+              </label>
+              <div class="detail-field detail-field-wide bonus-penalty-table">
+                <div class="bonus-penalty-table-head">
+                  <span>نیرو برای پاداش/جریمه</span>
+                  <small>برای هر نیروی این سفارش، مبلغ جدا ثبت کنید.</small>
                 </div>
+                <div v-if="releaseForm.bonusPenaltyAdjustments.length" class="bonus-penalty-list">
+                  <div v-for="(adjustment, index) in releaseForm.bonusPenaltyAdjustments" :key="`adjustment-${adjustment.worker_id || index}`" class="bonus-penalty-item">
+                    <strong>{{ adjustment.worker_name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</strong>
+                    <label class="tip-input-row">
+                      <span>پاداش (هزار تومان)</span>
+                      <input v-model.number="adjustment.bonus" type="number" min="0" step="1" />
+                    </label>
+                    <label class="tip-input-row">
+                      <span>جریمه (هزار تومان)</span>
+                      <input v-model.number="adjustment.penalty" type="number" min="0" step="1" />
+                    </label>
+                  </div>
+                </div>
+                <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است.</p>
               </div>
-              <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است.</p>
+              <label v-if="hasReleaseBonusOrPenalty" class="tip-input-row detail-field detail-field-wide">
+                <span>توضیح پاداش/جریمه</span>
+                <textarea v-model.trim="releaseForm.bonusPenaltyNote" rows="3" placeholder="دلیل ثبت پاداش یا جریمه را وارد کنید"></textarea>
+              </label>
             </div>
-            <label v-if="hasReleaseBonusOrPenalty" class="tip-input-row detail-field detail-field-wide">
-              <span>توضیح پاداش/جریمه</span>
-              <textarea v-model.trim="releaseForm.bonusPenaltyNote" rows="3" placeholder="دلیل ثبت پاداش یا جریمه را وارد کنید"></textarea>
-            </label>
-          </div>
-        </section>
+          </section>
+        </div>
       </section>
     </div>
     <div v-if="showChequeDetailsModal" class="modal-overlay" @click.self="closeChequeDetailsModal">
@@ -651,6 +662,13 @@ const releaseForm = ref({
 })
 const vehicleStore = useVehicleStore()
 const { vehicles, selectedVehicle } = storeToRefs(vehicleStore)
+const hasOperatorModalOpen = computed(() => (
+  showVehicleModal.value
+  || showVehicleDetailsModal.value
+  || showReleaseModal.value
+  || showChequeDetailsModal.value
+  || showInvoicePreviewModal.value
+))
 
 const openVehicleModal = () => {
   modalStep.value = 1
@@ -675,6 +693,16 @@ const openVehicleDetails = async (vehicleId) => {
 const closeVehicleDetails = () => {
   showVehicleDetailsModal.value = false
 }
+const lockBodyScrollForModal = () => {
+  if (typeof document === 'undefined') return
+  document.documentElement.classList.add('modal-open')
+  document.body.classList.add('modal-open')
+}
+const unlockBodyScrollForModal = () => {
+  if (typeof document === 'undefined') return
+  document.documentElement.classList.remove('modal-open')
+  document.body.classList.remove('modal-open')
+}
 const formatStatus = (value) => ({
   entered: 'وارد شده',
   assigned: 'تخصیص داده شده',
@@ -691,6 +719,17 @@ const formatDateTime = (value) => {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(new Date(value))
+}
+const apiErrorText = (error, fallback = 'عملیات ناموفق بود.') => {
+  const data = error?.response?.data
+  if (!data) return fallback
+  if (typeof data.detail === 'string' && data.detail.trim()) return data.detail.trim()
+  const firstField = Object.keys(data).find((key) => Array.isArray(data[key]) || typeof data[key] === 'string')
+  if (!firstField) return fallback
+  const value = data[firstField]
+  if (Array.isArray(value)) return String(value[0] || fallback)
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  return fallback
 }
 const parseJalaliToIso = (input) => {
   const value = (input || '').trim().replace(/-/g, '/')
@@ -747,6 +786,24 @@ const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
   .replace(/\D/g, '')
 const splitPlate = (rawPlate) => String(rawPlate || '').trim().split(/\s+/).filter(Boolean)
+const releaseVehicleSource = computed(() => releaseCandidate.value || selectedVehicle.value || {})
+const releaseVehicleHeaderLabel = computed(() => {
+  const source = releaseVehicleSource.value || {}
+  const model = String(source.car_model || source.model || '').trim()
+  const color = String(source.car_color || source.color || '').trim()
+  return `${model} ${color}`.trim()
+})
+const releaseVehiclePlateLabel = computed(() => {
+  const source = releaseVehicleSource.value || {}
+  const rawPlate = String(source.plate_number || source.plate || '').trim()
+  if (rawPlate) return rawPlate
+  return [
+    source.plate_left,
+    source.plate_letter,
+    source.plate_mid,
+    source.plate_right
+  ].map((value) => String(value || '').trim()).filter(Boolean).join(' ')
+})
 const mapVehicleToDraft = (source = {}) => ({
   id: source.id,
   plate: source.plate_number,
@@ -766,6 +823,15 @@ const mapVehicleToDraft = (source = {}) => ({
   is_plate_blocked: Boolean(source.is_plate_blocked),
   serviceIds: Array.isArray(source.job?.service_lines) ? source.job.service_lines.map((s) => s.service) : [],
   staffId: source.job?.assigned_worker || null,
+  staffMembers: Array.isArray(source.job?.assigned_workers_snapshot)
+    ? source.job.assigned_workers_snapshot
+      .map((item) => ({
+        id: Number(item?.id || 0),
+        name: String(item?.name || '').trim(),
+        worker_share_percent: Math.max(0, Math.min(100, Number(item?.worker_share_percent || 0)))
+      }))
+      .filter((item) => item.id > 0)
+    : [],
   staffIds: Array.isArray(source.job?.assigned_workers_snapshot)
     ? source.job.assigned_workers_snapshot
       .map((item) => Number(item?.id))
@@ -781,6 +847,15 @@ const assignedWorkersLabel = (job) => {
   return job.assigned_worker_name || 'تخصیص نشده'
 }
 const hasCompletedStepOneData = (source = {}) => {
+  const isPieceWash = Boolean(source.is_piece_wash)
+  const isAnonymous = source.plate_number === '1111' && source.car_model === '1111' && source.car_color === '1111'
+  const hasPhone = normalizeDigits(source.driver_phone).length > 0
+  if (isPieceWash) {
+    return String(source.driver_name || '').trim().length > 0 && hasPhone
+  }
+  if (isAnonymous) {
+    return hasPhone
+  }
   const plateParts = splitPlate(source.plate_number)
   const left = String(source.plate_left || plateParts[0] || '').trim()
   const letter = String(source.plate_letter || plateParts[1] || '').trim()
@@ -789,7 +864,6 @@ const hasCompletedStepOneData = (source = {}) => {
   const hasPlate = left.length === 2 && letter.length === 1 && mid.length === 3 && right.length === 2
   const hasModel = String(source.car_model || '').trim().length > 0
   const hasColor = String(source.car_color || '').trim().length > 0
-  const hasPhone = normalizeDigits(source.driver_phone).length > 0
   return hasPlate && hasModel && hasColor && hasPhone
 }
 const handleCardAction = async (car) => {
@@ -1095,10 +1169,11 @@ const openReleaseModal = async (car) => {
     const serviceLines = Array.isArray(data?.job?.service_lines)
       ? data.job.service_lines.map((line) => ({
         id: line.id,
+        service_id: Number(line.service_id || line.service || 0),
         service_name: line.service_name,
         quantity: Number(line.quantity || 0),
         line_total: Number(line.line_total || 0),
-        is_completed: true
+        is_completed: Boolean(line.is_completed)
       }))
       : []
     const availableProducts = Array.isArray(data?.job?.available_products)
@@ -1147,7 +1222,7 @@ const openReleaseModal = async (car) => {
     syncBonusPenaltyAdjustments()
   } catch (error) {
     console.error('openReleaseModal error:', error?.response?.data || error)
-    alert('بارگذاری اطلاعات ترخیص ناموفق بود.')
+    alert(apiErrorText(error, 'بارگذاری اطلاعات ترخیص ناموفق بود.'))
     closeReleaseModal()
   } finally {
     releaseCheckoutLoading.value = false
@@ -1466,7 +1541,7 @@ const confirmReleaseVehicle = async () => {
     closeReleaseModal()
   } catch (error) {
     console.error('confirmReleaseVehicle error:', error?.response?.data || error)
-    alert('ترخیص خودرو ناموفق بود.')
+    alert(apiErrorText(error, 'ترخیص خودرو ناموفق بود.'))
   } finally {
     releaseSubmitting.value = false
   }
@@ -1484,7 +1559,7 @@ const handleStepOneContinue = async (payload) => {
     modalStep.value = 2
   } catch (error) {
     console.error('continue step one error:', error?.response?.data || error)
-    alert('ذخیره اطلاعات مرحله اول ناموفق بود.')
+    alert(apiErrorText(error, 'ذخیره اطلاعات مرحله اول ناموفق بود.'))
   }
 }
 const buildCreateOrUpdatePayload = (payload, status) => {
@@ -1519,7 +1594,8 @@ const buildCreateOrUpdatePayload = (payload, status) => {
     staff_members: Array.isArray(payload?.staffMembers)
       ? payload.staffMembers.map((item) => ({
         id: item?.id,
-        name: item?.name || ''
+        name: item?.name || '',
+        worker_share_percent: Math.max(0, Math.min(100, Number(item?.worker_share_percent || 0)))
       }))
       : [],
     services: payload?.services || [],
@@ -1567,7 +1643,7 @@ const handleStepOneRefer = async (payload) => {
     closeVehicleModal()
   } catch (error) {
     console.error('refer step one error:', error?.response?.data || error)
-    alert('ثبت ارجاع ناموفق بود.')
+    alert(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'))
   }
 }
 
@@ -1577,7 +1653,7 @@ const handleStepTwoAssign = async (payload) => {
     closeVehicleModal()
   } catch (error) {
     console.error('assign step two error:', error?.response?.data || error)
-    alert('ثبت تخصیص ناموفق بود.')
+    alert(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'))
   }
 }
 const cars = computed(() => vehicles.value.map((item) => ({
@@ -1680,19 +1756,26 @@ const blockSelectedVehiclePlate = async () => {
 onMounted(() => {
   vehicleStore.fetchVehicles()
 })
+watch(hasOperatorModalOpen, (isOpen) => {
+  if (isOpen) lockBodyScrollForModal()
+  else unlockBodyScrollForModal()
+}, { immediate: true })
 onBeforeUnmount(() => {
+  unlockBodyScrollForModal()
   revokeInvoicePdfUrl()
 })
 </script>
 
 <style scoped>
-.dashboard-content { min-width: 0; }
+.dashboard-content { min-width: 0; width: 100%; max-width: 100%; overflow-x: hidden; }
 .primary-btn { height: 40px; border: none; border-radius: 12px; color: #fff; font-weight: 700; padding: 0 16px; background: linear-gradient(135deg, #0058be 0%, #57dffe 100%); cursor: pointer;margin-right: 3%; }
-.filters { display: flex; gap: 10px; overflow: auto; padding-bottom: 8px; }
+.filters { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; flex-wrap: nowrap; align-items: center; }
+.filters > * { flex: 0 0 auto; }
+.filters > .primary-btn { width: auto; margin-right: 0; }
 .chip { border: none; border-radius: 999px; padding: 10px 16px; background: #e6e8ea; color: #4b5563;font-size:13px; font-weight: 500; white-space: nowrap; }
 .chip.active { background: #0058be; color: #fff; }
-.cards-grid { margin-top: 18px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 20px; }
-.car-card { background: #fff; border-right: 4px solid #0058be; border-radius: 16px; padding: 16px; box-shadow: 0 14px 30px -10px rgba(15,23,42,.12); display: flex; flex-direction: column; gap: 12px; transition: transform .2s ease, box-shadow .2s ease; }
+.cards-grid { margin-top: 18px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 20px; width: 100%; max-width: 100%; }
+.car-card { min-width: 0; background: #fff; border-right: 4px solid #0058be; border-radius: 16px; padding: 16px; box-shadow: 0 14px 30px -10px rgba(15,23,42,.12); display: flex; flex-direction: column; gap: 12px; transition: transform .2s ease, box-shadow .2s ease; }
 .car-card:hover { transform: translateY(-3px); box-shadow: 0 20px 34px -14px rgba(15,23,42,.16); }
 .car-card.card-released { opacity: .58; filter: grayscale(.2); }
 .car-card.card-released:hover { transform: none; box-shadow: 0 14px 30px -10px rgba(15,23,42,.12); }
@@ -1700,8 +1783,8 @@ onBeforeUnmount(() => {
 .status { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #475569; }
 .dot { width: 8px; height: 8px; border-radius: 99px; }
 .time { font-size: 10px; padding: 4px 9px; border-radius: 999px; font-weight: 700; }
-.plate-box { border-radius: 12px; padding: 10px; display: flex; align-items: stretch; justify-content: center; direction: ltr; overflow: hidden; }
-.plate-white-wrap { display: flex; align-items: center; gap: 10px; background: #6f59ef18; color: #111827; border-radius: 7px 0 0 7px; padding: 4px 12px; }
+.plate-box { width: 100%; max-width: 100%; min-width: 0; border-radius: 12px; padding: 10px; display: flex; align-items: stretch; justify-content: center; direction: ltr; overflow: hidden; }
+.plate-white-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; background: #6f59ef18; color: #111827; border-radius: 7px 0 0 7px; padding: 4px 12px; }
 .plate-part { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .plate-two, .plate-three { font-size: 24px; font-weight: 700; height: 40px; padding-top: 12px; padding-bottom: 8px; }
 .plate-letter { font-size: 24px; font-weight: 700; min-width: 20px; padding-top: 2px; }
@@ -1724,9 +1807,19 @@ onBeforeUnmount(() => {
 .danger-btn{background:#fee2e2;color:#b91c1c}
 .danger-btn:disabled{background:#e5e7eb;color:#94a3b8;cursor:not-allowed}
 .small-btn{padding:6px 10px}
-.release-panel { width: min(1420px, 100%); background: linear-gradient(180deg,#fdfefe,#f6fbff); }
+.release-panel { width: min(1420px, 100%); max-width: 100%; height: calc(100vh - 40px); max-height: calc(100vh - 40px); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; background: linear-gradient(180deg,#fdfefe,#f6fbff); }
 .release-loading { min-height: 280px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 14px; }
-.release-layout { padding: 24px; display: grid; gap: 20px; grid-template-columns: minmax(0,1.05fr) minmax(0,.95fr) minmax(0,1.08fr); background:
+.release-modal-head{align-items:flex-start;gap:16px;padding:20px 24px;background:rgba(255,255,255,.9);backdrop-filter:blur(14px)}
+.release-modal-copy{display:grid;gap:4px}
+.release-modal-tools{display:flex;align-items:center;gap:12px;margin-inline-start:auto}
+.release-modal-vehicle{display:grid;gap:4px;padding:10px 14px;border-radius:18px;border:1px solid #d7e5f8;background:linear-gradient(180deg,#ffffff,#f4f8ff);min-width:0}
+.release-modal-vehicle strong{font-size:13px;color:#0f172a}
+.release-modal-vehicle span{font-size:12px;color:#0058be;font-weight:800;line-height:1.6}
+.release-modal-body{flex:1;min-height:0;overflow:visible;display:grid;gap:14px;padding:16px 0 20px;background:
+ radial-gradient(circle at top right, rgba(34,197,94,.08), transparent 18%),
+ radial-gradient(circle at top left, rgba(14,165,233,.10), transparent 24%),
+ linear-gradient(180deg,#edf7ff,#f5f9ff)}
+.release-layout { padding: 0 24px; display: grid; gap: 20px; grid-template-columns: minmax(0,1.05fr) minmax(0,.95fr) minmax(0,1.08fr); background:
   radial-gradient(circle at top right, rgba(34,197,94,.10), transparent 24%),
   radial-gradient(circle at top left, rgba(14,165,233,.14), transparent 28%),
   linear-gradient(180deg,#edf7ff,#eef5ff); }
@@ -1834,7 +1927,7 @@ onBeforeUnmount(() => {
 .summary-share p span small { color: #64748b; font-size: 11px; margin-right: 4px; }
 .summary-share .summary-share-total { border-top: 1px dashed #bfd7ff; padding-top: 8px; margin-top: 4px; font-weight: 700; }
 .summary-final { margin: 14px 0 0; padding:16px 18px; border:1px solid #d7e8ff; border-radius:18px; background:linear-gradient(180deg,#ffffff,#f7fbff); display: flex; justify-content: space-between; font-size: 20px; font-weight: 800; color: #111827; }
-.release-secondary-section{margin:14px 24px 24px;padding:18px;border:1px solid #d6e3f5;border-radius:24px;background:
+.release-secondary-section{margin:0 24px;padding:18px;border:1px solid #d6e3f5;border-radius:24px;background:
  radial-gradient(circle at top left, rgba(34,197,94,.10), transparent 22%),
  linear-gradient(180deg,#ffffff,#f6f9fd);display:grid;gap:14px}
 .release-secondary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -1889,11 +1982,31 @@ onBeforeUnmount(() => {
 .invoice-workers p{margin:0;display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:14px;background:#f8fbff;border:1px solid #dbe7f5;font-size:13px}
 .invoice-sheet-footer{padding-top:10px;border-top:1px dashed #cbd5e1;display:grid;gap:6px}
 .invoice-sheet-footer p{margin:0;color:#475569;font-size:12px;line-height:1.9;overflow-wrap:anywhere}
-.modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.modal-panel { width: min(1280px, 100%); max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow: auto; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
-.step-one-modal-panel { overflow: hidden; }
-.step-two-modal-panel { width: min(1440px, 100%); height: calc(100vh - 40px); max-height: calc(100vh - 40px); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-.modal-head { padding: 18px 22px; border-bottom: 1px solid #e3e6ed; display: flex; align-items: center; justify-content: space-between; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.modal-panel { width: min(1280px, 100%); max-width: 100%; max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
+.vehicle-entry-overlay { align-items: center; justify-content: center; }
+.vehicle-entry-panel { width: min(980px, 100%); max-width: 100%; }
+.vehicle-entry-head { background: rgba(255,255,255,.94); backdrop-filter: blur(12px); }
+.step-one-modal-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: calc(100vh - 40px);
+  max-height: calc(100vh - 40px);
+  min-height: 0;
+  background:
+    radial-gradient(circle at top right, rgba(30,111,217,.06), transparent 24%),
+    linear-gradient(180deg,#f7f9fb 0%,#eef5ff 100%);
+}
+.step-one-scroll-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.step-two-modal-panel { width: min(1440px, 100%); max-width: 100%; height: calc(100vh - 40px); max-height: calc(100vh - 40px); overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; min-height: 0; }
+.modal-head { padding: 18px 22px; border-bottom: 1px solid #e3e6ed; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .modal-head h2 { margin: 0; font-size: 22px; }
 .modal-step { margin: 0 0 6px; color: #64748b; font-size: 12px; }
 .close-btn { width: 38px; height: 38px; border: 1px solid #dbe3ef; border-radius: 10px; background: #fff; cursor: pointer; }
@@ -1912,18 +2025,301 @@ onBeforeUnmount(() => {
   .invoice-totals p,.invoice-workers p{align-items:flex-start}
 }
 @media (max-width: 768px) {
-  .cards-grid { grid-template-columns: 1fr; }
-  .modal-overlay { padding: 8px; }
-  .modal-panel { max-height: calc(100vh - 16px); border-radius: 14px; }
-  .step-two-modal-panel { height: calc(100vh - 16px); max-height: calc(100vh - 16px); }
+  .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .dashboard-content { padding-bottom: 8px; }
+  .filters {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 8px;
+    padding-bottom: 6px;
+    margin-top: 2px;
+  }
+  .chip {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .primary-btn {
+    height: 38px;
+    padding: 0 12px;
+    font-size: 13px;
+    border-radius: 10px;
+  }
+  .car-card {
+    padding: 10px;
+    gap: 8px;
+    border-radius: 14px;
+  }
+  .card-head {
+    gap: 8px;
+  }
+  .status {
+    font-size: 12px;
+  }
+  .time {
+    font-size: 10px;
+    padding: 4px 7px;
+  }
+  .modal-overlay {
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    overflow-y: hidden;
+    overflow-x: hidden;
+  }
+  .modal-panel {
+    width: 100%;
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 18px;
+  }
+  .vehicle-entry-overlay {
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 12px !important;
+  }
+  .vehicle-entry-panel {
+    width: min(860px, 100%) !important;
+    max-width: calc(100vw - 24px) !important;
+    border-radius: 24px !important;
+  }
+  .vehicle-entry-head {
+    padding: 16px 16px 14px;
+  }
+  .step-one-modal-panel {
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow: hidden;
+  }
+  .step-two-modal-panel,
+  .release-panel,
+  .invoice-modal-panel { height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
+  .primary-btn { margin-right: 0; }
+  .card-head,
+  .release-actions,
+  .selected-worker-box,
+  .service-check-item,
+  .product-item,
+  .summary-row,
+  .summary-foot-actions,
+  .worker-top,
+  .worker-jobs,
+  .worker-share-readonly,
+  .qty-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .plate-box,
+  .plate-white-wrap {
+    width: 100%;
+  }
+  .plate-box {
+    padding: 6px;
+  }
+  .plate-white-wrap {
+    gap: 6px;
+    padding: 4px 8px;
+  }
+  .plate-two, .plate-three { font-size: 15px; height: 24px; padding-top: 5px; padding-bottom: 3px; }
+  .plate-letter { font-size: 15px; min-width: 12px; padding-top: 0; }
+  .plate-blue { min-width: 32px; font-size: 13px; padding-top: 5px; padding-bottom: 3px; }
+  .car-info h3 {
+    font-size: 13px;
+    margin-bottom: 2px;
+  }
+  .car-info p,
+  .customer-score-row strong {
+    font-size: 11px;
+    line-height: 1.55;
+  }
+  .star-track {
+    font-size: 11px;
+  }
+  .service-line,
+  .customer-score-row {
+    display: none;
+  }
+  .card-action,
+  .card-passive-state {
+    height: 34px;
+    font-size: 12px;
+    border-radius: 10px;
+  }
+  .release-modal-head {
+    padding: 14px 14px 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .release-modal-tools {
+    width: 100%;
+    justify-content: space-between;
+    margin-inline-start: 0;
+  }
+  .release-modal-vehicle {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 16px;
+  }
+  .release-modal-vehicle strong {
+    font-size: 12px;
+  }
+  .release-modal-vehicle span {
+    font-size: 11px;
+  }
+  .release-modal-body {
+    gap: 10px;
+    padding: 10px 0 12px;
+  }
   .release-title-inline, .add-service-row { flex-direction: column; align-items: stretch; }
   .release-summary-hero,.worker-selection-head,.release-secondary-head,.cheque-inline-head,.cheque-modal-actions { flex-direction: column; align-items: stretch; }
-  .release-layout { padding: 14px; }
-  .release-secondary-section { margin: 10px 14px 14px; padding: 14px; border-radius: 18px; }
+  .release-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 12px;
+    background: transparent;
+  }
+  .release-col {
+    min-height: auto;
+    padding: 14px;
+    border-radius: 22px;
+  }
+  .release-summary-col {
+    order: 0;
+    position: static;
+    top: auto;
+    z-index: auto;
+    box-shadow: none;
+  }
+  .release-list,
+  .products-scroll {
+    max-height: none;
+    overflow: visible;
+  }
+  .release-secondary-section {
+    margin: 0 12px;
+    padding: 14px;
+    border-radius: 20px;
+  }
   .plus-btn { width: 100%; }
   .worker-share-input, .worker-share-controls { grid-template-columns: 1fr; }
+  .bonus-penalty-item { grid-template-columns: 1fr; }
+  .service-discount-row input, .totals input { width: 100%; }
+  .service-check-item,
+  .product-item {
+    border-radius: 16px;
+    padding: 12px;
+  }
+  .release-title h3 {
+    font-size: 17px;
+  }
+  .release-summary-hero {
+    padding: 16px;
+    border-radius: 20px;
+  }
+  .release-summary-hero strong {
+    font-size: 24px;
+  }
+  .summary-stat-grid {
+    gap: 8px;
+  }
+  .summary-stat-card {
+    border-radius: 16px;
+    padding: 12px;
+  }
+  .worker-selection-panel,
+  .summary-share,
+  .modern-input-row,
+  .detail-field,
+  .payment-method-preview,
+  .cheque-inline-card {
+    border-radius: 16px;
+  }
+  .release-actions {
+    position: static;
+    bottom: auto;
+    margin-top: 12px;
+    padding-top: 12px;
+    background: none;
+  }
+  .invoice-preview-loading,.invoice-preview-empty{min-height:220px}
   .invoice-modal-panel{height:calc(100vh - 16px)}
   .invoice-modal-actions{flex-direction:column}
   .invoice-totals p,.invoice-workers p{flex-direction:column}
+}
+@media (max-width: 480px) {
+  .filters {
+    display: flex;
+    grid-template-columns: none;
+  }
+  .cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .car-card {
+    padding: 8px;
+  }
+  .plate-box {
+    transform: none;
+    transform-origin: center right;
+    margin: 0;
+  }
+  .car-info h3 {
+    font-size: 12px;
+  }
+  .car-info p {
+    font-size: 10px;
+  }
+  .chip {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+  .primary-btn {
+    font-size: 12px;
+    padding: 0 10px;
+  }
+  .vehicle-entry-overlay {
+    padding: 10px !important;
+  }
+  .vehicle-entry-panel {
+    max-width: calc(100vw - 20px) !important;
+    border-radius: 20px !important;
+  }
+  .vehicle-entry-head {
+    padding: 14px 14px 12px;
+  }
+  .step-one-modal-panel {
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .release-layout {
+    padding: 0 10px;
+  }
+  .release-secondary-section {
+    margin: 0 10px;
+    padding: 12px;
+  }
+  .release-list,
+  .products-scroll {
+    max-height: none;
+  }
+  .release-col {
+    padding: 12px;
+    border-radius: 18px;
+  }
+  .release-summary-hero {
+    padding: 14px;
+    border-radius: 18px;
+  }
+  .release-summary-hero strong {
+    font-size: 21px;
+  }
+  .summary-final {
+    font-size: 17px;
+    padding: 14px;
+  }
 }
 </style>

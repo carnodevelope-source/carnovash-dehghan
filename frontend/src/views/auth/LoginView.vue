@@ -199,4 +199,12 @@ const onSubmit = async () => {
   font-size: 10px;
   letter-spacing: 0.12em;
 }
+@media (max-width: 640px) {
+  .decor-right { width: 220px; height: 220px; right: -70px; top: -40px; }
+  .decor-left { width: 180px; height: 180px; left: -60px; bottom: -40px; }
+  .login-card { max-width: 100%; padding: 22px 16px; border-radius: 16px; }
+  .login-head { margin-bottom: 18px; }
+  .login-head h1 { font-size: 22px; }
+  .field-row { flex-direction: column; align-items: stretch; gap: 10px; }
+}
 </style>

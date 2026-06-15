@@ -16,6 +16,18 @@ class CarWash(models.Model):
     def __str__(self) -> str:
         return self.name
 
+    def active_feature_keys(self):
+        return list(
+            self.feature_purchases.filter(is_active=True)
+            .order_by('feature_key')
+            .values_list('feature_key', flat=True)
+        )
+
+    def has_feature(self, feature_key):
+        if not feature_key:
+            return False
+        return self.feature_purchases.filter(feature_key=feature_key, is_active=True).exists()
+
 
 class User(AbstractUser):
     class Roles(models.TextChoices):
@@ -61,6 +73,31 @@ class User(AbstractUser):
 
     def __str__(self) -> str:
         return self.username
+
+
+class CarWashFeaturePurchase(models.Model):
+    class FeatureKey(models.TextChoices):
+        ATTENDANCE = 'attendance', 'Attendance'
+
+    tenant = models.ForeignKey(
+        CarWash,
+        on_delete=models.CASCADE,
+        related_name='feature_purchases',
+    )
+    feature_key = models.CharField(max_length=50, choices=FeatureKey.choices)
+    is_active = models.BooleanField(default=True)
+    purchased_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['tenant_id', 'feature_key']
+        constraints = [
+            models.UniqueConstraint(fields=['tenant', 'feature_key'], name='uniq_carwash_feature_purchase')
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.tenant.name} | {self.feature_key}'
 
 
 class SupportTicket(models.Model):

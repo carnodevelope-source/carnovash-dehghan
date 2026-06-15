@@ -3,7 +3,17 @@
     <div class="hq-bg hq-bg-one"></div>
     <div class="hq-bg hq-bg-two"></div>
 
-    <aside v-if="authStore.isHqAdmin" class="hq-sidebar">
+    <div
+      v-if="authStore.isHqAdmin && isMobileSidebarOpen"
+      class="hq-mobile-overlay"
+      @click="closeMobileSidebar"
+    ></div>
+
+    <aside
+      v-if="authStore.isHqAdmin"
+      class="hq-sidebar"
+      :class="{ 'hq-sidebar-mobile-open': isMobileSidebarOpen }"
+    >
       <div class="hq-brand">
         <span class="hq-brand-badge">HQ</span>
         <div>
@@ -19,7 +29,7 @@
           type="button"
           class="hq-nav-item"
           :class="{ active: activeTab === tab.key }"
-          @click="activeTab = tab.key"
+          @click="selectTab(tab.key)"
         >
           <span class="hq-nav-title">{{ tab.label }}</span>
           <span class="hq-nav-meta">{{ tab.meta }}</span>
@@ -42,6 +52,16 @@
           <h1>{{ currentTabTitle }}</h1>
         </div>
         <div class="hq-header-tools">
+          <button
+            v-if="authStore.isHqAdmin"
+            type="button"
+            class="hq-mobile-menu-btn"
+            :aria-expanded="isMobileSidebarOpen"
+            aria-label="باز کردن منوی پنل مرکزی"
+            @click="toggleMobileSidebar"
+          >
+            ☰
+          </button>
           <span class="hq-role-badge">{{ authStore.isHqAdmin ? 'HQ Admin' : 'HQ Support' }}</span>
           <button v-if="activeTab === 'overview'" type="button" class="primary-btn" @click="loadOverview">به‌روزرسانی</button>
           <button v-if="!authStore.isHqAdmin" type="button" class="ghost-btn" @click="logout">خروج</button>
@@ -981,6 +1001,7 @@ const allTabs = [
   { key: 'reports', label: 'گزارشات', meta: 'تحلیل تاریخی و مالی' }
 ]
 const activeTab = ref(authStore.isHqAdmin ? 'overview' : 'tickets')
+const isMobileSidebarOpen = ref(false)
 const visibleTabs = computed(() => {
   if (!authStore.isHqAdmin) return allTabs.filter((tab) => tab.key === 'tickets')
   return allTabs.filter((tab) => {
@@ -989,6 +1010,19 @@ const visibleTabs = computed(() => {
   })
 })
 const currentTabTitle = computed(() => visibleTabs.value.find((tab) => tab.key === activeTab.value)?.label || 'پنل مرکزی')
+
+const selectTab = (tabKey) => {
+  activeTab.value = tabKey
+  isMobileSidebarOpen.value = false
+}
+
+const toggleMobileSidebar = () => {
+  isMobileSidebarOpen.value = !isMobileSidebarOpen.value
+}
+
+const closeMobileSidebar = () => {
+  isMobileSidebarOpen.value = false
+}
 
 const overview = reactive({ summary: {}, recent_carwashes: [], recent_tickets: [] })
 
@@ -1652,6 +1686,7 @@ const logout = async () => {
 }
 
 watch(activeTab, async (tab) => {
+  closeMobileSidebar()
   if (!visibleTabs.value.some((item) => item.key === tab)) {
     activeTab.value = visibleTabs.value[0]?.key || 'tickets'
     return
@@ -1749,6 +1784,11 @@ onMounted(async () => {
   backdrop-filter: blur(16px);
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.06);
   z-index: 2;
+}
+
+.hq-mobile-overlay,
+.hq-mobile-menu-btn {
+  display: none;
 }
 
 .hq-brand,
@@ -3042,6 +3082,8 @@ td strong {
 
 .modal-card {
   width: min(680px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
   padding: 20px;
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.98);
@@ -3551,6 +3593,59 @@ td strong {
     padding: 16px;
   }
 
+  .hq-mobile-menu-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--text);
+    font: inherit;
+    font-size: 18px;
+  }
+
+  .hq-mobile-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.32);
+    z-index: 30;
+  }
+
+  .hq-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: min(320px, calc(100vw - 24px));
+    max-width: 100%;
+    height: 100vh;
+    transform: translateX(110%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform .22s ease, opacity .22s ease;
+    z-index: 35;
+    overflow: auto;
+  }
+
+  .hq-sidebar.hq-sidebar-mobile-open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .hq-nav {
+    display: grid;
+    gap: 10px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .hq-nav-item {
+    flex: unset;
+  }
+
   .hero-card,
   .form-grid,
   .ticket-filter-grid,
@@ -3569,7 +3664,10 @@ td strong {
   .chat-head,
   .chat-head-actions,
   .chat-head-badges,
-  .hq-header {
+  .hq-header,
+  .hq-header-tools,
+  .hq-profile,
+  .card-head {
     flex-direction: column;
     align-items: stretch;
   }

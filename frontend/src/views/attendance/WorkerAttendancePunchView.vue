@@ -214,5 +214,5 @@ onBeforeUnmount(() => {
 .error-box{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
 .success-box{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
 @media (max-width:900px){.panel-grid{grid-template-columns:1fr}.hero-card{flex-direction:column;align-items:flex-start}.status-orb{width:100%}}
-@media (max-width:640px){.attendance-shell{padding:18px 12px 28px}.hero-card,.glass-card{border-radius:24px;padding:18px}.action-grid,.stats-grid{grid-template-columns:1fr}}
+@media (max-width:640px){.attendance-shell{padding:18px 12px 28px}.hero-card,.glass-card{border-radius:24px;padding:18px}.action-grid,.stats-grid{grid-template-columns:1fr}.card-head,.timeline-item{grid-template-columns:1fr}.clock{justify-self:start}.status-orb{min-width:0}.timeline-item{padding:12px}}
 </style>

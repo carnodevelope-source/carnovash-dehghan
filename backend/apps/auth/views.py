@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 from apps.inventory.models import ExpenseEntry, StockMovement
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
 from apps.vehicles.models import VehicleEntry
-from .models import CarWash, SupportTicket, SupportTicketMessage, User
+from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketMessage, User
 from .serializers import (
     CarWashCreateSerializer,
     CarWashListSerializer,
@@ -67,6 +67,7 @@ def _is_hq_admin(user):
 
 
 def _auth_payload(user):
+    feature_keys = set(user.tenant.active_feature_keys()) if getattr(user, 'tenant_id', None) else set()
     return {
         'id': user.id,
         'username': user.username,
@@ -78,9 +79,40 @@ def _auth_payload(user):
         'phone': user.phone,
         'tenant_id': user.tenant_id,
         'tenant_name': user.tenant.name if user.tenant_id else '',
+        'purchased_menu_access': sorted(feature_keys),
+        'menu_access': {
+            CarWashFeaturePurchase.FeatureKey.ATTENDANCE: CarWashFeaturePurchase.FeatureKey.ATTENDANCE in feature_keys,
+        },
         'is_hq': _is_hq_user(user),
         'is_hq_admin': _is_hq_admin(user),
     }
+
+
+def _sync_tenant_feature_purchases(tenant, feature_keys):
+    if not tenant:
+        return
+    normalized_keys = {
+        str(item).strip()
+        for item in (feature_keys or [])
+        if str(item).strip() in CarWashFeaturePurchase.FeatureKey.values
+    }
+    existing = {
+        purchase.feature_key: purchase
+        for purchase in tenant.feature_purchases.all()
+    }
+    for feature_key in CarWashFeaturePurchase.FeatureKey.values:
+        purchase = existing.get(feature_key)
+        should_be_active = feature_key in normalized_keys
+        if purchase:
+            if purchase.is_active != should_be_active:
+                purchase.is_active = should_be_active
+                purchase.save(update_fields=['is_active', 'updated_at'])
+        elif should_be_active:
+            CarWashFeaturePurchase.objects.create(
+                tenant=tenant,
+                feature_key=feature_key,
+                is_active=True,
+            )
 
 
 def _response_status_score(status_value):
@@ -473,6 +505,7 @@ class HqCarWashListCreateView(HqBaseView):
             address=(data.get('carwash_address') or '').strip(),
             is_active=True,
         )
+        _sync_tenant_feature_purchases(tenant, data.get('purchased_menu_access', []))
         first_name = data['manager_first_name'].strip()
         last_name = data['manager_last_name'].strip()
         manager = user_model.objects.create(
@@ -519,6 +552,8 @@ class HqCarWashUpdateView(HqBaseView):
         if changed_fields:
             changed_fields.append('updated_at')
             tenant.save(update_fields=changed_fields)
+        if 'purchased_menu_access' in data:
+            _sync_tenant_feature_purchases(tenant, data.get('purchased_menu_access', []))
 
         manager = get_user_model().objects.filter(tenant=tenant, role='manager').order_by('id').first()
         if manager:

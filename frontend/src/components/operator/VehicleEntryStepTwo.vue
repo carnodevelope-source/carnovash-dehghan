@@ -315,6 +315,15 @@ const normalizedVehicle = computed(() => {
     pieceDetails: String(data.pieceDetails || data.piece_details || '').trim(),
     pieceWashPrice: Number(data.pieceWashPrice || 0),
     serviceIds: Array.isArray(data.serviceIds) ? data.serviceIds.map((id) => Number(id)) : [],
+    staffMembers: Array.isArray(data.staffMembers || data.staff_members)
+      ? (data.staffMembers || data.staff_members)
+        .map((item) => ({
+          id: Number(item?.id || 0),
+          name: String(item?.name || '').trim(),
+          worker_share_percent: Math.max(0, Math.min(100, Number(item?.worker_share_percent || 0)))
+        }))
+        .filter((item) => item.id > 0)
+      : [],
     staffId: fallbackStaffId,
     staffIds: providedStaffIds.length ? providedStaffIds : (fallbackStaffId ? [fallbackStaffId] : [])
   }
@@ -335,7 +344,8 @@ const plateParts = computed(() => {
 const vehicleTitle = computed(() => {
   const v = normalizedVehicle.value
   if (v.isPieceWash) {
-    return v.driver.trim().length > 0 && normalizeDigits(v.mobile).length > 0
+    const pieceOwner = String(v.driver || '').trim()
+    return pieceOwner || 'قطعه‌شویی'
   }
   const value = `${v.model} ${v.color}`.trim()
   return value || 'خودرو بدون مشخصات'
@@ -475,10 +485,13 @@ const setServiceDiscountPercent = (serviceId, value) => {
 
 const hasRequiredVehicleInfo = computed(() => {
   const v = normalizedVehicle.value
+  const hasPhone = normalizeDigits(v.mobile).length > 0
+  if (v.isPieceWash) {
+    return String(v.driver || '').trim().length > 0 && hasPhone
+  }
   const hasPlate = v.plateLeft.length === 2 && v.plateLetter.length === 1 && v.plateMid.length === 3 && v.plateRight.length === 2
   const hasModel = v.model.length > 0
   const hasColor = v.color.length > 0
-  const hasPhone = normalizeDigits(v.mobile).length > 0
   return hasPlate && hasModel && hasColor && hasPhone
 })
 const hasValidShare = computed(() => {
@@ -639,7 +652,11 @@ const hydrateFromVehicleInfo = () => {
   serviceDiscountPercents.value = {}
   pieceDetails.value = vehicle.pieceDetails || ''
   pieceWashPrice.value = isPieceWash.value ? Math.max(0, Number(vehicle.pieceWashPrice || 0)) : 0
-  workerSharePercents.value = normalizeWorkerSharePercents(selectedWorkerIds.value)
+  const existingWorkerSharePercents = (vehicle.staffMembers || []).reduce((accumulator, item) => {
+    if (item.id > 0) accumulator[item.id] = Math.max(0, Math.min(100, Number(item.worker_share_percent || 0)))
+    return accumulator
+  }, {})
+  workerSharePercents.value = normalizeWorkerSharePercents(selectedWorkerIds.value, existingWorkerSharePercents)
 }
 
 const loadInitialData = async () => {
@@ -687,24 +704,27 @@ onMounted(loadInitialData)
 
 <style scoped>
 .step-two {
-  background: #edf5ff;
+  background:
+    radial-gradient(circle at top right, rgba(30, 111, 217, 0.08), transparent 22%),
+    linear-gradient(180deg, #edf5ff 0%, #f7f9fb 100%);
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .step-two-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 32px;
-  border-bottom: 1px solid #d4e4ff;
-  background: #fff;
+  padding: 24px 28px;
+  border-bottom: 1px solid rgba(212, 228, 255, 0.92);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 4;
 }
 
 .header-main {
@@ -853,6 +873,8 @@ onMounted(loadInitialData)
 .step-two-grid {
   display: grid;
   grid-template-columns: 35% 35% 30%;
+  gap: 16px;
+  padding: 18px;
   min-height: 0;
   flex: 1;
   overflow: hidden;
@@ -862,37 +884,47 @@ onMounted(loadInitialData)
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  border: 1px solid rgba(199, 220, 255, 0.92);
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 0 22px 46px -38px rgba(15, 23, 42, 0.45);
 }
 
 .services-col,
 .staff-col {
-  border-left: 1px solid #d4e4ff;
+  border-left: 0;
 }
 
 .services-col {
-  background: #f2f8ff;
+  background:
+    radial-gradient(circle at top, rgba(65, 211, 255, 0.1), transparent 32%),
+    linear-gradient(180deg, #f8fbff, #eff6ff);
 }
 
 .staff-col {
-  background: #f2f8ff;
+  background:
+    radial-gradient(circle at top, rgba(148, 163, 184, 0.09), transparent 34%),
+    linear-gradient(180deg, #f8fbff, #f1f6ff);
 }
 
 .summary-col {
-  background: #fff;
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .col-head {
-  padding: 22px 20px 14px;
+  padding: 20px 20px 14px;
   display: grid;
   gap: 12px;
   flex-shrink: 0;
+  border-bottom: 1px solid rgba(212, 228, 255, 0.86);
 }
 
 .col-head h4,
 .summary-head h4 {
   margin: 0;
   color: #191c1e;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
 }
 
@@ -910,10 +942,10 @@ onMounted(loadInitialData)
 
 .search-box input {
   width: 100%;
-  height: 48px;
-  border: 1px solid transparent;
-  border-radius: 14px;
-  background: #e8f2ff;
+  height: 46px;
+  border: 1px solid rgba(191, 215, 255, 0.9);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
   padding: 0 14px;
   color: #191c1e;
 }
@@ -953,7 +985,7 @@ onMounted(loadInitialData)
 }
 
 .col-list {
-  padding: 0 20px 20px;
+  padding: 16px 20px 20px;
   overflow-y: auto;
   overflow-x: hidden;
   display: grid;
@@ -962,14 +994,15 @@ onMounted(loadInitialData)
 
 .service-card {
   position: relative;
-  border: 1px solid #bfd7ff;
-  border-radius: 16px;
-  background: #fff;
+  border: 1px solid rgba(191, 215, 255, 0.88);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.88);
   padding: 14px;
   display: grid;
   grid-template-columns: 26px 1fr;
   gap: 10px;
   cursor: pointer;
+  box-shadow: 0 18px 32px -30px rgba(15, 23, 42, 0.28);
 }
 
 .service-card input {
@@ -991,8 +1024,9 @@ onMounted(loadInitialData)
 }
 
 .service-card.selected {
-  background: rgba(216, 226, 255, 0.4);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(219, 234, 254, 0.72));
   border: 2px solid #0058be;
+  border-right-width: 5px;
 }
 
 .service-card.selected .checkmark {
@@ -1049,10 +1083,10 @@ onMounted(loadInitialData)
 }
 
 .piece-wash-box {
-  border: 1px solid #bfd7ff;
-  border-radius: 18px;
+  border: 1px solid rgba(191, 215, 255, 0.9);
+  border-radius: 22px;
   padding: 16px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.9);
   display: grid;
   gap: 12px;
 }
@@ -1075,16 +1109,18 @@ onMounted(loadInitialData)
 }
 
 .worker-card {
-  border: 1px solid #bfd7ff;
-  border-radius: 20px;
+  border: 1px solid rgba(191, 215, 255, 0.88);
+  border-radius: 22px;
   padding: 15px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.88);
   cursor: pointer;
+  box-shadow: 0 18px 32px -30px rgba(15, 23, 42, 0.28);
 }
 
 .worker-card.selected {
   border: 2px solid #0058be;
-  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
+  border-right-width: 5px;
+  box-shadow: 0 16px 28px -22px rgba(0, 88, 190, 0.35);
 }
 
 .worker-top {
@@ -1257,8 +1293,8 @@ onMounted(loadInitialData)
 }
 
 .summary-head {
-  padding: 22px 20px;
-  border-bottom: 1px solid #d4e4ff;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid rgba(212, 228, 255, 0.88);
 }
 
 .summary-body {
@@ -1266,7 +1302,7 @@ onMounted(loadInitialData)
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 20px;
+  padding: 18px 20px;
   display: grid;
   gap: 16px;
 }
@@ -1409,10 +1445,11 @@ onMounted(loadInitialData)
 }
 
 .summary-foot {
-  border-top: 1px solid #d4e4ff;
-  padding: 16px 20px;
+  border-top: 1px solid rgba(212, 228, 255, 0.88);
+  padding: 16px 20px 18px;
   display: grid;
   gap: 10px;
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .summary-foot-actions {
@@ -1442,7 +1479,7 @@ onMounted(loadInitialData)
   width: 100%;
   height: 48px;
   border: none;
-  border-radius: 12px;
+  border-radius: 16px;
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
@@ -1460,7 +1497,7 @@ onMounted(loadInitialData)
   width: 100%;
   height: 48px;
   border: 1px solid #c7d8f4;
-  border-radius: 12px;
+  border-radius: 16px;
   background: #ffffff;
   color: #1e3a5f;
   font: inherit;
@@ -1504,7 +1541,6 @@ onMounted(loadInitialData)
   .services-col,
   .staff-col {
     border-left: none;
-    border-bottom: 1px solid #d4e4ff;
   }
 
   .summary-col {
@@ -1513,23 +1549,93 @@ onMounted(loadInitialData)
 }
 
 @media (max-width: 768px) {
+  .step-two {
+    padding: 10px;
+    gap: 10px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
   .step-two-header {
-    padding: 14px;
+    padding: 14px 14px 12px;
     align-items: start;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
+    border: 1px solid rgba(201, 220, 245, 0.92);
+    border-radius: 24px;
+    box-shadow: 0 18px 34px -28px rgba(15, 23, 42, 0.35);
   }
 
   .header-main {
     width: 100%;
-    flex-direction: column;
-    align-items: start;
+    flex-direction: row;
+    align-items: center;
     gap: 10px;
+    min-width: 0;
   }
 
   .header-actions {
     width: 100%;
     justify-content: space-between;
+    gap: 8px;
+  }
+
+  .plate-badge {
+    transform: scale(0.9);
+    transform-origin: right center;
+    flex-shrink: 0;
+  }
+
+  .vehicle-meta {
+    min-width: 0;
+  }
+
+  .vehicle-meta h3 {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .vehicle-meta p {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.6;
+    flex-wrap: wrap;
+  }
+
+  .badge-muted {
+    font-size: 10px;
+    padding: 2px 8px;
+  }
+
+  .assigning-badge {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 22px;
+  }
+
+  .step-two-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    min-height: auto;
+    flex: none;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .col,
+  .summary-col {
+    min-height: auto;
+    border-radius: 24px;
+  }
+
+  .services-col,
+  .staff-col {
+    background: rgba(255, 255, 255, 0.88);
   }
 
   .col-head,
@@ -1537,13 +1643,58 @@ onMounted(loadInitialData)
   .summary-head,
   .summary-body,
   .summary-foot {
-    padding-right: 14px;
-    padding-left: 14px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .col-head,
+  .summary-head {
+    padding-top: 13px;
+    padding-bottom: 10px;
+    gap: 10px;
+  }
+
+  .services-col .col-list,
+  .staff-col .col-list {
+    max-height: none;
+    overflow: visible;
+    padding-bottom: 12px;
+    gap: 10px;
+  }
+
+  .summary-col {
+    position: static;
+    bottom: auto;
+    z-index: auto;
+    box-shadow: none;
+  }
+
+  .summary-body {
+    max-height: none;
+    overflow: visible;
+    padding-bottom: 10px;
+    gap: 10px;
+  }
+
+  .summary-foot {
+    padding-top: 12px;
+    position: static;
+    bottom: auto;
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  .search-box input {
+    height: 38px;
+    border-radius: 14px;
+    padding: 0 10px;
+    font-size: 12px;
   }
 
   .service-head {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
+    gap: 8px;
   }
 
   .worker-share {
@@ -1551,6 +1702,212 @@ onMounted(loadInitialData)
     align-items: stretch;
   }
 
+  .summary-foot-actions,
+  .staff-title-row,
+  .worker-top,
+  .worker-jobs,
+  .worker-share-readonly {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .worker-ident,
+  .selected-worker-box {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .selected-worker-box .worker-share-input,
+  .selected-worker-box .worker-share-pill {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+
+  .summary-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .summary-row input {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .summary-row .unit-note {
+    grid-column: 1 / -1;
+  }
+
+  .col-head h4,
+  .summary-head h4 {
+    font-size: 16px;
+  }
+
+  .service-card,
+  .worker-card,
+  .piece-wash-box {
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .service-head h5,
+  .worker-ident h5,
+  .piece-wash-box h5 {
+    font-size: 14px;
+  }
+
+  .service-head strong,
+  .worker-jobs,
+  .worker-share-readonly,
+  .service-body p,
+  .empty,
+  .error,
+  .summary-row,
+  .selected-worker-box small,
+  .blocked-plate-note {
+    font-size: 11px;
+  }
+
+  .worker-ident p,
+  .service-discount-row label,
+  .unit-note,
+  .summary-body h6,
+  .staff-title-row span {
+    font-size: 10px;
+  }
+
+  .service-discount-row input,
+  .share-value input,
+  .totals input,
+  .textarea-row textarea {
+    width: 100%;
+  }
+
+  .service-discount-row input,
+  .totals input,
+  .share-value input {
+    height: 32px;
+    font-size: 12px;
+  }
+
+  .textarea-row textarea {
+    min-height: 84px;
+  }
+
+  .avatar {
+    width: 36px;
+    height: 36px;
+    font-size: 12px;
+  }
+
+  .avatar.small {
+    width: 28px;
+    height: 28px;
+    font-size: 10px;
+  }
+
+  .worker-status,
+  .worker-share-pill,
+  .worker-share-input span {
+    font-size: 10px;
+  }
+
+  .primary-btn,
+  .secondary-foot-btn {
+    height: 40px;
+    font-size: 12px;
+  }
+
+  .summary-foot-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .step-two-header {
+    padding: 10px 12px;
+  }
+
+  .header-main {
+    align-items: start;
+  }
+
+  .plate-badge {
+    transform: scale(0.82);
+    margin-right: -8px;
+  }
+
+  .vehicle-title-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .vehicle-meta h3 {
+    font-size: 13px;
+  }
+
+  .vehicle-meta p {
+    font-size: 10px;
+  }
+
+  .col-head,
+  .col-list,
+  .summary-head,
+  .summary-body,
+  .summary-foot {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .service-card,
+  .worker-card,
+  .piece-wash-box {
+    padding: 9px;
+  }
+
+  .services-col .col-list,
+  .staff-col .col-list {
+    max-height: none;
+  }
+
+  .summary-body {
+    max-height: none;
+  }
+
+  .service-head h5,
+  .worker-ident h5,
+  .piece-wash-box h5,
+  .col-head h4,
+  .summary-head h4 {
+    font-size: 13px;
+  }
+
+  .service-head strong,
+  .worker-jobs,
+  .worker-share-readonly,
+  .service-body p,
+  .empty,
+  .error,
+  .summary-row,
+  .selected-worker-box small,
+  .blocked-plate-note {
+    font-size: 10px;
+  }
+
+  .service-discount-row input,
+  .totals input,
+  .share-value input,
+  .search-box input {
+    height: 30px;
+    font-size: 11px;
+  }
+
+  .textarea-row textarea {
+    min-height: 72px;
+  }
 }
 </style>
 

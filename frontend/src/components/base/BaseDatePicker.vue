@@ -311,4 +311,17 @@ onBeforeUnmount(() => {
 .day-cell.empty { border-color: transparent; background: transparent; cursor: default; }
 .day-cell.selected { background: #2563eb; border-color: #2563eb; color: #fff; }
 .day-cell.today { border-color: #2563eb; }
+@media (max-width: 640px) {
+  .picker-popup {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+    max-height: min(420px, calc(100vh - 24px));
+    overflow: auto;
+    border-radius: 16px;
+  }
+}
 </style>

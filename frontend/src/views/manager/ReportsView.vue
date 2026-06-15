@@ -652,10 +652,11 @@ th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-spa
 .modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e2e8f0}
 .modal-step{margin:0;color:#64748b;font-size:12px}
 .modal-body{padding:16px}
-.modal-body{display:grid;gap:12px}
+.modal-body{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}
 .modal-body label{display:grid;gap:6px}
 .modal-body input,.modal-body select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px}
 @media (max-width:1400px){.summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (max-width:1200px){.filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-field,.plate-field{grid-column:span 2}.worker-summary-grid{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:760px){.filters-card,.summary-grid,.worker-summary-grid,.plate-filter-row{grid-template-columns:1fr}.search-field,.plate-field{grid-column:span 1}}
+@media (max-width:760px){.reports-content{font-size:11px}.range-chip,.chip,.field,.field input,.field select,table,.modal-step{font-size:10px}.primary-btn,.secondary-btn,.close-btn{font-size:10px;padding:7px 10px}.filters-card,.summary-grid,.worker-summary-grid,.plate-filter-row{grid-template-columns:1fr}.search-field,.plate-field{grid-column:span 1}.worker-head,.action-row,.services-preview-cell{flex-direction:column;align-items:stretch}.kpi-card p,.services-expanded-box strong,.payout-card p{font-size:10px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:12px}.field input,.field select,.modal-body input,.modal-body select{height:34px}.range-bar,.tabs-bar{gap:5px}.modal-overlay{padding:10px}.modal-panel{max-height:calc(100vh - 20px);overflow:auto}.modal-body{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:480px){.reports-content{font-size:10px}.range-chip,.chip,.field,.field input,.field select,table,th,td{font-size:9px}.primary-btn,.secondary-btn,.close-btn{font-size:9px;padding:6px 9px}.kpi-card{padding:8px}.kpi-card p,.services-expanded-box strong,.services-expanded-box p,.payout-card p,.modal-step{font-size:9px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:11px}.field input,.field select,.modal-body input,.modal-body select{height:32px}.plate-filter-shell,.table-card,.modal-body{padding:8px}.worker-head,.action-row{gap:6px}}
 </style>

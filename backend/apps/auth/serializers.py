@@ -1,7 +1,7 @@
 ﻿from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
 
-from .models import CarWash, SupportTicket, SupportTicketMessage
+from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketMessage
 
 
 class LoginSerializer(serializers.Serializer):
@@ -31,6 +31,8 @@ class LoginSerializer(serializers.Serializer):
 
 class UserListSerializer(serializers.ModelSerializer):
     tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+    menu_access = serializers.SerializerMethodField()
+    purchased_menu_access = serializers.SerializerMethodField()
 
     class Meta:
         model = get_user_model()
@@ -43,10 +45,23 @@ class UserListSerializer(serializers.ModelSerializer):
             'phone',
             'tenant',
             'tenant_name',
+            'menu_access',
+            'purchased_menu_access',
             'role',
             'platform_role',
             'is_active',
         ]
+
+    def get_menu_access(self, obj):
+        feature_keys = set(obj.tenant.active_feature_keys()) if getattr(obj, 'tenant_id', None) else set()
+        return {
+            CarWashFeaturePurchase.FeatureKey.ATTENDANCE: CarWashFeaturePurchase.FeatureKey.ATTENDANCE in feature_keys,
+        }
+
+    def get_purchased_menu_access(self, obj):
+        if not getattr(obj, 'tenant_id', None):
+            return []
+        return obj.tenant.active_feature_keys()
 
 
 class HqSupportUserListSerializer(UserListSerializer):
@@ -140,6 +155,8 @@ class CarWashManagerSerializer(serializers.ModelSerializer):
 class CarWashListSerializer(serializers.ModelSerializer):
     manager = serializers.SerializerMethodField()
     tickets_open_count = serializers.SerializerMethodField()
+    purchased_menu_access = serializers.SerializerMethodField()
+    menu_access = serializers.SerializerMethodField()
 
     class Meta:
         model = CarWash
@@ -153,6 +170,8 @@ class CarWashListSerializer(serializers.ModelSerializer):
             'updated_at',
             'manager',
             'tickets_open_count',
+            'purchased_menu_access',
+            'menu_access',
         ]
 
     def get_manager(self, obj):
@@ -164,6 +183,15 @@ class CarWashListSerializer(serializers.ModelSerializer):
     def get_tickets_open_count(self, obj):
         return obj.support_tickets.exclude(status=SupportTicket.Status.CLOSED).count()
 
+    def get_purchased_menu_access(self, obj):
+        return obj.active_feature_keys()
+
+    def get_menu_access(self, obj):
+        feature_keys = set(obj.active_feature_keys())
+        return {
+            CarWashFeaturePurchase.FeatureKey.ATTENDANCE: CarWashFeaturePurchase.FeatureKey.ATTENDANCE in feature_keys,
+        }
+
 
 class CarWashCreateSerializer(serializers.Serializer):
     carwash_name = serializers.CharField(max_length=150)
@@ -173,6 +201,11 @@ class CarWashCreateSerializer(serializers.Serializer):
     manager_username = serializers.CharField(max_length=150)
     manager_phone = serializers.CharField(max_length=20)
     manager_password = serializers.CharField(min_length=6, write_only=True)
+    purchased_menu_access = serializers.ListField(
+        child=serializers.ChoiceField(choices=CarWashFeaturePurchase.FeatureKey.choices),
+        required=False,
+        allow_empty=True,
+    )
 
 
 class CarWashUpdateSerializer(serializers.Serializer):
@@ -183,6 +216,11 @@ class CarWashUpdateSerializer(serializers.Serializer):
     manager_last_name = serializers.CharField(max_length=150, required=False)
     manager_phone = serializers.CharField(max_length=20, required=False)
     manager_password = serializers.CharField(min_length=6, required=False, write_only=True)
+    purchased_menu_access = serializers.ListField(
+        child=serializers.ChoiceField(choices=CarWashFeaturePurchase.FeatureKey.choices),
+        required=False,
+        allow_empty=True,
+    )
 
 
 class HqSupportUserCreateSerializer(serializers.Serializer):

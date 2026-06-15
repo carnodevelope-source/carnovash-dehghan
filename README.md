@@ -16,11 +16,13 @@ npm install
 npm run dev
 ```
 
+Vite after this change listens on the local network too and prints a `Network` URL like `http://192.168.1.x:5173` that you can open on your phone.
+
 ### Backend
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python manage.py runserver
+python manage.py runserver 0.0.0.0:8000
 ```

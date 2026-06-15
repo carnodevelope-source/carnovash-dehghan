@@ -130,4 +130,9 @@ const innerStyles = computed(() => {
   75% { top: -35px; left: 225px; }
   100% { top: -35px; left: 10px; }
 }
+@media (max-width: 640px) {
+  .board {
+    width: min(250px, 72vw);
+  }
+}
 </style>

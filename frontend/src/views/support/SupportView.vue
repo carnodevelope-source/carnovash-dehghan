@@ -1688,17 +1688,59 @@ onMounted(async () => {
   .stats-grid,
   .hero-mini-grid,
   .inbox-summary-grid,
-  .metric-strip,
-  .modal-form {
+  .metric-strip {
     grid-template-columns: 1fr;
   }
 
+  .modal-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .modal-form .full {
-    grid-column: auto;
+    grid-column: 1 / -1;
   }
 
   .message-bubble {
     width: min(92%, 100%);
+  }
+
+  .hero-actions,
+  .panel-head,
+  .ticket-row-top,
+  .ticket-row-meta,
+  .conversation-title,
+  .conversation-tags,
+  .reply-actions,
+  .block-head,
+  .detail-row,
+  .message-meta,
+  .modal-actions,
+  .field-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ticket-list {
+    max-height: none;
+  }
+
+  .message-thread {
+    padding: 14px;
+  }
+
+  .status-pill,
+  .meta-pill {
+    white-space: normal;
+    text-align: center;
+  }
+
+  .modal-overlay {
+    padding: 10px;
+  }
+
+  .modal-panel {
+    max-height: calc(100vh - 20px);
+    overflow: auto;
   }
 }
 </style>
