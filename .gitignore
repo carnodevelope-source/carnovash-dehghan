@@ -18,11 +18,15 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.docker
 
 # Django
 backend/staticfiles/
 backend/media/
 backend/db.sqlite3
+backend/*-smoke*.log
+frontend/*-smoke*.log
+ai/tst/Persian-License-Plate-Recognition/*-smoke*.log
 
 # IDE
 .vscode/
