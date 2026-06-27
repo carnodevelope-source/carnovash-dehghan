@@ -48,6 +48,32 @@ Public endpoints after boot:
 - `http://SERVER_IP/`
 - `http://SERVER_IP/api/health/`
 
+## Windows Production Deployment
+
+For the Windows server workflow used by `carnowash.ir`:
+
+1. Prepare WSL and firewall rules:
+
+```powershell
+.\scripts\prepare_windows_server.ps1
+```
+
+2. Reboot the server once WSL prerequisites are enabled.
+3. Deploy the production stack:
+
+```powershell
+.\scripts\deploy_production.ps1
+```
+
+4. Renew TLS later with:
+
+```powershell
+.\scripts\renew_tls.ps1
+```
+
+Production settings live in `.env.production`, with a template in `.env.production.example`.
+The bundled `plate-ai` service is currently a contract-compatible placeholder and should be replaced with the real recognition artifact for final go-live quality.
+
 ## Local Non-Docker Dev
 
 ### Frontend

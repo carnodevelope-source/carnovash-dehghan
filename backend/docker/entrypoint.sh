@@ -27,4 +27,8 @@ PY
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 
+if [ "${DJANGO_BOOTSTRAP_PRODUCTION_DATA:-True}" = "True" ]; then
+    python manage.py seed_production_data
+fi
+
 exec "$@"
