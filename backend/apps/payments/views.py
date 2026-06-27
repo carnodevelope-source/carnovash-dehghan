@@ -1,5 +1,7 @@
 ﻿from decimal import Decimal
 
+from datetime import timedelta
+from decimal import ROUND_HALF_UP
 from secrets import token_urlsafe
 from urllib.parse import quote_plus, unquote_plus
 
@@ -8,6 +10,7 @@ from django.db.models import Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import redirect
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -20,6 +23,77 @@ from .serializers import (
     WalletSerializer,
     WalletWithdrawSerializer,
 )
+from apps.auth.models import CarWashFeaturePurchase
+
+
+FEATURE_OPTION_CATALOG = {
+    CarWashFeaturePurchase.FeatureKey.ATTENDANCE: {
+        'title': 'ورود و خروج',
+        'subtitle': 'صف حضور و غیاب هوشمند پرسنل',
+        'description': 'ثبت ورود و خروج، لینک اختصاصی پرسنل، صف نوبت‌دهی و گزارش کارکرد روزانه.',
+        'base_price': Decimal('2400000'),
+        'accent': '#0f766e',
+    },
+    CarWashFeaturePurchase.FeatureKey.ACCOUNTING: {
+        'title': 'حسابداری',
+        'subtitle': 'کنترل دقیق درآمد، هزینه و سهم‌ها',
+        'description': 'گزارش مالی، سهم کارواش و نیرو، جریان نقدی، تخفیف‌ها و پایش دریافت‌ها.',
+        'base_price': Decimal('3600000'),
+        'accent': '#315f9f',
+    },
+    CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE: {
+        'title': 'فضای ابری',
+        'subtitle': 'نگهداری امن اطلاعات و فایل‌ها',
+        'description': 'فضای اختصاصی برای فایل‌ها، رسیدها، سوابق مشتری و داده‌های عملیاتی کارواش.',
+        'base_price': Decimal('3000000'),
+        'accent': '#7c3aed',
+    },
+}
+
+
+def _money(value):
+    return Decimal(str(value or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def _tenant_price_factor(tenant):
+    tenant_id = int(getattr(tenant, 'id', 1) or 1)
+    return Decimal('1') + (Decimal(str(tenant_id % 5)) * Decimal('0.03'))
+
+
+def _feature_option_price(tenant, feature_key):
+    config = FEATURE_OPTION_CATALOG[feature_key]
+    return _money(config['base_price'] * _tenant_price_factor(tenant))
+
+
+def _feature_option_payload(tenant, feature_key, purchase=None):
+    config = FEATURE_OPTION_CATALOG[feature_key]
+    total_amount = _feature_option_price(tenant, feature_key)
+    upfront_amount = _money(total_amount * Decimal('0.25'))
+    remaining_amount = _money(total_amount - upfront_amount)
+    monthly_installment = _money(remaining_amount / Decimal('12'))
+    is_active = bool(purchase and purchase.is_active)
+    return {
+        'feature_key': feature_key,
+        'title': config['title'],
+        'subtitle': config['subtitle'],
+        'description': config['description'],
+        'accent': config['accent'],
+        'tenant_name': getattr(tenant, 'name', '') or '',
+        'tenant_slug': getattr(tenant, 'slug', '') or '',
+        'personalized_title': f"{config['title']} {getattr(tenant, 'name', '') or 'کارواش'}",
+        'personalized_path': f"/manager/options/{getattr(tenant, 'slug', '') or getattr(tenant, 'id', '')}/{feature_key}",
+        'is_active': is_active,
+        'payment_plan': purchase.payment_plan if purchase else '',
+        'total_amount': total_amount,
+        'cash_amount': total_amount,
+        'installment_upfront_amount': upfront_amount,
+        'installment_remaining_amount': remaining_amount,
+        'installment_months': 12,
+        'monthly_installment_amount': monthly_installment,
+        'paid_amount': purchase.paid_amount if purchase else Decimal('0'),
+        'remaining_amount': purchase.remaining_amount if purchase else Decimal('0'),
+        'next_installment_due_at': purchase.next_installment_due_at if purchase else None,
+    }
 
 
 class WalletBaseMixin:
@@ -126,6 +200,142 @@ class WalletDashboardView(WalletBaseMixin, APIView):
         )
 
 
+class WalletOptionsView(WalletBaseMixin, APIView):
+    def get(self, request):
+        tenant = getattr(request.user, 'tenant', None)
+        if not tenant:
+            return Response({'detail': 'کارواش کاربر مشخص نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+        self._get_or_create_default_wallet(tenant)
+        purchases = {
+            purchase.feature_key: purchase
+            for purchase in CarWashFeaturePurchase.objects.filter(tenant=tenant)
+        }
+        wallet = self._get_or_create_default_wallet(tenant)
+        return Response(
+            {
+                'tenant': {
+                    'id': tenant.id,
+                    'name': tenant.name,
+                    'slug': tenant.slug,
+                },
+                'wallet': WalletSerializer(wallet).data,
+                'options': [
+                    _feature_option_payload(tenant, feature_key, purchases.get(feature_key))
+                    for feature_key in FEATURE_OPTION_CATALOG.keys()
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @transaction.atomic
+    def post(self, request):
+        tenant = getattr(request.user, 'tenant', None)
+        if not tenant:
+            return Response({'detail': 'کارواش کاربر مشخص نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        feature_key = str(request.data.get('feature_key', '') or '').strip()
+        payment_plan = str(request.data.get('payment_plan', '') or '').strip()
+        wallet_id = request.data.get('wallet_id')
+        if feature_key not in FEATURE_OPTION_CATALOG:
+            return Response({'feature_key': ['آپشن انتخاب‌شده معتبر نیست.']}, status=status.HTTP_400_BAD_REQUEST)
+        if payment_plan not in {
+            CarWashFeaturePurchase.PaymentPlan.CASH,
+            CarWashFeaturePurchase.PaymentPlan.INSTALLMENT,
+        }:
+            return Response({'payment_plan': ['شیوه پرداخت معتبر نیست.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = CarWashFeaturePurchase.objects.select_for_update().filter(
+            tenant=tenant,
+            feature_key=feature_key,
+            is_active=True,
+        ).first()
+        if existing:
+            return Response({'detail': 'این آپشن قبلا برای این کارواش فعال شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        wallet = self._resolve_wallet_for_update(wallet_id, tenant)
+        if wallet.wallet_type == Wallet.WalletType.SMS:
+            return Response({'wallet_id': ['خرید آپشن از کیف پول پیامک مجاز نیست.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        total_amount = _feature_option_price(tenant, feature_key)
+        if payment_plan == CarWashFeaturePurchase.PaymentPlan.INSTALLMENT:
+            try:
+                debit_amount = _money(request.data.get('upfront_amount'))
+            except Exception:
+                return Response({'upfront_amount': ['مبلغ نقدی معتبر نیست.']}, status=status.HTTP_400_BAD_REQUEST)
+            if debit_amount <= 0:
+                return Response({'upfront_amount': ['مبلغ نقدی باید بزرگ‌تر از صفر باشد.']}, status=status.HTTP_400_BAD_REQUEST)
+            if debit_amount >= total_amount:
+                return Response({'upfront_amount': ['برای پرداخت قسطی، مبلغ نقدی باید کمتر از کل مبلغ باشد.']}, status=status.HTTP_400_BAD_REQUEST)
+            installment_months = 12
+            remaining_amount = _money(total_amount - debit_amount)
+            monthly_installment = _money(remaining_amount / Decimal(str(installment_months)))
+            next_due_at = timezone.now() + timedelta(days=30)
+        else:
+            debit_amount = total_amount
+            installment_months = 0
+            remaining_amount = Decimal('0')
+            monthly_installment = Decimal('0')
+            next_due_at = None
+
+        current_balance = Decimal(str(wallet.balance or 0))
+        if current_balance < debit_amount:
+            return Response(
+                {'detail': 'موجودی کیف پول برای خرید این آپشن کافی نیست.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        purchase, _created = CarWashFeaturePurchase.objects.select_for_update().get_or_create(
+            tenant=tenant,
+            feature_key=feature_key,
+            defaults={'is_active': False},
+        )
+        purchase.is_active = True
+        purchase.payment_plan = payment_plan
+        purchase.total_amount = total_amount
+        purchase.paid_amount = debit_amount
+        purchase.remaining_amount = remaining_amount
+        purchase.installment_months = installment_months
+        purchase.monthly_installment_amount = monthly_installment
+        purchase.next_installment_due_at = next_due_at
+        purchase.save(
+            update_fields=[
+                'is_active',
+                'payment_plan',
+                'total_amount',
+                'paid_amount',
+                'remaining_amount',
+                'installment_months',
+                'monthly_installment_amount',
+                'next_installment_due_at',
+                'updated_at',
+            ]
+        )
+
+        wallet.balance = current_balance - debit_amount
+        wallet.save(update_fields=['balance', 'updated_at'])
+
+        transaction_record = CashflowTransaction.objects.create(
+            tenant=tenant,
+            wallet=wallet,
+            direction=CashflowTransaction.Direction.OUT,
+            amount=debit_amount,
+            description=f"خرید آپشن {FEATURE_OPTION_CATALOG[feature_key]['title']}",
+            reference_type='feature_option_purchase',
+            reference_id=purchase.id,
+            created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+        )
+
+        return Response(
+            {
+                'detail': 'آپشن با موفقیت فعال شد.',
+                'wallet': WalletSerializer(wallet).data,
+                'option': _feature_option_payload(tenant, feature_key, purchase),
+                'transaction': CashflowTransactionSerializer(transaction_record).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
 class WalletDepositView(WalletBaseMixin, APIView):
     def post(self, request):
         serializer = WalletDepositSerializer(data=request.data)
@@ -163,8 +373,6 @@ class WalletDepositView(WalletBaseMixin, APIView):
 
 
 class WalletDepositStartView(WalletBaseMixin, APIView):
-    allowed_amounts = {Decimal('1000000'), Decimal('2000000'), Decimal('3000000')}
-
     def post(self, request):
         serializer = WalletDepositSerializer(
             data={
@@ -178,8 +386,6 @@ class WalletDepositStartView(WalletBaseMixin, APIView):
         return_url = str(request.data.get('return_url', '') or '').strip()
 
         amount = Decimal(str(data['amount']))
-        if amount not in self.allowed_amounts:
-            raise ValidationError({'amount': 'مبلغ باید ۱، ۲ یا ۳ میلیون تومان باشد.'})
 
         tenant = getattr(request.user, 'tenant', None)
         wallet = self._resolve_wallet_for_update(data.get('wallet_id'), tenant)

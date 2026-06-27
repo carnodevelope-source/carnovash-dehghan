@@ -551,6 +551,7 @@ import { useAuthStore } from '../../store/auth.store'
 import AppShell from '../../components/layout/AppShell.vue'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, fromThousandsTomanInput } from '../../utils/money'
+import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const authStore = useAuthStore()
 const search = ref('')
@@ -632,22 +633,7 @@ const toThousandsDisplay = (value) => Math.round(Number(value || 0) / 1000)
 const fromThousandsInput = (value) => fromThousandsTomanInput(value)
 const createEntrustedItem = () => ({ title: '', quantity: 1, price: 0 })
 
-const apiErrorText = (error) => {
-  const data = error?.response?.data
-  if (!data) return 'ثبت ناموفق بود'
-  if (typeof data.detail === 'string' && data.detail.trim()) return data.detail
-  if (typeof data === 'string') return data
-  const firstField = Object.keys(data)[0]
-  if (!firstField) return 'ثبت ناموفق بود'
-  const raw = data[firstField]
-  if (Array.isArray(raw)) return String(raw[0] || 'ثبت ناموفق بود')
-  if (raw && typeof raw === 'object') {
-    const nestedKey = Object.keys(raw)[0]
-    const nestedRaw = raw[nestedKey]
-    if (Array.isArray(nestedRaw)) return String(nestedRaw[0] || 'ثبت ناموفق بود')
-  }
-  return String(raw || 'ثبت ناموفق بود')
-}
+const apiErrorText = (error) => resolveApiErrorMessage(error, 'ثبت ناموفق بود')
 
 
 const formatWorkerPayment = (worker) => {
@@ -754,7 +740,7 @@ const loadAll = async () => {
       generalSettings.receipt_footer_note = ''
     }
   } catch (e) {
-    errorMessage.value = e?.response?.data?.detail || 'خطا در بارگذاری داده‌ها'
+    errorMessage.value = resolveApiErrorMessage(e, 'خطا در بارگذاری داده‌ها')
   }
 }
 

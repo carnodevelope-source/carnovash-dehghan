@@ -99,6 +99,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../../services/api'
 import { formatJalaliDateTime } from '../../utils/date'
+import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
 const note = ref('')
@@ -130,7 +131,7 @@ const loadData = async () => {
     payload.value = data || {}
     errorMessage.value = ''
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'بارگذاری صفحه حضور و غیاب ناموفق بود.'
+    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری صفحه حضور و غیاب ناموفق بود.')
   }
 }
 
@@ -147,7 +148,7 @@ const submitAttendance = async (eventType) => {
     note.value = ''
     await loadData()
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'ثبت حضور و غیاب انجام نشد.'
+    errorMessage.value = resolveApiErrorMessage(error, 'ثبت حضور و غیاب انجام نشد.')
   } finally {
     submitting.value = false
   }

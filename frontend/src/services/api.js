@@ -2,8 +2,25 @@ import axios from 'axios'
 import { getActivePinia } from 'pinia'
 import { useLoadingStore } from '../store/loading.store'
 
+const resolveBaseURL = () => {
+  const configured = import.meta.env.VITE_API_BASE_URL || ''
+  if (!configured) return '/api'
+
+  try {
+    const current = new URL(window.location.href)
+    const target = new URL(configured)
+    const isLocalTarget = ['localhost', '127.0.0.1'].includes(target.hostname)
+    const isViteDevServer = current.port === '5173'
+    if (isLocalTarget && isViteDevServer) return '/api'
+  } catch (_error) {
+    return configured || '/api'
+  }
+
+  return configured
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: resolveBaseURL(),
   withCredentials: true,
   xsrfCookieName: 'csrftoken',
   xsrfHeaderName: 'X-CSRFToken'

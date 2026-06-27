@@ -37,6 +37,10 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
     entrusted_items = serializers.SerializerMethodField()
     attendance_token = serializers.SerializerMethodField()
     attendance_path = serializers.SerializerMethodField()
+    current_status = serializers.SerializerMethodField()
+    last_event_at = serializers.SerializerMethodField()
+    open_shift_started_at = serializers.SerializerMethodField()
+    queue_position_at = serializers.SerializerMethodField()
 
     def get_full_name(self, obj):
         return obj.user.full_name or obj.user.username
@@ -84,6 +88,22 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
         token = ensure_attendance_token(obj)
         return f'/attendance/{token}'
 
+    def _attendance_queue_state(self, obj):
+        state = getattr(obj, '_attendance_queue_state', None)
+        return state if isinstance(state, dict) else {}
+
+    def get_current_status(self, obj):
+        return self._attendance_queue_state(obj).get('current_status', 'out')
+
+    def get_last_event_at(self, obj):
+        return self._attendance_queue_state(obj).get('last_event_at')
+
+    def get_open_shift_started_at(self, obj):
+        return self._attendance_queue_state(obj).get('open_shift_started_at')
+
+    def get_queue_position_at(self, obj):
+        return self._attendance_queue_state(obj).get('queue_position_at')
+
     class Meta:
         model = WorkerProfile
         fields = [
@@ -111,6 +131,10 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
             'entrusted_item_price',
             'attendance_token',
             'attendance_path',
+            'current_status',
+            'last_event_at',
+            'open_shift_started_at',
+            'queue_position_at',
             'updated_at',
         ]
 

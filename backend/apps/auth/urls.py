@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     CsrfView,
     HqOverviewView,
+    HqCarWashInsightView,
     HqCarWashListCreateView,
     HqCarWashUpdateView,
     HqReportsView,
@@ -35,6 +36,7 @@ urlpatterns = [
     path('support/tickets/<int:pk>/feedback/', SupportTicketFeedbackView.as_view(), name='support-ticket-feedback'),
     path('hq/overview/', HqOverviewView.as_view(), name='hq-overview'),
     path('hq/carwashes/', HqCarWashListCreateView.as_view(), name='hq-carwashes'),
+    path('hq/carwashes/<int:pk>/insights/', HqCarWashInsightView.as_view(), name='hq-carwash-insights'),
     path('hq/carwashes/<int:pk>/', HqCarWashUpdateView.as_view(), name='hq-carwash-update'),
     path('hq/team/', HqSupportUserListCreateView.as_view(), name='hq-team'),
     path('hq/team/<int:pk>/', HqSupportUserDetailView.as_view(), name='hq-team-detail'),

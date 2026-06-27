@@ -187,6 +187,7 @@ import { computed, onMounted, ref } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
 import api from '../../services/api'
 import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
+import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const summary = ref({})
 const workers = ref([])
@@ -241,7 +242,7 @@ const loadDashboard = async () => {
     recentEvents.value = data?.recent_events || []
     errorMessage.value = ''
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'بارگذاری حضور و غیاب ناموفق بود.'
+    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری حضور و غیاب ناموفق بود.')
   }
 }
 
@@ -254,7 +255,7 @@ const submitManagerEvent = async (worker, eventType) => {
     })
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'ثبت رویداد ناموفق بود.'
+    errorMessage.value = resolveApiErrorMessage(error, 'ثبت رویداد ناموفق بود.')
   } finally {
     submittingWorkerId.value = null
   }
@@ -277,7 +278,7 @@ const refreshToken = async (worker) => {
     await api.post(`/workers/${worker.id}/attendance-token/refresh/`)
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'بازسازی لینک انجام نشد.'
+    errorMessage.value = resolveApiErrorMessage(error, 'بازسازی لینک انجام نشد.')
   }
 }
 

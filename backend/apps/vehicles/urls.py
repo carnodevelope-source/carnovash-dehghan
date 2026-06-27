@@ -5,6 +5,7 @@ from .views import (
     VehicleEntryDetailView,
     VehicleBlockPlateView,
     VehicleEntryListCreateView,
+    VehiclePlateRecognitionView,
     VehiclePlateLookupView,
     VehicleEntryStatusUpdateView,
     VehicleReleaseCheckoutView,
@@ -13,6 +14,7 @@ from .views import (
 urlpatterns = [
     path('', VehicleEntryListCreateView.as_view(), name='vehicle-list-create'),
     path('plate-lookup/', VehiclePlateLookupView.as_view(), name='vehicle-plate-lookup'),
+    path('plate-recognition/', VehiclePlateRecognitionView.as_view(), name='vehicle-plate-recognition'),
     path('plate-status/', BlockedPlateStatusView.as_view(), name='vehicle-plate-status'),
     path('<int:pk>/', VehicleEntryDetailView.as_view(), name='vehicle-detail'),
     path('<int:pk>/block-plate/', VehicleBlockPlateView.as_view(), name='vehicle-block-plate'),

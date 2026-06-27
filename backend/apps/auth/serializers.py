@@ -4,6 +4,14 @@ from rest_framework import serializers
 from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketMessage
 
 
+def feature_access_map(feature_keys):
+    feature_key_set = set(feature_keys or [])
+    return {
+        key: key in feature_key_set
+        for key in CarWashFeaturePurchase.FeatureKey.values
+    }
+
+
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
@@ -54,9 +62,7 @@ class UserListSerializer(serializers.ModelSerializer):
 
     def get_menu_access(self, obj):
         feature_keys = set(obj.tenant.active_feature_keys()) if getattr(obj, 'tenant_id', None) else set()
-        return {
-            CarWashFeaturePurchase.FeatureKey.ATTENDANCE: CarWashFeaturePurchase.FeatureKey.ATTENDANCE in feature_keys,
-        }
+        return feature_access_map(feature_keys)
 
     def get_purchased_menu_access(self, obj):
         if not getattr(obj, 'tenant_id', None):
@@ -188,9 +194,7 @@ class CarWashListSerializer(serializers.ModelSerializer):
 
     def get_menu_access(self, obj):
         feature_keys = set(obj.active_feature_keys())
-        return {
-            CarWashFeaturePurchase.FeatureKey.ATTENDANCE: CarWashFeaturePurchase.FeatureKey.ATTENDANCE in feature_keys,
-        }
+        return feature_access_map(feature_keys)
 
 
 class CarWashCreateSerializer(serializers.Serializer):

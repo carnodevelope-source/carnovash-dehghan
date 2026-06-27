@@ -116,7 +116,7 @@
             v-for="worker in filteredWorkers"
             :key="worker.id"
             class="worker-card"
-            :class="{ selected: isWorkerSelected(worker.id) }"
+            :class="{ selected: isWorkerSelected(worker.id), 'queue-front': isQueueFront(worker.id) }"
             @click="toggleWorker(worker.id)"
           >
             <div class="worker-top">
@@ -131,6 +131,18 @@
                 <span class="status-dot"></span>
                 {{ workerStatus(worker).label }}
               </span>
+            </div>
+
+            <div class="worker-queue-meta">
+              <span>
+                ورود:
+                <strong>{{ formatQueueTime(worker.open_shift_started_at) }}</strong>
+              </span>
+              <span>
+                نوبت:
+                <strong>{{ formatQueueTime(worker.queue_position_at) }}</strong>
+              </span>
+              <span v-if="isQueueFront(worker.id)" class="queue-front-pill">اول صف</span>
             </div>
 
             <div class="worker-jobs">
@@ -248,6 +260,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import api from '../../services/api'
 import BaseSpinner from '../base/BaseSpinner.vue'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
+import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const props = defineProps({
   vehicleInfo: { type: Object, default: () => ({}) }
@@ -355,7 +368,13 @@ const vehicleDriver = computed(() => normalizedVehicle.value.driver)
 const vehiclePhone = computed(() => normalizedVehicle.value.mobile)
 const isPlateBlocked = computed(() => Boolean(props.vehicleInfo?.is_plate_blocked))
 
-const availableWorkersCount = computed(() => workers.value.filter((worker) => worker.is_available !== false).length)
+const isWorkerPresent = (worker) => String(worker?.current_status || '').toLowerCase() === 'in'
+const isQueueSelectableWorker = (worker) => isWorkerPresent(worker) && worker?.is_available !== false
+const availableWorkersCount = computed(() => workers.value.filter(isWorkerPresent).length)
+const queueFrontWorkerId = computed(() => {
+  const preferred = workers.value.find(isQueueSelectableWorker) || workers.value.find(isWorkerPresent) || workers.value[0]
+  return preferred ? Number(preferred.id) : null
+})
 
 const serviceCategories = computed(() => {
   const unique = new Set(['همه موارد'])
@@ -520,6 +539,7 @@ const toggleService = (id) => {
 }
 
 const workerStatus = (worker) => {
+  if (!isWorkerPresent(worker)) return { key: 'off', label: 'خارج از شیفت' }
   if (worker.is_available === false || worker.load_status === 'busy') return { key: 'busy', label: 'مشغول' }
   if (worker.load_status === 'normal' || Number(worker.active_jobs_count || 0) > 0) return { key: 'normal', label: 'در حال کار' }
   return { key: 'free', label: 'آزاد' }
@@ -527,6 +547,7 @@ const workerStatus = (worker) => {
 
 const isWorkerSelected = (id) => selectedWorkerIds.value.includes(Number(id))
 const isPrimaryWorker = (id) => Number(primarySelectedWorker.value?.id) === Number(id)
+const isQueueFront = (id) => Number(queueFrontWorkerId.value) === Number(id)
 const getWorkerSharePercent = (id) => Math.max(0, Math.min(100, Number(workerSharePercents.value[Number(id)] || 0)))
 const toggleWorker = (id) => {
   const normalizedId = Number(id)
@@ -570,6 +591,16 @@ const workerAvatar = (worker) => {
   const parts = name.split(' ').filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`
   return name.slice(0, 2)
+}
+
+const formatQueueTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat('fa-IR', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date)
 }
 
 const applyWorkerPaymentDefaults = (worker) => {
@@ -657,6 +688,14 @@ const hydrateFromVehicleInfo = () => {
     return accumulator
   }, {})
   workerSharePercents.value = normalizeWorkerSharePercents(selectedWorkerIds.value, existingWorkerSharePercents)
+  ensureDefaultWorkerSelection()
+}
+
+const ensureDefaultWorkerSelection = () => {
+  if (selectedWorkerIds.value.length || !workers.value.length) return
+  if (queueFrontWorkerId.value) {
+    selectedWorkerIds.value = [Number(queueFrontWorkerId.value)]
+  }
 }
 
 const loadInitialData = async () => {
@@ -685,9 +724,9 @@ const loadInitialData = async () => {
 
     const validWorkerIds = new Set(workers.value.map((item) => Number(item.id)))
     selectedWorkerIds.value = selectedWorkerIds.value.filter((id) => validWorkerIds.has(Number(id)))
-    if (!selectedWorkerIds.value.length && workers.value.length) selectedWorkerIds.value = [Number(workers.value[0].id)]
+    ensureDefaultWorkerSelection()
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'بارگذاری اطلاعات خدمات و پرسنل ناموفق بود.'
+    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری اطلاعات خدمات و پرسنل ناموفق بود.')
   } finally {
     loading.value = false
   }
@@ -1123,6 +1162,11 @@ onMounted(loadInitialData)
   box-shadow: 0 16px 28px -22px rgba(0, 88, 190, 0.35);
 }
 
+.worker-card.queue-front {
+  background: linear-gradient(180deg, rgba(240, 253, 250, 0.96), rgba(236, 253, 245, 0.86));
+  border-color: rgba(20, 184, 166, 0.55);
+}
+
 .worker-top {
   display: flex;
   justify-content: space-between;
@@ -1204,6 +1248,42 @@ onMounted(loadInitialData)
 
 .status-busy .status-dot {
   background: #ba1a1a;
+}
+
+.status-off {
+  background: rgba(100, 116, 139, 0.12);
+  color: #475569;
+}
+
+.status-off .status-dot {
+  background: #64748b;
+}
+
+.worker-queue-meta {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.worker-queue-meta span {
+  min-width: 0;
+}
+
+.worker-queue-meta strong {
+  color: #0f172a;
+}
+
+.queue-front-pill {
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: #ccfbf1;
+  color: #0f766e;
+  font-weight: 800;
+  justify-self: end;
 }
 
 .worker-jobs {

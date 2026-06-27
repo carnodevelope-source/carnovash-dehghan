@@ -144,28 +144,35 @@ body.modal-open {
   }
 
   #app :where(.table-wrap, .customer-table-wrap, .report-table-wrap) {
+    display: block;
+    max-width: 100%;
     overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
     padding-bottom: 4px;
   }
 
-  #app :where(table) {
-    width: 100%;
-    table-layout: fixed;
+  #app :where(.table-wrap table, .customer-table-wrap table, .report-table-wrap table) {
+    width: max-content !important;
+    min-width: 100% !important;
+    table-layout: auto !important;
   }
 
-  #app :where(th, td) {
-    white-space: normal !important;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    font-size: 12px;
+  #app :where(.table-wrap th, .table-wrap td, .customer-table-wrap th, .customer-table-wrap td, .report-table-wrap th, .report-table-wrap td) {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+    font-size: inherit !important;
   }
 
   #app :where(.modal-overlay, .wallet-modal-overlay, .vehicle-details-modal-overlay) {
     align-items: flex-end;
     padding: 8px;
+    overflow-y: auto;
     overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   #app :where(.modal-panel, .wallet-modal, .vehicle-details-modal-panel) {
@@ -173,7 +180,9 @@ body.modal-open {
     max-width: calc(100vw - 16px) !important;
     max-height: calc(100dvh - 16px);
     border-radius: 18px 18px 14px 14px;
+    overflow-y: auto;
     overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   #app :where(.modal-head, .wallet-modal-head, .vehicle-details-modal-head, .wallet-modal-body, .vehicle-details-grid) {
@@ -256,6 +265,7 @@ body.modal-open {
     width: 100% !important;
     max-width: calc(100vw - 12px) !important;
     border-radius: 16px 16px 12px 12px;
+    overflow-y: auto;
   }
 
   #app :where(.close-btn, .mobile-sidebar-close, .mobile-menu-toggle) {

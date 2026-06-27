@@ -78,6 +78,66 @@ def _serialize_worker_state(worker, events, now):
     }
 
 
+def _worker_queue_states(workers, tenant):
+    worker_ids = [worker.id for worker in workers if worker.id]
+    states = {
+        worker.id: {
+            'current_status': WorkerAttendance.EventType.OUT,
+            'last_event_type': '',
+            'last_event_at': None,
+            'open_shift_started_at': None,
+            'queue_position_at': None,
+        }
+        for worker in workers
+    }
+    if not worker_ids:
+        return states
+
+    start, end, _now = _today_bounds()
+    events = (
+        WorkerAttendance.objects
+        .filter(tenant=tenant, worker_id__in=worker_ids, event_at__gte=start, event_at__lte=end)
+        .order_by('worker_id', 'event_at', 'id')
+    )
+    for event in events:
+        state = states.setdefault(event.worker_id, {})
+        state['current_status'] = event.event_type
+        state['last_event_type'] = event.event_type
+        state['last_event_at'] = event.event_at
+        if event.event_type == WorkerAttendance.EventType.IN:
+            state['open_shift_started_at'] = event.event_at
+        elif event.event_type == WorkerAttendance.EventType.OUT:
+            state['open_shift_started_at'] = None
+
+    for worker in workers:
+        state = states.setdefault(worker.id, {})
+        open_shift_started_at = state.get('open_shift_started_at')
+        if state.get('current_status') == WorkerAttendance.EventType.IN and open_shift_started_at:
+            last_assigned_at = worker.last_assigned_at
+            state['queue_position_at'] = (
+                last_assigned_at
+                if last_assigned_at and last_assigned_at > open_shift_started_at
+                else open_shift_started_at
+            )
+        else:
+            state['queue_position_at'] = None
+    return states
+
+
+def _queue_sort_key(worker):
+    state = getattr(worker, '_attendance_queue_state', {}) or {}
+    is_present = state.get('current_status') == WorkerAttendance.EventType.IN
+    queue_position_at = state.get('queue_position_at')
+    name = _worker_name(worker)
+    return (
+        0 if is_present else 1,
+        0 if worker.is_available is not False else 1,
+        queue_position_at.timestamp() if queue_position_at else float('inf'),
+        name,
+        worker.id or 0,
+    )
+
+
 def _create_attendance_event(worker, event_type, source='manager', note='', request=None):
     last_event = worker.attendance_events.order_by('-event_at', '-id').first()
     if last_event and last_event.event_type == event_type:
@@ -115,10 +175,25 @@ class WorkerProfileListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         tenant = _resolve_request_tenant(self.request)
         return WorkerProfile.objects.select_related('user').filter(tenant=tenant).order_by(
-            F('last_assigned_at').asc(nulls_first=True),
             'user__full_name',
             'user__username',
         )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        workers = list(queryset)
+        states = _worker_queue_states(workers, _resolve_request_tenant(request))
+        for worker in workers:
+            worker._attendance_queue_state = states.get(worker.id, {})
+        workers.sort(key=_queue_sort_key)
+
+        page = self.paginate_queryset(workers)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(workers, many=True)
+        return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

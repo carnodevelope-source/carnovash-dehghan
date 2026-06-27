@@ -180,6 +180,31 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             plate_right=obj.plate_right,
         )
 
+    def _assigned_worker_ids_from_payload(self, payload, assigned_worker=None):
+        worker_ids = []
+        if assigned_worker:
+            worker_ids.append(int(assigned_worker.id))
+        if isinstance(payload, list):
+            for item in payload:
+                worker_id = item.get('id') if isinstance(item, dict) else item
+                try:
+                    normalized_id = int(worker_id)
+                except (TypeError, ValueError):
+                    continue
+                if normalized_id > 0:
+                    worker_ids.append(normalized_id)
+        return list(dict.fromkeys(worker_ids))
+
+    def _mark_workers_assigned(self, tenant, payload, assigned_worker=None):
+        worker_ids = self._assigned_worker_ids_from_payload(payload, assigned_worker)
+        if not worker_ids:
+            return
+        assigned_at = timezone.now()
+        WorkerProfile.objects.filter(tenant=tenant, id__in=worker_ids).update(
+            last_assigned_at=assigned_at,
+            updated_at=assigned_at,
+        )
+
     @transaction.atomic
     def create(self, validated_data):
         request = self.context.get('request')
@@ -248,10 +273,6 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             line_total = max(Decimal('0'), unit_price - discount_amount)
             services_total += line_total
             normalized_services.append((item, unit_price, discount_amount, line_total))
-        if assigned_worker:
-            assigned_worker.last_assigned_at = timezone.now()
-            assigned_worker.save(update_fields=['last_assigned_at', 'updated_at'])
-
         products_total = Decimal('0')
         product_lines_data = []
         for item in products_payload:
@@ -311,6 +332,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             worker_share_amount=worker_share_amount,
             carwash_share_amount=carwash_share_amount,
         )
+        self._mark_workers_assigned(tenant, staff_members_payload, assigned_worker)
 
         for item, unit_price, discount_amount, line_total in normalized_services:
             title = (item.get('title') or '').strip() or 'خدمت بدون نام'
@@ -549,9 +571,12 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         if instance.status == VehicleEntry.Status.READY_TO_SETTLE and not vehicle_job.completed_at:
             vehicle_job.completed_at = timezone.now()
-        if (worker_id_provided or worker_name_provided) and assigned_worker:
-            assigned_worker.last_assigned_at = timezone.now()
-            assigned_worker.save(update_fields=['last_assigned_at', 'updated_at'])
+        if worker_id_provided or worker_name_provided or staff_members_provided:
+            self._mark_workers_assigned(
+                tenant,
+                staff_members_payload or [],
+                assigned_worker,
+            )
 
         vehicle_job.worker_payment_type = payment_type
         vehicle_job.worker_payment_percent = payment_percent

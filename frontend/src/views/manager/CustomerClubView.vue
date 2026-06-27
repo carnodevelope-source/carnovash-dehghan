@@ -564,6 +564,7 @@ import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman } from '../../utils/money'
+import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const authStore = useAuthStore()
 
@@ -879,7 +880,7 @@ const loadCustomerClubData = async ({ showLoading = true } = {}) => {
 const saveCustomGroup = async () => {
   const name = String(groupBuilder.name || '').trim()
   if (!name) {
-    alert('??? ???? ?? ???? ????.')
+    alert('نام گروه را وارد کنید.')
     return
   }
 
@@ -896,7 +897,7 @@ const saveCustomGroup = async () => {
     groupingMode.value = 'custom'
     highlightedGroupId.value = latestGroup?.id || ''
   } catch (error) {
-    alert(error?.response?.data?.detail || '????? ???? ????? ???.')
+    alert(resolveApiErrorMessage(error, 'ذخیره گروه ناموفق بود.'))
   }
 }
 
@@ -942,7 +943,7 @@ const saveCustomerGroupAssignment = async () => {
     await loadCustomerClubData({ showLoading: false })
     closeAssignGroupModal()
   } catch (error) {
-    alert(error?.response?.data?.detail || '??????????? ???? ????? ???.')
+    alert(resolveApiErrorMessage(error, 'بروزرسانی گروه‌ها ناموفق بود.'))
   }
 }
 
@@ -967,15 +968,15 @@ const openSmsComposer = (payload) => {
 
   if (payload?.type === 'customer' && payload.customer) {
     recipients = [payload.customer]
-    targetLabel = `????? ??? ???? ${payload.customer.name}`
+    targetLabel = `پیامک تکی برای ${payload.customer.name}`
     targetType = 'customer'
   } else if (payload?.type === 'group' && payload.group) {
     recipients = resolveGroupMembers(payload.group)
-    targetLabel = `????? ????? ???? ${payload.group.name}`
+    targetLabel = `پیامک گروهی برای ${payload.group.name}`
     targetType = 'group'
   } else if (payload?.type === 'section' && payload.section) {
     recipients = payload.section.customers || []
-    targetLabel = `????? ???? ${payload.section.title}`
+    targetLabel = `پیامک برای ${payload.section.title}`
     targetType = 'section'
   }
 
@@ -984,7 +985,7 @@ const openSmsComposer = (payload) => {
     .filter((recipient) => recipient.phone)
 
   if (!normalizedRecipients.length) {
-    alert('???? ????? ????? ????? ?? ????? ????? ???? ???.')
+    alert('شماره موبایل معتبری برای ارسال پیامک وجود ندارد.')
     return
   }
 
@@ -1047,19 +1048,19 @@ const sendSmsCampaign = async () => {
     const failedCount = Number(data?.failed_count || 0)
 
     if (successCount === 0) {
-      alert(data?.detail || '??? ?????? ????? ???. ??????? ????? ?? ????? ?????? ?? ????? ????.')
+      alert(data?.detail || 'هیچ پیامکی ارسال نشد. جزئیات خطا را در گزارش پیامک بررسی کنید.')
       return
     }
 
     closeSmsComposer()
     if (failedCount > 0) {
-      alert(`${toFa(successCount)} ????? ????? ?? ? ${toFa(failedCount)} ???? ?????? ???.`)
+      alert(`${toFa(successCount)} پیامک ارسال شد و ${toFa(failedCount)} پیامک ناموفق بود.`)
       return
     }
 
-    alert(`${toFa(successCount)} ????? ?? ?????? ?? ?? ????? ???? ????.`)
+    alert(`${toFa(successCount)} پیامک با موفقیت در صف ارسال قرار گرفت.`)
   } catch (error) {
-    const detail = error?.response?.data?.detail || '????? ????? ????? ???.'
+    const detail = resolveApiErrorMessage(error, 'ارسال پیامک ناموفق بود.')
     alert(detail)
     await loadCustomerClubData({ showLoading: false })
   } finally {

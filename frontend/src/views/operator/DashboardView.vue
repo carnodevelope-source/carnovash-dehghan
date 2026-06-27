@@ -617,6 +617,7 @@ import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.v
 import { useVehicleStore } from '../../store/vehicle.store'
 import api from '../../services/api'
 import { formatThousandsToman } from '../../utils/money'
+import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const search = ref('')
 const activeFilter = ref('all')
@@ -720,17 +721,7 @@ const formatDateTime = (value) => {
     timeStyle: 'short'
   }).format(new Date(value))
 }
-const apiErrorText = (error, fallback = 'عملیات ناموفق بود.') => {
-  const data = error?.response?.data
-  if (!data) return fallback
-  if (typeof data.detail === 'string' && data.detail.trim()) return data.detail.trim()
-  const firstField = Object.keys(data).find((key) => Array.isArray(data[key]) || typeof data[key] === 'string')
-  if (!firstField) return fallback
-  const value = data[firstField]
-  if (Array.isArray(value)) return String(value[0] || fallback)
-  if (typeof value === 'string' && value.trim()) return value.trim()
-  return fallback
-}
+const apiErrorText = (error, fallback = 'عملیات ناموفق بود.') => resolveApiErrorMessage(error, fallback)
 const parseJalaliToIso = (input) => {
   const value = (input || '').trim().replace(/-/g, '/')
   const match = value.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/)

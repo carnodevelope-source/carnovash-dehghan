@@ -7,12 +7,38 @@
           <p>می‌توانید عکس پلاک بگیرید یا اطلاعات را دستی وارد کنید.</p>
         </header>
 
-        <button type="button" class="camera-box" @click="onCaptureMock">
+        <div
+          class="camera-box"
+          :class="{ active: cameraState.active, loading: cameraState.loading }"
+          role="button"
+          tabindex="0"
+          @click="captureFromVideo"
+          @keydown.enter.prevent="captureFromVideo"
+        >
+          <video ref="cameraVideoRef" class="camera-video" autoplay playsinline muted></video>
+          <canvas ref="cameraCanvasRef" class="camera-canvas"></canvas>
           <div class="camera-overlay">
-            <div class="plate-guide">محل قرارگیری پلاک</div>
+            <div class="plate-guide">{{ cameraState.loading ? 'در حال پردازش پلاک...' : 'محل قرارگیری پلاک' }}</div>
           </div>
-          <span>برای شبیه‌سازی اسکن، کلیک کنید</span>
-        </button>
+          <span>{{ cameraState.active ? 'روی تصویر کلیک کنید تا پلاک استخراج شود' : 'ابتدا دوربین را باز کنید' }}</span>
+        </div>
+
+        <div class="camera-actions">
+          <button type="button" class="camera-action primary-camera" :disabled="cameraState.loading" @click="startCamera">
+            {{ cameraState.active ? 'راه‌اندازی مجدد دوربین' : 'باز کردن دوربین' }}
+          </button>
+          <button type="button" class="camera-action" :disabled="cameraState.loading || !cameraState.active" @click="captureFromVideo">
+            {{ cameraState.loading ? 'در حال تشخیص...' : 'تشخیص پلاک' }}
+          </button>
+          <button type="button" class="camera-action" :disabled="cameraState.loading" @click="cameraFileInputRef?.click()">
+            دوربین گوشی / عکس
+          </button>
+          <input ref="cameraFileInputRef" class="camera-file" type="file" accept="image/*" capture="environment" @change="processCameraFile" />
+        </div>
+
+        <p v-if="cameraState.message" class="camera-message" :class="{ error: cameraState.error }">
+          {{ cameraState.message }}
+        </p>
 
         <div class="ai-result-grid">
           <div class="result-card">
@@ -50,6 +76,18 @@
             <input v-model="form.plateMid" :disabled="form.isAnonymous" maxlength="3" inputmode="numeric" placeholder="345" @input="onlyDigits('plateMid')" />
             <input v-model="form.plateLetter" :disabled="form.isAnonymous" maxlength="1" placeholder="ب" @input="onlyLetter" />
             <input v-model="form.plateLeft" :disabled="form.isAnonymous" maxlength="2" inputmode="numeric" placeholder="12" @input="onlyDigits('plateLeft')" />
+          </div>
+          <div v-if="letterSuggestionOptions.length > 1" class="letter-suggestions">
+            <button
+              v-for="option in letterSuggestionOptions"
+              :key="option"
+              type="button"
+              class="letter-chip"
+              :class="{ active: form.plateLetter === option }"
+              @click="selectLetterSuggestion(option)"
+            >
+              {{ option }}
+            </button>
           </div>
         </label>
         <div v-else class="piece-wash-toggle-row">
@@ -96,7 +134,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
 
 const emit = defineEmits(['cancel', 'continue', 'refer'])
@@ -119,6 +157,32 @@ const form = reactive({
   isPieceWash: false
 })
 
+const cameraVideoRef = ref(null)
+const cameraCanvasRef = ref(null)
+const cameraFileInputRef = ref(null)
+const cameraStream = ref(null)
+const cameraState = reactive({
+  active: false,
+  loading: false,
+  message: '',
+  error: false,
+  lastConfidence: 0,
+  lastLatency: 0
+})
+const letterSuggestions = ref([])
+const aiSessionId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(window.navigator.userAgent || '')
+const canUseLiveCamera = Boolean(window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname))
+const OCR_LETTER_CONFUSIONS = {
+  ب: ['ب', 'س', 'ص'],
+  س: ['س', 'ب', 'ص'],
+  ص: ['ص', 'س', 'ب'],
+  ق: ['ق', 'ی'],
+  ی: ['ی', 'ق'],
+  ر: ['ر', 'ط'],
+  ط: ['ط', 'ر']
+}
+
 const hydrateForm = (data = {}) => {
   const plateNumber = String(data.plate || data.plate_number || '').trim()
   const parts = plateNumber.split(/\s+/).filter(Boolean)
@@ -134,6 +198,7 @@ const hydrateForm = (data = {}) => {
   form.note = String(data.note || data.notes || '')
   form.isAnonymous = Boolean(data.isAnonymous)
   form.isPieceWash = Boolean(data.isPieceWash || data.is_piece_wash)
+  syncLetterSuggestions(form.plateLetter)
 }
 
 const normalizeDigits = (value) => String(value || '')
@@ -146,6 +211,7 @@ const onlyDigits = (key) => {
 
 const onlyLetter = () => {
   form.plateLetter = normalizePlateLetter(form.plateLetter)
+  syncLetterSuggestions(form.plateLetter)
 }
 
 const normalizePlateLetter = (value) => {
@@ -154,6 +220,221 @@ const normalizePlateLetter = (value) => {
   const upper = raw.toUpperCase()
   if (englishMap[upper]) return englishMap[upper]
   return raw.replace(/[^آابپتثجچحخدذرزسشصضطظعغفقکگلمنوهی]/g, '')
+}
+
+const buildLetterSuggestions = (letter) => {
+  const normalized = normalizePlateLetter(letter)
+  if (!normalized) return []
+  return OCR_LETTER_CONFUSIONS[normalized] || [normalized]
+}
+
+const syncLetterSuggestions = (letter) => {
+  letterSuggestions.value = buildLetterSuggestions(letter)
+}
+
+const selectLetterSuggestion = (letter) => {
+  form.plateLetter = normalizePlateLetter(letter)
+  syncLetterSuggestions(form.plateLetter)
+}
+
+const setCameraMessage = (message, isError = false) => {
+  cameraState.message = message
+  cameraState.error = isError
+}
+
+const stopCamera = () => {
+  if (cameraStream.value) {
+    cameraStream.value.getTracks().forEach((track) => track.stop())
+  }
+  cameraStream.value = null
+  cameraState.active = false
+  if (cameraVideoRef.value) cameraVideoRef.value.srcObject = null
+}
+
+const startCamera = async () => {
+  if (cameraState.loading) return
+  setCameraMessage('')
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraMessage('دسترسی مستقیم به دوربین در این مرورگر فعال نیست. از گزینه دوربین گوشی / عکس استفاده کنید.', true)
+      return
+    }
+    stopCamera()
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    })
+    cameraStream.value = stream
+    if (cameraVideoRef.value) {
+      cameraVideoRef.value.srcObject = stream
+      await cameraVideoRef.value.play()
+    }
+    cameraState.active = true
+    setCameraMessage('دوربین آماده است. پلاک را داخل کادر بگذارید و روی تصویر کلیک کنید.')
+  } catch (error) {
+    stopCamera()
+    const isInsecure = !canUseLiveCamera
+    setCameraMessage(
+      isInsecure
+        ? 'برای دوربین زنده روی گوشی باید سایت با HTTPS باز شود. فعلاً از گزینه دوربین گوشی / عکس استفاده کنید.'
+        : 'اجازه دسترسی به دوربین داده نشد یا دوربین در دسترس نیست.',
+      true
+    )
+  }
+}
+
+const dataUrlFromCanvas = (source, sourceWidth, sourceHeight) => {
+  const canvas = cameraCanvasRef.value || document.createElement('canvas')
+  const maxWidth = 1600
+  const scale = Math.min(1, maxWidth / Math.max(1, sourceWidth))
+  canvas.width = Math.max(1, Math.round(sourceWidth * scale))
+  canvas.height = Math.max(1, Math.round(sourceHeight * scale))
+  const context = canvas.getContext('2d')
+  context.drawImage(source, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/jpeg', 0.94)
+}
+
+const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(String(reader.result || ''))
+  reader.onerror = () => reject(new Error('file_read_failed'))
+  reader.readAsDataURL(file)
+})
+
+const captureStillFromTrack = async () => {
+  const track = cameraStream.value?.getVideoTracks?.()[0]
+  if (!track || typeof window.ImageCapture !== 'function') return ''
+  try {
+    const imageCapture = new window.ImageCapture(track)
+    const bitmap = await imageCapture.grabFrame()
+    return dataUrlFromCanvas(bitmap, bitmap.width, bitmap.height)
+  } catch (_error) {
+    return ''
+  }
+}
+
+const processCameraFile = async (event) => {
+  const file = event.target?.files?.[0]
+  event.target.value = ''
+  if (!file || cameraState.loading) return
+  const image = new Image()
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const originalImageDataUrl = await readFileAsDataUrl(file)
+    await new Promise((resolve, reject) => {
+      image.onload = resolve
+      image.onerror = reject
+      image.src = objectUrl
+    })
+    const imageDataUrl = image.naturalWidth >= 900 ? originalImageDataUrl : dataUrlFromCanvas(image, image.naturalWidth, image.naturalHeight)
+    await recognizePlateImage(imageDataUrl)
+  } catch (_error) {
+    setCameraMessage('تصویر انتخاب‌شده قابل خواندن نیست.', true)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+const captureFromVideo = async () => {
+  if (cameraState.loading || form.isAnonymous || form.isPieceWash) return
+  if (!cameraState.active || !cameraVideoRef.value?.videoWidth) {
+    await startCamera()
+    return
+  }
+  const highResDataUrl = await captureStillFromTrack()
+  const video = cameraVideoRef.value
+  const imageDataUrl = highResDataUrl || dataUrlFromCanvas(video, video.videoWidth, video.videoHeight)
+  await recognizePlateImage(imageDataUrl)
+}
+
+const applyRecognizedPlate = (data) => {
+  const left = normalizeDigits(data?.plate_left || '')
+  const mid = normalizeDigits(data?.plate_mid || '')
+  const right = normalizeDigits(data?.plate_right || '')
+  const letter = normalizePlateLetter(data?.plate_letter || '')
+  const suggestions = buildLetterSuggestions(letter)
+  if (left.length !== 2 || mid.length !== 3 || right.length !== 2 || !letter) return false
+  form.isAnonymous = false
+  form.isPieceWash = false
+  form.plateLeft = left
+  form.plateLetter = letter
+  form.plateMid = mid
+  form.plateRight = right
+  letterSuggestions.value = suggestions
+  return true
+}
+
+const tryResolveLetterFromHistory = async () => {
+  if (form.isAnonymous || form.isPieceWash) return false
+  if (form.plateLeft.length !== 2 || form.plateMid.length !== 3 || form.plateRight.length !== 2) return false
+  const candidates = buildLetterSuggestions(form.plateLetter)
+  if (candidates.length <= 1) return false
+  const responses = await Promise.allSettled(
+    candidates.map((letter) => api.get('/vehicles/plate-lookup/', {
+      params: {
+        plate_left: form.plateLeft.trim(),
+        plate_letter: letter,
+        plate_mid: form.plateMid.trim(),
+        plate_right: form.plateRight.trim()
+      },
+      meta: { trackLoading: false }
+    }))
+  )
+  const matches = responses
+    .map((result, index) => ({ result, letter: candidates[index] }))
+    .filter(({ result }) => result.status === 'fulfilled' && result.value?.data?.found)
+
+  if (matches.length !== 1) return false
+  const match = matches[0]
+  form.plateLetter = match.letter
+  form.driver = String(match.result.value.data.driver_name || '').trim()
+  form.mobile = normalizeDigits(String(match.result.value.data.driver_phone || ''))
+  syncLetterSuggestions(match.letter)
+  return true
+}
+
+const recognizePlateImage = async (imageDataUrl) => {
+  cameraState.loading = true
+  setCameraMessage('در حال ارسال تصویر و تشخیص پلاک...')
+  try {
+    const { data } = await api.post('/vehicles/plate-recognition/', {
+      session_id: aiSessionId,
+      image_base64: imageDataUrl
+    }, { meta: { trackLoading: false } })
+    cameraState.lastConfidence = Number(data?.confidence || 0)
+    cameraState.lastLatency = Number(data?.latency_ms || 0)
+    if (!data?.accepted) {
+      setCameraMessage(data?.detail || 'درخواست تشخیص پلاک پذیرفته نشد.', true)
+      return
+    }
+    if (!applyRecognizedPlate(data)) {
+      const extractedText = String(data?.persian_text || data?.text || '').trim()
+      const aiReason = String(data?.reason || '').trim()
+      setCameraMessage(
+        extractedText
+          ? `متن پلاک خوانده شد اما فرم آن کامل نیست: ${extractedText}`
+          : `پلاک در تصویر پیدا نشد${aiReason ? ` (${aiReason})` : ''}. عکس واضح‌تر و نزدیک‌تر بگیرید.`,
+        true
+      )
+      return
+    }
+    const correctedFromHistory = await tryResolveLetterFromHistory()
+    const confidenceText = cameraState.lastConfidence ? ` | اطمینان ${(cameraState.lastConfidence * 100).toFixed(0)}٪` : ''
+    setCameraMessage(
+      correctedFromHistory
+        ? `پلاک ${plate.value} از روی سابقه مشتری اصلاح و ثبت شد${confidenceText}.`
+        : `پلاک ${plate.value} ثبت شد${confidenceText}.`
+    )
+  } catch (error) {
+    const detail = error?.response?.data?.detail || 'ارتباط با سرویس تشخیص پلاک برقرار نشد.'
+    setCameraMessage(detail, true)
+  } finally {
+    cameraState.loading = false
+  }
 }
 
 const plate = computed(() => {
@@ -201,21 +482,12 @@ const onRefer = () => {
   emit('refer', payload())
 }
 
-const onCaptureMock = () => {
-  if (form.isAnonymous) return
-  if (!form.plateLeft) form.plateLeft = '12'
-  if (!form.plateLetter) form.plateLetter = 'ب'
-  if (!form.plateMid) form.plateMid = '345'
-  if (!form.plateRight) form.plateRight = '67'
-  if (!form.model) form.model = 'پژو 206'
-  if (!form.color) form.color = 'سفید'
-}
-
 const detectedPlate = computed(() => plate.value || '-- - --- --')
 const detectedModelColor = computed(() => {
   const text = `${form.model.trim()} ${form.color.trim()}`.trim()
   return text || '---'
 })
+const letterSuggestionOptions = computed(() => letterSuggestions.value)
 
 watch(() => props.vehicleInfo, (value) => {
   hydrateForm(value || {})
@@ -223,10 +495,12 @@ watch(() => props.vehicleInfo, (value) => {
 
 watch(() => form.isAnonymous, (value) => {
   if (value) {
+    stopCamera()
     form.plateLeft = ''
     form.plateLetter = ''
     form.plateMid = ''
     form.plateRight = ''
+    letterSuggestions.value = []
     form.model = '1111'
     form.color = '1111'
     return
@@ -237,11 +511,13 @@ watch(() => form.isAnonymous, (value) => {
 
 watch(() => form.isPieceWash, (value) => {
   if (!value) return
+  stopCamera()
   form.isAnonymous = false
   form.plateLeft = ''
   form.plateLetter = ''
   form.plateMid = ''
   form.plateRight = ''
+  letterSuggestions.value = []
   form.model = ''
   form.color = ''
   form.note = ''
@@ -275,6 +551,24 @@ watch(
     }, 220)
   }
 )
+
+onMounted(async () => {
+  if (form.isAnonymous || form.isPieceWash) return
+  if (!isMobileDevice) return
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setCameraMessage('این مرورگر دوربین زنده را پشتیبانی نمی‌کند. از گزینه دوربین گوشی / عکس استفاده کنید.', true)
+    return
+  }
+  if (!canUseLiveCamera) {
+    setCameraMessage('برای فعال شدن دوربین زنده در موبایل باید سایت را با HTTPS باز کنید. در این حالت از گزینه دوربین گوشی / عکس استفاده کنید.', true)
+    return
+  }
+  await startCamera()
+})
+
+onBeforeUnmount(() => {
+  stopCamera()
+})
 </script>
 
 <style scoped>
@@ -352,6 +646,36 @@ watch(
   color: #334155;
   font-weight: 700;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 22px 44px -34px rgba(30, 111, 217, 0.45);
+  overflow: hidden;
+  display: block;
+}
+
+.camera-box.active {
+  background: #020617;
+  border-color: rgba(59, 130, 246, 0.72);
+}
+
+.camera-box.loading {
+  cursor: wait;
+}
+
+.camera-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+
+.camera-box.active .camera-video {
+  opacity: 1;
+}
+
+.camera-canvas,
+.camera-file {
+  display: none;
 }
 
 .camera-overlay {
@@ -362,6 +686,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
 }
 
 .plate-guide {
@@ -373,11 +698,80 @@ watch(
   font-size: 13px;
 }
 
+.camera-box.active .camera-overlay {
+  border-color: rgba(255, 255, 255, 0.74);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.06), rgba(15, 23, 42, 0.24));
+}
+
+.camera-box.active .plate-guide {
+  background: rgba(37, 99, 235, 0.82);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.82);
+}
+
 .camera-box > span {
   position: absolute;
   bottom: 16px;
   right: 18px;
   font-size: 13px;
+  z-index: 2;
+  max-width: calc(100% - 36px);
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1e293b;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.1);
+}
+
+.camera-box.active > span {
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+}
+
+.camera-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.camera-action {
+  min-height: 42px;
+  border: 1px solid #d4e2f5;
+  border-radius: 15px;
+  background: linear-gradient(180deg, #fff, #f4f8ff);
+  color: #315f9f;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.camera-action.primary-camera {
+  border-color: transparent;
+  background: linear-gradient(135deg, #1e5fae, #3b82c4);
+  color: #fff;
+}
+
+.camera-action:disabled {
+  opacity: .58;
+  cursor: not-allowed;
+}
+
+.camera-message {
+  margin: -4px 0 0;
+  padding: 11px 13px;
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  line-height: 1.8;
+  font-weight: 700;
+}
+
+.camera-message.error {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #9f1239;
 }
 
 .ai-result-grid {
@@ -514,6 +908,33 @@ watch(
   padding: 0;
 }
 
+.letter-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.letter-chip {
+  min-width: 42px;
+  height: 38px;
+  border: 1px solid #d5e3f7;
+  border-radius: 14px;
+  background: #f8fbff;
+  color: #334155;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+
+.letter-chip.active {
+  border-color: #1e6fd9;
+  background: rgba(30, 111, 217, 0.1);
+  color: #0f172a;
+  box-shadow: 0 10px 18px -14px rgba(30, 111, 217, 0.75);
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -610,7 +1031,8 @@ watch(
     margin-top: 5px;
   }
   .grid-2,
-  .ai-result-grid { grid-template-columns: 1fr; }
+  .ai-result-grid,
+  .camera-actions { grid-template-columns: 1fr; }
   .plate-tools,
   .piece-wash-toggle-row { flex-direction: column; align-items: stretch; }
   .plate-row {

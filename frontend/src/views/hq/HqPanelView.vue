@@ -140,7 +140,7 @@
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'carwashes'" class="workspace-grid">
+      <section v-else-if="activeTab === 'carwashes'" class="workspace-grid carwash-ops-grid">
         <article class="glass-card create-card">
           <div class="card-head">
             <h3>ثبت کارواش و مدیر</h3>
@@ -181,6 +181,132 @@
           </form>
         </article>
 
+        <article class="glass-card tenant-command-card" :class="{ loading: carwashInsight.loading }">
+          <div class="tenant-command-empty" v-if="carwashInsight.error && !carwashInsight.loading">
+            <span class="tenant-command-mark error">!</span>
+            <h3>دریافت اطلاعات ناموفق بود</h3>
+            <p>{{ carwashInsight.error }}</p>
+          </div>
+
+          <div class="tenant-command-empty" v-else-if="!selectedCarwashInsight && !carwashInsight.loading">
+            <span class="tenant-command-mark">HQ</span>
+            <h3>مرکز نظارت کارواش</h3>
+            <p>روی نام هر کارواش کلیک کنید تا وضعیت کیف پول، اقساط آپشن‌ها و ورود و خروج همان مجموعه یکجا نمایش داده شود.</p>
+          </div>
+
+          <div v-else-if="carwashInsight.loading" class="tenant-command-empty">
+            <span class="tenant-command-mark pulse">...</span>
+            <h3>در حال بارگذاری داده‌ها</h3>
+            <p>اطلاعات مالی و عملیاتی کارواش انتخاب‌شده در حال دریافت است.</p>
+          </div>
+
+          <div v-else class="tenant-command-content">
+            <header class="tenant-command-head">
+              <div>
+                <small>نمای ۳۶۰ درجه</small>
+                <h3>{{ selectedCarwashInsight.tenant.name }}</h3>
+                <p>{{ selectedCarwashInsight.tenant.address || 'آدرس ثبت نشده' }}</p>
+              </div>
+              <button type="button" class="refresh-btn" @click="loadCarwashInsight(selectedCarwashInsight.tenant.id)">
+                بروزرسانی
+              </button>
+            </header>
+
+            <div class="tenant-kpi-grid">
+              <div class="tenant-kpi-card primary">
+                <small>موجودی کل</small>
+                <strong>{{ money(selectedCarwashInsight.wallet.summary.total_balance) }}</strong>
+                <span>اصلی {{ money(selectedCarwashInsight.wallet.summary.regular_balance) }}</span>
+              </div>
+              <div class="tenant-kpi-card">
+                <small>اقساط فعال</small>
+                <strong>{{ toFa(selectedCarwashInsight.options.summary.installment_count) }}</strong>
+                <span>مانده {{ money(selectedCarwashInsight.options.summary.remaining_total) }}</span>
+              </div>
+              <div class="tenant-kpi-card">
+                <small>حاضر امروز</small>
+                <strong>{{ toFa(selectedCarwashInsight.attendance.summary.present_count) }}</strong>
+                <span>از {{ toFa(selectedCarwashInsight.attendance.summary.worker_count) }} نیرو</span>
+              </div>
+              <div class="tenant-kpi-card">
+                <small>خودروهای امروز</small>
+                <strong>{{ toFa(selectedCarwashInsight.attendance.summary.today_vehicle_count) }}</strong>
+                <span>{{ toFa(selectedCarwashInsight.attendance.summary.today_active_vehicle_count) }} فعال</span>
+              </div>
+            </div>
+
+            <div class="tenant-monitor-grid">
+              <section class="tenant-monitor-panel">
+                <div class="tenant-panel-head">
+                  <h4>کیف پول</h4>
+                  <span>امروز: +{{ money(selectedCarwashInsight.wallet.summary.today_deposit_total) }} / -{{ money(selectedCarwashInsight.wallet.summary.today_withdraw_total) }}</span>
+                </div>
+                <div class="wallet-monitor-list">
+                  <div v-for="wallet in selectedCarwashInsight.wallet.wallets" :key="wallet.id" class="wallet-monitor-row">
+                    <div>
+                      <strong>{{ wallet.name }}</strong>
+                      <small>{{ wallet.wallet_type === 'sms' ? 'پیامک' : 'اصلی' }}</small>
+                    </div>
+                    <span>{{ money(wallet.balance) }}</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="tenant-monitor-panel">
+                <div class="tenant-panel-head">
+                  <h4>آپشن‌ها و اقساط</h4>
+                  <span>ماهیانه {{ money(selectedCarwashInsight.options.summary.monthly_total) }}</span>
+                </div>
+                <div class="option-monitor-list">
+                  <div v-for="option in selectedCarwashInsight.options.purchases" :key="option.id" class="option-monitor-row" :class="{ active: option.is_active }">
+                    <div>
+                      <strong>{{ option.title }}</strong>
+                      <small>{{ paymentPlanLabel(option.payment_plan) }}</small>
+                    </div>
+                    <span>{{ option.remaining_amount > 0 ? money(option.remaining_amount) : 'تسویه' }}</span>
+                  </div>
+                  <div v-if="!selectedCarwashInsight.options.purchases.length" class="empty-note">آپشنی برای این کارواش ثبت نشده است.</div>
+                </div>
+              </section>
+            </div>
+
+            <section class="tenant-monitor-panel wide-panel">
+              <div class="tenant-panel-head">
+                <h4>ورود و خروج امروز</h4>
+                <span>{{ toFa(selectedCarwashInsight.attendance.summary.present_count) }} نفر داخل صف کاری</span>
+              </div>
+              <div class="attendance-monitor-list">
+                <div v-for="worker in selectedCarwashInsight.attendance.workers" :key="worker.worker_id" class="attendance-monitor-row" :class="worker.current_status">
+                  <span class="attendance-dot"></span>
+                  <div>
+                    <strong>{{ worker.name }}</strong>
+                    <small>{{ worker.first_in_at ? `ورود: ${dateTime(worker.first_in_at)}` : 'ورودی امروز ندارد' }}</small>
+                  </div>
+                  <em>{{ worker.current_status === 'in' ? 'حاضر' : 'خارج' }}</em>
+                </div>
+                <div v-if="!selectedCarwashInsight.attendance.workers.length" class="empty-note">نیرویی برای این کارواش ثبت نشده است.</div>
+              </div>
+            </section>
+
+            <section class="tenant-monitor-panel wide-panel">
+              <div class="tenant-panel-head">
+                <h4>آخرین تراکنش‌های کیف پول</h4>
+                <span>{{ toFa(selectedCarwashInsight.wallet.recent_transactions.length) }} تراکنش</span>
+              </div>
+              <div class="transaction-monitor-list">
+                <div v-for="tx in selectedCarwashInsight.wallet.recent_transactions" :key="tx.id" class="transaction-monitor-row" :class="tx.direction">
+                  <div>
+                    <strong>{{ tx.description || tx.wallet_name }}</strong>
+                    <small>{{ dateTime(tx.transacted_at) }}</small>
+                  </div>
+                  <span>{{ tx.direction === 'in' ? '+' : '-' }}{{ money(tx.amount) }}</span>
+                </div>
+                <div v-if="!selectedCarwashInsight.wallet.recent_transactions.length" class="empty-note">تراکنشی برای نمایش وجود ندارد.</div>
+              </div>
+            </section>
+          </div>
+        </article>
+
         <article class="glass-card table-card">
           <div class="card-head">
             <h3>نظارت بر کارواش‌ها</h3>
@@ -193,6 +319,7 @@
             <table>
               <thead>
                 <tr>
+                  <th>ردیف</th>
                   <th>کارواش</th>
                   <th>مدیر</th>
                   <th>موبایل مدیر</th>
@@ -205,7 +332,9 @@
                 <tr v-for="(row, index) in filteredCarwashes" :key="row.id">
                   <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
                   <td>
-                    <strong>{{ row.name }}</strong>
+                    <button type="button" class="tenant-name-btn" :class="{ active: selectedCarwashInsight?.tenant?.id === row.id }" @click="loadCarwashInsight(row.id)">
+                      {{ row.name }}
+                    </button>
                     <small class="row-sub">{{ row.address || '-' }}</small>
                   </td>
                   <td>{{ row.manager?.full_name || '-' }}</td>
@@ -1028,6 +1157,11 @@ const overview = reactive({ summary: {}, recent_carwashes: [], recent_tickets: [
 
 const carwashes = ref([])
 const carwashQuery = ref('')
+const carwashInsight = reactive({
+  loading: false,
+  error: '',
+  data: null
+})
 const createForm = reactive({
   carwash_name: '',
   carwash_address: '',
@@ -1097,6 +1231,7 @@ const filteredCarwashes = computed(() => {
     return haystack.includes(query)
   })
 })
+const selectedCarwashInsight = computed(() => carwashInsight.data)
 
 const teamAssignable = computed(() => hqTeam.value.filter((item) => ['hq_admin', 'hq_support'].includes(item.platform_role)))
 const ticketScopeOptions = computed(() => (authStore.isHqAdmin
@@ -1364,6 +1499,11 @@ const walletHealthLabel = (value) => ({
   empty: 'خالی',
   idle: 'بدون تراکنش'
 }[value] || 'سالم')
+const paymentPlanLabel = (value) => ({
+  cash: 'نقدی',
+  installment: 'قسطی',
+  manual: 'دستی'
+}[value] || 'نامشخص')
 const trendValue = (item) => Number(item?.[reportTrendMetricKey.value] || 0)
 const trendBarStyle = (item) => {
   const ratio = trendValue(item) / reportTrendMax.value
@@ -1493,6 +1633,21 @@ const loadCarwashes = async () => {
   carwashes.value = Array.isArray(data) ? data : []
 }
 
+const loadCarwashInsight = async (tenantId) => {
+  const id = Number(tenantId || 0)
+  if (!id || carwashInsight.loading) return
+  carwashInsight.loading = true
+  carwashInsight.error = ''
+  try {
+    const { data } = await api.get(`/auth/hq/carwashes/${id}/insights/`)
+    carwashInsight.data = data
+  } catch (error) {
+    carwashInsight.error = error?.response?.data?.detail || 'دریافت اطلاعات نظارتی کارواش ناموفق بود.'
+  } finally {
+    carwashInsight.loading = false
+  }
+}
+
 const createCarwash = async () => {
   await api.post('/auth/hq/carwashes/', createForm)
   Object.assign(createForm, {
@@ -1505,12 +1660,14 @@ const createCarwash = async () => {
     manager_password: ''
   })
   await loadCarwashes()
+  if (carwashes.value[0]?.id) await loadCarwashInsight(carwashes.value[0].id)
   await loadOverview()
 }
 
 const toggleCarwashState = async (row) => {
   await api.patch(`/auth/hq/carwashes/${row.id}/`, { is_active: !row.is_active })
   await loadCarwashes()
+  if (selectedCarwashInsight.value?.tenant?.id === row.id) await loadCarwashInsight(row.id)
   await loadOverview()
 }
 
@@ -2102,10 +2259,262 @@ onMounted(async () => {
   gap: 16px;
 }
 
+.carwash-ops-grid .table-card {
+  grid-column: 1 / -1;
+}
+
 .create-card,
 .table-card,
-.report-shell {
+.report-shell,
+.tenant-command-card {
   padding: 20px;
+}
+
+.tenant-command-card {
+  min-height: 430px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.92), rgba(245,248,252,.82)),
+    radial-gradient(circle at top right, rgba(14, 165, 233, .12), transparent 42%);
+  overflow: hidden;
+}
+
+.tenant-command-empty {
+  min-height: 390px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.tenant-command-empty h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 24px;
+}
+
+.tenant-command-empty p {
+  margin: 0;
+  max-width: 46ch;
+  line-height: 1.9;
+}
+
+.tenant-command-mark {
+  width: 62px;
+  height: 62px;
+  border-radius: 22px;
+  display: inline-grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 900;
+  background: linear-gradient(135deg, #0f5dd7, #0ea5e9);
+  box-shadow: 0 18px 34px rgba(15, 93, 215, .22);
+}
+
+.tenant-command-mark.error {
+  background: linear-gradient(135deg, #dc2626, #fb7185);
+}
+
+.tenant-command-mark.pulse {
+  animation: hqPulse 1.1s ease-in-out infinite;
+}
+
+.tenant-command-content {
+  display: grid;
+  gap: 16px;
+}
+
+.tenant-command-head,
+.tenant-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.tenant-command-head small,
+.tenant-panel-head span,
+.tenant-kpi-card small,
+.wallet-monitor-row small,
+.option-monitor-row small,
+.attendance-monitor-row small,
+.transaction-monitor-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tenant-command-head h3 {
+  margin: 6px 0 4px;
+  font-size: 26px;
+  color: var(--text);
+}
+
+.tenant-command-head p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.refresh-btn {
+  border: 0;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: rgba(15, 93, 215, .1);
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.tenant-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tenant-kpi-card {
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 20px;
+  padding: 14px;
+  background: rgba(255, 255, 255, .78);
+  display: grid;
+  gap: 7px;
+}
+
+.tenant-kpi-card.primary {
+  background: linear-gradient(135deg, rgba(15, 93, 215, .14), rgba(14, 165, 233, .08));
+}
+
+.tenant-kpi-card strong {
+  font-size: 20px;
+  color: var(--text);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.tenant-kpi-card span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tenant-monitor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tenant-monitor-panel {
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 22px;
+  padding: 14px;
+  background: rgba(255, 255, 255, .72);
+  display: grid;
+  gap: 12px;
+}
+
+.tenant-monitor-panel.wide-panel {
+  width: 100%;
+}
+
+.tenant-panel-head h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.wallet-monitor-list,
+.option-monitor-list,
+.attendance-monitor-list,
+.transaction-monitor-list {
+  display: grid;
+  gap: 8px;
+}
+
+.wallet-monitor-row,
+.option-monitor-row,
+.attendance-monitor-row,
+.transaction-monitor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, .86);
+}
+
+.wallet-monitor-row strong,
+.option-monitor-row strong,
+.attendance-monitor-row strong,
+.transaction-monitor-row strong {
+  color: var(--text);
+}
+
+.wallet-monitor-row span,
+.option-monitor-row span,
+.transaction-monitor-row span {
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.option-monitor-row.active {
+  background: rgba(220, 252, 231, .62);
+}
+
+.attendance-monitor-row {
+  justify-content: start;
+}
+
+.attendance-monitor-row em {
+  margin-right: auto;
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 900;
+  color: #64748b;
+}
+
+.attendance-monitor-row.in em {
+  color: #166534;
+}
+
+.attendance-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 0 5px rgba(148, 163, 184, .14);
+}
+
+.attendance-monitor-row.in .attendance-dot {
+  background: #16a34a;
+  box-shadow: 0 0 0 5px rgba(22, 163, 74, .14);
+}
+
+.transaction-monitor-row.out span {
+  color: #dc2626;
+}
+
+.tenant-name-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  text-align: right;
+}
+
+.tenant-name-btn:hover,
+.tenant-name-btn.active {
+  color: var(--primary);
+}
+
+@keyframes hqPulse {
+  0%, 100% { transform: scale(1); opacity: .72; }
+  50% { transform: scale(1.06); opacity: 1; }
 }
 
 .form-grid {
@@ -3551,6 +3960,14 @@ td strong {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .tenant-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tenant-monitor-grid {
+    grid-template-columns: 1fr;
+  }
+
   .report-insight-grid {
     grid-template-columns: 1fr;
   }
@@ -3650,11 +4067,26 @@ td strong {
   .form-grid,
   .ticket-filter-grid,
   .team-grid,
+  .tenant-kpi-grid,
   .report-kpi-grid,
   .report-side-stats,
   .report-glance-strip,
-  .trend-bars {
+  .trend-bars,
+  .tenant-monitor-grid {
     grid-template-columns: 1fr;
+  }
+
+  .tenant-command-head,
+  .tenant-panel-head,
+  .wallet-monitor-row,
+  .option-monitor-row,
+  .transaction-monitor-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .attendance-monitor-row {
+    align-items: flex-start;
   }
 
   .team-metrics {

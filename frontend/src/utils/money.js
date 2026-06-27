@@ -1,7 +1,6 @@
 export const toThousandsToman = (value) => Number(value || 0) / 1000
 
-export const formatThousandsTomanValue = (value, options = {}) => {
-  const numeric = toThousandsToman(value)
+const formatFaNumber = (numeric, options = {}) => {
   const {
     minimumFractionDigits = 0,
     maximumFractionDigits = Number.isInteger(numeric) ? 0 : 1
@@ -12,6 +11,17 @@ export const formatThousandsTomanValue = (value, options = {}) => {
   })
 }
 
-export const formatThousandsToman = (value, options = {}) => `${formatThousandsTomanValue(value, options)} هزار تومان`
+export const formatThousandsTomanValue = (value, options = {}) => {
+  const numeric = toThousandsToman(value)
+  return formatFaNumber(numeric, options)
+}
+
+export const formatThousandsToman = (value, options = {}) => {
+  const numeric = Number(value || 0)
+  if (Math.abs(numeric) >= 1000000) {
+    return `${formatFaNumber(numeric / 1000000, options)} میلیون تومان`
+  }
+  return `${formatThousandsTomanValue(value, options)} هزار تومان`
+}
 
 export const fromThousandsTomanInput = (value) => Math.round(Number(value || 0) * 1000)

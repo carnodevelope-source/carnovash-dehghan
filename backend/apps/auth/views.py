@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model, login, logout
 from django.db import transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.decorators import method_decorator
@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from apps.inventory.models import ExpenseEntry, StockMovement
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
 from apps.vehicles.models import VehicleEntry
+from apps.workers.models import WorkerAttendance, WorkerProfile
 from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketMessage, User
 from .serializers import (
     CarWashCreateSerializer,
@@ -35,6 +36,7 @@ from .serializers import (
     TenantRegisterSerializer,
     UserCreateSerializer,
     UserListSerializer,
+    feature_access_map,
 )
 
 
@@ -80,9 +82,7 @@ def _auth_payload(user):
         'tenant_id': user.tenant_id,
         'tenant_name': user.tenant.name if user.tenant_id else '',
         'purchased_menu_access': sorted(feature_keys),
-        'menu_access': {
-            CarWashFeaturePurchase.FeatureKey.ATTENDANCE: CarWashFeaturePurchase.FeatureKey.ATTENDANCE in feature_keys,
-        },
+        'menu_access': feature_access_map(feature_keys),
         'is_hq': _is_hq_user(user),
         'is_hq_admin': _is_hq_admin(user),
     }
@@ -569,6 +569,203 @@ class HqCarWashUpdateView(HqBaseView):
             manager.save()
 
         return Response(CarWashListSerializer(tenant).data, status=status.HTTP_200_OK)
+
+
+def _money(value):
+    return Decimal(str(value or 0))
+
+
+def _feature_title(feature_key):
+    return {
+        CarWashFeaturePurchase.FeatureKey.ATTENDANCE: 'ورود و خروج',
+        CarWashFeaturePurchase.FeatureKey.ACCOUNTING: 'حسابداری',
+        CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE: 'فضای ابری',
+    }.get(feature_key, feature_key)
+
+
+class HqCarWashInsightView(HqBaseView):
+    def get(self, request, pk):
+        forbidden = self.forbid_if_not_hq(request)
+        if forbidden:
+            return forbidden
+
+        tenant = CarWash.objects.filter(pk=pk).first()
+        if not tenant:
+            return Response({'detail': 'کارواش یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        today = timezone.localdate()
+        today_start = timezone.make_aware(datetime.combine(today, time.min))
+        today_end = timezone.make_aware(datetime.combine(today, time.max))
+
+        wallets = list(Wallet.objects.filter(tenant=tenant, is_active=True).order_by('wallet_type', 'id'))
+        wallet_rows = []
+        wallet_summary = {
+            'total_balance': Decimal('0'),
+            'regular_balance': Decimal('0'),
+            'sms_balance': Decimal('0'),
+            'today_deposit_total': Decimal('0'),
+            'today_withdraw_total': Decimal('0'),
+        }
+        for wallet in wallets:
+            balance = _money(wallet.balance)
+            wallet_summary['total_balance'] += balance
+            if wallet.wallet_type == Wallet.WalletType.SMS:
+                wallet_summary['sms_balance'] += balance
+            else:
+                wallet_summary['regular_balance'] += balance
+            wallet_rows.append(
+                {
+                    'id': wallet.id,
+                    'name': wallet.name,
+                    'wallet_type': wallet.wallet_type,
+                    'balance': balance,
+                    'is_active': wallet.is_active,
+                }
+            )
+
+        today_wallet_transactions = CashflowTransaction.objects.filter(
+            tenant=tenant,
+            transacted_at__gte=today_start,
+            transacted_at__lte=today_end,
+        )
+        for tx in today_wallet_transactions:
+            if tx.direction == CashflowTransaction.Direction.IN:
+                wallet_summary['today_deposit_total'] += _money(tx.amount)
+            else:
+                wallet_summary['today_withdraw_total'] += _money(tx.amount)
+
+        recent_wallet_transactions = [
+            {
+                'id': tx.id,
+                'wallet_name': tx.wallet.name if tx.wallet_id else '',
+                'direction': tx.direction,
+                'amount': tx.amount,
+                'description': tx.description,
+                'reference_type': tx.reference_type,
+                'transacted_at': tx.transacted_at,
+            }
+            for tx in CashflowTransaction.objects.select_related('wallet')
+            .filter(tenant=tenant)
+            .order_by('-transacted_at')[:8]
+        ]
+
+        purchases = []
+        installment_summary = {
+            'active_count': 0,
+            'installment_count': 0,
+            'remaining_total': Decimal('0'),
+            'monthly_total': Decimal('0'),
+        }
+        for purchase in CarWashFeaturePurchase.objects.filter(tenant=tenant).order_by('feature_key'):
+            remaining = _money(purchase.remaining_amount)
+            monthly = _money(purchase.monthly_installment_amount)
+            if purchase.is_active:
+                installment_summary['active_count'] += 1
+            if purchase.payment_plan == CarWashFeaturePurchase.PaymentPlan.INSTALLMENT:
+                installment_summary['installment_count'] += 1
+                installment_summary['remaining_total'] += remaining
+                installment_summary['monthly_total'] += monthly
+            purchases.append(
+                {
+                    'id': purchase.id,
+                    'feature_key': purchase.feature_key,
+                    'title': _feature_title(purchase.feature_key),
+                    'is_active': purchase.is_active,
+                    'payment_plan': purchase.payment_plan,
+                    'total_amount': purchase.total_amount,
+                    'paid_amount': purchase.paid_amount,
+                    'remaining_amount': remaining,
+                    'installment_months': purchase.installment_months,
+                    'monthly_installment_amount': monthly,
+                    'next_installment_due_at': purchase.next_installment_due_at,
+                    'purchased_at': purchase.purchased_at,
+                }
+            )
+
+        workers = list(WorkerProfile.objects.select_related('user').filter(tenant=tenant, is_available=True).order_by('user__full_name', 'user__username'))
+        events = (
+            WorkerAttendance.objects.select_related('worker', 'worker__user')
+            .filter(tenant=tenant, event_at__gte=today_start, event_at__lte=today_end)
+            .order_by('event_at', 'id')
+        )
+        last_events = {}
+        in_times = {}
+        out_count = 0
+        for event in events:
+            last_events[event.worker_id] = event
+            if event.event_type == WorkerAttendance.EventType.IN and event.worker_id not in in_times:
+                in_times[event.worker_id] = event.event_at
+            if event.event_type == WorkerAttendance.EventType.OUT:
+                out_count += 1
+
+        attendance_rows = []
+        present_count = 0
+        for worker in workers:
+            last_event = last_events.get(worker.id)
+            is_present = bool(last_event and last_event.event_type == WorkerAttendance.EventType.IN)
+            if is_present:
+                present_count += 1
+            attendance_rows.append(
+                {
+                    'worker_id': worker.id,
+                    'name': worker.user.full_name or worker.user.username,
+                    'current_status': 'in' if is_present else 'out',
+                    'first_in_at': in_times.get(worker.id),
+                    'last_event_at': last_event.event_at if last_event else None,
+                    'last_assigned_at': worker.last_assigned_at,
+                    'active_jobs_count': worker.active_jobs_count,
+                }
+            )
+        attendance_rows.sort(key=lambda item: (item['current_status'] != 'in', item['first_in_at'] or timezone.now(), item['name']))
+
+        vehicle_counts = VehicleEntry.objects.filter(
+            tenant=tenant,
+            check_in_at__gte=today_start,
+            check_in_at__lte=today_end,
+        ).aggregate(
+            total=Count('id'),
+            released=Count('id', filter=Q(status=VehicleEntry.Status.RELEASED)),
+            active=Count('id', filter=Q(status__in=[
+                VehicleEntry.Status.ENTERED,
+                VehicleEntry.Status.ASSIGNED,
+                VehicleEntry.Status.IN_PROGRESS,
+                VehicleEntry.Status.READY_TO_SETTLE,
+            ])),
+        )
+
+        return Response(
+            {
+                'tenant': {
+                    'id': tenant.id,
+                    'name': tenant.name,
+                    'slug': tenant.slug,
+                    'address': tenant.address,
+                    'is_active': tenant.is_active,
+                    'updated_at': tenant.updated_at,
+                },
+                'wallet': {
+                    'summary': wallet_summary,
+                    'wallets': wallet_rows,
+                    'recent_transactions': recent_wallet_transactions,
+                },
+                'options': {
+                    'summary': installment_summary,
+                    'purchases': purchases,
+                },
+                'attendance': {
+                    'summary': {
+                        'worker_count': len(workers),
+                        'present_count': present_count,
+                        'out_count': out_count,
+                        'today_vehicle_count': vehicle_counts['total'] or 0,
+                        'today_active_vehicle_count': vehicle_counts['active'] or 0,
+                        'today_released_vehicle_count': vehicle_counts['released'] or 0,
+                    },
+                    'workers': attendance_rows,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class HqSupportUserListCreateView(HqBaseView):

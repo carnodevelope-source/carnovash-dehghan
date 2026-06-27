@@ -78,6 +78,13 @@ class User(AbstractUser):
 class CarWashFeaturePurchase(models.Model):
     class FeatureKey(models.TextChoices):
         ATTENDANCE = 'attendance', 'Attendance'
+        ACCOUNTING = 'accounting', 'Accounting'
+        CLOUD_STORAGE = 'cloud_storage', 'Cloud Storage'
+
+    class PaymentPlan(models.TextChoices):
+        MANUAL = 'manual', 'Manual'
+        CASH = 'cash', 'Cash'
+        INSTALLMENT = 'installment', 'Installment'
 
     tenant = models.ForeignKey(
         CarWash,
@@ -86,6 +93,13 @@ class CarWashFeaturePurchase(models.Model):
     )
     feature_key = models.CharField(max_length=50, choices=FeatureKey.choices)
     is_active = models.BooleanField(default=True)
+    payment_plan = models.CharField(max_length=20, choices=PaymentPlan.choices, default=PaymentPlan.MANUAL)
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    remaining_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    installment_months = models.PositiveSmallIntegerField(default=0)
+    monthly_installment_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    next_installment_due_at = models.DateTimeField(null=True, blank=True)
     purchased_at = models.DateTimeField(auto_now_add=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

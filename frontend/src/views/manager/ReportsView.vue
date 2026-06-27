@@ -190,6 +190,7 @@ import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, fromThousandsTomanInput, toThousandsToman } from '../../utils/money'
+import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const activeTab = ref('overall')
 const workers = ref([])
@@ -384,19 +385,6 @@ const normalizePlateFilters = () => {
   filters.plateLetter = normalizePlateLetter(filters.plateLetter)
 }
 
-const resolveApiErrorMessage = (error, fallback) => {
-  const payload = error?.response?.data
-  if (typeof payload === 'string' && payload.trim()) return payload
-  if (typeof payload?.detail === 'string' && payload.detail.trim()) return payload.detail
-  if (payload && typeof payload === 'object') {
-    for (const value of Object.values(payload)) {
-      if (typeof value === 'string' && value.trim()) return value
-      if (Array.isArray(value) && value.length) return String(value[0])
-    }
-  }
-  return fallback
-}
-
 const fetchWorkers = async () => {
   try {
     const { data } = await api.get('/workers/')
@@ -453,7 +441,7 @@ const fetchReports = async () => {
     selectedWorkerTransactions.value = payload.selected_worker_transactions || []
   } catch (error) {
     if (token !== fetchToken) return
-    errorMessage.value = error?.response?.data?.detail || 'بارگذاری گزارشات ناموفق بود.'
+    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری گزارشات ناموفق بود.')
   }
 }
 
@@ -478,7 +466,7 @@ const openVehicleDetail = async (vehicleId) => {
     const { data } = await api.get(`/vehicles/${vehicleId}/`)
     vehicleModal.data = data
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'بارگذاری جزئیات سفارش ناموفق بود.'
+    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری جزئیات سفارش ناموفق بود.')
     closeVehicleModal()
   } finally {
     vehicleModal.loading = false
@@ -548,7 +536,7 @@ const submitPayout = async () => {
     closePayoutModal()
     await fetchReports()
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'ثبت پرداخت ناموفق بود.'
+    errorMessage.value = resolveApiErrorMessage(error, 'ثبت پرداخت ناموفق بود.')
   } finally {
     payoutModal.submitting = false
   }
@@ -581,7 +569,7 @@ const submitAdjustment = async () => {
     closeAdjustmentModal()
     await fetchReports()
   } catch (error) {
-    errorMessage.value = error?.response?.data?.detail || 'ثبت تعدیل ناموفق بود.'
+    errorMessage.value = resolveApiErrorMessage(error, 'ثبت تعدیل ناموفق بود.')
   } finally {
     adjustmentModal.submitting = false
   }
@@ -657,6 +645,6 @@ th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-spa
 .modal-body input,.modal-body select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px}
 @media (max-width:1400px){.summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (max-width:1200px){.filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-field,.plate-field{grid-column:span 2}.worker-summary-grid{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:760px){.reports-content{font-size:11px}.range-chip,.chip,.field,.field input,.field select,table,.modal-step{font-size:10px}.primary-btn,.secondary-btn,.close-btn{font-size:10px;padding:7px 10px}.filters-card,.summary-grid,.worker-summary-grid,.plate-filter-row{grid-template-columns:1fr}.search-field,.plate-field{grid-column:span 1}.worker-head,.action-row,.services-preview-cell{flex-direction:column;align-items:stretch}.kpi-card p,.services-expanded-box strong,.payout-card p{font-size:10px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:12px}.field input,.field select,.modal-body input,.modal-body select{height:34px}.range-bar,.tabs-bar{gap:5px}.modal-overlay{padding:10px}.modal-panel{max-height:calc(100vh - 20px);overflow:auto}.modal-body{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:480px){.reports-content{font-size:10px}.range-chip,.chip,.field,.field input,.field select,table,th,td{font-size:9px}.primary-btn,.secondary-btn,.close-btn{font-size:9px;padding:6px 9px}.kpi-card{padding:8px}.kpi-card p,.services-expanded-box strong,.services-expanded-box p,.payout-card p,.modal-step{font-size:9px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:11px}.field input,.field select,.modal-body input,.modal-body select{height:32px}.plate-filter-shell,.table-card,.modal-body{padding:8px}.worker-head,.action-row{gap:6px}}
+@media (max-width:760px){.reports-content{font-size:11px}.range-chip,.chip,.field,.field input,.field select,.modal-step{font-size:10px}.table-wrap{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}.table-wrap table{width:max-content;min-width:100%;table-layout:auto}.table-wrap th,.table-wrap td{white-space:nowrap;word-break:normal;overflow-wrap:normal}.primary-btn,.secondary-btn,.close-btn{font-size:10px;padding:7px 10px}.filters-card,.summary-grid,.worker-summary-grid,.plate-filter-row{grid-template-columns:1fr}.search-field,.plate-field{grid-column:span 1}.worker-head,.action-row,.services-preview-cell{flex-direction:column;align-items:stretch}.kpi-card p,.services-expanded-box strong,.payout-card p{font-size:10px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:12px}.field input,.field select,.modal-body input,.modal-body select{height:34px}.range-bar,.tabs-bar{gap:5px}.modal-overlay{padding:10px}.modal-panel{max-height:calc(100vh - 20px);overflow:auto}.modal-body{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:480px){.reports-content{font-size:10px}.range-chip,.chip,.field,.field input,.field select{font-size:9px}.primary-btn,.secondary-btn,.close-btn{font-size:9px;padding:6px 9px}.kpi-card{padding:8px}.kpi-card p,.services-expanded-box strong,.services-expanded-box p,.payout-card p,.modal-step{font-size:9px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:11px}.field input,.field select,.modal-body input,.modal-body select{height:32px}.plate-filter-shell,.table-card,.modal-body{padding:8px}.worker-head,.action-row{gap:6px}}
 </style>

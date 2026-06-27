@@ -1,6 +1,11 @@
 ﻿from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
+import json
+import re
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
@@ -49,6 +54,138 @@ def _normalized_plate_value(plate_number='', plate_left='', plate_letter='', pla
     if left and letter and mid and right:
         return f'{left} {letter} {mid} {right}'
     return str(plate_number or '').strip()
+
+
+_PERSIAN_DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')
+_AI_LETTER_MAP = {
+    'a': 'ا',
+    'b': 'ب',
+    'c': 'ص',
+    'd': 'د',
+    'e': 'ه',
+    'f': 'ف',
+    'g': 'گ',
+    'h': 'ح',
+    'i': 'ی',
+    'j': 'ج',
+    'k': 'ک',
+    'l': 'ل',
+    'm': 'م',
+    'n': 'ن',
+    'o': 'و',
+    'p': 'پ',
+    'q': 'ق',
+    'r': 'ر',
+    's': 'س',
+    't': 'ط',
+    'u': 'ع',
+    'v': 'و',
+    'w': 'و',
+    'x': 'ش',
+    'y': 'ی',
+    'z': 'ز',
+}
+
+_PLATE_LETTER_WORD_MAP = {
+    'الف': 'ا',
+    'ا': 'ا',
+    'ب': 'ب',
+    'پ': 'پ',
+    'ت': 'ت',
+    'ث': 'ث',
+    'ج': 'ج',
+    'چ': 'چ',
+    'ح': 'ح',
+    'خ': 'خ',
+    'د': 'د',
+    'ذ': 'ذ',
+    'ر': 'ر',
+    'ز': 'ز',
+    'ژ': 'ژ',
+    'س': 'س',
+    'ش': 'ش',
+    'ص': 'ص',
+    'ض': 'ض',
+    'ط': 'ط',
+    'ظ': 'ظ',
+    'ع': 'ع',
+    'غ': 'غ',
+    'ف': 'ف',
+    'ق': 'ق',
+    'ک': 'ک',
+    'ك': 'ک',
+    'گ': 'گ',
+    'ل': 'ل',
+    'م': 'م',
+    'ن': 'ن',
+    'و': 'و',
+    'ه': 'ه',
+    'ی': 'ی',
+    'ي': 'ی',
+}
+
+
+def _normalized_ai_letter(value=''):
+    token = str(value or '').strip().lower()
+    if not token:
+        return ''
+    token = token.replace('ك', 'ک').replace('ي', 'ی')
+    if token in _AI_LETTER_MAP:
+        return _AI_LETTER_MAP[token]
+    if token in _PLATE_LETTER_WORD_MAP:
+        return _PLATE_LETTER_WORD_MAP[token]
+    first_char = token[:1]
+    if first_char in _AI_LETTER_MAP:
+        return _AI_LETTER_MAP[first_char]
+    return _PLATE_LETTER_WORD_MAP.get(first_char, '')
+
+
+def _plate_parts_from_ai(raw_text='', persian_text=''):
+    raw = str(raw_text or '').strip().lower()
+    compact_raw = ''.join(ch for ch in raw if ch.isalnum())
+    raw_match = re.search(r'(\d{2})([a-z])(\d{3})(\d{2})', compact_raw)
+    if raw_match:
+        left, letter_token, mid, right = raw_match.groups()
+        letter = _normalized_ai_letter(letter_token)
+        if letter:
+            return {
+                'plate_left': left,
+                'plate_letter': letter,
+                'plate_mid': mid,
+                'plate_right': right,
+                'plate_number': f'{left} {letter} {mid} {right}',
+            }
+
+    normalized = str(persian_text or '').translate(_PERSIAN_DIGITS)
+    normalized = normalized.replace('ك', 'ک').replace('ي', 'ی')
+    tokenized = re.sub(r'[^0-9A-Za-zآ-ی]+', ' ', normalized).split()
+    for index in range(max(0, len(tokenized) - 3)):
+        left = ''.join(ch for ch in tokenized[index] if ch.isdigit())[:2]
+        letter = _normalized_ai_letter(tokenized[index + 1])
+        mid = ''.join(ch for ch in tokenized[index + 2] if ch.isdigit())[:3]
+        right = ''.join(ch for ch in tokenized[index + 3] if ch.isdigit())[:2]
+        if len(left) == 2 and letter and len(mid) == 3 and len(right) == 2:
+            return {
+                'plate_left': left,
+                'plate_letter': letter,
+                'plate_mid': mid,
+                'plate_right': right,
+                'plate_number': f'{left} {letter} {mid} {right}',
+            }
+
+    inline_match = re.search(r'(\d{2})\s*([^0-9\s]{1,4})\s*(\d{3})\s*(\d{2})', normalized)
+    if inline_match:
+        left, letter_token, mid, right = inline_match.groups()
+        letter = _normalized_ai_letter(letter_token)
+        if letter:
+            return {
+                'plate_left': left,
+                'plate_letter': letter,
+                'plate_mid': mid,
+                'plate_right': right,
+                'plate_number': f'{left} {letter} {mid} {right}',
+            }
+    return {}
 
 
 class VehicleEntryDetailView(generics.RetrieveUpdateAPIView):
@@ -164,6 +301,73 @@ class VehiclePlateLookupView(APIView):
                 'driver_phone': latest_vehicle.driver_phone or '',
                 'car_model': latest_vehicle.car_model or '',
                 'car_color': latest_vehicle.car_color or '',
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class VehiclePlateRecognitionView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        tenant = getattr(request.user, 'tenant', None)
+        if not tenant:
+            return Response({'detail': 'کارواش کاربر مشخص نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        image_base64 = str(request.data.get('image_base64') or request.data.get('image_data_url') or '').strip()
+        if not image_base64:
+            return Response({'image_base64': ['تصویر دوربین ارسال نشده است.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        session_suffix = str(request.data.get('session_id') or 'default').strip() or 'default'
+        session_id = f'tenant-{tenant.id}:{session_suffix}'
+        service_url = str(getattr(settings, 'PLATE_AI_SERVICE_URL', 'http://127.0.0.1:8765')).rstrip('/')
+        timeout_seconds = float(getattr(settings, 'PLATE_AI_TIMEOUT_SECONDS', 5.0) or 5.0)
+        payload = json.dumps(
+            {
+                'session_id': session_id,
+                'image_base64': image_base64,
+                'timeout_sec': max(1.0, timeout_seconds - 0.5),
+                'force_process': True,
+            }
+        ).encode('utf-8')
+
+        try:
+            upstream_request = Request(
+                f'{service_url}/recognize',
+                data=payload,
+                headers={'Content-Type': 'application/json'},
+                method='POST',
+            )
+            with urlopen(upstream_request, timeout=timeout_seconds) as response:
+                upstream_data = json.loads(response.read().decode('utf-8'))
+        except HTTPError as exc:
+            try:
+                upstream_data = json.loads(exc.read().decode('utf-8'))
+            except Exception:
+                upstream_data = {'detail': str(exc)}
+            return Response(upstream_data, status=exc.code)
+        except (URLError, TimeoutError, OSError):
+            return Response(
+                {
+                    'accepted': False,
+                    'detail': 'سرویس تشخیص پلاک فعال نیست. سرویس AI را کنار سایت اجرا کنید.',
+                    'service_url': service_url,
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        raw_text = upstream_data.get('text') or ''
+        persian_text = upstream_data.get('persian_text') or ''
+        parts = _plate_parts_from_ai(raw_text=raw_text, persian_text=persian_text)
+        return Response(
+            {
+                **upstream_data,
+                'recognized': bool(parts),
+                'plate_number': parts.get('plate_number', ''),
+                'plate_left': parts.get('plate_left', ''),
+                'plate_letter': parts.get('plate_letter', ''),
+                'plate_mid': parts.get('plate_mid', ''),
+                'plate_right': parts.get('plate_right', ''),
             },
             status=status.HTTP_200_OK,
         )

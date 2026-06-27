@@ -1,11 +1,36 @@
+import socket
 from pathlib import Path
 from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _csv_config(name, default=''):
+    return [item.strip() for item in config(name, default=default).split(',') if item.strip()]
+
+
+def _local_dev_origins():
+    if not DEBUG:
+        return []
+
+    ports = _csv_config('DJANGO_DEV_FRONTEND_PORTS', default='5173')
+    addresses = set()
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
+            address = info[4][0]
+            if address and not address.startswith('127.'):
+                addresses.add(address)
+    except OSError:
+        pass
+
+    return [f'http://{address}:{port}' for address in sorted(addresses) for port in ports]
+
 SECRET_KEY = config('DJANGO_SECRET_KEY', default='replace-me')
 DEBUG = config('DJANGO_DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config('DJANGO_ALLOWED_HOSTS', default='*').split(',')
+PLATE_AI_SERVICE_URL = config('PLATE_AI_SERVICE_URL', default='http://127.0.0.1:8765')
+PLATE_AI_TIMEOUT_SECONDS = config('PLATE_AI_TIMEOUT_SECONDS', default=5.0, cast=float)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -90,16 +115,21 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = [
+DEFAULT_DEV_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    *_local_dev_origins(),
 ]
+CORS_ALLOWED_ORIGINS = _csv_config(
+    'DJANGO_CORS_ALLOWED_ORIGINS',
+    default=','.join(DEFAULT_DEV_ORIGINS),
+)
 CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-]
+CSRF_TRUSTED_ORIGINS = _csv_config(
+    'DJANGO_CSRF_TRUSTED_ORIGINS',
+    default=','.join(CORS_ALLOWED_ORIGINS),
+)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

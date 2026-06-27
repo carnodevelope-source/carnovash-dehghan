@@ -51,6 +51,7 @@ import { useRouter } from 'vue-router'
 import api, { ensureCsrfToken } from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { defaultRouteByRole } from '../../config/navigation'
+import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const showPassword = ref(false)
 const isLoading = ref(false)
@@ -75,10 +76,7 @@ const onSubmit = async () => {
 
     await router.push(authStore.isHq ? '/hq' : (defaultRouteByRole[authStore.role] || '/'))
   } catch (error) {
-    errorMessage.value =
-      error?.response?.data?.detail ||
-      error?.response?.data?.non_field_errors?.[0] ||
-      'ورود ناموفق بود. لطفا اطلاعات را بررسی کنید.'
+    errorMessage.value = resolveApiErrorMessage(error, 'ورود ناموفق بود. لطفا اطلاعات را بررسی کنید.')
   } finally {
     isLoading.value = false
   }
