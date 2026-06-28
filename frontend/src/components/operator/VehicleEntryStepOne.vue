@@ -18,14 +18,17 @@
           <video ref="cameraVideoRef" class="camera-video" autoplay playsinline muted></video>
           <canvas ref="cameraCanvasRef" class="camera-canvas"></canvas>
           <div class="camera-overlay">
-            <div class="plate-guide">{{ cameraState.loading ? 'در حال پردازش پلاک...' : 'محل قرارگیری پلاک' }}</div>
+            <div class="plate-guide">{{ cameraGuideText }}</div>
           </div>
-          <span>{{ cameraState.active ? 'روی تصویر کلیک کنید تا پلاک استخراج شود' : 'ابتدا دوربین را باز کنید' }}</span>
+          <span>{{ cameraHintText }}</span>
         </div>
 
         <div class="camera-actions">
           <button type="button" class="camera-action primary-camera" :disabled="cameraState.loading" @click="startCamera">
             {{ cameraState.active ? 'راه‌اندازی مجدد دوربین' : 'باز کردن دوربین' }}
+          </button>
+          <button type="button" class="camera-action live-camera" :class="{ active: cameraState.liveEnabled }" :disabled="!cameraState.active || cameraState.loading" @click="toggleLiveRecognition">
+            {{ cameraState.liveEnabled ? 'توقف لایو' : 'تشخیص لایو' }}
           </button>
           <button type="button" class="camera-action" :disabled="cameraState.loading || !cameraState.active" @click="captureFromVideo">
             {{ cameraState.loading ? 'در حال تشخیص...' : 'تشخیص پلاک' }}
@@ -167,9 +170,13 @@ const cameraState = reactive({
   message: '',
   error: false,
   lastConfidence: 0,
-  lastLatency: 0
+  lastLatency: 0,
+  liveEnabled: false,
+  livePaused: false
 })
 const letterSuggestions = ref([])
+let liveRecognitionTimer = null
+let liveRecognitionCooldown = 0
 const aiSessionId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(window.navigator.userAgent || '')
 const canUseLiveCamera = Boolean(window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname))
@@ -243,6 +250,7 @@ const setCameraMessage = (message, isError = false) => {
 }
 
 const stopCamera = () => {
+  stopLiveRecognition()
   if (cameraStream.value) {
     cameraStream.value.getTracks().forEach((track) => track.stop())
   }
@@ -274,7 +282,8 @@ const startCamera = async () => {
       await cameraVideoRef.value.play()
     }
     cameraState.active = true
-    setCameraMessage('دوربین آماده است. پلاک را داخل کادر بگذارید و روی تصویر کلیک کنید.')
+    setCameraMessage('دوربین آماده است. پلاک را داخل کادر نگه دارید تا خودکار خوانده شود.')
+    startLiveRecognition()
   } catch (error) {
     stopCamera()
     const isInsecure = !canUseLiveCamera
@@ -285,6 +294,52 @@ const startCamera = async () => {
       true
     )
   }
+}
+
+const stopLiveRecognition = () => {
+  if (liveRecognitionTimer) clearInterval(liveRecognitionTimer)
+  liveRecognitionTimer = null
+  liveRecognitionCooldown = 0
+  cameraState.liveEnabled = false
+  cameraState.livePaused = false
+}
+
+const pauseLiveRecognition = () => {
+  if (liveRecognitionTimer) clearInterval(liveRecognitionTimer)
+  liveRecognitionTimer = null
+  cameraState.liveEnabled = false
+  cameraState.livePaused = true
+}
+
+const startLiveRecognition = () => {
+  if (!cameraState.active || form.isAnonymous || form.isPieceWash) return
+  if (liveRecognitionTimer) clearInterval(liveRecognitionTimer)
+  cameraState.liveEnabled = true
+  cameraState.livePaused = false
+  liveRecognitionCooldown = 0
+  liveRecognitionTimer = setInterval(runLiveRecognitionFrame, 1800)
+  runLiveRecognitionFrame()
+}
+
+const toggleLiveRecognition = () => {
+  if (cameraState.liveEnabled) {
+    pauseLiveRecognition()
+    setCameraMessage('تشخیص زنده متوقف شد. برای اسکن دوباره دکمه تشخیص لایو را بزنید.')
+    return
+  }
+  startLiveRecognition()
+}
+
+const runLiveRecognitionFrame = async () => {
+  if (!cameraState.active || !cameraVideoRef.value?.videoWidth || cameraState.loading || form.isAnonymous || form.isPieceWash) return
+  const hasPlate = form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1
+  if (hasPlate && liveRecognitionCooldown > 0) {
+    liveRecognitionCooldown -= 1
+    return
+  }
+  const video = cameraVideoRef.value
+  const imageDataUrl = dataUrlFromCanvas(video, video.videoWidth, video.videoHeight)
+  await recognizePlateImage(imageDataUrl, { source: 'live' })
 }
 
 const dataUrlFromCanvas = (source, sourceWidth, sourceHeight) => {
@@ -397,9 +452,10 @@ const tryResolveLetterFromHistory = async () => {
   return true
 }
 
-const recognizePlateImage = async (imageDataUrl) => {
+const recognizePlateImage = async (imageDataUrl, options = {}) => {
+  const isLive = options.source === 'live'
   cameraState.loading = true
-  setCameraMessage('در حال ارسال تصویر و تشخیص پلاک...')
+  setCameraMessage(isLive ? 'در حال خواندن پلاک از تصویر زنده...' : 'در حال ارسال تصویر و تشخیص پلاک...')
   try {
     const { data } = await api.post('/vehicles/plate-recognition/', {
       session_id: aiSessionId,
@@ -407,8 +463,13 @@ const recognizePlateImage = async (imageDataUrl) => {
     }, { meta: { trackLoading: false } })
     cameraState.lastConfidence = Number(data?.confidence || 0)
     cameraState.lastLatency = Number(data?.latency_ms || 0)
+    if (data?.mode === 'stub') {
+      pauseLiveRecognition()
+      setCameraMessage(data?.detail || 'مدل واقعی تشخیص پلاک هنوز روی سرویس AI نصب نشده است.', true)
+      return
+    }
     if (!data?.accepted) {
-      setCameraMessage(data?.detail || 'درخواست تشخیص پلاک پذیرفته نشد.', true)
+      setCameraMessage(data?.detail || 'درخواست تشخیص پلاک پذیرفته نشد.', !isLive)
       return
     }
     if (!applyRecognizedPlate(data)) {
@@ -418,12 +479,16 @@ const recognizePlateImage = async (imageDataUrl) => {
         extractedText
           ? `متن پلاک خوانده شد اما فرم آن کامل نیست: ${extractedText}`
           : `پلاک در تصویر پیدا نشد${aiReason ? ` (${aiReason})` : ''}. عکس واضح‌تر و نزدیک‌تر بگیرید.`,
-        true
+        !isLive
       )
       return
     }
     const correctedFromHistory = await tryResolveLetterFromHistory()
     const confidenceText = cameraState.lastConfidence ? ` | اطمینان ${(cameraState.lastConfidence * 100).toFixed(0)}٪` : ''
+    if (isLive) {
+      liveRecognitionCooldown = 4
+      pauseLiveRecognition()
+    }
     setCameraMessage(
       correctedFromHistory
         ? `پلاک ${plate.value} از روی سابقه مشتری اصلاح و ثبت شد${confidenceText}.`
@@ -431,7 +496,7 @@ const recognizePlateImage = async (imageDataUrl) => {
     )
   } catch (error) {
     const detail = error?.response?.data?.detail || 'ارتباط با سرویس تشخیص پلاک برقرار نشد.'
-    setCameraMessage(detail, true)
+    setCameraMessage(detail, !isLive)
   } finally {
     cameraState.loading = false
   }
@@ -483,6 +548,18 @@ const onRefer = () => {
 }
 
 const detectedPlate = computed(() => plate.value || '-- - --- --')
+const cameraGuideText = computed(() => {
+  if (cameraState.loading) return 'در حال پردازش پلاک...'
+  if (cameraState.liveEnabled) return 'تشخیص زنده فعال'
+  if (cameraState.livePaused) return 'پلاک ثبت شد'
+  return 'محل قرارگیری پلاک'
+})
+const cameraHintText = computed(() => {
+  if (!cameraState.active) return 'ابتدا دوربین را باز کنید'
+  if (cameraState.liveEnabled) return 'پلاک را ثابت داخل کادر نگه دارید'
+  if (cameraState.livePaused) return 'برای اسکن دوباره تشخیص لایو را فعال کنید'
+  return 'روی تصویر کلیک کنید یا تشخیص لایو را فعال کنید'
+})
 const detectedModelColor = computed(() => {
   const text = `${form.model.trim()} ${form.color.trim()}`.trim()
   return text || '---'

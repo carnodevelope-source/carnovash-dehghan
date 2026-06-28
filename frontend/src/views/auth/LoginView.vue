@@ -21,17 +21,17 @@
         <form class="login-form" @submit.prevent="onSubmit">
           <label class="field">
             <span>نام کاربری یا شماره همراه</span>
-            <input v-model="form.username" type="text" placeholder="نام کاربری یا شماره همراه" />
+            <input v-model.trim="form.username" type="text" placeholder="نام کاربری یا شماره همراه" autocomplete="username" required />
           </label>
 
           <label class="field">
             <div class="field-row">
               <span>رمز عبور</span>
             </div>
-            <input v-model="form.password" :type="showPassword ? 'text' : 'password'" placeholder="رمز عبور" />
+            <input v-model="form.password" :type="showPassword ? 'text' : 'password'" placeholder="رمز عبور" autocomplete="current-password" required />
           </label>
 
-          <button class="submit-btn" type="submit" :disabled="isLoading">
+          <button class="submit-btn" type="submit" :disabled="isLoading" @click="onSubmit">
             {{ isLoading ? 'در حال ورود...' : 'ورود به سامانه' }}
           </button>
           <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
@@ -64,15 +64,22 @@ const form = reactive({
 })
 
 const onSubmit = async () => {
+  if (isLoading.value) return
   errorMessage.value = ''
+
+  if (!form.username || !form.password) {
+    errorMessage.value = 'نام کاربری و رمز عبور را وارد کنید.'
+    return
+  }
+
   isLoading.value = true
   try {
     await ensureCsrfToken()
-    await api.post('/auth/login/', {
+    const { data } = await api.post('/auth/login/', {
       username: form.username,
       password: form.password
     })
-    await authStore.fetchMe()
+    authStore.setUser(data)
 
     await router.push(authStore.isHq ? '/hq' : (defaultRouteByRole[authStore.role] || '/'))
   } catch (error) {

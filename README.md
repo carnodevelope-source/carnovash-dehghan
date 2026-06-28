@@ -736,6 +736,7 @@ docker compose --env-file .env.production -f docker-compose.yml -f docker-compos
 | SSL صادر نمی‌شود | DNS یا پورت 80/443 مشکل دارد | DNS را چک کنید، firewall را باز کنید، دوباره `deploy_linux.sh` را اجرا کنید |
 | فرانت بالا می‌آید ولی API 403 می‌دهد | CSRF/session/cookie مشکل دارد | ابتدا `/api/auth/csrf/` را بزنید و credentialها را با cookie ارسال کنید |
 | build `plate-ai` شکست می‌خورد | عدم دسترسی به Docker Hub یا proxy نادرست | network/proxy سرور را اصلاح کنید |
+| `Access denied for user 'carwash'@'...'` | volume دیتابیس قبلاً با credential دیگری initialize شده | `./scripts/reset_mysql_access.sh` را اجرا کنید یا volume دیتابیس را برای deploy تمیز دوباره بسازید |
 
 ## نکات مهم
 
@@ -769,4 +770,3 @@ docker compose --env-file .env.production -f docker-compose.yml -f docker-compos
 - router فرانت: [frontend/src/router/index.js](/mnt/newvolume/PRG/carvash/frontend/src/router/index.js:1)
 - compose پایه: [docker-compose.yml](/mnt/newvolume/PRG/carvash/docker-compose.yml:1)
 - compose production: [docker-compose.production.yml](/mnt/newvolume/PRG/carvash/docker-compose.production.yml:1)
-

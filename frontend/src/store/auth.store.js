@@ -16,19 +16,22 @@ export const useAuthStore = defineStore('auth', {
     canAccessDashboard: (state) => ['admin', 'owner', 'manager', 'operator', 'worker'].includes(state.user?.role)
   },
   actions: {
+    setUser(user) {
+      this.user = user || null
+    },
     async fetchMe() {
       try {
         const { data } = await api.get('/auth/me/')
-        this.user = data
+        this.setUser(data)
       } catch {
-        this.user = null
+        this.setUser(null)
       }
     },
     async logout() {
       try {
         await api.post('/auth/logout/')
       } finally {
-        this.user = null
+        this.setUser(null)
       }
     }
   }

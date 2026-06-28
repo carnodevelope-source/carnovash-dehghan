@@ -28,7 +28,16 @@ def _local_dev_origins():
 
 SECRET_KEY = config('DJANGO_SECRET_KEY', default='replace-me')
 DEBUG = config('DJANGO_DEBUG', default=True, cast=bool)
-ALLOWED_HOSTS = config('DJANGO_ALLOWED_HOSTS', default='*').split(',')
+ALLOWED_HOSTS = list(
+    dict.fromkeys(
+        [
+            *[host.strip() for host in config('DJANGO_ALLOWED_HOSTS', default='*').split(',') if host.strip()],
+            'localhost',
+            '127.0.0.1',
+            'backend',
+        ]
+    )
+)
 PLATE_AI_SERVICE_URL = config('PLATE_AI_SERVICE_URL', default='http://127.0.0.1:8765')
 PLATE_AI_TIMEOUT_SECONDS = config('PLATE_AI_TIMEOUT_SECONDS', default=5.0, cast=float)
 
@@ -123,6 +132,7 @@ CSRF_COOKIE_SECURE = config('DJANGO_CSRF_COOKIE_SECURE', default=not DEBUG, cast
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False
 SECURE_SSL_REDIRECT = config('DJANGO_SECURE_SSL_REDIRECT', default=False, cast=bool)
+SECURE_REDIRECT_EXEMPT = [r'^api/health/$']
 if config('DJANGO_SECURE_PROXY_SSL_HEADER', default=not DEBUG, cast=bool):
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
