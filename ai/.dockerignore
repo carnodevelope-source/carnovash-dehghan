@@ -1,0 +1,10 @@
+.git
+__pycache__/
+database/__pycache__/
+io/output/
+io/input/
+websit/
+*.bat
+*.md
+*.mp4
+plate-ai-smoke*.log

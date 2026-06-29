@@ -33,7 +33,18 @@
         <section class="vehicle-details-card">
           <h3>مشخصات خودرو</h3>
           <div class="vehicle-details-info-grid">
-            <p><span>پلاک</span><strong>{{ vehicle.plate_number || '-' }}</strong></p>
+            <div class="vehicle-details-plate-field">
+              <span>پلاک</span>
+              <PlateBadge
+                :plate-number="vehicle.plate_number"
+                :plate-left="vehicle.plate_left"
+                :plate-letter="vehicle.plate_letter"
+                :plate-mid="vehicle.plate_mid"
+                :plate-right="vehicle.plate_right"
+                :plate-type="vehicle.plate_type || 'car'"
+                compact
+              />
+            </div>
             <p><span>مدل</span><strong>{{ vehicle.car_model || '-' }}</strong></p>
             <p><span>رنگ</span><strong>{{ vehicle.car_color || '-' }}</strong></p>
             <p><span>زمان ورود</span><strong>{{ formatDateTime(vehicle.check_in_at) }}</strong></p>
@@ -135,6 +146,7 @@
 
 <script setup>
 import { formatThousandsToman } from '../../utils/money'
+import PlateBadge from './PlateBadge.vue'
 
 defineProps({
   open: { type: Boolean, default: false },
@@ -218,6 +230,8 @@ const workerTotalWithTip = (job) => {
 .vehicle-details-info-grid p { margin: 0; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; padding: 9px 10px; display: grid; gap: 4px; }
 .vehicle-details-info-grid p span { color: #64748b; font-size: 12px; }
 .vehicle-details-info-grid p strong { color: #0f172a; font-size: 13px; font-weight: 700; }
+.vehicle-details-plate-field { margin: 0; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; padding: 9px 10px; display: grid; gap: 8px; }
+.vehicle-details-plate-field > span { color: #64748b; font-size: 12px; }
 .vehicle-details-note-box { margin-top: 10px; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px; color: #334155; font-size: 13px; background: #f8fafc; }
 .vehicle-details-list { display: grid; gap: 8px; }
 .vehicle-details-list-item { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; background: #fdfefe; }

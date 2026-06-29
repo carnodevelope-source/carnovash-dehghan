@@ -297,6 +297,11 @@ class VehiclePlateLookupView(APIView):
             {
                 'found': True,
                 'plate_number': plate_number,
+                'plate_left': latest_vehicle.plate_left or '',
+                'plate_letter': latest_vehicle.plate_letter or '',
+                'plate_mid': latest_vehicle.plate_mid or '',
+                'plate_right': latest_vehicle.plate_right or '',
+                'plate_type': latest_vehicle.plate_type or VehicleEntry.PlateType.CAR,
                 'driver_name': latest_vehicle.driver_name or '',
                 'driver_phone': latest_vehicle.driver_phone or '',
                 'car_model': latest_vehicle.car_model or '',
@@ -395,6 +400,7 @@ class VehicleBlockPlateView(APIView):
                 'plate_letter': vehicle.plate_letter,
                 'plate_mid': vehicle.plate_mid,
                 'plate_right': vehicle.plate_right,
+                'plate_type': vehicle.plate_type or VehicleEntry.PlateType.CAR,
                 'blocked_by': request.user if getattr(request.user, 'is_authenticated', False) else None,
                 'note': (request.data.get('note') or '').strip(),
             },
@@ -499,18 +505,16 @@ class VehicleReleaseCheckoutView(APIView):
         workers = []
         for worker_id in ordered_ids:
             profile = profiles_by_id.get(worker_id) or profiles_by_user_id.get(worker_id)
-            if not profile:
-                continue
             name = (
                 names_by_id.get(worker_id)
-                or (profile.user.full_name or profile.user.username or '').strip()
+                or ((profile.user.full_name or profile.user.username or '').strip() if profile and getattr(profile, 'user', None) else '')
                 or f'نیرو {worker_id}'
             )
             workers.append(
                 {
                     'id': worker_id,
                     'name': name,
-                    'tip_share_percent': Decimal(str(profile.tip_share_percent or 0)),
+                    'tip_share_percent': Decimal(str(profile.tip_share_percent or 0)) if profile else Decimal('0'),
                     'worker_share_percent': worker_share_percent_by_id.get(worker_id, Decimal('0')),
                     'worker_share_amount': worker_share_amount_by_id.get(worker_id, Decimal('0')),
                 }
@@ -850,6 +854,7 @@ class VehicleReleaseCheckoutView(APIView):
         worker_share_distribution_payload = request.data.get('worker_share_distribution', [])
         tip_amount = Decimal(str(request.data.get('tip_amount', vehicle.job.tip_amount or 0)))
         payment_method = str(request.data.get('payment_method', Payment.Method.CASH) or Payment.Method.CASH).strip().lower()
+        payment_breakdown = request.data.get('payment_breakdown', [])
         credit_due_date = request.data.get('credit_due_date')
         cheque_number = str(request.data.get('cheque_number', '') or '').strip()
         cheque_serial_number = str(request.data.get('cheque_serial_number', '') or '').strip()
@@ -922,6 +927,26 @@ class VehicleReleaseCheckoutView(APIView):
         valid_methods = {choice[0] for choice in Payment.Method.choices}
         if payment_method not in valid_methods:
             return Response({'payment_method': ['Invalid payment method.']}, status=status.HTTP_400_BAD_REQUEST)
+        normalized_payment_breakdown = []
+        if isinstance(payment_breakdown, list):
+            for item in payment_breakdown:
+                if not isinstance(item, dict):
+                    continue
+                method = str(item.get('method', '') or '').strip().lower()
+                amount = self._money(item.get('amount', 0))
+                if method not in {Payment.Method.CASH, Payment.Method.POS, Payment.Method.TRANSFER, Payment.Method.CHEQUE}:
+                    continue
+                if amount <= 0:
+                    continue
+                normalized_payment_breakdown.append({
+                    'method': method,
+                    'amount': float(amount),
+                })
+        if payment_method == Payment.Method.MANUAL and not normalized_payment_breakdown:
+            return Response({'payment_breakdown': ['Payment breakdown is required for manual payment.']}, status=status.HTTP_400_BAD_REQUEST)
+        manual_uses_cheque = payment_method == Payment.Method.MANUAL and any(
+            item.get('method') == Payment.Method.CHEQUE for item in normalized_payment_breakdown
+        )
         reminder_due_at = None
         if payment_method == Payment.Method.CREDIT:
             if not credit_due_date:
@@ -930,7 +955,7 @@ class VehicleReleaseCheckoutView(APIView):
                 reminder_due_at = timezone.make_aware(datetime.strptime(str(credit_due_date), '%Y-%m-%d'))
             except ValueError:
                 return Response({'credit_due_date': ['Invalid date format.']}, status=status.HTTP_400_BAD_REQUEST)
-        if payment_method == Payment.Method.CHEQUE:
+        if payment_method == Payment.Method.CHEQUE or manual_uses_cheque:
             if not credit_due_date:
                 return Response({'credit_due_date': ['Cheque due date is required.']}, status=status.HTTP_400_BAD_REQUEST)
             try:
@@ -1213,6 +1238,7 @@ class VehicleReleaseCheckoutView(APIView):
             product_amount=product_totals,
             discount_amount=discount_total,
             tax_amount=Decimal('0'),
+            gateway_payload={'payment_breakdown': normalized_payment_breakdown} if normalized_payment_breakdown else {},
             paid_at=paid_at,
             payer_name=vehicle.driver_name or '',
             payer_phone=vehicle.driver_phone or '',
@@ -1221,7 +1247,7 @@ class VehicleReleaseCheckoutView(APIView):
             cheque_sayadi_number=cheque_sayadi_number,
             cheque_bank=cheque_bank,
             cheque_shaba=cheque_shaba,
-            cheque_amount=cheque_amount if payment_method == Payment.Method.CHEQUE else Decimal('0'),
+            cheque_amount=cheque_amount if payment_method == Payment.Method.CHEQUE or manual_uses_cheque else Decimal('0'),
             reminder_due_at=reminder_due_at,
             created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
         )
@@ -1293,4 +1319,3 @@ class VehicleReleaseCheckoutView(APIView):
 
         serializer = VehicleEntrySerializer(vehicle)
         return Response(serializer.data, status=status.HTTP_200_OK)
-

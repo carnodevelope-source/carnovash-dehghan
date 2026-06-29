@@ -46,24 +46,55 @@
         <div class="ai-result-grid">
           <div class="result-card">
             <small>پلاک شناسایی‌شده</small>
-            <strong dir="ltr">{{ detectedPlate }}</strong>
+            <PlateBadge
+              :plate-number="detectedPlate"
+              :plate-left="detectedPlateParts.left"
+              :plate-letter="detectedPlateParts.letter"
+              :plate-mid="detectedPlateParts.mid"
+              :plate-right="detectedPlateParts.right"
+              :plate-type="detectedPlateType"
+              compact
+            />
           </div>
           <div class="result-card">
             <small>مدل و رنگ</small>
             <strong>{{ detectedModelColor }}</strong>
           </div>
         </div>
+
+        <section class="tariff-type-row" aria-label="تیپ نرخنامه">
+          <span>تیپ نرخنامه</span>
+          <div class="tariff-bubbles">
+            <button
+              v-for="option in tariffTypeOptions"
+              :key="option.value"
+              type="button"
+              class="tariff-bubble"
+              :class="{ active: form.tariffType === option.value }"
+              @click="form.tariffType = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </section>
       </article>
 
       <form class="form-panel" @submit.prevent="onContinue">
         <header class="panel-head">
           <h3>فرم تکمیلی</h3>
-          <p>{{ form.isPieceWash ? 'برای قطعه‌شویی فقط نام و شماره تلفن لازم است.' : 'برای ادامه، پلاک، مدل، رنگ و شماره تلفن الزامی است.' }}</p>
+          <p>{{ form.isPieceWash ? 'برای قطعه‌شویی، فقط شماره تماس برای ادامه الزامی است.' : 'در این مرحله فقط شماره تماس برای ادامه الزامی است.' }}</p>
         </header>
 
         <label v-if="!form.isPieceWash" class="field">
           <span>شماره پلاک</span>
           <div class="plate-tools">
+            <label class="plate-type-select">
+              <span>نوع پلاک</span>
+              <select v-model="form.plateType">
+                <option value="car">پلاک ماشین</option>
+                <option value="motorcycle">پلاک موتور</option>
+              </select>
+            </label>
             <label class="toggle-check">
               <input v-model="form.isAnonymous" type="checkbox" />
               <span>بی‌نام</span>
@@ -73,14 +104,38 @@
               <span>قطعه‌شویی</span>
             </label>
           </div>
-          <div class="plate-row" dir="ltr">
-            <input v-model="form.plateRight" :disabled="form.isAnonymous" maxlength="2" inputmode="numeric" placeholder="67" @input="onlyDigits('plateRight')" />
-            <span>-</span>
-            <input v-model="form.plateMid" :disabled="form.isAnonymous" maxlength="3" inputmode="numeric" placeholder="345" @input="onlyDigits('plateMid')" />
-            <input v-model="form.plateLetter" :disabled="form.isAnonymous" maxlength="1" placeholder="ب" @input="onlyLetter" />
-            <input v-model="form.plateLeft" :disabled="form.isAnonymous" maxlength="2" inputmode="numeric" placeholder="12" @input="onlyDigits('plateLeft')" />
+          <div
+            v-if="!form.isAnonymous"
+            class="plate-entry-shell"
+            :class="[`plate-entry-${form.plateType}`]"
+          >
+            <div v-if="form.plateType === 'motorcycle'" class="manual-plate-badge manual-plate-motorcycle" dir="ltr">
+              <div class="manual-plate-blue manual-plate-blue-motor">
+                <span>I.R.</span>
+                <span>IRAN</span>
+              </div>
+              <div class="manual-plate-main">
+                <div class="motor-row-top">
+                  <input v-model="form.plateMid" class="plate-input mid" maxlength="3" inputmode="numeric" placeholder="---" @focus="selectFieldText" @input="onlyDigits('plateMid')" />
+                </div>
+                <div class="motor-row-bottom">
+                  <input v-model="form.plateLetter" class="plate-input motor-bottom-input" maxlength="5" inputmode="numeric" placeholder="-----" @focus="selectFieldText" @input="onlyDigits('plateLetter')" />
+                </div>
+              </div>
+            </div>
+            <div v-else class="manual-plate-badge manual-plate-car" dir="ltr">
+              <div class="manual-plate-main manual-plate-white-wrap">
+                <input v-model="form.plateRight" class="plate-input right" maxlength="2" inputmode="numeric" placeholder="--" @focus="selectFieldText" @input="onlyDigits('plateRight')" />
+                <input v-model="form.plateLetter" class="plate-input letter" maxlength="1" placeholder="-" @focus="selectFieldText" @input="onlyLetter" />
+                <input v-model="form.plateMid" class="plate-input mid" maxlength="3" inputmode="numeric" placeholder="---" @focus="selectFieldText" @input="onlyDigits('plateMid')" />
+              </div>
+              <div class="manual-plate-blue">
+                <input v-model="form.plateLeft" class="plate-input blue-input" maxlength="2" inputmode="numeric" placeholder="--" @focus="selectFieldText" @input="onlyDigits('plateLeft')" />
+              </div>
+            </div>
           </div>
-          <div v-if="letterSuggestionOptions.length > 1" class="letter-suggestions">
+          <div v-else class="anonymous-plate-note">برای پذیرش بی‌نام، ورود دستی پلاک پنهان می‌شود.</div>
+          <div v-if="form.plateType === 'car' && letterSuggestionOptions.length > 1" class="letter-suggestions">
             <button
               v-for="option in letterSuggestionOptions"
               :key="option"
@@ -119,6 +174,7 @@
           <label class="field">
             <span>شماره تماس</span>
             <input v-model="form.mobile" dir="ltr" placeholder="0912..." @input="onlyDigits('mobile')" />
+            <small v-if="form.mobile && !isPhoneValid" class="field-error">شماره تماس باید دقیقا 11 رقم و با 0 شروع شود.</small>
           </label>
         </div>
 
@@ -139,6 +195,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
+import PlateBadge from '../vehicles/PlateBadge.vue'
+import { buildPlateNumber, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
 
 const emit = defineEmits(['cancel', 'continue', 'refer'])
 const props = defineProps({
@@ -156,8 +214,24 @@ const form = reactive({
   driver: '',
   mobile: '',
   note: '',
+  tariffType: 'type_1',
+  plateType: 'car',
   isAnonymous: false,
   isPieceWash: false
+})
+const tariffTypeOptions = [
+  { value: 'type_1', label: 'تیپ ۱' },
+  { value: 'type_2', label: 'تیپ ۲' },
+  { value: 'type_3', label: 'تیپ ۳' },
+  { value: 'type_4', label: 'تیپ ۴' }
+]
+const detectedPlateSnapshot = ref({
+  left: '',
+  letter: '',
+  mid: '',
+  right: '',
+  plateNumber: '',
+  plateType: 'car'
 })
 
 const cameraVideoRef = ref(null)
@@ -190,46 +264,67 @@ const OCR_LETTER_CONFUSIONS = {
   ط: ['ط', 'ر']
 }
 
+const isMotorcyclePlate = () => form.plateType === 'motorcycle'
+const hasCompleteManualPlate = () => (
+  isMotorcyclePlate()
+    ? form.plateMid.length === 3 && form.plateLetter.length === 5
+    : form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1
+)
+
 const hydrateForm = (data = {}) => {
-  const plateNumber = String(data.plate || data.plate_number || '').trim()
-  const parts = plateNumber.split(/\s+/).filter(Boolean)
+  const plateType = String(data.plateType || data.plate_type || 'car').trim() || 'car'
+  const resolvedParts = resolvePlateParts({
+    raw: data.plate || data.plate_number || '',
+    plate_left: data.plateLeft || data.plate_left || '',
+    plate_letter: data.plateLetter || data.plate_letter || '',
+    plate_mid: data.plateMid || data.plate_mid || '',
+    plate_right: data.plateRight || data.plate_right || '',
+    plate_type: plateType
+  })
   form.id = data.id ?? null
-  form.plateLeft = String(data.plateLeft || data.plate_left || parts[0] || '').slice(0, 2)
-  form.plateLetter = normalizePlateLetter(String(data.plateLetter || data.plate_letter || parts[1] || '').slice(0, 1))
-  form.plateMid = String(data.plateMid || data.plate_mid || parts[2] || '').slice(0, 3)
-  form.plateRight = String(data.plateRight || data.plate_right || parts[3] || '').slice(0, 2)
+  form.plateLeft = plateType === 'motorcycle' ? '' : String(resolvedParts.left || '').slice(0, 2)
+  form.plateLetter = plateType === 'motorcycle'
+    ? String(resolvedParts.letter || '').slice(0, 5)
+    : normalizePlateLetter(String(resolvedParts.letter || '').slice(0, 1))
+  form.plateMid = String(resolvedParts.mid || '').slice(0, 3)
+  form.plateRight = plateType === 'motorcycle' ? '' : String(resolvedParts.right || '').slice(0, 2)
   form.model = String(data.model || data.car_model || '')
   form.color = String(data.color || data.car_color || '')
   form.driver = String(data.driver || data.driver_name || '')
   form.mobile = normalizeDigits(String(data.mobile || data.driver_phone || ''))
   form.note = String(data.note || data.notes || '')
+  form.tariffType = String(data.tariffType || data.tariff_type || 'type_1').trim() || 'type_1'
+  form.plateType = plateType
   form.isAnonymous = Boolean(data.isAnonymous)
   form.isPieceWash = Boolean(data.isPieceWash || data.is_piece_wash)
-  syncLetterSuggestions(form.plateLetter)
+  detectedPlateSnapshot.value = {
+    left: String(data.detectedPlateLeft || '').trim(),
+    letter: normalizePlateLetter(String(data.detectedPlateLetter || '').trim()),
+    mid: String(data.detectedPlateMid || '').trim(),
+    right: String(data.detectedPlateRight || '').trim(),
+    plateNumber: String(data.detectedPlate || '').trim(),
+    plateType: String(data.detectedPlateType || form.plateType || 'car').trim() || 'car'
+  }
+  syncLetterSuggestions(form.plateType === 'car' ? form.plateLetter : '')
 }
 
-const normalizeDigits = (value) => String(value || '')
-  .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-  .replace(/\D/g, '')
-
 const onlyDigits = (key) => {
-  form[key] = normalizeDigits(form[key])
+  const normalized = key === 'mobile' ? normalizePhone(form[key]) : normalizeDigits(form[key]).replace(/\D/g, '')
+  form[key] = normalized
 }
 
 const onlyLetter = () => {
+  if (isMotorcyclePlate()) {
+    form.plateLetter = normalizeDigits(form.plateLetter).replace(/\D/g, '').slice(0, 5)
+    letterSuggestions.value = []
+    return
+  }
   form.plateLetter = normalizePlateLetter(form.plateLetter)
   syncLetterSuggestions(form.plateLetter)
 }
 
-const normalizePlateLetter = (value) => {
-  const raw = String(value || '').replace(/\s+/g, '').slice(0, 1)
-  const englishMap = { A: 'ا', B: 'ب', D: 'د', H: 'ه', J: 'ج', L: 'ل', M: 'م', N: 'ن', P: 'پ', S: 'س', T: 'ط', V: 'و', Y: 'ی' }
-  const upper = raw.toUpperCase()
-  if (englishMap[upper]) return englishMap[upper]
-  return raw.replace(/[^آابپتثجچحخدذرزسشصضطظعغفقکگلمنوهی]/g, '')
-}
-
 const buildLetterSuggestions = (letter) => {
+  if (isMotorcyclePlate()) return []
   const normalized = normalizePlateLetter(letter)
   if (!normalized) return []
   return OCR_LETTER_CONFUSIONS[normalized] || [normalized]
@@ -239,7 +334,14 @@ const syncLetterSuggestions = (letter) => {
   letterSuggestions.value = buildLetterSuggestions(letter)
 }
 
+const selectFieldText = (event) => {
+  const element = event?.target
+  if (!element || typeof element.select !== 'function') return
+  requestAnimationFrame(() => element.select())
+}
+
 const selectLetterSuggestion = (letter) => {
+  if (isMotorcyclePlate()) return
   form.plateLetter = normalizePlateLetter(letter)
   syncLetterSuggestions(form.plateLetter)
 }
@@ -332,7 +434,7 @@ const toggleLiveRecognition = () => {
 
 const runLiveRecognitionFrame = async () => {
   if (!cameraState.active || !cameraVideoRef.value?.videoWidth || cameraState.loading || form.isAnonymous || form.isPieceWash) return
-  const hasPlate = form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1
+  const hasPlate = hasCompleteManualPlate()
   if (hasPlate && liveRecognitionCooldown > 0) {
     liveRecognitionCooldown -= 1
     return
@@ -407,23 +509,40 @@ const captureFromVideo = async () => {
 }
 
 const applyRecognizedPlate = (data) => {
+  const plateType = String(data?.plate_type || form.plateType || 'car').trim() || 'car'
   const left = normalizeDigits(data?.plate_left || '')
   const mid = normalizeDigits(data?.plate_mid || '')
   const right = normalizeDigits(data?.plate_right || '')
-  const letter = normalizePlateLetter(data?.plate_letter || '')
-  const suggestions = buildLetterSuggestions(letter)
-  if (left.length !== 2 || mid.length !== 3 || right.length !== 2 || !letter) return false
+  const letter = plateType === 'motorcycle'
+    ? normalizeDigits(data?.plate_letter || '').replace(/\D/g, '').slice(0, 5)
+    : normalizePlateLetter(data?.plate_letter || '')
+  const suggestions = plateType === 'motorcycle' ? [] : buildLetterSuggestions(letter)
+  if (plateType === 'motorcycle') {
+    if (mid.length !== 3 || letter.length !== 5) return false
+  } else if (left.length !== 2 || mid.length !== 3 || right.length !== 2 || !letter) {
+    return false
+  }
   form.isAnonymous = false
   form.isPieceWash = false
-  form.plateLeft = left
+  form.plateType = plateType
+  form.plateLeft = plateType === 'motorcycle' ? '' : left
   form.plateLetter = letter
   form.plateMid = mid
-  form.plateRight = right
+  form.plateRight = plateType === 'motorcycle' ? '' : right
+  detectedPlateSnapshot.value = {
+    left: plateType === 'motorcycle' ? '' : left,
+    letter,
+    mid,
+    right: plateType === 'motorcycle' ? '' : right,
+    plateNumber: buildPlateNumber({ left, letter, mid, right, plateType }),
+    plateType
+  }
   letterSuggestions.value = suggestions
   return true
 }
 
 const tryResolveLetterFromHistory = async () => {
+  if (isMotorcyclePlate()) return false
   if (form.isAnonymous || form.isPieceWash) return false
   if (form.plateLeft.length !== 2 || form.plateMid.length !== 3 || form.plateRight.length !== 2) return false
   const candidates = buildLetterSuggestions(form.plateLetter)
@@ -448,6 +567,7 @@ const tryResolveLetterFromHistory = async () => {
   form.plateLetter = match.letter
   form.driver = String(match.result.value.data.driver_name || '').trim()
   form.mobile = normalizeDigits(String(match.result.value.data.driver_phone || ''))
+  form.plateType = String(match.result.value.data.plate_type || form.plateType || 'car').trim() || 'car'
   syncLetterSuggestions(match.letter)
   return true
 }
@@ -503,39 +623,43 @@ const recognizePlateImage = async (imageDataUrl, options = {}) => {
 }
 
 const plate = computed(() => {
-  if (form.isAnonymous) return '1111'
-  const left = form.plateLeft.trim()
-  const letter = form.plateLetter.trim()
-  const mid = form.plateMid.trim()
-  const right = form.plateRight.trim()
-  if (!left || !letter || !mid || !right) return ''
-  return `${left} ${letter} ${mid} ${right}`
+  if (form.isAnonymous) return ''
+  return buildPlateNumber({
+    left: form.plateLeft.trim(),
+    letter: form.plateLetter.trim(),
+    mid: form.plateMid.trim(),
+    right: form.plateRight.trim(),
+    plateType: form.plateType
+  })
 })
 
+const isPhoneValid = computed(() => isValidIranMobile(form.mobile))
 const canSubmit = computed(() => {
-  if (form.isPieceWash) {
-    return form.driver.trim() && form.mobile.trim()
-  }
-  const hasPlate = form.isAnonymous || (form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1)
-  const hasModel = form.isAnonymous || form.model.trim()
-  const hasColor = form.isAnonymous || form.color.trim()
-  return hasPlate && hasModel && hasColor && form.mobile.trim()
+  return isPhoneValid.value && tariffTypeOptions.some((option) => option.value === form.tariffType)
 })
 
 const payload = () => ({
   id: form.id,
   plate: form.isPieceWash ? '' : plate.value,
-  plateLeft: form.isAnonymous || form.isPieceWash ? '' : form.plateLeft.trim(),
+  plateLeft: form.isAnonymous || form.isPieceWash || isMotorcyclePlate() ? '' : form.plateLeft.trim(),
   plateLetter: form.isAnonymous || form.isPieceWash ? '' : form.plateLetter.trim(),
   plateMid: form.isAnonymous || form.isPieceWash ? '' : form.plateMid.trim(),
-  plateRight: form.isAnonymous || form.isPieceWash ? '' : form.plateRight.trim(),
+  plateRight: form.isAnonymous || form.isPieceWash || isMotorcyclePlate() ? '' : form.plateRight.trim(),
   model: form.isPieceWash ? 'قطعه‌شویی' : (form.isAnonymous ? '1111' : form.model.trim()),
   color: form.isPieceWash ? '-' : (form.isAnonymous ? '1111' : form.color.trim()),
   driver: form.driver.trim(),
   mobile: form.mobile.trim(),
   note: form.isPieceWash ? '' : form.note.trim(),
+  tariffType: form.tariffType,
+  plateType: form.plateType,
   isAnonymous: form.isAnonymous,
-  isPieceWash: form.isPieceWash
+  isPieceWash: form.isPieceWash,
+  detectedPlate: detectedPlate.value,
+  detectedPlateLeft: detectedPlateParts.value.left,
+  detectedPlateLetter: detectedPlateParts.value.letter,
+  detectedPlateMid: detectedPlateParts.value.mid,
+  detectedPlateRight: detectedPlateParts.value.right,
+  detectedPlateType: detectedPlateType.value
 })
 
 const onContinue = () => {
@@ -547,7 +671,21 @@ const onRefer = () => {
   emit('refer', payload())
 }
 
-const detectedPlate = computed(() => plate.value || '-- - --- --')
+const detectedPlateParts = computed(() => resolvePlateParts({
+  raw: detectedPlateSnapshot.value.plateNumber,
+  plate_left: detectedPlateSnapshot.value.left,
+  plate_letter: detectedPlateSnapshot.value.letter,
+  plate_mid: detectedPlateSnapshot.value.mid,
+  plate_right: detectedPlateSnapshot.value.right,
+  plate_type: detectedPlateSnapshot.value.plateType
+}))
+const detectedPlateType = computed(() => detectedPlateSnapshot.value.plateType || form.plateType || 'car')
+const detectedPlate = computed(() => (
+  buildPlateNumber({
+    ...detectedPlateParts.value,
+    plateType: detectedPlateType.value
+  }) || (detectedPlateType.value === 'motorcycle' ? '--- -----' : '-- - --- --')
+))
 const cameraGuideText = computed(() => {
   if (cameraState.loading) return 'در حال پردازش پلاک...'
   if (cameraState.liveEnabled) return 'تشخیص زنده فعال'
@@ -600,14 +738,30 @@ watch(() => form.isPieceWash, (value) => {
   form.note = ''
 })
 
+watch(() => form.plateType, (value) => {
+  if (value === 'motorcycle') {
+    form.plateLeft = ''
+    form.plateRight = ''
+    form.plateLetter = normalizeDigits(form.plateLetter).replace(/\D/g, '').slice(0, 5)
+    letterSuggestions.value = []
+  } else {
+    form.plateLetter = normalizePlateLetter(form.plateLetter)
+    syncLetterSuggestions(form.plateLetter)
+  }
+  detectedPlateSnapshot.value = {
+    ...detectedPlateSnapshot.value,
+    plateType: detectedPlateSnapshot.value.plateNumber ? detectedPlateSnapshot.value.plateType : value
+  }
+})
+
 let lookupTimer = null
 let lookupToken = 0
 watch(
   () => [form.plateLeft, form.plateLetter, form.plateMid, form.plateRight, form.isAnonymous],
   async () => {
     if (lookupTimer) clearTimeout(lookupTimer)
-    if (form.isAnonymous) return
-    const hasFullPlate = form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1
+    if (form.isAnonymous || isMotorcyclePlate()) return
+    const hasFullPlate = hasCompleteManualPlate()
     if (!hasFullPlate) return
     lookupTimer = setTimeout(async () => {
       const token = ++lookupToken
@@ -623,6 +777,7 @@ watch(
         if (token !== lookupToken || !data?.found) return
         form.driver = String(data.driver_name || '').trim()
         form.mobile = normalizeDigits(String(data.driver_phone || ''))
+        form.plateType = String(data.plate_type || form.plateType || 'car').trim() || 'car'
       } catch (_error) {
       }
     }, 220)
@@ -877,8 +1032,59 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
+.result-card :deep(.plate-badge) {
+  margin-top: 4px;
+}
+
 .form-panel {
   gap: 14px;
+}
+
+.tariff-type-row {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid #d8e6f7;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 248, 255, 0.86));
+}
+
+.tariff-type-row > span {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.tariff-bubbles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tariff-bubble {
+  height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.tariff-bubble.active {
+  border-color: #0058be;
+  background: linear-gradient(135deg, #0058be, #2170e4);
+  color: #ffffff;
+  box-shadow: 0 12px 24px -18px rgba(0, 88, 190, 0.72);
+}
+
+.tariff-bubble:not(.active):hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
 }
 
 .field {
@@ -897,12 +1103,12 @@ onBeforeUnmount(() => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border: 1px solid #c8d7ea;
+  border: 0;
   border-radius: 18px;
   padding: 0 14px;
   font: inherit;
-  background: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  background: rgba(244, 248, 255, 0.78);
+  box-shadow: none;
 }
 
 .plate-tools {
@@ -926,6 +1132,24 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
+.plate-type-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.plate-type-select select {
+  height: 36px;
+  border: 1px solid #c8d7ea;
+  border-radius: 12px;
+  background: #fff;
+  padding: 0 10px;
+  font: inherit;
+}
+
 .toggle-check input {
   width: 17px;
   height: 17px;
@@ -944,7 +1168,7 @@ onBeforeUnmount(() => {
 .field input:focus,
 .field textarea:focus {
   outline: 2px solid rgba(96, 165, 250, 0.18);
-  border-color: #60a5fa;
+  background: rgba(239, 246, 255, 0.96);
 }
 
 .piece-wash-toggle-row {
@@ -952,37 +1176,170 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-.plate-row {
-  display: grid;
-  grid-template-columns: 78px auto 92px 72px 78px;
-  gap: 8px;
-  align-items: center;
-  justify-content: start;
-  width: 100%;
-  max-width: 100%;
-  padding: 10px;
-  border: 1px solid #dce6f7;
-  border-radius: 22px;
-  background: #f9fbff;
-  overflow: hidden;
+.plate-entry-shell {
+  display: block;
 }
 
-.plate-row span {
+.manual-plate-badge {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border-radius: 12px;
+  padding: 10px;
+  overflow: hidden;
+  direction: ltr;
+}
+
+.manual-plate-main {
+  min-width: 0;
+  flex: 1;
+  background: #6f59ef18;
+}
+
+.manual-plate-car .manual-plate-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  border-radius: 7px 0 0 7px;
+  padding: 6px 18px;
+}
+
+.manual-plate-motorcycle .manual-plate-main {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 6px;
+  padding: 8px 10px 9px;
+  border-radius: 10px 0 0 10px;
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(255,255,255,0.98), rgba(241,245,249,0.95));
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-right: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+}
+
+.manual-plate-blue {
+  min-width: 52px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 48px;
-  text-align: center;
-  color: #64748b;
-  font-weight: 700;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 0 7px 7px 0;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  padding-top: 12px;
+  padding-bottom: 8px;
 }
 
-.plate-row input {
+.manual-plate-blue-motor {
+  flex-direction: column;
+  gap: 4px;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+}
+
+.plate-input {
   min-width: 0;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent !important;
   text-align: center;
-  font-weight: 800;
-  line-height: 48px;
+  color: #111827;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
   padding: 0;
+}
+
+.manual-plate-car .plate-input.right,
+.manual-plate-car .plate-input.left {
+  width: 88px;
+}
+
+.manual-plate-car .plate-input.mid {
+  width: 126px;
+}
+
+.manual-plate-car .plate-input.letter {
+  width: 72px;
+  min-width: 40px;
+  padding-top: 2px;
+}
+
+.blue-input {
+  width: 74px !important;
+  background: transparent !important;
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.plate-input::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.plate-input:focus {
+  outline: none;
+  background: transparent !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.14);
+}
+
+.plate-input.letter {
+  font-size: 24px;
+}
+
+.manual-plate-motorcycle .plate-input.mid {
+  max-width: 200px;
+  width: 100%;
+  height: 52px;
+  line-height: 52px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent !important;
+  justify-self: center;
+  font-size: 30px;
+  font-weight: 950;
+  letter-spacing: 0.16em;
+  padding: 0 4px;
+}
+
+.manual-plate-motorcycle .motor-bottom-input {
+  width: min(100%, 260px);
+  height: 54px;
+  line-height: 54px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent !important;
+  font-size: 28px;
+  font-weight: 950;
+  letter-spacing: 0.18em;
+  padding: 0 6px;
+}
+
+.motor-row-top,
+.motor-row-bottom {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+}
+
+.motor-row-top {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.motor-row-bottom {
+  grid-template-columns: 1fr;
+  justify-items: center;
 }
 
 .letter-suggestions {
@@ -990,6 +1347,13 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+.anonymous-plate-note,
+.field-error {
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .letter-chip {
@@ -1110,13 +1474,83 @@ onBeforeUnmount(() => {
   .grid-2,
   .ai-result-grid,
   .camera-actions { grid-template-columns: 1fr; }
+  .tariff-type-row {
+    padding: 10px;
+    border-radius: 16px;
+  }
+  .tariff-bubbles {
+    gap: 6px;
+  }
+  .tariff-bubble {
+    height: 34px;
+    font-size: 11px;
+  }
   .plate-tools,
   .piece-wash-toggle-row { flex-direction: column; align-items: stretch; }
   .plate-row {
-    grid-template-columns: 48px minmax(0, 1fr) 56px 44px 48px;
     gap: 4px;
+  }
+  .manual-plate-badge {
+    max-width: none;
+    border-radius: 12px;
     padding: 6px;
-    border-radius: 18px;
+  }
+  .manual-plate-car .manual-plate-main {
+    gap: 8px;
+    padding: 4px 8px;
+  }
+  .manual-plate-motorcycle .manual-plate-main {
+    padding: 8px 10px;
+  }
+  .motor-row-top {
+    grid-template-columns: 1fr;
+  }
+  .motor-row-bottom {
+    grid-template-columns: 1fr;
+  }
+  .plate-input {
+    height: 24px;
+    line-height: 1;
+    border-radius: 6px;
+    font-size: 15px;
+  }
+  .plate-input.letter {
+    font-size: 15px;
+  }
+  .manual-plate-car .plate-input.right,
+  .manual-plate-car .plate-input.left {
+    width: 56px;
+  }
+  .manual-plate-car .plate-input.mid {
+    width: 78px;
+  }
+  .manual-plate-car .plate-input.letter {
+    width: 38px;
+    min-width: 22px;
+  }
+  .manual-plate-blue {
+    min-width: 32px;
+    font-size: 13px;
+    padding-top: 5px;
+    padding-bottom: 3px;
+  }
+  .manual-plate-blue-motor {
+    gap: 4px;
+    font-size: 8px;
+  }
+  .manual-plate-motorcycle .plate-input.mid {
+    max-width: 132px;
+    height: 42px;
+    line-height: 42px;
+    border-radius: 14px;
+    font-size: 24px;
+  }
+  .manual-plate-motorcycle .motor-bottom-input {
+    width: min(100%, 180px);
+    height: 42px;
+    line-height: 42px;
+    border-radius: 14px;
+    font-size: 20px;
   }
   .field input {
     height: 40px;
@@ -1162,21 +1596,50 @@ onBeforeUnmount(() => {
     padding: 12px;
   }
 
-  .plate-row {
-    grid-template-columns: 42px minmax(0, 1fr) 50px 40px 42px;
-    gap: 4px;
-    padding: 5px;
+  .motor-row-top {
+    grid-template-columns: 1fr;
   }
-
-  .plate-row span,
-  .plate-row input {
+  .motor-row-bottom {
+    grid-template-columns: 1fr;
+  }
+  .plate-input {
+    height: 24px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
+  .plate-input.letter {
+    font-size: 13px;
+  }
+  .manual-plate-car .plate-input.right,
+  .manual-plate-car .plate-input.left {
+    width: 46px;
+  }
+  .manual-plate-car .plate-input.mid {
+    width: 66px;
+  }
+  .manual-plate-car .plate-input.letter {
+    width: 32px;
+  }
+  .manual-plate-motorcycle .plate-input.mid {
+    max-width: 108px;
     height: 36px;
     line-height: 36px;
-    font-size: 11px;
+    border-radius: 12px;
+    font-size: 20px;
   }
-
+  .manual-plate-motorcycle .motor-bottom-input {
+    width: min(100%, 152px);
+    height: 36px;
+    line-height: 36px;
+    border-radius: 12px;
+    font-size: 16px;
+  }
   .field input {
     padding-inline: 10px;
+  }
+  .tariff-bubble {
+    height: 32px;
+    font-size: 10px;
   }
 }
 </style>

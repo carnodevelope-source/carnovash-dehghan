@@ -70,7 +70,7 @@
               <tbody>
                 <template v-for="row in data.overall_report" :key="`o-${serviceRowKey(row)}`">
                   <tr class="clickable-row" :class="{ expanded: isServicesExpanded(row) }" @click="openVehicleDetail(row.vehicle_id)">
-                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
+                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
                   </tr>
                   <tr v-if="isServicesExpanded(row)" class="services-expanded-row">
                     <td colspan="13">
@@ -89,7 +89,7 @@
         <template v-else-if="activeTab === 'carwash'">
           <h3>گزارش حق کارواش</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>حق کارواش</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.carwash_report" :key="`c-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+            <tr v-for="row in data.carwash_report" :key="`c-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
@@ -107,7 +107,7 @@
             <article class="payout-card"><p>مانده انعام</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
           </div>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.worker_report" :key="`w-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+            <tr v-for="row in data.worker_report" :key="`w-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
           <div v-if="selectedWorkerSummary" class="transactions-shell">
             <div class="worker-head">
@@ -127,14 +127,14 @@
         <template v-else-if="activeTab === 'tips'">
           <h3>گزارش انعام</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>پلاک</th><th>انعام</th><th>نام نیرو</th><th>کالا</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.tips_report" :key="`t-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.plate_number }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+            <tr v-for="row in data.tips_report" :key="`t-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
         <template v-else-if="activeTab === 'revenue'">
           <h3>گزارش درآمد</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>تاریخ</th><th>راننده</th><th>شماره</th><th>مدل خودرو</th><th>رنگ</th><th>پلاک</th><th>روش پرداخت</th><th>وضعیت پرداخت</th><th>خدمات</th><th>محصولات</th><th>تخفیف</th><th>انعام</th><th>مبلغ نهایی</th><th>وصول شده</th><th>مانده</th><th>شماره چک</th><th>سررسید</th></tr></thead><tbody>
-            <tr v-for="row in data.revenue_report" :key="`r-${row.row}`"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td>{{ row.plate_number }}</td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
+            <tr v-for="row in data.revenue_report" :key="`r-${row.row}`"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
@@ -187,6 +187,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
 import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
+import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, fromThousandsTomanInput, toThousandsToman } from '../../utils/money'
@@ -622,6 +623,18 @@ th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-spa
 .clickable-row.expanded{background:#f8fbff}
 .services-preview-cell{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .services-preview-text{flex:1;min-width:0}
+.report-plate{min-width:58px}
+.report-plate:deep(.plate-badge){padding:2px;border-radius:10px}
+.report-plate:deep(.plate-white-wrap){gap:4px;padding:2px 5px}
+.report-plate:deep(.plate-two),
+.report-plate:deep(.plate-three){height:18px;font-size:11px;padding-top:3px;padding-bottom:2px}
+.report-plate:deep(.plate-letter){min-width:10px;font-size:11px}
+.report-plate:deep(.plate-blue){min-width:24px;font-size:10px;padding-top:3px;padding-bottom:2px}
+.report-plate:deep(.motor-blue){min-width:22px;font-size:5px;gap:2px;padding-top:4px;padding-bottom:3px}
+.report-plate:deep(.plate-motorcycle .motor-main){padding:3px 5px 4px;gap:1px;border-radius:7px 0 0 7px}
+.report-plate:deep(.plate-motorcycle .plate-cell){font-size:7px}
+.report-plate:deep(.plate-motorcycle .plate-cell.mid){font-size:9px;letter-spacing:.08em}
+.report-plate:deep(.plate-motorcycle .plate-cell.bottom){font-size:11px;letter-spacing:.06em}
 .services-toggle-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#475569;cursor:pointer;flex-shrink:0;transition:.18s ease}
 .services-toggle-btn:hover,.services-toggle-btn.active{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
 .services-toggle-dots{font-size:15px;line-height:1;transform:translateY(-1px)}

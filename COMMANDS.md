@@ -20,6 +20,7 @@ docker compose --env-file .env.production -f docker-compose.yml -f docker-compos
 docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml logs -f backend
 docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml logs -f frontend
 docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml logs -f edge-nginx
+docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml logs -f plate-ai
 ```
 
 ## Django Ops
@@ -36,6 +37,7 @@ curl -I http://carnowash.ir/
 curl -I http://carnowash.ir/login
 curl -I http://carnowash.ir/api/auth/csrf/
 curl -I http://carnowash.ir/api/auth/me/
+curl http://127.0.0.1:8765/health
 ```
 
 ## CSRF / Login Checks

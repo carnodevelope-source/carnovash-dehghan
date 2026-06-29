@@ -172,7 +172,17 @@
                         <span class="avatar-badge">{{ initials(customer.name) }}</span>
                         <div>
                           <strong>{{ customer.name }}</strong>
-                          <small>{{ customer.primary_plate || 'بدون پلاک ثبت‌شده' }}</small>
+                          <PlateBadge
+                            v-if="customer.primary_plate"
+                            :plate-number="customer.primary_plate"
+                            :plate-left="customer.primary_plate_left"
+                            :plate-letter="customer.primary_plate_letter"
+                            :plate-mid="customer.primary_plate_mid"
+                            :plate-right="customer.primary_plate_right"
+                            :plate-type="customer.primary_plate_type || 'car'"
+                            compact
+                          />
+                          <small v-else>بدون پلاک ثبت‌شده</small>
                         </div>
                       </div>
                     </td>
@@ -451,9 +461,17 @@
           <article class="detail-panel">
             <h4>پلاک‌های ثبت‌شده</h4>
             <div class="tag-row">
-              <span v-for="plate in customerDetail.customer.plates" :key="plate" class="tag">
-                {{ plate }}
-              </span>
+              <PlateBadge
+                v-for="plate in customerDetail.customer.plates"
+                :key="plate.plate_number"
+                :plate-number="plate.plate_number"
+                :plate-left="plate.plate_left"
+                :plate-letter="plate.plate_letter"
+                :plate-mid="plate.plate_mid"
+                :plate-right="plate.plate_right"
+                :plate-type="plate.plate_type || 'car'"
+                compact
+              />
             </div>
           </article>
         </div>
@@ -560,6 +578,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
+import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
@@ -768,7 +787,12 @@ const buildCustomersFromVehicles = (rows) => {
         score: 0,
         last_order_at: item?.created_at || item?.check_in_at || null,
         plates: [],
-        primary_plate: ''
+        primary_plate: '',
+        primary_plate_left: '',
+        primary_plate_letter: '',
+        primary_plate_mid: '',
+        primary_plate_right: '',
+        primary_plate_type: 'car'
       }
       record.orders_count += 1
       record.total_spent += Number(item?.job?.final_total || item?.job?.services_total || 0)
@@ -778,8 +802,23 @@ const buildCustomersFromVehicles = (rows) => {
         record.last_order_at = eventDate
       }
       const plate = String(item?.plate_number || '').trim()
-      if (plate && plate !== '1111' && !record.plates.includes(plate)) record.plates.push(plate)
-      record.primary_plate = record.plates[0] || record.primary_plate || 'قطعه‌شویی'
+      if (plate && plate !== '1111' && !record.plates.find((entry) => entry.plate_number === plate)) {
+        record.plates.push({
+          plate_number: plate,
+          plate_left: String(item?.plate_left || '').trim(),
+          plate_letter: String(item?.plate_letter || '').trim(),
+          plate_mid: String(item?.plate_mid || '').trim(),
+          plate_right: String(item?.plate_right || '').trim(),
+          plate_type: String(item?.plate_type || 'car').trim() || 'car'
+        })
+      }
+      const primaryPlate = record.plates[0]
+      record.primary_plate = primaryPlate?.plate_number || record.primary_plate || ''
+      record.primary_plate_left = primaryPlate?.plate_left || ''
+      record.primary_plate_letter = primaryPlate?.plate_letter || ''
+      record.primary_plate_mid = primaryPlate?.plate_mid || ''
+      record.primary_plate_right = primaryPlate?.plate_right || ''
+      record.primary_plate_type = primaryPlate?.plate_type || 'car'
       map.set(key, record)
     })
   return [...map.values()]

@@ -13,42 +13,6 @@
     </template>
 
     <div class="support-page">
-      <section class="hero-shell">
-        <div class="hero-copy">
-          <span class="hero-kicker">Support Flow</span>
-          <h2>صفحه تیکت کارواش</h2>
-          <p>
-            ثبت درخواست، پیگیری پاسخ‌ها، مشاهده وضعیت رسیدگی و ثبت نظر نهایی در یک فضای یکپارچه و
-            قابل پیگیری.
-          </p>
-          <div class="hero-actions">
-            <button type="button" class="primary-btn" @click="openCreateTicketModal">ایجاد درخواست پشتیبانی</button>
-            <button type="button" class="ghost-btn" @click="focusLatestTicket">آخرین تیکت من</button>
-          </div>
-        </div>
-
-        <div class="hero-side">
-          <article class="hero-spotlight">
-            <small>نمای فعال</small>
-            <strong>{{ activeStatusLabel }}</strong>
-            <p>{{ activeStatusDescription }}</p>
-          </article>
-
-          <div class="hero-mini-grid">
-            <article class="hero-mini-card">
-              <small>کل تیکت‌ها</small>
-              <strong>{{ toFa(tickets.length) }}</strong>
-              <span>آرشیو کامل گفتگوهای کارواش</span>
-            </article>
-            <article class="hero-mini-card">
-              <small>نیازمند اقدام</small>
-              <strong>{{ toFa(requiresActionCount) }}</strong>
-              <span>باز، در انتظار یا پاسخ‌داده‌شده</span>
-            </article>
-          </div>
-        </div>
-      </section>
-
       <section class="stats-grid">
         <article
           v-for="item in statusTrack"
@@ -286,62 +250,6 @@
           </div>
         </section>
 
-        <aside class="surface-card sidebar-card">
-          <section class="sidebar-block">
-            <div class="block-head">
-              <h4>جزئیات رسیدگی</h4>
-              <span>{{ detailState.ticket ? clientStatusLabel(detailState.ticket) : 'بدون انتخاب' }}</span>
-            </div>
-            <div class="detail-list">
-              <div class="detail-row">
-                <span>شماره تیکت</span>
-                <strong>{{ detailState.ticket ? `#${toFa(detailState.ticket.id)}` : '-' }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>اولویت</span>
-                <strong>{{ detailState.ticket ? priorityLabel(detailState.ticket.priority) : '-' }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>دسته‌بندی</span>
-                <strong>{{ detailState.ticket ? categoryLabel(detailState.ticket.category) : '-' }}</strong>
-              </div>
-              <div class="detail-row">
-                <span>آخرین پاسخ‌دهنده</span>
-                <strong>{{ detailState.ticket ? ticketLastResponder(detailState.ticket) : '-' }}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section class="sidebar-block">
-            <div class="block-head">
-              <h4>راهنمای مرتبط</h4>
-              <span>{{ sidebarArticles.length.toLocaleString('fa-IR') }} مورد</span>
-            </div>
-            <div class="stack-list">
-              <article v-for="article in sidebarArticles" :key="article.id" class="helper-card">
-                <strong>{{ article.title }}</strong>
-                <p>{{ article.summary }}</p>
-              </article>
-            </div>
-          </section>
-
-          <section class="sidebar-block">
-            <div class="block-head">
-              <h4>تاریخچه فعالیت</h4>
-              <span>{{ ticketActivityFeed.length.toLocaleString('fa-IR') }} رویداد</span>
-            </div>
-            <div class="activity-list">
-              <article v-for="item in ticketActivityFeed.slice(0, 8)" :key="item.id" class="activity-row">
-                <div class="activity-dot" :class="item.tone"></div>
-                <div>
-                  <strong>{{ item.title }}</strong>
-                  <p>{{ item.description }}</p>
-                  <small>{{ formatDateTime(item.created_at) }}</small>
-                </div>
-              </article>
-            </div>
-          </section>
-        </aside>
       </section>
     </div>
 
@@ -933,7 +841,6 @@ onMounted(async () => {
   gap: 18px;
 }
 
-.hero-shell,
 .surface-card,
 .modal-panel {
   border-radius: 32px;
@@ -1192,7 +1099,7 @@ onMounted(async () => {
 .stat-card.closed .stat-icon { background: #e2e8f0; color: #475569; }
 
 .workspace-grid {
-  grid-template-columns: minmax(320px, 400px) minmax(0, 1.35fr) 320px;
+  grid-template-columns: minmax(320px, 400px) minmax(0, 1.35fr);
   align-items: start;
 }
 
@@ -1204,8 +1111,7 @@ onMounted(async () => {
 }
 
 .inbox-card,
-.conversation-card,
-.sidebar-card {
+.conversation-card{
   display: grid;
   gap: 14px;
   padding: 20px;
@@ -1481,10 +1387,6 @@ onMounted(async () => {
   font-weight: 800;
 }
 
-.sidebar-card {
-  align-content: start;
-}
-
 .sidebar-block,
 .side-card {
   display: grid;
@@ -1647,15 +1549,9 @@ onMounted(async () => {
   .workspace-grid {
     grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
   }
-
-  .sidebar-card {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 1180px) {
-  .hero-shell,
   .workspace-grid,
   .modal-layout {
     grid-template-columns: 1fr;
@@ -1666,16 +1562,11 @@ onMounted(async () => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .sidebar-card {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 760px) {
-  .hero-shell,
   .inbox-card,
   .conversation-card,
-  .sidebar-card,
   .modal-layout,
   .modal-head {
     padding: 16px;

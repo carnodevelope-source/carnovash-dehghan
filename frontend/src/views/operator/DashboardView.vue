@@ -10,6 +10,7 @@
   >
     <div class="dashboard-content">
         <div class="filters">
+          <button class="primary-btn" @click="openVehicleModal">ثبت خودروی جدید</button>
           <button
             v-for="item in filterItems"
             :key="item.key"
@@ -19,8 +20,6 @@
           >
             {{ item.label }}
           </button>
-          <button class="primary-btn" @click="openVehicleModal">ثبت خودروی جدید</button>
-        
         </div>
         
 
@@ -41,14 +40,15 @@
               <span class="time" :style="{ backgroundColor: car.badgeBg, color: car.badgeText }">{{ car.time }}</span>
             </div>
 
-            <div class="plate-box">
-              <div class="plate-white-wrap">
-                <span class="plate-part plate-two">{{ car.plateTwoDigit }}</span>
-                <span class="plate-part plate-letter">{{ car.plateLetter }}</span>
-                <span class="plate-part plate-three">{{ car.plateThreeDigit }}</span>
-              </div>
-              <span class="plate-blue">{{ car.plateBlue }}</span>
-            </div>
+            <PlateBadge
+              class="plate-box"
+              :plate-number="car.plateDisplay"
+              :plate-left="car.plateLeft"
+              :plate-letter="car.plateLetter"
+              :plate-mid="car.plateMid"
+              :plate-right="car.plateRight"
+              :plate-type="car.plateType"
+            />
 
             <div class="car-info">
               <h3>{{ car.model }} - {{ car.colorName }}</h3>
@@ -123,10 +123,6 @@
             <h2>اتمام کار و فروش محصولات</h2>
           </div>
           <div class="release-modal-tools">
-            <div v-if="releaseVehiclePlateLabel || releaseVehicleHeaderLabel" class="release-modal-vehicle">
-              <strong v-if="releaseVehicleHeaderLabel">{{ releaseVehicleHeaderLabel }}</strong>
-              <span v-if="releaseVehiclePlateLabel">{{ releaseVehiclePlateLabel }}</span>
-            </div>
             <button class="close-btn" @click="closeReleaseModal">✕</button>
           </div>
         </header>
@@ -134,23 +130,51 @@
           <BaseSpinner size="66px" color="#1d4ed8" ball-color="#60a5fa" label="در حال بارگذاری اطلاعات ترخیص..." />
         </div>
         <div v-else class="release-modal-body">
+          <div v-if="showReleaseServicePicker" class="service-picker-overlay" role="dialog" aria-modal="true">
+            <section class="service-picker-panel">
+              <header class="service-picker-head">
+                <div>
+                  <h4>ویرایش خدمات</h4>
+                  <p>{{ tempReleaseServiceIds.length.toLocaleString('fa-IR') }} خدمت انتخاب شده</p>
+                </div>
+                <button type="button" class="icon-btn" aria-label="بستن" @click="closeReleaseServicePicker">
+                  ✕
+                </button>
+              </header>
+
+              <div class="service-picker-grid release-service-picker-grid">
+                <button
+                  v-for="service in releaseForm.availableServicesToAdd"
+                  :key="service.id"
+                  type="button"
+                  class="service-bubble"
+                  :class="{ selected: tempReleaseServiceIds.includes(Number(service.id)) }"
+                  @click="toggleTempReleaseService(service.id)"
+                >
+                  {{ service.name }}
+                </button>
+              </div>
+
+              <p v-if="!releaseForm.availableServicesToAdd.length" class="empty">خدمتی برای انتخاب وجود ندارد.</p>
+
+              <footer class="service-picker-foot">
+                <button type="button" class="secondary-foot-btn" @click="closeReleaseServicePicker">انصراف</button>
+                <button type="button" class="primary-btn" @click="confirmReleaseServicePicker">ثبت خدمات</button>
+              </footer>
+            </section>
+          </div>
           <div class="release-layout">
             <div class="release-col">
             <div class="release-title release-title-inline">
-              <h3>تایید خدمات</h3>
-              <div class="add-service-row">
-                <select v-model.number="releaseForm.selectedServiceToAdd">
-                  <option :value="0">انتخاب خدمت</option>
-                  <option v-for="service in releaseForm.availableServicesToAdd" :key="service.id" :value="service.id">{{ service.name }}</option>
-                </select>
-                <button type="button" class="secondary-btn plus-btn" @click="addServiceFromSystem">+</button>
-              </div>
+              <h3>خدمات</h3>
+              <button type="button" class="secondary-btn small-btn" @click="openReleaseServicePicker">
+                ویرایش
+              </button>
             </div>
             <div class="release-list">
-              <article v-for="(line, lineIndex) in releaseForm.serviceLines" :key="line.id || `service-${line.service_id || lineIndex}`" class="service-check-item">
+              <article v-for="(line, lineIndex) in visibleReleaseServiceLines" :key="line.id || `service-${line.service_id || lineIndex}`" class="service-check-item">
                 <div>
                   <h4>{{ line.service_name }}</h4>
-                  <p>تعداد: {{ Number(line.quantity || 0).toLocaleString('fa-IR') }}</p>
                 </div>
                 <div class="service-check-action">
                   <span>{{ formatMoney(line.line_total) }}</span>
@@ -163,7 +187,7 @@
                   </label>
                 </div>
               </article>
-              <p v-if="!releaseForm.serviceLines.length" class="empty-row">خدمتی برای این خودرو ثبت نشده است.</p>
+              <p v-if="!visibleReleaseServiceLines.length" class="empty-row">خدمتی برای این خودرو ثبت نشده است.</p>
             </div>
             
             </div>
@@ -235,7 +259,7 @@
                 <strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong>
               </article>
               <article class="summary-stat-card">
-                <span>تخفیف مشتری</span>
+                <span>تخفیف</span>
                 <strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong>
                 <small>{{ formatPercent(releaseSummary.customerDiscountPercent) }}</small>
               </article>
@@ -280,41 +304,6 @@
               <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است.</p>
             </div>
             <div class="summary-share">
-              <div v-if="selectedAssignedWorkers.length" class="worker-share-editor modern-worker-share-editor">
-                <article
-                  v-for="worker in selectedAssignedWorkers"
-                  :key="`share-${worker.id || worker.sourceIndex}`"
-                  class="worker-share-card"
-                >
-                  <div class="worker-share-card-head">
-                    <span class="worker-share-name">{{ worker.name || `نیروی ${Number(worker.sourceIndex + 1).toLocaleString('fa-IR')}` }}</span>
-                    <small>سهم پایه و درصد این نیرو</small>
-                  </div>
-                  <div class="worker-share-controls modern-worker-share-controls">
-                    <div class="worker-share-control amount-control">
-                      <input
-                        :value="getReleaseWorkerShareAmountInput(worker.sourceIndex)"
-                        type="number"
-                        min="0"
-                        step="1"
-                        @input="setReleaseWorkerShareAmount(worker.sourceIndex, $event.target.value)"
-                      />
-                      <small>هزار تومان</small>
-                    </div>
-                    <div class="worker-share-control">
-                      <input
-                        :value="worker.worker_share_percent ?? 0"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                        @input="setReleaseWorkerSharePercent(worker.sourceIndex, $event.target.value)"
-                      />
-                      <small>٪</small>
-                    </div>
-                  </div>
-                </article>
-              </div>
               <p
                 v-for="(worker, index) in releaseSummary.workerShares"
                 :key="`${worker.name || 'worker'}-${index}`"
@@ -361,13 +350,32 @@
                   <option value="transfer">کارت به کارت</option>
                   <option value="cheque">چک</option>
                   <option value="credit">نسیه</option>
+                  <option value="manual">اسنادی / ترکیبی</option>
                 </select>
               </label>
-              <div class="payment-method-preview">
-                <strong>ثبت پرداخت</strong>
-                <p>پرداخت فعلی با روش <span>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</span> نهایی می‌شود.</p>
+              <div v-if="releaseForm.paymentMethod === 'manual'" class="detail-field detail-field-wide split-payment-grid">
+                <label class="tip-input-row">
+                  <span>مبلغ نقدی (هزار تومان)</span>
+                  <input v-model.number="releaseForm.manualCashAmount" type="number" min="0" step="1" />
+                </label>
+                <label class="tip-input-row">
+                  <span>روش بخش دوم</span>
+                  <select v-model="releaseForm.manualSecondaryMethod">
+                    <option value="transfer">کارت به کارت</option>
+                    <option value="pos">دستگاه پوز</option>
+                    <option value="cheque">چک</option>
+                  </select>
+                </label>
+                <label class="tip-input-row">
+                  <span>مبلغ بخش دوم (هزار تومان)</span>
+                  <input v-model.number="releaseForm.manualSecondaryAmount" type="number" min="0" step="1" />
+                </label>
+                <div class="split-payment-summary">
+                  <strong>جمع پرداخت ترکیبی</strong>
+                  <span>{{ releasePaymentBreakdownLabel || 'هنوز بخشی ثبت نشده است.' }}</span>
+                </div>
               </div>
-              <div v-if="releaseForm.paymentMethod === 'cheque'" class="cheque-inline-card detail-field-wide">
+              <div v-if="releaseForm.paymentMethod === 'cheque' || (releaseForm.paymentMethod === 'manual' && releaseForm.manualSecondaryMethod === 'cheque' && Number(releaseForm.manualSecondaryAmount || 0) > 0)" class="cheque-inline-card detail-field-wide">
                 <div class="cheque-inline-head">
                 <div>
                   <strong>جزئیات چک</strong>
@@ -494,10 +502,12 @@
         <div class="invoice-sheet">
           <header class="invoice-sheet-head">
             <div>
-              <strong>فاکتور ترخیص خودرو</strong>
+              <small>CarnoWash</small>
+              <strong>فاکتور نهایی سفارش</strong>
               <span>شماره سفارش: #{{ Number(releaseCandidate?.id || 0).toLocaleString('fa-IR') }}</span>
             </div>
             <div class="invoice-sheet-meta">
+              <strong>کارنوواش | CarnoWash</strong>
               <span>تاریخ صدور: {{ invoiceIssuedAt }}</span>
               <span>روش پرداخت: {{ paymentMethodLabel(releaseForm.paymentMethod) }}</span>
             </div>
@@ -519,6 +529,10 @@
               <span>پلاک</span>
               <strong>{{ releaseCandidate?.plateDisplay || releaseCandidate?.plate_number || 'قطعه‌شویی' }}</strong>
             </article>
+            <article>
+              <span>امتیاز مشتری</span>
+              <strong>{{ formatCustomerScore(releaseForm.customerScore) }} | {{ releaseCustomerScoreStars }}</strong>
+            </article>
           </section>
 
           <section class="invoice-sheet-section">
@@ -529,14 +543,12 @@
               <thead>
                 <tr>
                   <th>عنوان</th>
-                  <th>تعداد</th>
                   <th>مبلغ</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="(line, lineIndex) in invoiceServiceLines" :key="`invoice-service-${line.id || lineIndex}`">
                   <td>{{ line.service_name }}</td>
-                  <td>{{ Number(line.quantity || 0).toLocaleString('fa-IR') }}</td>
                   <td>{{ formatMoney(line.line_total) }}</td>
                 </tr>
               </tbody>
@@ -569,36 +581,23 @@
             <div class="invoice-totals">
               <p><span>جمع خدمات</span><strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong></p>
               <p><span>جمع محصولات</span><strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong></p>
-              <p><span>تخفیف مشتری</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
+              <p><span>تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
               <p class="invoice-grand-total"><span>مبلغ نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </div>
           </section>
 
-          <section class="invoice-sheet-section">
-            <div class="invoice-section-head">
-              <strong>سهم پرسنل</strong>
-            </div>
-            <div class="invoice-workers">
-              <p v-for="(worker, index) in releaseSummary.workerShares" :key="`invoice-worker-${index}`">
-                <span>{{ worker.name }} ({{ Number(worker.percent || 0).toLocaleString('fa-IR') }}٪)</span>
-                <strong>{{ formatMoney(worker.amount) }}</strong>
-              </p>
-              <p>
-                <span>سهم کارواش</span>
-                <strong>{{ formatMoney(releaseSummary.carwashShare) }}</strong>
-              </p>
-            </div>
-          </section>
-
           <footer class="invoice-sheet-footer">
+            <p v-if="releaseForm.paymentMethod === 'manual' && releasePaymentBreakdownLabel">
+              جزئیات پرداخت: {{ releasePaymentBreakdownLabel }}
+            </p>
             <p v-if="releaseForm.creditDueDate && ['credit', 'cheque'].includes(releaseForm.paymentMethod)">
               سررسید پرداخت: {{ releaseForm.creditDueDate }}
             </p>
             <p v-if="releaseForm.paymentMethod === 'cheque' && chequeDetailsSummary !== 'جزئیات ثبت نشده'">
               {{ chequeDetailsSummary }}
             </p>
-            <p v-if="releaseForm.receiptFooterNote">{{ releaseForm.receiptFooterNote }}</p>
+            <p>کارنوواش | CarnoWash</p>
           </footer>
         </div>
       </div>
@@ -613,19 +612,22 @@ import VehicleEntryStepTwo from '../../components/operator/VehicleEntryStepTwo.v
 import BaseSpinner from '../../components/base/BaseSpinner.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import AppShell from '../../components/layout/AppShell.vue'
+import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
 import { useVehicleStore } from '../../store/vehicle.store'
 import api from '../../services/api'
 import { formatThousandsToman } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import { buildPlateNumber, isAnonymousPlate, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
 
 const search = ref('')
-const activeFilter = ref('all')
+const activeFilter = ref('entered')
 const showVehicleModal = ref(false)
 const showVehicleDetailsModal = ref(false)
 const showReleaseModal = ref(false)
 const showChequeDetailsModal = ref(false)
 const showInvoicePreviewModal = ref(false)
+const showReleaseServicePicker = ref(false)
 const releaseCheckoutLoading = ref(false)
 const releaseSubmitting = ref(false)
 const invoiceGenerating = ref(false)
@@ -635,7 +637,8 @@ const modalStep = ref(1)
 const vehicleDraft = ref(null)
 const releaseCandidate = ref(null)
 const invoiceTemplateRef = ref(null)
-const releasePaymentMethods = ['pos', 'cash', 'transfer', 'cheque', 'credit']
+const tempReleaseServiceIds = ref([])
+const releasePaymentMethods = ['pos', 'cash', 'transfer', 'cheque', 'credit', 'manual']
 const releaseForm = ref({
   serviceLines: [],
   availableProducts: [],
@@ -646,7 +649,11 @@ const releaseForm = ref({
   workerShareAmount: 0,
   customerScore: 0,
   discountPercentPerHalfStar: 0,
+  manualDiscountTotal: 0,
   paymentMethod: 'cash',
+  manualCashAmount: 0,
+  manualSecondaryMethod: 'transfer',
+  manualSecondaryAmount: 0,
   chequeNumber: '',
   chequeSerialNumber: '',
   chequeSayadiNumber: '',
@@ -766,17 +773,14 @@ const paymentMethodLabel = (value) => ({
   transfer: 'کارت به کارت',
   cheque: 'چک',
   credit: 'نسیه',
-  manual: 'دستی'
+  manual: 'اسنادی / ترکیبی'
 }[value] || 'نامشخص')
 const customerScorePercent = (score) => {
   const normalized = Math.max(0, Math.min(5, Number(score || 0)))
   return (normalized / 5) * 100
 }
 const formatCustomerScore = (score) => `${Number(score || 0).toLocaleString('fa-IR')} / ۵`
-const normalizeDigits = (value) => String(value || '')
-  .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-  .replace(/\D/g, '')
-const splitPlate = (rawPlate) => String(rawPlate || '').trim().split(/\s+/).filter(Boolean)
+const releaseCustomerScoreStars = computed(() => '★'.repeat(Math.round(Math.max(0, Math.min(5, Number(releaseForm.value.customerScore || 0))))) || '—')
 const releaseVehicleSource = computed(() => releaseCandidate.value || selectedVehicle.value || {})
 const releaseVehicleHeaderLabel = computed(() => {
   const source = releaseVehicleSource.value || {}
@@ -788,12 +792,7 @@ const releaseVehiclePlateLabel = computed(() => {
   const source = releaseVehicleSource.value || {}
   const rawPlate = String(source.plate_number || source.plate || '').trim()
   if (rawPlate) return rawPlate
-  return [
-    source.plate_left,
-    source.plate_letter,
-    source.plate_mid,
-    source.plate_right
-  ].map((value) => String(value || '').trim()).filter(Boolean).join(' ')
+  return buildPlateNumber(resolvePlateParts(source))
 })
 const mapVehicleToDraft = (source = {}) => ({
   id: source.id,
@@ -802,15 +801,18 @@ const mapVehicleToDraft = (source = {}) => ({
   plate_letter: source.plate_letter,
   plate_mid: source.plate_mid,
   plate_right: source.plate_right,
+  plate_type: source.plate_type || 'car',
+  plateType: source.plate_type || 'car',
   model: source.car_model,
   color: source.car_color,
   driver: source.driver_name,
   mobile: source.driver_phone,
   note: source.notes,
+  tariffType: source.tariff_type || source.tariffType || 'type_1',
   isPieceWash: Boolean(source.is_piece_wash),
   pieceDetails: source.piece_details || '',
   pieceWashPrice: Number(source.job?.services_total || 0),
-  isAnonymous: source.plate_number === '1111' && source.car_model === '1111' && source.car_color === '1111',
+  isAnonymous: isAnonymousPlate(source),
   is_plate_blocked: Boolean(source.is_plate_blocked),
   serviceIds: Array.isArray(source.job?.service_lines) ? source.job.service_lines.map((s) => s.service) : [],
   staffId: source.job?.assigned_worker || null,
@@ -839,23 +841,13 @@ const assignedWorkersLabel = (job) => {
 }
 const hasCompletedStepOneData = (source = {}) => {
   const isPieceWash = Boolean(source.is_piece_wash)
-  const isAnonymous = source.plate_number === '1111' && source.car_model === '1111' && source.car_color === '1111'
-  const hasPhone = normalizeDigits(source.driver_phone).length > 0
-  if (isPieceWash) {
-    return String(source.driver_name || '').trim().length > 0 && hasPhone
-  }
+  const isAnonymous = isAnonymousPlate(source)
+  const hasPhone = normalizeDigits(source.driver_phone).length === 11
+  if (isPieceWash) return hasPhone
   if (isAnonymous) {
     return hasPhone
   }
-  const plateParts = splitPlate(source.plate_number)
-  const left = String(source.plate_left || plateParts[0] || '').trim()
-  const letter = String(source.plate_letter || plateParts[1] || '').trim()
-  const mid = String(source.plate_mid || plateParts[2] || '').trim()
-  const right = String(source.plate_right || plateParts[3] || '').trim()
-  const hasPlate = left.length === 2 && letter.length === 1 && mid.length === 3 && right.length === 2
-  const hasModel = String(source.car_model || '').trim().length > 0
-  const hasColor = String(source.car_color || '').trim().length > 0
-  return hasPlate && hasModel && hasColor && hasPhone
+  return hasPhone
 }
 const handleCardAction = async (car) => {
   if (car.statusKey === 'released' || car.statusKey === 'cancelled') return
@@ -871,9 +863,11 @@ const handleCardAction = async (car) => {
 }
 const closeReleaseModal = () => {
   showReleaseModal.value = false
+  showReleaseServicePicker.value = false
   showChequeDetailsModal.value = false
   closeInvoicePreviewModal()
   releaseCandidate.value = null
+  tempReleaseServiceIds.value = []
   releaseCheckoutLoading.value = false
   releaseSubmitting.value = false
   releaseForm.value = {
@@ -886,7 +880,11 @@ const closeReleaseModal = () => {
       workerShareAmount: 0,
     customerScore: 0,
     discountPercentPerHalfStar: 0,
+    manualDiscountTotal: 0,
     paymentMethod: defaultReleasePaymentMethod.value,
+    manualCashAmount: 0,
+    manualSecondaryMethod: 'transfer',
+    manualSecondaryAmount: 0,
     chequeNumber: '',
     chequeSerialNumber: '',
     chequeSayadiNumber: '',
@@ -944,8 +942,13 @@ const defaultWorkerSharePercents = (count) => {
   })
 }
 const openChequeDetailsModal = () => {
+  const preferredChequeAmount = releaseForm.value.paymentMethod === 'manual'
+    && releaseForm.value.manualSecondaryMethod === 'cheque'
+    && Number(releaseForm.value.manualSecondaryAmount || 0) > 0
+    ? Number(releaseForm.value.manualSecondaryAmount || 0)
+    : Math.round(Number(releaseSummary.value.finalTotal || 0) / 1000)
   if (Number(releaseForm.value.chequeAmount || 0) <= 0) {
-    releaseForm.value.chequeAmount = Math.max(1, Math.round(Number(releaseSummary.value.finalTotal || 0) / 1000))
+    releaseForm.value.chequeAmount = Math.max(1, preferredChequeAmount)
   }
   showChequeDetailsModal.value = true
 }
@@ -961,6 +964,31 @@ const normalizeReleaseAssignedWorkers = (workers) => {
     isSelected: true
   }))
 }
+const releaseWorkersScore = (workers) => {
+  const items = Array.isArray(workers) ? workers : []
+  const activeCount = items.length
+  const percentCount = items.filter((item) => Number(item?.worker_share_percent || 0) > 0).length
+  const amountCount = items.filter((item) => Number(item?.worker_share_amount || 0) > 0).length
+  return (activeCount * 10) + (percentCount * 4) + (amountCount * 4)
+}
+const pickBestReleaseAssignedWorkers = (...sources) => (
+  sources
+    .filter((items) => Array.isArray(items) && items.length)
+    .sort((first, second) => releaseWorkersScore(second) - releaseWorkersScore(first))[0]
+    || []
+)
+const selectedReleaseServiceIds = computed(() => (
+  Array.isArray(releaseForm.value.serviceLines)
+    ? releaseForm.value.serviceLines
+      .filter((line) => line?.is_selected !== false && Number(line?.service_id || 0) > 0)
+      .map((line) => Number(line.service_id))
+    : []
+))
+const visibleReleaseServiceLines = computed(() => (
+  Array.isArray(releaseForm.value.serviceLines)
+    ? releaseForm.value.serviceLines.filter((line) => line?.is_selected !== false)
+    : []
+))
 const extractReleaseAssignedWorkers = (payload) => {
   const assignedWorkers = Array.isArray(payload?.job?.assigned_workers)
     ? payload.job.assigned_workers
@@ -995,7 +1023,87 @@ const extractReleaseAssignedWorkers = (payload) => {
         tip_share_percent: 0,
         worker_share_percent: 0
       }))
-    : []
+    : (() => {
+      const fallbackName = String(
+        payload?.job?.assigned_worker_name
+        || payload?.workerName
+        || payload?.worker_name
+        || ''
+      ).trim()
+      return fallbackName
+        ? [{
+          id: 1,
+          name: fallbackName,
+          tip_share_percent: 0,
+          worker_share_percent: 100
+        }]
+        : []
+    })()
+}
+const openReleaseServicePicker = () => {
+  tempReleaseServiceIds.value = [...selectedReleaseServiceIds.value]
+  showReleaseServicePicker.value = true
+}
+const closeReleaseServicePicker = () => {
+  showReleaseServicePicker.value = false
+}
+const toggleTempReleaseService = (rawServiceId) => {
+  const serviceId = Number(rawServiceId || 0)
+  if (!serviceId) return
+  if (tempReleaseServiceIds.value.includes(serviceId)) {
+    tempReleaseServiceIds.value = tempReleaseServiceIds.value.filter((item) => Number(item) !== serviceId)
+    return
+  }
+  tempReleaseServiceIds.value = [...tempReleaseServiceIds.value, serviceId]
+}
+const confirmReleaseServicePicker = () => {
+  const selectedIds = new Set(tempReleaseServiceIds.value.map((item) => Number(item)).filter((item) => item > 0))
+  const currentLines = Array.isArray(releaseForm.value.serviceLines) ? [...releaseForm.value.serviceLines] : []
+  const currentByServiceId = new Map(
+    currentLines
+      .filter((line) => Number(line?.service_id || 0) > 0)
+      .map((line) => [Number(line.service_id), line])
+  )
+
+  currentLines.forEach((line) => {
+    const serviceId = Number(line?.service_id || 0)
+    if (!serviceId || !line?.id) return
+    line.is_selected = selectedIds.has(serviceId)
+    if (!selectedIds.has(serviceId)) line.is_completed = false
+  })
+
+  releaseForm.value.availableServicesToAdd.forEach((service) => {
+    const serviceId = Number(service.id || 0)
+    if (!serviceId || !selectedIds.has(serviceId) || currentByServiceId.has(serviceId)) return
+    currentLines.push({
+      id: null,
+      service_id: serviceId,
+      service_name: service.name,
+      quantity: 1,
+      line_total: Number(service.base_price || 0),
+      is_completed: true,
+      is_selected: true
+    })
+  })
+
+  releaseForm.value.serviceLines = currentLines
+    .map((line) => {
+      const serviceId = Number(line?.service_id || 0)
+      if (!serviceId) return line
+      const isSelected = selectedIds.has(serviceId)
+      return {
+        ...line,
+        is_selected: isSelected,
+        is_completed: isSelected ? Boolean(line.is_completed ?? true) : false
+      }
+    })
+    .filter((line) => line?.id || line?.is_selected !== false)
+
+  releaseForm.value.newServiceLines = releaseForm.value.serviceLines
+    .filter((line) => !line.id && line.is_selected !== false && Number(line.service_id || 0) > 0)
+    .map((line) => ({ service_id: Number(line.service_id) }))
+
+  closeReleaseServicePicker()
 }
 const getSelectedWorkerIndexes = (workers) => (
   Array.isArray(workers)
@@ -1140,6 +1248,7 @@ const setReleaseWorkerShareAmount = (index, rawValue) => {
   releaseForm.value.assignedWorkers = workers
 }
 const openReleaseModal = async (car) => {
+  const sourceVehicle = vehicleStore.vehicles.find((item) => Number(item.id) === Number(car?.id || 0)) || null
   releaseCandidate.value = car
   showReleaseModal.value = true
   releaseCheckoutLoading.value = true
@@ -1164,9 +1273,30 @@ const openReleaseModal = async (car) => {
         service_name: line.service_name,
         quantity: Number(line.quantity || 0),
         line_total: Number(line.line_total || 0),
-        is_completed: Boolean(line.is_completed)
+        is_completed: true,
+        is_selected: true
       }))
       : []
+    const resolvedAssignedWorkers = extractReleaseAssignedWorkers(data)
+    const sourceSnapshotWorkers = Array.isArray(sourceVehicle?.job?.assigned_workers_snapshot)
+      ? sourceVehicle.job.assigned_workers_snapshot
+        .map((item) => ({
+          id: Number(item?.id || 0),
+          name: String(item?.name || '').trim(),
+          tip_share_percent: Number(item?.tip_share_percent || 0),
+          worker_share_percent: Number(item?.worker_share_percent || 0),
+          worker_share_amount: Number(item?.worker_share_amount || 0)
+        }))
+        .filter((item) => item.id > 0 && item.name.length > 0)
+      : []
+    const fallbackAssignedWorkers = sourceVehicle
+      ? extractReleaseAssignedWorkers(sourceVehicle)
+      : extractReleaseAssignedWorkers({ workerName: car?.workerName || '' })
+    const preferredAssignedWorkers = pickBestReleaseAssignedWorkers(
+      sourceSnapshotWorkers,
+      fallbackAssignedWorkers,
+      resolvedAssignedWorkers
+    )
     const availableProducts = Array.isArray(data?.job?.available_products)
       ? data.job.available_products.map((item) => ({
         id: item.id,
@@ -1187,11 +1317,15 @@ const openReleaseModal = async (car) => {
       productLinesByProductId,
       productSearch: '',
       tipAmount: Math.max(0, Number(data?.job?.tip_amount || 0) / 1000),
-      assignedWorkers: normalizeReleaseAssignedWorkers(extractReleaseAssignedWorkers(data)),
+      assignedWorkers: normalizeReleaseAssignedWorkers(preferredAssignedWorkers),
       workerShareAmount: Number(data?.job?.worker_share_amount || 0),
       customerScore: Math.max(0, Number(data?.vehicle?.customer_score || releaseCandidate.value?.customerScore || 0)),
       discountPercentPerHalfStar,
+      manualDiscountTotal: Math.max(0, Number(data?.job?.manual_discount_total || 0)),
       paymentMethod: defaultReleasePaymentMethod.value,
+      manualCashAmount: 0,
+      manualSecondaryMethod: 'transfer',
+      manualSecondaryAmount: 0,
       chequeNumber: '',
       chequeSerialNumber: '',
       chequeSayadiNumber: '',
@@ -1210,6 +1344,7 @@ const openReleaseModal = async (car) => {
       })) : [],
       selectedServiceToAdd: 0
     }
+    tempReleaseServiceIds.value = [...selectedReleaseServiceIds.value]
     syncBonusPenaltyAdjustments()
   } catch (error) {
     console.error('openReleaseModal error:', error?.response?.data || error)
@@ -1250,6 +1385,21 @@ const invoiceIssuedAt = computed(() => new Intl.DateTimeFormat('fa-IR', {
   dateStyle: 'medium',
   timeStyle: 'short'
 }).format(new Date()))
+const releasePaymentBreakdown = computed(() => {
+  if (releaseForm.value.paymentMethod !== 'manual') return []
+  const cashAmount = Math.max(0, Number(releaseForm.value.manualCashAmount || 0) * 1000)
+  const secondaryAmount = Math.max(0, Number(releaseForm.value.manualSecondaryAmount || 0) * 1000)
+  const secondaryMethod = String(releaseForm.value.manualSecondaryMethod || 'transfer').trim()
+  return [
+    cashAmount > 0 ? { method: 'cash', amount: cashAmount } : null,
+    secondaryAmount > 0 ? { method: secondaryMethod, amount: secondaryAmount } : null
+  ].filter(Boolean)
+})
+const releasePaymentBreakdownLabel = computed(() => (
+  releasePaymentBreakdown.value
+    .map((item) => `${paymentMethodLabel(item.method)}: ${formatMoney(item.amount)}`)
+    .join(' | ')
+))
 const getReleaseProductQty = (productId) => Number(releaseForm.value.productLinesByProductId[productId] || 0)
 const increaseReleaseProduct = (productId) => {
   const product = releaseForm.value.availableProducts.find((item) => item.id === productId)
@@ -1286,8 +1436,8 @@ const filteredReleaseProducts = computed(() => {
   if (!query) return items
   return items.filter((item) => `${item.name || ''} ${item.sku || ''}`.includes(query))
 })
-const addServiceFromSystem = () => {
-  const serviceId = Number(releaseForm.value.selectedServiceToAdd || 0)
+const addServiceFromSystem = (rawServiceId = null) => {
+  const serviceId = Number(rawServiceId || releaseForm.value.selectedServiceToAdd || 0)
   if (!serviceId) return
   const service = releaseForm.value.availableServicesToAdd.find((item) => item.id === serviceId)
   if (!service) return
@@ -1319,7 +1469,9 @@ const releaseSummary = computed(() => {
   const discountPercentPerHalfStar = Math.max(0, Number(releaseForm.value.discountPercentPerHalfStar || 0))
   const customerDiscountPercent = Math.max(0, Math.min(100, Number((discountPercentPerHalfStar * customerScore * 2).toFixed(2))))
   const discountBase = Math.max(0, servicesTotal + productsTotal)
-  const discountAmount = Number((discountBase * customerDiscountPercent / 100).toFixed(2))
+  const customerDiscountAmount = Number((discountBase * customerDiscountPercent / 100).toFixed(2))
+  const manualDiscountAmount = Math.max(0, Number(releaseForm.value.manualDiscountTotal || 0))
+  const discountAmount = Math.min(discountBase, Number((customerDiscountAmount + manualDiscountAmount).toFixed(2)))
   const shareBaseTotal = Math.max(0, servicesTotal)
   const workerShareBase = Math.min(shareBaseTotal, Number(releaseForm.value.workerShareAmount || 0))
   const finalTotalWithProducts = Math.max(0, servicesTotal + productsTotal - discountAmount + tipAmount)
@@ -1398,6 +1550,8 @@ const releaseSummary = computed(() => {
     productsTotal,
     customerScore,
     customerDiscountPercent,
+    customerDiscountAmount,
+    manualDiscountAmount,
     discountAmount,
     tipAmount,
     shareBaseTotal,
@@ -1414,13 +1568,21 @@ const hasReleaseBonusOrPenalty = computed(() => (
 ))
 watch(bonusPenaltyWorkers, syncBonusPenaltyAdjustments, { deep: true })
 const chequeDetailsSummary = computed(() => {
-  if (releaseForm.value.paymentMethod !== 'cheque') return 'جزئیات ثبت نشده'
+  if (releaseForm.value.paymentMethod !== 'cheque' && !(releaseForm.value.paymentMethod === 'manual' && releaseForm.value.manualSecondaryMethod === 'cheque')) return 'جزئیات ثبت نشده'
   const parts = []
   if (releaseForm.value.chequeSerialNumber) parts.push(`سریال ${releaseForm.value.chequeSerialNumber}`)
   if (releaseForm.value.chequeBank) parts.push(releaseForm.value.chequeBank)
   if (releaseForm.value.creditDueDate) parts.push(`وصول ${releaseForm.value.creditDueDate}`)
   if (Number(releaseForm.value.chequeAmount || 0) > 0) parts.push(`${Number(releaseForm.value.chequeAmount || 0).toLocaleString('fa-IR')} هزار`)
   return parts.length ? parts.join(' | ') : 'جزئیات ثبت نشده'
+})
+watch(() => releaseForm.value.paymentMethod, (value) => {
+  if (value !== 'manual') return
+  const finalTotal = Math.max(0, Number(releaseSummary.value.finalTotal || 0))
+  if (Number(releaseForm.value.manualCashAmount || 0) <= 0 && Number(releaseForm.value.manualSecondaryAmount || 0) <= 0) {
+    releaseForm.value.manualCashAmount = Math.round(finalTotal / 1000)
+    releaseForm.value.manualSecondaryAmount = 0
+  }
 })
 const buildInvoicePdf = async () => {
   if (!invoiceTemplateRef.value) return
@@ -1433,7 +1595,7 @@ const buildInvoicePdf = async () => {
     const html2pdf = html2pdfModule.default || html2pdfModule
     const worker = html2pdf()
       .set({
-        margin: [8, 8, 8, 8],
+        margin: [6, 6, 6, 6],
         filename: `invoice-${releaseCandidate.value?.id || 'carwash'}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
@@ -1474,10 +1636,24 @@ const confirmReleaseVehicle = async () => {
     alert('حداقل یک نیرو را برای این تسویه انتخاب کنید.')
     return
   }
-  if (releaseForm.value.paymentMethod === 'cheque') {
+  const usesChequeDetails = releaseForm.value.paymentMethod === 'cheque'
+    || (releaseForm.value.paymentMethod === 'manual' && releaseForm.value.manualSecondaryMethod === 'cheque' && Number(releaseForm.value.manualSecondaryAmount || 0) > 0)
+  if (usesChequeDetails) {
     if (!releaseForm.value.creditDueDate || !releaseForm.value.chequeSerialNumber || !releaseForm.value.chequeSayadiNumber || !releaseForm.value.chequeBank || !releaseForm.value.chequeShaba || Number(releaseForm.value.chequeAmount || 0) <= 0) {
       alert('همه جزئیات چک را کامل کنید.')
       showChequeDetailsModal.value = true
+      return
+    }
+  }
+  if (releaseForm.value.paymentMethod === 'manual') {
+    const breakdownTotal = releasePaymentBreakdown.value.reduce((sum, item) => sum + Number(item.amount || 0), 0)
+    const finalTotal = Math.max(0, Number(releaseSummary.value.finalTotal || 0))
+    if (!releasePaymentBreakdown.value.length) {
+      alert('حداقل یک بخش پرداخت برای حالت اسنادی / ترکیبی وارد کنید.')
+      return
+    }
+    if (Math.abs(breakdownTotal - finalTotal) > 1) {
+      alert('جمع بخش‌های پرداخت باید دقیقا با مبلغ نهایی برابر باشد.')
       return
     }
   }
@@ -1511,13 +1687,17 @@ const confirmReleaseVehicle = async () => {
       })).filter((worker) => worker.id > 0),
       tip_amount: Math.max(0, Number(releaseForm.value.tipAmount || 0) * 1000),
       payment_method: releaseForm.value.paymentMethod,
-      cheque_number: releaseForm.value.paymentMethod === 'cheque' ? (releaseForm.value.chequeSerialNumber || releaseForm.value.chequeNumber) : undefined,
-      cheque_serial_number: releaseForm.value.paymentMethod === 'cheque' ? releaseForm.value.chequeSerialNumber : undefined,
-      cheque_sayadi_number: releaseForm.value.paymentMethod === 'cheque' ? releaseForm.value.chequeSayadiNumber : undefined,
-      cheque_bank: releaseForm.value.paymentMethod === 'cheque' ? releaseForm.value.chequeBank : undefined,
-      cheque_shaba: releaseForm.value.paymentMethod === 'cheque' ? releaseForm.value.chequeShaba : undefined,
-      cheque_amount: releaseForm.value.paymentMethod === 'cheque' ? Number(releaseForm.value.chequeAmount || 0) * 1000 : undefined,
-      credit_due_date: ['credit', 'cheque'].includes(releaseForm.value.paymentMethod) ? parseJalaliToIso(releaseForm.value.creditDueDate) || undefined : undefined,
+      payment_breakdown: releasePaymentBreakdown.value.map((item) => ({
+        method: item.method,
+        amount: Number(item.amount || 0)
+      })),
+      cheque_number: usesChequeDetails ? (releaseForm.value.chequeSerialNumber || releaseForm.value.chequeNumber) : undefined,
+      cheque_serial_number: usesChequeDetails ? releaseForm.value.chequeSerialNumber : undefined,
+      cheque_sayadi_number: usesChequeDetails ? releaseForm.value.chequeSayadiNumber : undefined,
+      cheque_bank: usesChequeDetails ? releaseForm.value.chequeBank : undefined,
+      cheque_shaba: usesChequeDetails ? releaseForm.value.chequeShaba : undefined,
+      cheque_amount: usesChequeDetails ? Number(releaseForm.value.chequeAmount || 0) * 1000 : undefined,
+      credit_due_date: (['credit', 'cheque'].includes(releaseForm.value.paymentMethod) || usesChequeDetails) ? parseJalaliToIso(releaseForm.value.creditDueDate) || undefined : undefined,
       bonus_penalty_adjustments: (releaseForm.value.bonusPenaltyAdjustments || [])
         .map((item) => ({
           worker_id: Number(item.worker_id || 0),
@@ -1546,7 +1726,16 @@ const handleStepOneContinue = async (payload) => {
       return
     }
     const savedVehicle = await saveVehicle({ vehicle: payload }, 'entered')
-    vehicleDraft.value = mapVehicleToDraft(savedVehicle)
+    vehicleDraft.value = {
+      ...mapVehicleToDraft(savedVehicle),
+      detectedPlate: payload.detectedPlate,
+      detectedPlateLeft: payload.detectedPlateLeft,
+      detectedPlateLetter: payload.detectedPlateLetter,
+      detectedPlateMid: payload.detectedPlateMid,
+      detectedPlateRight: payload.detectedPlateRight,
+      detectedPlateType: payload.detectedPlateType,
+      tariffType: payload.tariffType
+    }
     modalStep.value = 2
   } catch (error) {
     console.error('continue step one error:', error?.response?.data || error)
@@ -1567,13 +1756,14 @@ const buildCreateOrUpdatePayload = (payload, status) => {
   const isPieceWash = Boolean(payload?.vehicle?.isPieceWash)
 
   return {
-    plate_number: isPieceWash ? '' : (isAnonymous ? '1111' : rebuiltPlate),
+    plate_number: isPieceWash ? '' : (isAnonymous ? '' : rebuiltPlate),
     plate_left: isPieceWash || isAnonymous ? '' : left,
     plate_letter: isPieceWash || isAnonymous ? '' : letter,
     plate_mid: isPieceWash || isAnonymous ? '' : mid,
     plate_right: isPieceWash || isAnonymous ? '' : right,
-    car_model: isPieceWash ? 'قطعه‌شویی' : (isAnonymous ? '1111' : (payload?.vehicle?.model || '').trim()),
-    car_color: isPieceWash ? '-' : (isAnonymous ? '1111' : (payload?.vehicle?.color || '').trim()),
+    plate_type: String(payload?.vehicle?.plateType || payload?.vehicle?.plate_type || 'car').trim() || 'car',
+    car_model: isPieceWash ? 'قطعه‌شویی' : (isAnonymous ? '1111' : String(payload?.vehicle?.model || '').trim()),
+    car_color: isPieceWash ? '-' : (isAnonymous ? '1111' : String(payload?.vehicle?.color || '').trim()),
     driver_name: (payload?.vehicle?.driver || '').trim(),
     driver_phone: (payload?.vehicle?.mobile || '').trim(),
     notes: isPieceWash ? '' : (payload?.vehicle?.note || '').trim(),
@@ -1657,10 +1847,11 @@ const cars = computed(() => vehicles.value.map((item) => ({
   badgeText: '#334155',
   time: formatDateTime(item.check_in_at),
   sortTime: item.check_in_at,
-  plateTwoDigit: item.plate_left || '--',
+  plateLeft: item.plate_left || '--',
   plateLetter: item.plate_letter || '-',
-  plateThreeDigit: item.plate_mid || '---',
-  plateBlue: item.plate_right || '--',
+  plateMid: item.plate_mid || '---',
+  plateRight: item.plate_right || '--',
+  plateType: item.plate_type || 'car',
   model: item.car_model,
   colorName: item.car_color,
   plateDisplay: item.plate_number || '-',
@@ -1686,19 +1877,29 @@ const counts = computed(() => {
 })
 
 const filterItems = computed(() => [
-  { key: 'all', label: `کل (${cars.value.length})` },
   { key: 'entered', label: `در انتظار تکمیل (${counts.value.entered})` },
   { key: 'in_progress', label: `در حال انجام (${counts.value.in_progress})` },
   { key: 'released', label: `ترخیص شده (${counts.value.released})` },
-  { key: 'cancelled', label: `لغو (${counts.value.cancelled})` }
+  { key: 'cancelled', label: `لغو (${counts.value.cancelled})` },
+  { key: 'all', label: `کل (${cars.value.length})` }
 ])
 
 const filteredCars = computed(() => {
   let items = cars.value
   if (activeFilter.value !== 'all') items = items.filter((item) => item.queueBucket === activeFilter.value)
   if (search.value.trim()) {
-    const query = search.value.trim()
-    items = items.filter((item) => [item.plateTwoDigit, item.plateLetter, item.plateThreeDigit, item.plateBlue, item.model, item.driverName, item.driverPhone].join(' ').includes(query))
+    const query = search.value.trim().toLowerCase()
+    items = items.filter((item) => [
+      item.plateLeft,
+      item.plateLetter,
+      item.plateMid,
+      item.plateRight,
+      item.plateDisplay,
+      item.model,
+      item.driverName,
+      item.driverPhone,
+      item.workerName
+    ].join(' ').toLowerCase().includes(query))
   }
   return [...items].sort((first, second) => {
     const weightMap = { entered: 0, in_progress: 1, released: 3, cancelled: 4 }
@@ -1806,7 +2007,7 @@ onBeforeUnmount(() => {
 .release-modal-vehicle{display:grid;gap:4px;padding:10px 14px;border-radius:18px;border:1px solid #d7e5f8;background:linear-gradient(180deg,#ffffff,#f4f8ff);min-width:0}
 .release-modal-vehicle strong{font-size:13px;color:#0f172a}
 .release-modal-vehicle span{font-size:12px;color:#0058be;font-weight:800;line-height:1.6}
-.release-modal-body{flex:1;min-height:0;overflow:visible;display:grid;gap:14px;padding:16px 0 20px;background:
+.release-modal-body{position:relative;flex:1;min-height:0;overflow:visible;display:grid;gap:14px;padding:16px 0 20px;background:
  radial-gradient(circle at top right, rgba(34,197,94,.08), transparent 18%),
  radial-gradient(circle at top left, rgba(14,165,233,.10), transparent 24%),
  linear-gradient(180deg,#edf7ff,#f5f9ff)}
@@ -1817,6 +2018,21 @@ onBeforeUnmount(() => {
 .release-col { background: rgba(255,255,255,.88); border: 1px solid rgba(191,215,255,.9); border-radius: 24px; padding: 18px; display: flex; flex-direction: column; min-height: 620px; box-shadow: 0 22px 45px -32px rgba(15,23,42,.45); backdrop-filter: blur(10px); }
 .release-products-col, .release-summary-col { border-right: 1px solid rgba(191,215,255,.85); }
 .release-title-inline{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.service-picker-overlay{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(15,23,42,.28);backdrop-filter:blur(6px)}
+.service-picker-panel{width:min(920px,100%);max-height:min(720px,100%);display:grid;gap:18px;padding:22px;border-radius:28px;background:linear-gradient(180deg,#ffffff,#f5f9ff);border:1px solid #d8e6ff;box-shadow:0 28px 60px -34px rgba(15,23,42,.45);overflow:auto}
+.service-picker-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.service-picker-head h4{margin:0;color:#0f172a;font-size:20px}
+.service-picker-head p{margin:6px 0 0;color:#64748b;font-size:12px}
+.service-picker-grid{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start}
+.release-service-picker-grid{max-height:420px;overflow:auto;padding-inline-end:4px}
+.service-bubble{border:1px solid #cfe1ff;border-radius:999px;padding:10px 16px;background:linear-gradient(180deg,#ffffff,#f3f8ff);color:#0f4c81;font-size:13px;font-weight:700;line-height:1.7;cursor:pointer;transition:.18s ease;white-space:nowrap}
+.service-bubble.selected{border-color:#0ea5e9;background:linear-gradient(135deg,#0f4c81,#0ea5e9);color:#fff;box-shadow:0 18px 28px -22px rgba(14,165,233,.78)}
+.service-picker-foot{display:flex;justify-content:flex-end;gap:10px}
+.secondary-foot-btn{height:44px;padding:0 18px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;color:#334155;font-weight:700;cursor:pointer}
+.release-service-bubbles{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;min-width:0}
+.release-service-bubble{border:1px solid #cfe1ff;border-radius:999px;padding:9px 14px;background:linear-gradient(180deg,#ffffff,#f3f8ff);color:#0f4c81;font-size:12px;font-weight:700;line-height:1.6;cursor:pointer;transition:.18s ease;white-space:nowrap;box-shadow:0 10px 22px -20px rgba(15,76,129,.45)}
+.release-service-bubble:hover{border-color:#8fc5ff;background:linear-gradient(180deg,#ffffff,#eaf5ff);transform:translateY(-1px)}
+.release-service-bubble.active{border-color:#0ea5e9;background:linear-gradient(135deg,#0f4c81,#0ea5e9);color:#fff;box-shadow:0 18px 28px -22px rgba(14,165,233,.78)}
 .add-service-row{display:flex;gap:8px;align-items:center}
 .plus-btn{width:42px;height:42px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;line-height:1}
 .bonus-penalty-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:end}
@@ -1844,10 +2060,12 @@ onBeforeUnmount(() => {
 .release-product-search { margin-bottom: 10px; }
 .release-product-search input { width: 100%; height: 46px; border: 1px solid #bfd7ff; border-radius: 14px; padding: 0 14px; background: #f4f9ff; }
 .products-scroll { max-height: 520px; padding-right: 4px; }
-.product-item { border: 1px solid #d4e4ff; border-radius: 18px; padding: 14px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(180deg,#ffffff,#f7fbff); }
-.product-item h4 { margin: 0 0 4px; font-size: 14px; color: #111827; }
+.product-item { border: 1px solid #d4e4ff; border-radius: 22px; padding: 16px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 14px; align-items: center; background:
+ linear-gradient(180deg,#ffffff,#f8fbff);
+ box-shadow: 0 18px 32px -28px rgba(15,23,42,.18); }
+.product-item h4 { margin: 0 0 6px; font-size: 15px; color: #111827; }
 .product-item p { margin: 0; font-size: 12px; color: #64748b; }
-.product-item span { font-size: 13px; color: #00687a; font-weight: 700; }
+.product-item span { display:inline-flex; margin-top:10px; padding:6px 10px; border-radius:999px; background:#ebf8ff; font-size: 13px; color: #00687a; font-weight: 800; }
 .product-item.unavailable { opacity: .55; }
 .product-item p.stock-empty { color: #ba1a1a; }
 .qty-controls { display: inline-flex; align-items: center; gap: 10px; border: 1px solid #d4e4ff; border-radius: 14px; padding: 6px 8px; background: #edf5ff; }
@@ -1928,6 +2146,10 @@ onBeforeUnmount(() => {
 .release-secondary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .detail-field{margin-top:0;padding:14px;border:1px solid #d6e6ff;border-radius:18px;background:rgba(255,255,255,.8)}
 .detail-field-wide{grid-column:span 2}
+.split-payment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+.split-payment-summary{grid-column:1/-1;padding:14px 16px;border-radius:18px;background:linear-gradient(180deg,#f8fbff,#edf7ff);border:1px dashed #bcd8ff;display:grid;gap:6px}
+.split-payment-summary strong{font-size:14px;color:#0f172a}
+.split-payment-summary span{font-size:12px;color:#475569;line-height:1.8}
 .payment-method-preview{padding:14px;border-radius:18px;border:1px dashed #bcd8ff;background:linear-gradient(180deg,#f5fbff,#edf7ff);display:grid;gap:6px}
 .payment-method-preview strong{font-size:14px;color:#0f172a}
 .payment-method-preview p{margin:0;font-size:12px;line-height:1.9;color:#475569}
@@ -1948,31 +2170,31 @@ onBeforeUnmount(() => {
 .invoice-preview-loading,.invoice-preview-empty{min-height:380px;border:1px dashed #bfd7ff;border-radius:18px;background:#fff;display:flex;align-items:center;justify-content:center;color:#64748b;padding:20px}
 .invoice-preview-frame-wrap{min-height:0;min-width:0;border-radius:18px;overflow:auto;border:1px solid #dbe7f5;background:#fff;box-shadow:0 16px 36px rgba(15,23,42,.08);height:100%}
 .invoice-preview-frame{display:block;width:100%;height:100%;min-height:0;min-width:0;border:0;background:#fff}
-.invoice-print-stage{position:fixed;left:-99999px;top:0;width:794px;pointer-events:none}
-.invoice-template{width:794px;max-width:794px;background:#fff;padding:0}
-.invoice-sheet{direction:rtl;background:#fff;color:#0f172a;padding:28px;font-family:Tahoma,Arial,sans-serif;display:grid;gap:18px;width:100%;max-width:100%;box-sizing:border-box}
-.invoice-sheet-head{display:flex;justify-content:space-between;gap:18px;padding-bottom:14px;border-bottom:2px solid #dbe7f5}
-.invoice-sheet-head strong{display:block;font-size:22px}
-.invoice-sheet-head span{display:block;margin-top:6px;color:#475569;font-size:13px}
-.invoice-sheet-meta{display:grid;gap:8px;justify-items:end;min-width:0}
-.invoice-sheet-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.invoice-sheet-grid article{border:1px solid #dbe7f5;border-radius:16px;padding:14px;background:#f8fbff;display:grid;gap:6px;min-width:0}
-.invoice-sheet-grid article span{font-size:12px;color:#64748b}
-.invoice-sheet-grid article strong{font-size:14px;min-width:0;overflow-wrap:anywhere}
-.invoice-sheet-section{display:grid;gap:10px}
-.invoice-section-head strong{font-size:15px}
-.invoice-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;border:1px solid #dbe7f5;border-radius:16px;overflow:hidden}
-.invoice-table th,.invoice-table td{padding:12px 14px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:13px;overflow-wrap:anywhere;word-break:break-word}
-.invoice-table th{background:#eff6ff;color:#334155}
+.invoice-print-stage{position:fixed;left:-99999px;top:0;width:210mm;pointer-events:none}
+.invoice-template{width:210mm;max-width:210mm;background:#fff;padding:0;box-sizing:border-box;overflow:hidden}
+.invoice-sheet{direction:rtl;background:#fff;color:#0f172a;padding:6mm 6mm 5mm;font-family:Tahoma,Arial,sans-serif;display:grid;gap:10px;width:210mm;min-height:297mm;max-width:210mm;box-sizing:border-box;overflow:hidden}
+.invoice-sheet-head{display:flex;justify-content:space-between;gap:14px;padding:14px 16px;border-radius:18px;background:linear-gradient(135deg,#0f172a,#0f4c81 58%,#0ea5e9);color:#fff}
+.invoice-sheet-head small{display:block;font-size:10px;color:rgba(255,255,255,.72);letter-spacing:.06em}
+.invoice-sheet-head strong{display:block;font-size:20px;line-height:1.25;margin-top:2px}
+.invoice-sheet-head span{display:block;margin-top:4px;color:rgba(255,255,255,.78);font-size:10px}
+.invoice-sheet-meta{display:grid;gap:4px;justify-items:end;min-width:0;align-content:center}
+.invoice-sheet-meta strong{font-size:13px}
+.invoice-sheet-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.invoice-sheet-grid article{border:1px solid #dbe7f5;border-radius:14px;padding:10px 11px;background:linear-gradient(180deg,#ffffff,#f8fbff);display:grid;gap:3px;min-width:0}
+.invoice-sheet-grid article span{font-size:10px;color:#64748b}
+.invoice-sheet-grid article strong{font-size:11px;min-width:0;overflow-wrap:anywhere}
+.invoice-sheet-section{display:grid;gap:6px}
+.invoice-section-head strong{font-size:13px;color:#0f172a}
+.invoice-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;border:1px solid #dbe7f5;border-radius:12px;overflow:hidden}
+.invoice-table th,.invoice-table td{padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:11px;overflow-wrap:anywhere;word-break:break-word}
+.invoice-table th{background:#eff6ff;color:#334155;font-weight:800}
 .invoice-table tr:last-child td{border-bottom:0}
-.invoice-total-section{border:1px solid #dbe7f5;border-radius:18px;padding:14px;background:linear-gradient(180deg,#ffffff,#f8fbff)}
-.invoice-totals{display:grid;gap:10px}
-.invoice-totals p{margin:0;display:flex;justify-content:space-between;gap:12px;color:#334155;font-size:13px}
-.invoice-grand-total{padding-top:10px;border-top:1px dashed #bfd7ff;font-size:16px;font-weight:800;color:#0f172a}
-.invoice-workers{display:grid;gap:8px}
-.invoice-workers p{margin:0;display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:14px;background:#f8fbff;border:1px solid #dbe7f5;font-size:13px}
-.invoice-sheet-footer{padding-top:10px;border-top:1px dashed #cbd5e1;display:grid;gap:6px}
-.invoice-sheet-footer p{margin:0;color:#475569;font-size:12px;line-height:1.9;overflow-wrap:anywhere}
+.invoice-total-section{border:1px solid #dbe7f5;border-radius:16px;padding:12px 14px;background:linear-gradient(180deg,#ffffff,#f8fbff)}
+.invoice-totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}
+.invoice-totals p{margin:0;display:flex;justify-content:space-between;gap:10px;color:#334155;font-size:11px}
+.invoice-grand-total{grid-column:1 / -1;padding-top:6px;border-top:1px dashed #bfd7ff;font-size:13px;font-weight:800;color:#0f172a}
+.invoice-sheet-footer{padding-top:6px;border-top:1px dashed #cbd5e1;display:grid;gap:3px}
+.invoice-sheet-footer p{margin:0;color:#475569;font-size:10px;line-height:1.7;overflow-wrap:anywhere}
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .modal-panel { width: min(1280px, 100%); max-width: 100%; max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
 .vehicle-entry-overlay { align-items: center; justify-content: center; }
@@ -2008,12 +2230,12 @@ onBeforeUnmount(() => {
   .release-layout { grid-template-columns: 1fr; }
   .release-col { min-height: auto; }
   .bonus-penalty-row { grid-template-columns: 1fr; }
-  .summary-stat-grid,.worker-selection-grid,.modern-worker-share-editor,.release-secondary-grid,.cheque-fields-grid { grid-template-columns: 1fr; }
+  .summary-stat-grid,.worker-selection-grid,.modern-worker-share-editor,.release-secondary-grid,.cheque-fields-grid,.split-payment-grid { grid-template-columns: 1fr; }
   .detail-field-wide,.cheque-field-wide { grid-column: auto; }
   .release-secondary-section { margin: 14px 20px 20px; }
   .invoice-sheet-head,.invoice-sheet-grid{grid-template-columns:1fr;display:grid}
   .invoice-sheet-meta{justify-items:start}
-  .invoice-totals p,.invoice-workers p{align-items:flex-start}
+  .invoice-totals p{align-items:flex-start}
 }
 @media (max-width: 768px) {
   .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -2239,7 +2461,7 @@ onBeforeUnmount(() => {
   .invoice-preview-loading,.invoice-preview-empty{min-height:220px}
   .invoice-modal-panel{height:calc(100vh - 16px)}
   .invoice-modal-actions{flex-direction:column}
-  .invoice-totals p,.invoice-workers p{flex-direction:column}
+  .invoice-totals p{flex-direction:column}
 }
 @media (max-width: 480px) {
   .filters {

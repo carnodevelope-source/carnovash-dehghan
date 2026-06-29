@@ -17,6 +17,9 @@ from apps.products.models import Product
 from apps.inventory.models import InventoryItem, StockMovement
 
 
+VALID_IRAN_MOBILE_PATTERN = r'^0\d{10}$'
+
+
 class VehicleJobServiceLineSerializer(serializers.ModelSerializer):
     service_name = serializers.SerializerMethodField()
 
@@ -205,6 +208,39 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             updated_at=assigned_at,
         )
 
+    def _resolve_worker_payment_defaults(self, tenant, payload, assigned_worker=None):
+        worker_ids = self._assigned_worker_ids_from_payload(payload, assigned_worker)
+        if not worker_ids:
+            return None, None
+
+        profiles = list(WorkerProfile.objects.filter(tenant=tenant, id__in=worker_ids))
+        if not profiles:
+            return None, None
+
+        profiles_by_id = {profile.id: profile for profile in profiles}
+        ordered_profiles = [profiles_by_id[worker_id] for worker_id in worker_ids if worker_id in profiles_by_id]
+        if not ordered_profiles:
+            return None, None
+
+        payment_configs = []
+        for profile in ordered_profiles:
+            if profile.payment_type == 'hourly' and (profile.default_hourly_wage or 0) > 0:
+                payment_configs.append((VehicleJob.WorkerPaymentType.HOURLY, Decimal(str(profile.default_hourly_wage or 0))))
+            elif profile.payment_type == 'fixed' or (profile.default_fixed_wage or 0) > 0:
+                payment_configs.append((VehicleJob.WorkerPaymentType.FIXED, Decimal(str(profile.default_fixed_wage or 0))))
+            else:
+                payment_configs.append((VehicleJob.WorkerPaymentType.PERCENT, Decimal(str(profile.default_commission_percent or 0))))
+
+        if len(payment_configs) == 1:
+            return payment_configs[0]
+
+        unique_types = {config[0] for config in payment_configs}
+        if len(unique_types) == 1:
+            average_value = sum((config[1] for config in payment_configs), Decimal('0')) / Decimal(str(len(payment_configs)))
+            return payment_configs[0][0], average_value
+
+        return payment_configs[0]
+
     @transaction.atomic
     def create(self, validated_data):
         request = self.context.get('request')
@@ -255,16 +291,14 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         payment_type = share_payload.get('type', VehicleJob.WorkerPaymentType.PERCENT)
         share_value = share_payload.get('value', 0) or 0
-        if assigned_worker:
-            if assigned_worker.payment_type == 'hourly' and (assigned_worker.default_hourly_wage or 0) > 0:
-                payment_type = VehicleJob.WorkerPaymentType.HOURLY
-                share_value = assigned_worker.default_hourly_wage or 0
-            elif (assigned_worker.default_fixed_wage or 0) > 0:
-                payment_type = VehicleJob.WorkerPaymentType.FIXED
-                share_value = assigned_worker.default_fixed_wage or 0
-            else:
-                payment_type = VehicleJob.WorkerPaymentType.PERCENT
-                share_value = assigned_worker.default_commission_percent or 0
+        resolved_payment_type, resolved_share_value = self._resolve_worker_payment_defaults(
+            tenant=tenant,
+            payload=staff_members_payload,
+            assigned_worker=assigned_worker,
+        )
+        if resolved_payment_type:
+            payment_type = resolved_payment_type
+            share_value = resolved_share_value or 0
         services_total = Decimal('0')
         normalized_services = []
         for item in services_payload:
@@ -519,16 +553,14 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         )
         products_total = vehicle_job.products_total or Decimal('0')
 
-        if assigned_worker:
-            if assigned_worker.payment_type == 'hourly' and (assigned_worker.default_hourly_wage or 0) > 0:
-                payment_type = VehicleJob.WorkerPaymentType.HOURLY
-                share_value = Decimal(str(assigned_worker.default_hourly_wage or 0))
-            elif (assigned_worker.default_fixed_wage or 0) > 0:
-                payment_type = VehicleJob.WorkerPaymentType.FIXED
-                share_value = Decimal(str(assigned_worker.default_fixed_wage or 0))
-            else:
-                payment_type = VehicleJob.WorkerPaymentType.PERCENT
-                share_value = Decimal(str(assigned_worker.default_commission_percent or 0))
+        resolved_payment_type, resolved_share_value = self._resolve_worker_payment_defaults(
+            tenant=tenant,
+            payload=staff_members_payload if staff_members_provided else (vehicle_job.assigned_workers_snapshot or []),
+            assigned_worker=assigned_worker,
+        )
+        if resolved_payment_type:
+            payment_type = resolved_payment_type
+            share_value = Decimal(str(resolved_share_value or 0))
         else:
             if share_provided and isinstance(share_payload, dict):
                 payment_type = share_payload.get('type', vehicle_job.worker_payment_type or VehicleJob.WorkerPaymentType.PERCENT)
@@ -606,6 +638,52 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         )
 
         return instance
+
+    def validate_plate_type(self, value):
+        normalized = str(value or VehicleEntry.PlateType.CAR).strip().lower()
+        valid_choices = {choice[0] for choice in VehicleEntry.PlateType.choices}
+        if normalized not in valid_choices:
+            raise serializers.ValidationError('نوع پلاک نامعتبر است.')
+        return normalized
+
+    def validate_plate_left(self, value):
+        normalized = str(value or '').strip()
+        if len(normalized) > 2:
+            raise serializers.ValidationError('بخش آبی پلاک باید حداکثر ۲ کاراکتر باشد.')
+        return normalized
+
+    def validate_plate_right(self, value):
+        normalized = str(value or '').strip()
+        if len(normalized) > 2:
+            raise serializers.ValidationError('بخش دو رقمی پلاک باید حداکثر ۲ کاراکتر باشد.')
+        return normalized
+
+    def validate_plate_mid(self, value):
+        normalized = str(value or '').strip()
+        if len(normalized) > 3:
+            raise serializers.ValidationError('بخش سه رقمی پلاک باید حداکثر ۳ کاراکتر باشد.')
+        return normalized
+
+    def validate_plate_letter(self, value):
+        normalized = str(value or '').strip()
+        if len(normalized) > 5:
+            raise serializers.ValidationError('بخش حرف پلاک بیش از حد مجاز است.')
+        return normalized
+
+    def validate_driver_phone(self, value):
+        phone = self._normalize_phone(value)
+        requested_status = (
+            self.initial_data.get('status')
+            if isinstance(getattr(self, 'initial_data', None), dict)
+            else None
+        ) or VehicleEntry.Status.ENTERED
+        if requested_status == VehicleEntry.Status.ENTERED and not phone:
+            return ''
+        if not phone:
+            raise serializers.ValidationError('شماره تماس الزامی است.')
+        if len(phone) != 11 or not phone.startswith('0'):
+            raise serializers.ValidationError('شماره تماس باید دقیقا 11 رقم و با 0 شروع شود.')
+        return phone
 
     def _normalize_staff_members_payload(self, payload, assigned_worker=None):
         def _normalized_percent(value):
@@ -780,6 +858,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'plate_letter',
             'plate_mid',
             'plate_right',
+            'plate_type',
             'car_model',
             'car_color',
             'driver_name',
@@ -811,9 +890,12 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'check_in_at', 'created_at', 'updated_at']
         extra_kwargs = {
             'plate_number': {'required': False, 'allow_blank': True},
+            'plate_left': {'required': False, 'allow_blank': True},
+            'plate_letter': {'required': False, 'allow_blank': True},
+            'plate_mid': {'required': False, 'allow_blank': True},
+            'plate_right': {'required': False, 'allow_blank': True},
             'car_model': {'required': False, 'allow_blank': True},
             'car_color': {'required': False, 'allow_blank': True},
             'driver_name': {'required': False, 'allow_blank': True},
             'driver_phone': {'required': False, 'allow_blank': True},
         }
-
