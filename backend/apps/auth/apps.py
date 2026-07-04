@@ -6,3 +6,8 @@ class AuthConfig(AppConfig):
     name = 'apps.auth'
     label = 'cw_auth'
     verbose_name = 'Authentication'
+
+    def ready(self):
+        from .scheduler import start_internal_scheduler
+
+        start_internal_scheduler()

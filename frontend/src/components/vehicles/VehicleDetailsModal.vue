@@ -258,7 +258,8 @@ const workerTotalWithTip = (job) => {
   .vehicle-details-modal-panel { height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); border-radius: 14px; }
   .vehicle-details-grid { padding: 14px; }
   .vehicle-details-summary-strip,
-  .vehicle-details-info-grid-four { grid-template-columns: 1fr; }
+  .vehicle-details-info-grid,
+  .vehicle-details-info-grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vehicle-details-list-item,
   .vehicle-details-actions { flex-direction: column; align-items: stretch; }
 }

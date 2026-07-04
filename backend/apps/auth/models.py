@@ -213,3 +213,27 @@ class SupportTicketMessage(models.Model):
 
     def __str__(self) -> str:
         return f'Ticket #{self.ticket_id} message'
+
+
+class SupportTicketAttachment(models.Model):
+    ticket = models.ForeignKey(
+        SupportTicket,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+    )
+    uploaded_by = models.ForeignKey(
+        'cw_auth.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='support_ticket_attachments',
+    )
+    file = models.FileField(upload_to='support_tickets/%Y/%m/')
+    original_name = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+
+    def __str__(self) -> str:
+        return f'Ticket #{self.ticket_id} attachment'

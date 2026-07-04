@@ -113,7 +113,7 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
 
 .plate-two,
 .plate-three {
-  font-size: 24px;
+  font-size: 15px;
   font-weight: 700;
   height: 40px;
   padding-top: 12px;
@@ -121,7 +121,7 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
 }
 
 .plate-letter {
-  font-size: 24px;
+  font-size: 15px;
   font-weight: 700;
   min-width: 20px;
   padding-top: 2px;
@@ -136,7 +136,7 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 24px;
+  font-size: 15px;
   line-height: 1;
   padding-top: 12px;
   padding-bottom: 8px;
@@ -215,29 +215,33 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
 }
 
 .compact .plate-white-wrap {
-  padding: 4px 8px;
-  gap: 6px;
+  padding: 2px 5px;
+  gap: 3px;
+  flex-wrap: nowrap;
 }
 
 .compact .plate-two,
 .compact .plate-three {
-  height: 24px;
-  font-size: 15px;
-  padding-top: 5px;
-  padding-bottom: 3px;
+  height: 16px;
+  font-size: 10px;
+  padding-top: 2px;
+  padding-bottom: 1px;
+  white-space: nowrap;
 }
 
 .compact .plate-letter {
-  min-width: 12px;
-  font-size: 15px;
+  min-width: 8px;
+  font-size: 10px;
   padding-top: 0;
+  white-space: nowrap;
 }
 
 .compact .plate-blue {
-  min-width: 32px;
-  font-size: 13px;
-  padding-top: 5px;
-  padding-bottom: 3px;
+  min-width: 18px;
+  font-size: 8px;
+  padding-top: 2px;
+  padding-bottom: 1px;
+  white-space: nowrap;
 }
 
 .compact .motor-blue {

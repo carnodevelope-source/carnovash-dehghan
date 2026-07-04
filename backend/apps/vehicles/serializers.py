@@ -15,6 +15,7 @@ from apps.services.models import Service
 from apps.workers.models import WorkerProfile
 from apps.products.models import Product
 from apps.inventory.models import InventoryItem, StockMovement
+from apps.notifications.services import send_vehicle_event_sms
 
 
 VALID_IRAN_MOBILE_PATTERN = r'^0\d{10}$'
@@ -152,6 +153,11 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
 
 
 class VehicleEntrySerializer(serializers.ModelSerializer):
+    plate_number = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    plate_left = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    plate_letter = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    plate_mid = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    plate_right = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     services = serializers.ListField(write_only=True, required=False, default=list)
     products = serializers.ListField(write_only=True, required=False, default=list)
     staff_members = serializers.ListField(write_only=True, required=False, default=list)
@@ -287,6 +293,10 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             increment_visit=True,
             tenant=tenant,
         )
+        if requested_status == VehicleEntry.Status.READY_TO_SETTLE and not validated_data.get('ready_at'):
+            validated_data['ready_at'] = timezone.now()
+        if requested_status == VehicleEntry.Status.RELEASED and not validated_data.get('released_at'):
+            validated_data['released_at'] = timezone.now()
         vehicle_entry = VehicleEntry.objects.create(customer=customer, tenant=tenant, **validated_data)
 
         payment_type = share_payload.get('type', VehicleJob.WorkerPaymentType.PERCENT)
@@ -414,12 +424,22 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 else None,
             )
 
+        if requested_status == VehicleEntry.Status.READY_TO_SETTLE:
+            send_vehicle_event_sms(
+                'vehicle_assigned',
+                tenant,
+                vehicle_entry,
+                created_by=request.user if getattr(request, 'user', None) and request.user.is_authenticated else None,
+                extra_context={'assigned_at': vehicle_entry.ready_at or vehicle_entry.updated_at},
+            )
+
         return vehicle_entry
 
     @transaction.atomic
     def update(self, instance, validated_data):
         request = self.context.get('request')
         tenant = getattr(getattr(request, 'user', None), 'tenant', None)
+        previous_status = instance.status
         initial = getattr(self, 'initial_data', {}) or {}
         services_provided = 'services' in initial
         share_provided = 'share' in initial
@@ -637,6 +657,18 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             ]
         )
 
+        if instance.status == VehicleEntry.Status.READY_TO_SETTLE and previous_status != VehicleEntry.Status.READY_TO_SETTLE:
+            if not instance.ready_at:
+                instance.ready_at = timezone.now()
+                instance.save(update_fields=['ready_at', 'updated_at'])
+            send_vehicle_event_sms(
+                'vehicle_assigned',
+                tenant,
+                instance,
+                created_by=request.user if getattr(request, 'user', None) and request.user.is_authenticated else None,
+                extra_context={'assigned_at': instance.ready_at or instance.updated_at},
+            )
+
         return instance
 
     def validate_plate_type(self, value):
@@ -646,13 +678,40 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('نوع پلاک نامعتبر است.')
         return normalized
 
+    def _incoming_plate_type(self):
+        if isinstance(getattr(self, 'initial_data', None), dict):
+            raw_value = self.initial_data.get('plate_type')
+            if raw_value:
+                return str(raw_value).strip().lower()
+        return str(getattr(self.instance, 'plate_type', VehicleEntry.PlateType.CAR) or VehicleEntry.PlateType.CAR).strip().lower()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        plate_type = str(
+            attrs.get('plate_type')
+            or getattr(self.instance, 'plate_type', VehicleEntry.PlateType.CAR)
+            or VehicleEntry.PlateType.CAR
+        ).strip().lower()
+        if plate_type == VehicleEntry.PlateType.MOTORCYCLE:
+            attrs['plate_left'] = ''
+            attrs['plate_right'] = ''
+            attrs['plate_mid'] = str(attrs.get('plate_mid', getattr(self.instance, 'plate_mid', '')) or '').strip()[:3]
+            attrs['plate_letter'] = str(attrs.get('plate_letter', getattr(self.instance, 'plate_letter', '')) or '').strip()[:5]
+            if attrs['plate_mid'] and attrs['plate_letter']:
+                attrs['plate_number'] = f"{attrs['plate_mid']} {attrs['plate_letter']}"
+        return attrs
+
     def validate_plate_left(self, value):
+        if self._incoming_plate_type() == VehicleEntry.PlateType.MOTORCYCLE:
+            return ''
         normalized = str(value or '').strip()
         if len(normalized) > 2:
             raise serializers.ValidationError('بخش آبی پلاک باید حداکثر ۲ کاراکتر باشد.')
         return normalized
 
     def validate_plate_right(self, value):
+        if self._incoming_plate_type() == VehicleEntry.PlateType.MOTORCYCLE:
+            return ''
         normalized = str(value or '').strip()
         if len(normalized) > 2:
             raise serializers.ValidationError('بخش دو رقمی پلاک باید حداکثر ۲ کاراکتر باشد.')
@@ -681,8 +740,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             return ''
         if not phone:
             raise serializers.ValidationError('شماره تماس الزامی است.')
-        if len(phone) != 11 or not phone.startswith('0'):
-            raise serializers.ValidationError('شماره تماس باید دقیقا 11 رقم و با 0 شروع شود.')
+        if len(phone) != 11 or not phone.startswith('09'):
+            raise serializers.ValidationError('شماره تماس باید دقیقا 11 رقم و با 09 شروع شود.')
         return phone
 
     def _normalize_staff_members_payload(self, payload, assigned_worker=None):
@@ -763,18 +822,21 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if not phone_value:
             return None
 
-        customer, _ = CustomerProfile.objects.get_or_create(
-            phone=phone_value,
-            tenant=tenant,
-            defaults={
-                'full_name': (full_name or '').strip(),
-                'yearly_score': Decimal('0'),
-                'score_year': timezone.localtime().year,
-            },
-        )
+        customer = CustomerProfile.objects.filter(phone=phone_value).first()
+        if not customer:
+            customer = CustomerProfile.objects.create(
+                phone=phone_value,
+                tenant=tenant,
+                full_name=(full_name or '').strip(),
+                yearly_score=Decimal('0'),
+                score_year=timezone.localtime().year,
+            )
 
         update_fields = ['updated_at']
         display_name = (full_name or '').strip()
+        if tenant and customer.tenant_id is None:
+            customer.tenant = tenant
+            update_fields.append('tenant')
         if display_name and display_name != (customer.full_name or '').strip():
             customer.full_name = display_name
             update_fields.append('full_name')

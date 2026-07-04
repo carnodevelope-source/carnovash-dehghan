@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth.store'
 import { defaultRouteByRole } from '../config/navigation'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess } from '../utils/attendanceAccess'
+import { notifyWarning } from '../utils/notify'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('../views/auth/LoginView.vue'), meta: { public: true } },
@@ -64,7 +65,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.path === ATTENDANCE_ROUTE && !hasAttendanceAccess(authStore.user)) {
-    if (typeof window !== 'undefined') window.alert(getAttendanceUpgradeMessage())
+    notifyWarning(getAttendanceUpgradeMessage(), { title: 'دسترسی محدود' })
     return defaultRouteByRole[authStore.role] || '/'
   }
 

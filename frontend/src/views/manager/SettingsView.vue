@@ -16,6 +16,7 @@
           :class="{ active: activeTab === tab.key }"
           @click="activeTab = tab.key"
         >
+          <IconlyIcon :name="tab.icon" size="sm" />
           {{ tab.label }}
         </button>
       </section>
@@ -26,7 +27,7 @@
         <template v-if="activeTab === 'workers'">
           <div class="head-row">
             <h2>مدیریت پرسنل</h2>
-            <button class="primary-btn" @click="openWorkerModal()">افزودن پرسنل</button>
+            <button class="primary-btn btn-with-icon" @click="openWorkerModal()"><IconlyIcon name="plus" size="sm" />افزودن پرسنل</button>
           </div>
           <div class="table-wrap">
             <table>
@@ -71,8 +72,8 @@
           <div class="head-row">
             <h2>مدیریت محصولات</h2>
             <div class="head-actions">
-              <button class="secondary-btn" @click="openProductPurchaseModal()">ثبت خرید جدید</button>
-              <button class="primary-btn" @click="openProductModal()">افزودن محصول</button>
+              <button class="secondary-btn btn-with-icon" @click="openProductPurchaseModal()"><IconlyIcon name="buy" size="sm" />ثبت خرید جدید</button>
+              <button class="primary-btn btn-with-icon" @click="openProductModal()"><IconlyIcon name="plus" size="sm" />افزودن محصول</button>
             </div>
           </div>
           <div class="table-wrap">
@@ -111,7 +112,7 @@
         <template v-else-if="activeTab === 'expenses'">
           <div class="head-row">
             <h2>هزینه‌ها</h2>
-            <button class="primary-btn" @click="openExpenseModal()">ثبت هزینه جدید</button>
+            <button class="primary-btn btn-with-icon" @click="openExpenseModal()"><IconlyIcon name="plus" size="sm" />ثبت هزینه جدید</button>
           </div>
           <div class="expense-summary-strip">
             <article>
@@ -162,7 +163,7 @@
         <template v-else-if="activeTab === 'services'">
           <div class="head-row">
             <h2>مدیریت خدمات</h2>
-            <button class="primary-btn" @click="openServiceModal()">افزودن خدمت</button>
+            <button class="primary-btn btn-with-icon" @click="openServiceModal()"><IconlyIcon name="paperPlus" size="sm" />افزودن خدمت</button>
           </div>
           <div class="table-wrap">
             <table>
@@ -198,33 +199,52 @@
         </template>
 
         <template v-else>
-          <div class="head-row">
-            <h2>تنظیمات عمومی</h2>
-          </div>
+          <section class="settings-hero">
+            <div class="settings-hero-copy">
+              <span class="settings-hero-kicker">کنترل مرکزی شعبه</span>
+              <h2>تنظیمات عمومی</h2>
+              <p>تخفیف مشتری، پرداخت، فیش پرینتر و قالب پیامک را از یک نمای مرتب، روشن و سریع مدیریت کنید.</p>
+            </div>
+            <div class="settings-hero-stats">
+              <article>
+                <span>تخفیف هر ستاره کامل</span>
+                <strong>{{ fullStarDiscountLabel }}</strong>
+              </article>
+              <article>
+                <span>بانک اصلی</span>
+                <strong>{{ generalSettings.preferred_bank_name || 'ثبت نشده' }}</strong>
+              </article>
+              <article>
+                <span>فیش پرینتر</span>
+                <strong>{{ generalSettings.receipt_printer_enabled ? 'فعال' : 'غیرفعال' }}</strong>
+              </article>
+            </div>
+          </section>
           <div class="general-settings-form">
-            <section class="general-settings-card">
+            <section class="general-settings-card general-settings-card-accent">
               <div class="general-settings-head">
                 <div>
                   <strong>تنظیمات تخفیف مشتری</strong>
                   <p class="helper-text">مبنای تخفیف ستاره‌ای مشتری را از اینجا تنظیم کنید.</p>
                 </div>
               </div>
-              <label class="general-setting-label">
-                <span>درصد تخفیف به‌ازای هر نیم‌ستاره</span>
-                <input
-                  v-model.number="generalSettings.discount_percent_per_half_star"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                />
-              </label>
-              <p class="helper-text">
-                مثال: اگر این مقدار ۵٪ باشد، با هر ۱ ستاره کامل، تخفیف مشتری ۱۰٪ خواهد بود.
-              </p>
-              <p class="helper-text">
-                پیش‌نمایش فعلی: ۱ ستاره کامل = {{ fullStarDiscountLabel }} تخفیف
-              </p>
+              <div class="discount-editor-grid">
+                <label class="general-setting-label">
+                  <span>درصد تخفیف به‌ازای هر نیم‌ستاره</span>
+                  <input
+                    v-model.number="generalSettings.discount_percent_per_half_star"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                  />
+                </label>
+                <article class="discount-preview-card">
+                  <small>پیش‌نمایش سریع</small>
+                  <strong>{{ fullStarDiscountLabel }}</strong>
+                  <p>اگر مقدار هر نیم‌ستاره {{ generalSettings.discount_percent_per_half_star || 0 }}٪ باشد، هر یک ستاره کامل دو برابر همین عدد تخفیف می‌دهد.</p>
+                </article>
+              </div>
             </section>
             <section class="general-settings-card payment-settings-card">
               <div class="general-settings-head">
@@ -264,44 +284,29 @@
                 </label>
               </div>
             </section>
-            <section class="general-settings-card printer-settings-card">
+            <section class="general-settings-card sms-settings-card">
               <div class="general-settings-head">
                 <div>
-                  <strong>تنظیمات فیش پرینتر</strong>
-                  <p class="helper-text">مشخصات چاپ فیش و نحوه خروجی گرفتن از صندوق را از این بخش تنظیم کنید.</p>
+                  <strong>تنظیمات سرویس پیامک</strong>
                 </div>
               </div>
-              <div class="printer-settings-grid">
-                <label class="row-check printer-toggle">
-                  <input v-model="generalSettings.receipt_printer_enabled" type="checkbox" />
-                  <span>فیش پرینتر فعال باشد</span>
-                </label>
-                <label class="general-setting-label">
-                  <span>نام پرینتر</span>
-                  <input v-model.trim="generalSettings.receipt_printer_name" type="text" placeholder="مثلا Epson TM-T20III" />
-                </label>
-                <label class="general-setting-label">
-                  <span>عرض کاغذ</span>
-                  <select v-model="generalSettings.receipt_printer_paper_width">
-                    <option value="58mm">58mm</option>
-                    <option value="80mm">80mm</option>
-                    <option value="a4">A4</option>
-                  </select>
-                </label>
-                <label class="general-setting-label">
-                  <span>تعداد نسخه چاپ</span>
-                  <input v-model.number="generalSettings.receipt_print_copies" type="number" min="1" max="5" />
-                </label>
-                <div class="printer-checks">
-                  <label class="row-check"><input v-model="generalSettings.receipt_auto_print" type="checkbox" /><span>چاپ خودکار بعد از ترخیص</span></label>
-                  <label class="row-check"><input v-model="generalSettings.receipt_show_logo" type="checkbox" /><span>نمایش لوگو در فیش</span></label>
-                  <label class="row-check"><input v-model="generalSettings.receipt_show_qr" type="checkbox" /><span>نمایش QR در فیش</span></label>
-                </div>
+              <div class="sms-template-grid">
                 <label class="general-setting-label full-width">
-                  <span>متن پایین فیش</span>
-                  <textarea v-model.trim="generalSettings.receipt_footer_note" rows="4" placeholder="مثلا: با تشکر از اعتماد شما - ساعات پاسخگویی ۸ تا ۲۲" />
+                  <span>پیام تخصیص خودرو</span>
+                  <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="6" />
+                </label>
+                <label class="general-setting-label full-width">
+                  <span>بخش پیش‌فاکتور پیام تخصیص</span>
+                  <textarea v-model.trim="generalSettings.sms_vehicle_assigned_invoice_template" rows="8" />
+                </label>
+                <label class="general-setting-label full-width">
+                  <span>پیام بعد از ترخیص</span>
+                  <textarea v-model.trim="generalSettings.sms_vehicle_released_template" rows="7" />
                 </label>
               </div>
+              <p class="helper-text">
+                متغیرهای قابل استفاده: `[خطاب مشتری]`، `[نام مشتری]`، `[نام کارواش]`، `[پلاک]`، `[ساعت تخصیص]`، `[تاریخ تخصیص]`، `[خلاصه خدمات]`، `[جمع کل]`، `[ساعت ترخیص]`، `[تاریخ ترخیص]`، `[امتیاز مشتری]`، `[درصد تخفیف سفارش بعد]`، `[مبلغ نهایی]`، `[جمع تخفیف]`
+              </p>
             </section>
             <div class="modal-actions">
               <button class="primary-btn" :disabled="generalSettingsSaving" @click="saveGeneralSettings">
@@ -322,7 +327,7 @@
 
         <form class="modal-form" @submit.prevent="submitModal">
           <template v-if="modal.type === 'workers'">
-            <label><span>نام کامل</span><input v-model="forms.worker.full_name" required /></label>
+            <label><span>نام و نام خانوادگی</span><input v-model="forms.worker.full_name" required /></label>
             <label>
               <span>نقش پرسنل</span>
               <select v-model="forms.worker.role">
@@ -549,6 +554,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import AppShell from '../../components/layout/AppShell.vue'
+import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
@@ -559,11 +565,11 @@ const activeTab = ref('workers')
 const errorMessage = ref('')
 
 const tabs = [
-  { key: 'workers', label: 'پرسنل' },
-  { key: 'products', label: 'محصولات' },
-  { key: 'expenses', label: 'هزینه‌ها' },
-  { key: 'services', label: 'خدمات' },
-  { key: 'general', label: 'تنظیمات عمومی' }
+  { key: 'workers', label: 'پرسنل', icon: 'users3' },
+  { key: 'products', label: 'محصولات', icon: 'buy' },
+  { key: 'expenses', label: 'هزینه‌ها', icon: 'wallet' },
+  { key: 'services', label: 'خدمات', icon: 'paperPlus' },
+  { key: 'general', label: 'تنظیمات عمومی', icon: 'setting' }
 ]
 
 const workers = ref([])
@@ -587,7 +593,14 @@ const generalSettings = reactive({
   receipt_auto_print: false,
   receipt_show_logo: false,
   receipt_show_qr: false,
-  receipt_footer_note: ''
+  receipt_footer_note: '',
+  sms_provider_base_url: 'https://api.iranpayamak.com',
+  sms_provider_line_number: '',
+  sms_provider_api_key_configured: false,
+  sms_provider_source: 'env',
+  sms_vehicle_assigned_template: '',
+  sms_vehicle_assigned_invoice_template: '',
+  sms_vehicle_released_template: ''
 })
 const generalSettingsSaving = ref(false)
 
@@ -721,6 +734,13 @@ const loadAll = async () => {
       generalSettings.receipt_show_logo = Boolean(gs.data?.receipt_show_logo)
       generalSettings.receipt_show_qr = Boolean(gs.data?.receipt_show_qr)
       generalSettings.receipt_footer_note = gs.data?.receipt_footer_note || ''
+      generalSettings.sms_provider_base_url = gs.data?.sms_provider_base_url || 'https://api.iranpayamak.com'
+      generalSettings.sms_provider_line_number = gs.data?.sms_provider_line_number || ''
+      generalSettings.sms_provider_api_key_configured = Boolean(gs.data?.sms_provider_api_key_configured)
+      generalSettings.sms_provider_source = gs.data?.sms_provider_source || 'env'
+      generalSettings.sms_vehicle_assigned_template = gs.data?.sms_vehicle_assigned_template || ''
+      generalSettings.sms_vehicle_assigned_invoice_template = gs.data?.sms_vehicle_assigned_invoice_template || ''
+      generalSettings.sms_vehicle_released_template = gs.data?.sms_vehicle_released_template || ''
     } catch {
       generalSettings.discount_percent_per_half_star = 0
       generalSettings.preferred_bank_name = ''
@@ -738,6 +758,13 @@ const loadAll = async () => {
       generalSettings.receipt_show_logo = false
       generalSettings.receipt_show_qr = false
       generalSettings.receipt_footer_note = ''
+      generalSettings.sms_provider_base_url = 'https://api.iranpayamak.com'
+      generalSettings.sms_provider_line_number = ''
+      generalSettings.sms_provider_api_key_configured = false
+      generalSettings.sms_provider_source = 'env'
+      generalSettings.sms_vehicle_assigned_template = ''
+      generalSettings.sms_vehicle_assigned_invoice_template = ''
+      generalSettings.sms_vehicle_released_template = ''
     }
   } catch (e) {
     errorMessage.value = resolveApiErrorMessage(e, 'خطا در بارگذاری داده‌ها')
@@ -763,7 +790,10 @@ const saveGeneralSettings = async () => {
       receipt_auto_print: Boolean(generalSettings.receipt_auto_print),
       receipt_show_logo: Boolean(generalSettings.receipt_show_logo),
       receipt_show_qr: Boolean(generalSettings.receipt_show_qr),
-      receipt_footer_note: generalSettings.receipt_footer_note || ''
+      receipt_footer_note: generalSettings.receipt_footer_note || '',
+      sms_vehicle_assigned_template: generalSettings.sms_vehicle_assigned_template || '',
+      sms_vehicle_assigned_invoice_template: generalSettings.sms_vehicle_assigned_invoice_template || '',
+      sms_vehicle_released_template: generalSettings.sms_vehicle_released_template || ''
     }
     const response = await api.patch('/services/general-settings/', payload)
     generalSettings.discount_percent_per_half_star = Number(response.data?.discount_percent_per_half_star || 0)
@@ -782,6 +812,13 @@ const saveGeneralSettings = async () => {
     generalSettings.receipt_show_logo = Boolean(response.data?.receipt_show_logo)
     generalSettings.receipt_show_qr = Boolean(response.data?.receipt_show_qr)
     generalSettings.receipt_footer_note = response.data?.receipt_footer_note || ''
+    generalSettings.sms_provider_base_url = response.data?.sms_provider_base_url || 'https://api.iranpayamak.com'
+    generalSettings.sms_provider_line_number = response.data?.sms_provider_line_number || ''
+    generalSettings.sms_provider_api_key_configured = Boolean(response.data?.sms_provider_api_key_configured)
+    generalSettings.sms_provider_source = response.data?.sms_provider_source || 'env'
+    generalSettings.sms_vehicle_assigned_template = response.data?.sms_vehicle_assigned_template || ''
+    generalSettings.sms_vehicle_assigned_invoice_template = response.data?.sms_vehicle_assigned_invoice_template || ''
+    generalSettings.sms_vehicle_released_template = response.data?.sms_vehicle_released_template || ''
     t('تنظیمات عمومی ذخیره شد')
   } catch (e) {
     t(apiErrorText(e), 'error')
@@ -1042,8 +1079,10 @@ onMounted(async () => {
 <style scoped>
 .settings-content { min-width: 0; }
 .tabs-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-.chip { border: 0; background: #e2e8f0; color: #334155; padding: 8px 14px; border-radius: 999px; cursor: pointer; }
+.chip { border: 0; background: #e2e8f0; color: #334155; padding: 8px 14px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
 .chip.active { background: #2563eb; color: #fff; }
+.chip.active :deep(.iconly-shell),
+.primary-btn :deep(.iconly-shell) { --iconly-filter: brightness(0) saturate(100%) invert(100%); }
 .card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; }
 .head-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; }
 .head-actions { display: flex; gap: 8px; }
@@ -1059,6 +1098,7 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .primary-btn, .secondary-btn { border: 0; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
 .primary-btn { background: linear-gradient(90deg,#2563eb,#0891b2); color: #fff; }
 .secondary-btn { background: #e2e8f0; }
+.btn-with-icon { display: inline-flex; align-items: center; gap: 8px; }
 .table-btn { border: 0; background: #e2e8f0; padding: 6px 10px; border-radius: 8px; cursor: pointer; margin-left: 6px; }
 .table-btn.danger { background: #fee2e2; color: #991b1b; }
 .table-meta-note { color: #64748b; font-size: 12px; font-weight: 700; }
@@ -1135,35 +1175,95 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .history-summary article { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; background: #f8fbff; display: grid; gap: 6px; }
 .history-summary span { color: #64748b; font-size: 12px; }
 .history-summary strong { color: #0f172a; font-size: 14px; }
-.general-settings-form { display: grid; gap: 14px; }
-.general-settings-card {
-  border: 1px solid #dbe7f5;
-  border-radius: 18px;
-  padding: 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+.settings-hero {
   display: grid;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, .9fr);
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 22px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(34, 197, 94, 0.10), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.14), transparent 24%),
+    linear-gradient(135deg, #f8fcff 0%, #f5fbfa 54%, #ffffff 100%);
+  border: 1px solid #d8e9ef;
 }
+.settings-hero-copy { display: grid; gap: 10px; align-content: center; }
+.settings-hero-kicker { color: #0f766e; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+.settings-hero-copy h2 { font-size: 28px; }
+.settings-hero-copy p { margin: 0; color: #4b5d72; line-height: 2; }
+.settings-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.settings-hero-stats article {
+  border-radius: 22px;
+  padding: 16px;
+  background: rgba(255,255,255,.88);
+  border: 1px solid #e2edf2;
+  display: grid;
+  gap: 8px;
+}
+.settings-hero-stats span { color: #64748b; font-size: 12px; }
+.settings-hero-stats strong { color: #0f172a; font-size: 17px; line-height: 1.5; }
+.general-settings-form { display: grid; gap: 16px; }
+.general-settings-card {
+  border: 1px solid #d8e6ee;
+  border-radius: 26px;
+  padding: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,252,255,.98) 100%);
+  display: grid;
+  gap: 14px;
+}
+.general-settings-card-accent { background: linear-gradient(135deg, #f7fffc 0%, #f8fbff 48%, #ffffff 100%); }
 .general-settings-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
-.general-settings-head strong { color: #0f172a; font-size: 15px; }
+.general-settings-head strong { color: #0f172a; font-size: 16px; }
 .general-setting-label { display: grid; gap: 6px; }
 .general-setting-label input,
-.general-setting-label textarea {
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: #fff;
+.general-setting-label textarea,
+.general-setting-label select {
+  border: 1px solid #d9e3ea;
+  border-radius: 18px;
+  padding: 10px 14px;
+  background: #f9fbfc;
   font: inherit;
+  box-shadow: none !important;
+  outline: none;
+  transition: border-color .2s ease, background .2s ease;
 }
-.general-setting-label input { height: 44px; }
+.general-setting-label input { height: 48px; }
+.general-setting-label input:focus,
+.general-setting-label textarea:focus,
+.general-setting-label select:focus {
+  border-color: #8dd3c7;
+  background: #fff;
+  box-shadow: none !important;
+}
+.discount-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, .8fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.discount-preview-card {
+  border-radius: 22px;
+  padding: 18px;
+  background: linear-gradient(135deg, #0f766e 0%, #0f5cc0 100%);
+  color: #fff;
+  display: grid;
+  gap: 10px;
+}
+.discount-preview-card small { font-size: 12px; opacity: .82; }
+.discount-preview-card strong { font-size: 28px; line-height: 1.2; }
+.discount-preview-card p { margin: 0; line-height: 1.9; font-size: 13px; color: rgba(255,255,255,.86); }
 .payment-settings-card {
-  background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+  background: linear-gradient(180deg, #f9fcff 0%, #f3f8fd 100%);
 }
 .payment-settings-grid {
   display: grid;
@@ -1171,7 +1271,7 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   gap: 12px;
 }
 .printer-settings-card {
-  background: linear-gradient(180deg, #fffdfa 0%, #fff7ed 100%);
+  background: linear-gradient(180deg, #fffefb 0%, #fff8ef 100%);
 }
 .printer-settings-grid {
   display: grid;
@@ -1179,19 +1279,15 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   gap: 12px;
 }
 .printer-settings-grid select {
-  height: 44px;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 0 12px;
-  background: #fff;
+  height: 48px;
   font: inherit;
 }
 .printer-toggle {
   grid-column: 1 / -1;
-  padding: 12px 14px;
-  border: 1px dashed #fdba74;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.78);
+  padding: 14px 16px;
+  border: 1px solid #fde2ba;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
 }
 .printer-checks {
   grid-column: 1 / -1;
@@ -1206,6 +1302,7 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .toast.success { background: #16a34a; }
 .toast.error { background: #dc2626; }
 @media (max-width: 960px) {
+  .settings-hero,
   .head-row,
   .head-actions,
   .tabs-bar,
@@ -1220,10 +1317,8 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .entrusted-item-row { grid-template-columns: 1fr; }
   .entrusted-list-head { align-items: stretch; }
   .expense-summary-strip { grid-template-columns: 1fr; }
+  .discount-editor-grid,
+  .settings-hero-stats,
   .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
-
-
-
-

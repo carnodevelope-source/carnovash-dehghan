@@ -15,10 +15,16 @@
           <span></span>
         </button>
         <div class="brand-wrap">
+          <span class="brand-mark">
+            <IconlyIcon :name="currentPageIconName || 'home'" size="sm" />
+          </span>
           <span class="brand">{{ tenantName }}</span>
           <span class="brand-sub">پنل مدیریت</span>
         </div>
         <div v-if="showSearch" class="search-box">
+          <span class="search-box-icon">
+            <IconlyIcon name="search" size="sm" />
+          </span>
           <input
             :value="searchQuery"
             type="text"
@@ -31,6 +37,9 @@
       <div class="topbar-right">
         <div ref="profileMenuRef" class="profile-menu">
           <button type="button" class="profile-button" @click="toggleProfileMenu">
+            <span class="profile-button-icon">
+              <IconlyIcon name="profile" size="sm" />
+            </span>
             <div>
               <p class="profile-name">{{ profileDisplayName }}</p>
               <p class="profile-role">{{ roleLabel }}</p>
@@ -45,6 +54,7 @@
               :disabled="isLoggingOut"
               @click="onLogoutClick"
             >
+              <IconlyIcon name="logout" size="sm" />
               {{ isLoggingOut ? 'در حال خروج...' : 'خروج از حساب' }}
             </button>
           </div>
@@ -89,6 +99,9 @@
             :to="item.route"
             @click="onMenuItemClick(item, $event)"
           >
+            <span class="menu-item-icon-wrap">
+              <IconlyIcon v-if="item.iconName" :name="item.iconName" size="sm" class="menu-item-icon" />
+            </span>
             <span class="menu-item-label">{{ item.label }}</span>
             <span v-if="item.route === '/manager/wallet' && walletWarning.active" class="menu-warning-badge">
               {{ walletWarning.label }}
@@ -97,16 +110,27 @@
         </nav>
 
         <div class="premium-actions">
-          <button v-if="!canAccessAttendance" type="button" class="menu-item menu-button" @click="goToAttendance">ورود و خروج</button>
-          <button type="button" class="menu-item menu-button" @click="showPremiumFeatureMessage">حسابداری</button>
+          <button v-if="!canAccessAttendance" type="button" class="menu-item menu-button" @click="goToAttendance">
+            <span class="menu-item-icon-wrap"><IconlyIcon name="calendar" size="sm" /></span>
+            <span class="menu-item-label">ورود و خروج</span>
+          </button>
+          <button type="button" class="menu-item menu-button" @click="showPremiumFeatureMessage">
+            <span class="menu-item-icon-wrap"><IconlyIcon name="graph" size="sm" /></span>
+            <span class="menu-item-label">حسابداری</span>
+          </button>
         </div>
       </aside>
 
       <main class="content">
         <header v-if="!hidePageHeader" class="page-head">
-          <div>
+          <div class="page-title-wrap">
+            <span class="page-title-icon">
+              <IconlyIcon :name="currentPageIconName || 'home'" size="md" />
+            </span>
+            <div>
             <p v-if="subtitle" class="page-subtitle">{{ subtitle }}</p>
             <h1>{{ title }}</h1>
+            </div>
           </div>
 
           <div class="page-actions">
@@ -124,9 +148,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
-import { navigationByRole } from '../../config/navigation'
+import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess } from '../../utils/attendanceAccess'
+import { notifyWarning } from '../../utils/notify'
+import IconlyIcon from '../base/IconlyIcon.vue'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -159,6 +185,12 @@ const navItems = computed(() => (
 const mobileShellStyle = computed(() => ({
   '--mobile-topbar-offset': `${topbarHeight.value}px`
 }))
+const currentPageIconName = computed(() => {
+  const routeKey = Object.keys(navigationRouteMeta)
+    .sort((a, b) => b.length - a.length)
+    .find((path) => route.path === path || (path !== '/' && route.path.startsWith(path)))
+  return routeKey ? navigationRouteMeta[routeKey]?.iconName || '' : ''
+})
 const tenantName = computed(() => authStore.user?.tenant_name || 'CarWash')
 const profileDisplayName = computed(() => {
   const full = String(authStore.user?.full_name || '').trim()
@@ -189,11 +221,15 @@ const onSearchInput = (event) => {
 }
 
 const showPremiumFeatureMessage = () => {
-  alert('برای فعال‌سازی این قابلیت باید اشتراک ویژه را خریداری کنید.')
+  notifyWarning('برای فعال‌سازی این قابلیت باید اشتراک ویژه را خریداری کنید.', {
+    title: 'اشتراک ویژه'
+  })
 }
 
 const showAttendanceAccessMessage = () => {
-  alert(getAttendanceUpgradeMessage())
+  notifyWarning(getAttendanceUpgradeMessage(), {
+    title: 'دسترسی حضور و غیاب'
+  })
 }
 
 const onMenuItemClick = (item, event) => {
@@ -345,10 +381,30 @@ onBeforeUnmount(() => {
   gap: 12px;
   min-width: 0;
 }
+.topbar-left {
+  flex: 1 1 auto;
+}
+.topbar-right {
+  flex: 0 0 auto;
+}
 
 .brand {
   color: #0058be;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #e8f1ff, #dbeafe);
+  flex: 0 0 auto;
+  --iconly-filter: brightness(0) saturate(100%) invert(31%) sepia(73%) saturate(1584%) hue-rotate(201deg) brightness(96%) contrast(98%);
 }
 .mobile-menu-toggle {
   display: none;
@@ -394,17 +450,27 @@ onBeforeUnmount(() => {
 .mobile-menu-toggle.open span:nth-child(3) {
   transform: translateY(-6px) rotate(-45deg);
 }
-.brand-wrap { display: flex; align-items: center; gap: 8px; }
+.brand-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand-sub { font-size: 12px; color: #64748b; border-right: 1px solid #cbd5e1; padding-right: 8px; }
+.search-box { flex: 1 1 0; min-width: 0; position: relative; }
+.search-box-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+  pointer-events: none;
+  --iconly-filter: brightness(0) saturate(100%) invert(48%) sepia(15%) saturate(909%) hue-rotate(176deg) brightness(90%) contrast(86%);
+}
 
 .search-box input {
-  width: 260px;
+  width: 100%;
   max-width: 100%;
   height: 40px;
   border: none;
   border-radius: 12px;
   background: #f2f4f6;
-  padding: 0 12px;
+  padding: 0 38px 0 12px;
 }
 
 .search-box input:focus {
@@ -425,6 +491,22 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 0 10px;
   cursor: pointer;
+  min-width: 0;
+}
+.profile-button-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #eff6ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #2563eb;
+  flex: 0 0 auto;
+  --iconly-filter: brightness(0) saturate(100%) invert(31%) sepia(73%) saturate(1584%) hue-rotate(201deg) brightness(96%) contrast(98%);
+}
+.profile-button > div {
+  min-width: 0;
 }
 
 .profile-caret {
@@ -455,6 +537,10 @@ onBeforeUnmount(() => {
   font: inherit;
   color: #334155;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
 }
 
 .profile-dropdown-item:hover {
@@ -471,6 +557,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 700;
   color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .profile-role {
@@ -547,7 +636,20 @@ onBeforeUnmount(() => {
   color: #475569;
   font-weight: 600;
 }
-.menu-item-label { display: inline-flex; align-items: center; }
+.menu-item-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  --iconly-filter: brightness(0) saturate(100%) invert(40%) sepia(20%) saturate(899%) hue-rotate(177deg) brightness(92%) contrast(88%);
+}
+.menu-item-icon { opacity: 0.9; }
+.menu-item-label { display: inline-flex; align-items: center; flex: 1; min-width: 0; }
 .menu-warning-badge {
   display: inline-flex;
   align-items: center;
@@ -564,6 +666,12 @@ onBeforeUnmount(() => {
 .menu-item.active {
   background: #dbeafe;
   color: #0058be;
+}
+
+.menu-item.active .menu-item-icon-wrap {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  --iconly-filter: brightness(0) saturate(100%) invert(28%) sepia(88%) saturate(1449%) hue-rotate(205deg) brightness(99%) contrast(96%);
 }
 
 .premium-actions {
@@ -601,6 +709,26 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+.page-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-title-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff, #eff6ff);
+  border: 1px solid #dbeafe;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
+  flex: 0 0 auto;
+  --iconly-filter: brightness(0) saturate(100%) invert(31%) sepia(73%) saturate(1584%) hue-rotate(201deg) brightness(96%) contrast(98%);
+}
+
 .page-head h1 {
   margin: 0;
   font-size: 24px;
@@ -626,8 +754,8 @@ onBeforeUnmount(() => {
   .topbar {
     height: auto;
     padding: 12px 16px;
-    flex-wrap: wrap;
-    gap: 12px;
+    flex-wrap: nowrap;
+    gap: 10px;
   }
 
   .topbar-left,
@@ -636,16 +764,18 @@ onBeforeUnmount(() => {
   }
 
   .topbar-left {
-    flex-wrap: wrap;
-    flex: 1;
+    flex-wrap: nowrap;
+    flex: 1 1 auto;
     justify-content: flex-start;
     gap: 10px;
   }
 
   .search-box {
-    width: 100%;
-    order: 3;
-    flex-basis: 100%;
+    width: auto;
+    order: 0;
+    flex: 1 1 0;
+    flex-basis: auto;
+    min-width: 0;
   }
 
   .search-box input {
@@ -655,6 +785,10 @@ onBeforeUnmount(() => {
   .page-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .page-title-wrap {
+    width: 100%;
   }
 
   .page-actions {
@@ -735,7 +869,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .topbar {
-    padding: 12px;
+    padding: 10px 12px;
   }
 
   .sidebar {
@@ -757,24 +891,41 @@ onBeforeUnmount(() => {
   }
 
   .brand-wrap {
-    display: grid;
-    gap: 3px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 72px;
+    max-width: 110px;
   }
 
   .brand {
-    font-size: 14px;
+    font-size: 12px;
   }
 
   .brand-sub {
-    font-size: 11px;
-    border-right: 0;
-    padding-right: 0;
+    display: none;
   }
 
   .profile-button {
     width: auto;
     min-width: 0;
     justify-content: space-between;
+    height: 38px;
+  }
+
+  .profile-name {
+    font-size: 11px;
+  }
+
+  .profile-role {
+    font-size: 9px;
+    margin-top: 1px;
+  }
+
+  .search-box input {
+    height: 38px;
+    padding: 0 34px 0 10px;
+    font-size: 12px;
   }
 
   .page-head h1 {
@@ -789,24 +940,59 @@ onBeforeUnmount(() => {
 @media (max-width: 480px) {
   .topbar-left,
   .topbar-right {
-    gap: 10px;
+    gap: 6px;
   }
 
   .profile-button {
-    padding: 0 10px;
+    padding: 0 8px;
+    gap: 6px;
   }
 
   .profile-name {
-    font-size: 12px;
+    font-size: 10px;
   }
 
   .profile-role {
-    font-size: 10px;
+    display: none;
   }
 
   .search-box input,
   .profile-button {
-    height: 42px;
+    height: 36px;
+  }
+
+  .mobile-menu-toggle {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .mobile-menu-toggle span {
+    width: 16px;
+  }
+
+  .brand-wrap {
+    min-width: 58px;
+    max-width: 82px;
+  }
+
+  .brand {
+    font-size: 11px;
+  }
+
+  .search-box input {
+    font-size: 11px;
+    padding: 0 9px;
+  }
+
+  .profile-caret {
+    display: none;
+  }
+
+  .page-title-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
   }
 
   .content {

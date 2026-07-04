@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from datetime import timedelta
 from django.utils import timezone
+from unittest.mock import patch
 from rest_framework.test import APIClient, APITestCase
 
 from apps.auth.models import CarWash
@@ -109,6 +110,61 @@ class AttendanceApiTests(APITestCase):
         self.assertEqual([item['id'] for item in response.data[:2]], [self.worker.id, second_worker.id])
         self.assertEqual(response.data[0]['current_status'], 'in')
         self.assertIsNotNone(response.data[0]['queue_position_at'])
+
+    @patch('apps.workers.views.send_user_credentials_sms')
+    def test_worker_create_sends_credentials_sms(self, mock_send_credentials_sms):
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.post(
+            reverse('worker-list-create'),
+            {
+                'full_name': 'New Operator',
+                'username': 'new-operator',
+                'password': 'operator-pass-123',
+                'phone': '09120000999',
+                'role': 'operator',
+                'is_available': True,
+                'payment_type': 'percent',
+                'payment_value': 30,
+                'tip_share_percent': 50,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mock_send_credentials_sms.assert_called_once()
+        _, kwargs = mock_send_credentials_sms.call_args
+        self.assertEqual(kwargs['tenant'], self.tenant)
+        self.assertEqual(kwargs['tenant_name'], self.tenant.name)
+        self.assertEqual(kwargs['phone'], '09120000999')
+        self.assertEqual(kwargs['username'], 'new-operator')
+        self.assertEqual(kwargs['password'], 'operator-pass-123')
+        self.assertEqual(kwargs['role'], 'operator')
+        self.assertEqual(kwargs['template_code'], 'worker_credentials')
+
+    def test_worker_create_rejects_existing_manager_phone(self):
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.post(
+            reverse('worker-list-create'),
+            {
+                'full_name': 'Shadow Manager',
+                'username': 'shadow-manager',
+                'password': 'operator-pass-123',
+                'phone': self.manager.phone,
+                'role': 'operator',
+                'is_available': True,
+                'payment_type': 'percent',
+                'payment_value': 30,
+                'tip_share_percent': 50,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.manager.refresh_from_db()
+        self.assertEqual(self.manager.role, 'manager')
+        self.assertEqual(response.data['phone'][0], 'این شماره موبایل قبلا ثبت شده است.')
 
     def test_vehicle_assignment_moves_all_selected_workers_to_tail(self):
         user_model = get_user_model()

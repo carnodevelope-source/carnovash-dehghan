@@ -18,6 +18,7 @@ from .serializers import VehicleEntrySerializer
 from apps.inventory.models import InventoryItem
 from apps.inventory.models import StockMovement
 from apps.notifications.models import NotificationLog
+from apps.notifications.services import send_vehicle_event_sms
 from apps.payments.models import Payment
 from apps.products.models import Product
 from apps.services.models import GeneralSettings, Service
@@ -244,6 +245,37 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
                 instance.job.released_at = timezone.now()
                 instance.job.save(update_fields=['released_at', 'updated_at'])
 
+        if previous_status != new_status:
+            if new_status == VehicleEntry.Status.READY_TO_SETTLE:
+                send_vehicle_event_sms(
+                    'vehicle_assigned',
+                    instance.tenant,
+                    instance,
+                    created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                    extra_context={'assigned_at': instance.ready_at or timezone.now()},
+                )
+            elif new_status == VehicleEntry.Status.RELEASED:
+                job = getattr(instance, 'job', None)
+                send_vehicle_event_sms(
+                    'vehicle_released',
+                    instance.tenant,
+                    instance,
+                    created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                    extra_context={
+                        'released_at': instance.released_at or timezone.now(),
+                        'customer_score': float(getattr(getattr(instance, 'customer', None), 'yearly_score', 0) or 0),
+                        'next_discount_percent': 0,
+                        'final_total': float(
+                            (getattr(job, 'final_total', 0) or 0)
+                            or (getattr(job, 'services_total', 0) or 0)
+                        ),
+                        'discount_total': float(
+                            (getattr(job, 'discount_total', 0) or 0)
+                            + (getattr(job, 'manual_discount_total', 0) or 0)
+                        ),
+                    },
+                )
+
         serializer = self.get_serializer(instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -468,20 +500,25 @@ class VehicleReleaseCheckoutView(APIView):
         snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
         ordered_ids = []
         names_by_id = {}
+        orphan_names = []
         worker_share_percent_by_id = {}
         worker_share_amount_by_id = {}
         for item in snapshot:
             if not isinstance(item, dict):
                 continue
+            raw_name = (item.get('name') or '').strip()
             try:
                 worker_id = int(item.get('id'))
             except (TypeError, ValueError):
+                if raw_name:
+                    orphan_names.append(raw_name)
                 continue
             if worker_id <= 0:
+                if raw_name:
+                    orphan_names.append(raw_name)
                 continue
             if worker_id not in ordered_ids:
                 ordered_ids.append(worker_id)
-            raw_name = (item.get('name') or '').strip()
             if raw_name:
                 names_by_id[worker_id] = raw_name
             worker_share_percent_by_id[worker_id] = self._clamp_percent(item.get('worker_share_percent', 0))
@@ -489,6 +526,29 @@ class VehicleReleaseCheckoutView(APIView):
 
         if job.assigned_worker_id and job.assigned_worker_id not in ordered_ids:
             ordered_ids.insert(0, int(job.assigned_worker_id))
+
+        if orphan_names:
+            candidate_profiles = list(
+                WorkerProfile.objects.select_related('user').filter(tenant=job.tenant)
+            )
+            profiles_by_name = {}
+            for profile in candidate_profiles:
+                if not getattr(profile, 'user', None):
+                    continue
+                full_name = (profile.user.full_name or '').strip()
+                username = (profile.user.username or '').strip()
+                if full_name:
+                    profiles_by_name.setdefault(full_name.casefold(), profile)
+                if username:
+                    profiles_by_name.setdefault(username.casefold(), profile)
+            for raw_name in orphan_names:
+                profile = profiles_by_name.get(raw_name.casefold())
+                if not profile:
+                    continue
+                if profile.id not in ordered_ids:
+                    ordered_ids.append(profile.id)
+                if raw_name and profile.id not in names_by_id:
+                    names_by_id[profile.id] = raw_name
 
         if not ordered_ids:
             return []
@@ -503,8 +563,13 @@ class VehicleReleaseCheckoutView(APIView):
         profiles_by_id = {item.id: item for item in profiles}
         profiles_by_user_id = {item.user_id: item for item in profiles if item.user_id}
         workers = []
+        seen_profile_ids = set()
         for worker_id in ordered_ids:
             profile = profiles_by_id.get(worker_id) or profiles_by_user_id.get(worker_id)
+            resolved_worker_id = int(profile.id) if profile else int(worker_id)
+            if resolved_worker_id in seen_profile_ids:
+                continue
+            seen_profile_ids.add(resolved_worker_id)
             name = (
                 names_by_id.get(worker_id)
                 or ((profile.user.full_name or profile.user.username or '').strip() if profile and getattr(profile, 'user', None) else '')
@@ -512,7 +577,7 @@ class VehicleReleaseCheckoutView(APIView):
             )
             workers.append(
                 {
-                    'id': worker_id,
+                    'id': resolved_worker_id,
                     'name': name,
                     'tip_share_percent': Decimal(str(profile.tip_share_percent or 0)) if profile else Decimal('0'),
                     'worker_share_percent': worker_share_percent_by_id.get(worker_id, Decimal('0')),
@@ -1318,4 +1383,17 @@ class VehicleReleaseCheckoutView(APIView):
         )
 
         serializer = VehicleEntrySerializer(vehicle)
+        send_vehicle_event_sms(
+            'vehicle_released',
+            tenant,
+            vehicle,
+            created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+            extra_context={
+                'released_at': vehicle.released_at or timezone.now(),
+                'customer_score': float(customer_score or 0),
+                'next_discount_percent': float(_customer_discount_percent or 0),
+                'final_total': float(final_total or 0),
+                'discount_total': float(discount_total or 0),
+            },
+        )
         return Response(serializer.data, status=status.HTTP_200_OK)

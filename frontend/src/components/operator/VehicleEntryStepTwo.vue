@@ -2,15 +2,10 @@
   <section class="step-two" dir="rtl">
     <header class="step-two-header">
       <div class="header-main">
-        <PlateBadge
-          v-if="!isPieceWash"
-          :plate-left="plateParts.left"
-          :plate-letter="plateParts.letter"
-          :plate-mid="plateParts.mid"
-          :plate-right="plateParts.right"
-          :plate-type="normalizedVehicle.plateType"
-        />
-
+        <div class="header-copy">
+          <h3>تخصیص خدمات و نیروها</h3>
+          <p>خدمات را نهایی کنید و نیروهای حاضر را به این خودرو وصل کنید.</p>
+        </div>
       </div>
 
       <div class="header-actions">
@@ -293,7 +288,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '../../services/api'
 import BaseSpinner from '../base/BaseSpinner.vue'
-import PlateBadge from '../vehicles/PlateBadge.vue'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { resolvePlateParts } from '../../utils/plate'
@@ -838,6 +832,24 @@ onMounted(loadInitialData)
   display: flex;
   align-items: center;
   gap: 22px;
+}
+
+.header-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.header-copy h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #191c1e;
+}
+
+.header-copy p {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.8;
 }
 
 .plate-badge {
@@ -1662,6 +1674,7 @@ onMounted(loadInitialData)
 
 .selected-worker-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1936,6 +1949,14 @@ onMounted(loadInitialData)
     min-width: 0;
   }
 
+  .header-copy h3 {
+    font-size: 16px;
+  }
+
+  .header-copy p {
+    font-size: 10px;
+  }
+
   .header-actions {
     width: 100%;
     justify-content: space-between;
@@ -2022,6 +2043,14 @@ onMounted(loadInitialData)
     overflow: visible;
     padding-bottom: 12px;
     gap: 10px;
+  }
+
+  .services-col .col-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .staff-col .col-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .summary-col {
@@ -2119,6 +2148,10 @@ onMounted(loadInitialData)
     font-size: 14px;
   }
 
+  .selected-worker-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .service-head strong,
   .service-body p,
   .empty,
@@ -2206,22 +2239,12 @@ onMounted(loadInitialData)
     align-items: start;
   }
 
-  .plate-badge {
-    transform: scale(0.82);
-    margin-right: -8px;
+  .header-copy h3 {
+    font-size: 14px;
   }
 
-  .vehicle-title-row {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .vehicle-meta h3 {
-    font-size: 13px;
-  }
-
-  .vehicle-meta p {
-    font-size: 10px;
+  .header-copy p {
+    font-size: 9px;
   }
 
   .col-head,
@@ -2242,6 +2265,14 @@ onMounted(loadInitialData)
   .services-col .col-list,
   .staff-col .col-list {
     max-height: none;
+  }
+
+  .services-col .col-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .staff-col .col-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .summary-body {

@@ -206,7 +206,9 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         if instance and getattr(instance, 'user_id', None) == getattr(existing_user, 'id', None):
             return value
 
-        if existing_user and existing_user.tenant_id != getattr(tenant, 'id', None):
+        if existing_user:
+            if existing_user.tenant_id == getattr(tenant, 'id', None):
+                raise serializers.ValidationError('این شماره موبایل قبلا ثبت شده است.')
             raise serializers.ValidationError('این شماره موبایل قبلا در یک کارواش دیگر ثبت شده است.')
         return value
 
@@ -296,27 +298,25 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         username = validated_data['username']
         password = str(validated_data.get('password') or '').strip()
         role = validated_data.get('role', 'worker')
-        user = user_model.objects.filter(phone=phone, tenant=tenant).first()
-        if not user:
-            user = user_model.objects.create(
-                username=username,
-                full_name=full_name,
-                phone=phone,
-                tenant=tenant,
-                role=role,
-                is_active=True,
-            )
-            user.set_password(password)
-            user.save()
-        else:
-            user.full_name = full_name
-            user.username = username
-            user.role = role
-            update_fields = ['full_name', 'username', 'role']
-            if password:
-                user.set_password(password)
-                update_fields.append('password')
-            user.save(update_fields=update_fields)
+        self.created_credentials = None
+        user = user_model.objects.create(
+            username=username,
+            full_name=full_name,
+            phone=phone,
+            tenant=tenant,
+            role=role,
+            is_active=True,
+        )
+        user.set_password(password)
+        user.save()
+        if password:
+            self.created_credentials = {
+                'tenant': tenant,
+                'phone': phone,
+                'username': username,
+                'password': password,
+                'role': role,
+            }
 
         profile, _ = WorkerProfile.objects.get_or_create(user=user, defaults={'tenant': tenant})
         if profile.tenant_id is None:

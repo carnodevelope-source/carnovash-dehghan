@@ -8,8 +8,8 @@
     @update:search-query="searchQuery = $event"
   >
     <template #header-actions>
-      <button type="button" class="club-ghost-btn" @click="exportCustomers">خروجی اکسل</button>
-      <button type="button" class="club-primary-btn" @click="openGroupBuilder">ساخت گروه جدید</button>
+      <button type="button" class="club-ghost-btn btn-with-icon" @click="exportCustomers"><IconlyIcon name="document" size="sm" />خروجی اکسل</button>
+      <button type="button" class="club-primary-btn btn-with-icon" @click="openGroupBuilder"><IconlyIcon name="plus" size="sm" />ساخت گروه جدید</button>
     </template>
 
     <div class="club-page">
@@ -32,10 +32,11 @@
           <button
             v-if="activePlan === 'advanced'"
             type="button"
-            class="club-secondary-btn"
-            :disabled="!customGroups.length"
-            @click="openSmsComposer({ type: 'group', group: customGroups[0] })"
+            class="club-secondary-btn btn-with-icon"
+            :disabled="!filteredCustomers.length"
+            @click="openPrimaryGroupSmsComposer"
           >
+            <IconlyIcon name="message" size="sm" />
             ارسال پیامک گروهی
           </button>
         </div>
@@ -158,10 +159,8 @@
                     <th>نام مشتری</th>
                     <th>شماره موبایل</th>
                     <th>نام کارواش</th>
-                    <th>تعداد سفارش</th>
                     <th>جمع مبلغ خرید</th>
                     <th>امتیاز</th>
-                    <th>آخرین سفارش</th>
                     <th>عملیات</th>
                   </tr>
                 </thead>
@@ -188,7 +187,6 @@
                     </td>
                     <td class="mono-cell">{{ customer.phone || '-' }}</td>
                     <td>{{ customer.carwash_name }}</td>
-                    <td>{{ toFa(customer.orders_count) }}</td>
                     <td>{{ money(customer.total_spent) }}</td>
                     <td>
                       <span class="score-pill">
@@ -196,25 +194,29 @@
                         <span>★</span>
                       </span>
                     </td>
-                    <td>{{ date(customer.last_order_at) }}</td>
                     <td>
                       <div class="table-actions">
-                        <button type="button" class="icon-action" @click="openCustomerDetail(customer)">مشاهده</button>
+                        <button type="button" class="icon-action icon-only-action" title="مشاهده" aria-label="مشاهده" @click="openCustomerDetail(customer)">
+                          <img :src="actionIcons.view" alt="" class="action-icon-image" />
+                        </button>
                         <button
                           type="button"
-                          class="icon-action"
-                          :disabled="!customGroups.length"
-                          @click="openAssignGroupModal(customer)"
+                          class="icon-action icon-only-action"
+                          title="گروه"
+                          aria-label="گروه"
+                          @click="handleGroupAction(customer)"
                         >
-                          گروه
+                          <img :src="actionIcons.group" alt="" class="action-icon-image" />
                         </button>
                         <button
                           v-if="activePlan === 'advanced'"
                           type="button"
-                          class="icon-action primary"
+                          class="icon-action primary icon-only-action"
+                          title="پیامک"
+                          aria-label="پیامک"
                           @click="openSmsComposer({ type: 'customer', customer })"
                         >
-                          پیامک
+                          <img :src="actionIcons.sms" alt="" class="action-icon-image" />
                         </button>
                       </div>
                     </td>
@@ -276,11 +278,12 @@
           <article class="side-card">
             <div class="side-card-head">
               <h4>قالب‌های سریع</h4>
-              <span>SMS</span>
+              <button type="button" class="club-inline-btn" @click="openTemplateEditor()">مدیریت</button>
             </div>
             <div class="template-list">
-              <button v-for="template in smsTemplates" :key="template.id" type="button" class="template-item" @click="useSmsTemplate(template.body)">
-                {{ template.title }}
+              <button v-for="template in smsTemplates" :key="template.id" type="button" class="template-item template-preview-item" @click="openTemplateEditor(template)">
+                <strong>{{ template.title }}</strong>
+                <small>{{ previewTemplateBody(template.body) }}</small>
               </button>
             </div>
           </article>
@@ -339,7 +342,7 @@
               </label>
               <label class="filter-field">
                 <span>حداقل خرید</span>
-                <input v-model.number="groupBuilder.rules.minSpent" type="number" min="0" />
+                <input v-model.number="groupBuilder.rules.minSpent" type="number" min="0" placeholder="مثلا 1000000" />
               </label>
               <label class="filter-field">
                 <span>حداقل امتیاز</span>
@@ -430,7 +433,7 @@
           <button type="button" class="icon-close" @click="closeCustomerDetail">×</button>
         </header>
 
-        <div v-if="customerDetail.customer" class="detail-grid">
+        <div v-if="false && customerDetail.customer" class="detail-grid">
           <article class="detail-metric">
             <small>شماره موبایل</small>
             <strong>{{ customerDetail.customer.phone || '-' }}</strong>
@@ -474,6 +477,79 @@
               />
             </div>
           </article>
+        </div>
+
+        <div v-if="customerDetail.customer" class="customer-profile-shell">
+          <section class="customer-profile-hero">
+            <div class="customer-profile-title">
+              <span class="avatar-badge large">{{ initials(customerDetail.customer.name) }}</span>
+              <div>
+                <strong>{{ customerDetail.customer.name }}</strong>
+                <small>{{ customerDetail.customer.phone || '-' }}</small>
+              </div>
+            </div>
+            <div class="customer-profile-score">
+              <span>امتیاز فعلی</span>
+              <strong>{{ toFaDecimal(customerDetail.customer.score) }}</strong>
+            </div>
+          </section>
+
+          <div class="detail-grid profile-metrics-grid">
+            <article class="detail-metric">
+              <small>کارواش</small>
+              <strong>{{ customerDetail.customer.carwash_name }}</strong>
+            </article>
+            <article class="detail-metric">
+              <small>سفارش‌ها</small>
+              <strong>{{ toFa(customerDetail.customer.orders_count) }}</strong>
+            </article>
+            <article class="detail-metric">
+              <small>جمع خرید</small>
+              <strong>{{ money(customerDetail.customer.total_spent) }}</strong>
+            </article>
+            <article class="detail-metric">
+              <small>میانگین هر سفارش</small>
+              <strong>{{ money(customerDetail.customer.average_ticket) }}</strong>
+            </article>
+            <article class="detail-metric">
+              <small>آخرین مراجعه</small>
+              <strong>{{ date(customerDetail.customer.last_order_at) }}</strong>
+            </article>
+            <article class="detail-metric">
+              <small>اولین ثبت</small>
+              <strong>{{ date(customerDetail.customer.first_order_at) }}</strong>
+            </article>
+          </div>
+
+          <div class="profile-panel-grid">
+            <article class="detail-panel profile-panel">
+              <h4>گروه‌های عضو</h4>
+              <div class="tag-row">
+                <span class="tag">کارواش {{ customerDetail.customer.carwash_name }}</span>
+                <span v-for="group in customerMembershipGroups(customerDetail.customer)" :key="group.id" class="tag custom">
+                  {{ group.name }}
+                </span>
+              </div>
+            </article>
+
+            <article class="detail-panel profile-panel">
+              <h4>پلاک‌های ثبت‌شده</h4>
+              <div class="tag-row plate-tag-row">
+                <PlateBadge
+                  v-for="plate in customerDetail.customer.plates"
+                  :key="plate.plate_number"
+                  :plate-number="plate.plate_number"
+                  :plate-left="plate.plate_left"
+                  :plate-letter="plate.plate_letter"
+                  :plate-mid="plate.plate_mid"
+                  :plate-right="plate.plate_right"
+                  :plate-type="plate.plate_type || 'car'"
+                  compact
+                />
+                <span v-if="!customerDetail.customer.plates?.length" class="tag">بدون پلاک ثبت‌شده</span>
+              </div>
+            </article>
+          </div>
         </div>
 
         <footer class="modal-foot">
@@ -572,25 +648,94 @@
         </footer>
       </section>
     </div>
+
+    <div v-if="templateEditor.open" class="overlay" @click.self="closeTemplateEditor">
+      <section class="modal-card template-editor-modal">
+        <header class="modal-head">
+          <div>
+            <p class="modal-kicker">قالب پیامک</p>
+            <h3>{{ templateEditor.id ? 'ویرایش قالب' : 'ساخت قالب جدید' }}</h3>
+          </div>
+          <button type="button" class="icon-close" @click="closeTemplateEditor">×</button>
+        </header>
+
+        <div class="template-editor-layout">
+          <div class="template-editor-form">
+            <label class="filter-field">
+              <span>عنوان</span>
+              <input v-model.trim="templateEditor.title" type="text" placeholder="مثلا تخفیف وفاداری" />
+            </label>
+            <label class="filter-field">
+              <span>کد قالب</span>
+              <input v-model.trim="templateEditor.code" type="text" placeholder="discount-loyal" />
+            </label>
+            <label class="filter-field">
+              <span>متن قالب</span>
+              <textarea v-model.trim="templateEditor.body" rows="8" placeholder="[نام مشتری] عزیز ..."></textarea>
+            </label>
+            <div class="template-token-row">
+              <button v-for="token in smsVariableTokens" :key="token" type="button" class="group-chip" @click="appendTemplateToken(token)">{{ token }}</button>
+            </div>
+          </div>
+
+          <aside class="template-editor-preview">
+            <div class="side-card-head">
+              <h4>پیش‌نمایش</h4>
+              <span>{{ toFa(templateEditor.body.length) }} کاراکتر</span>
+            </div>
+            <div class="template-preview-box">
+              <p>{{ templatePreviewText }}</p>
+            </div>
+            <button
+              v-if="templateEditor.body.trim()"
+              type="button"
+              class="club-secondary-btn"
+              @click="useTemplateInComposer"
+            >
+              استفاده در ارسال پیامک
+            </button>
+          </aside>
+        </div>
+
+        <footer class="modal-foot template-editor-foot">
+          <button v-if="templateEditor.id" type="button" class="club-ghost-btn danger-btn" @click="deleteTemplate">حذف</button>
+          <button type="button" class="club-ghost-btn" @click="closeTemplateEditor">انصراف</button>
+          <button type="button" class="club-primary-btn" :disabled="templateSaving" @click="saveTemplate">
+            {{ templateSaving ? 'در حال ذخیره...' : 'ذخیره قالب' }}
+          </button>
+        </footer>
+      </section>
+    </div>
   </AppShell>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
+import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
+import actionViewIcon from '../../assets/iconly/show.svg'
+import actionGroupIcon from '../../assets/iconly/category.svg'
+import actionSmsIcon from '../../assets/iconly/message.svg'
 
 const authStore = useAuthStore()
+const actionIcons = {
+  view: actionViewIcon,
+  group: actionGroupIcon,
+  sms: actionSmsIcon
+}
 
 const activePlan = ref('simple')
 const searchQuery = ref('')
 const loading = ref(false)
 const smsSending = ref(false)
+const templateSaving = ref(false)
 const customers = ref([])
 const smsCreditBalance = ref(0)
 const smsPricePerSegment = ref(500)
@@ -645,6 +790,16 @@ const smsComposer = reactive({
 })
 
 const smsTemplates = ref([])
+const smsVariableTokens = ['[نام مشتری]', '[نام کارواش]', '[تعداد سفارش]', '[جمع خرید]', '[امتیاز]', '[پلاک]']
+
+const templateEditor = reactive({
+  open: false,
+  id: '',
+  code: '',
+  title: '',
+  body: '',
+  displayOrder: 0
+})
 
 const availableCarwashes = computed(() => {
   const set = new Set(customers.value.map((item) => item.carwash_name).filter(Boolean))
@@ -666,7 +821,7 @@ const smsCreditStateLabel = computed(() => {
 
 const filteredCustomers = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  const minSpentValue = Number(filters.minSpent || 0) * 1000
+  const minSpentValue = Number(filters.minSpent || 0)
   const items = customers.value.filter((customer) => {
     if (filters.carwash && customer.carwash_name !== filters.carwash) return false
     if (Number(customer.orders_count || 0) < Number(filters.minOrders || 0)) return false
@@ -746,8 +901,15 @@ const smsPreviewText = computed(() => {
   const sampleCustomer = smsRecipients.value[0]
   const message = String(smsComposer.message || '').trim()
   if (!message) return 'متن پیام شما اینجا نمایش داده می‌شود.'
-  return replaceSmsVariables(message, sampleCustomer)
+  return renderSmsVariables(message, sampleCustomer)
 })
+const templatePreviewText = computed(() => {
+  const sampleCustomer = customers.value[0]
+  const message = String(templateEditor.body || '').trim()
+  if (!message) return 'پیش‌نمایش قالب اینجا نمایش داده می‌شود.'
+  return renderSmsVariables(message, sampleCustomer)
+})
+
 const smsStatusCount = computed(() => smsLogs.value.reduce((acc, item) => {
   acc[item.status] = (acc[item.status] || 0) + 1
   return acc
@@ -827,7 +989,7 @@ const buildCustomersFromVehicles = (rows) => {
 const customerMatchesRules = (customer, rules) => {
   if (rules.carwash && customer.carwash_name !== rules.carwash) return false
   if (Number(customer.orders_count || 0) < Number(rules.minOrders || 0)) return false
-  if (Number(customer.total_spent || 0) < Number(rules.minSpent || 0) * 1000) return false
+  if (Number(customer.total_spent || 0) < Number(rules.minSpent || 0)) return false
   if (Number(customer.score || 0) < Number(rules.minScore || 0)) return false
   return true
 }
@@ -919,7 +1081,7 @@ const loadCustomerClubData = async ({ showLoading = true } = {}) => {
 const saveCustomGroup = async () => {
   const name = String(groupBuilder.name || '').trim()
   if (!name) {
-    alert('نام گروه را وارد کنید.')
+    notifyWarning('نام گروه را وارد کنید.', { title: 'اطلاعات ناقص' })
     return
   }
 
@@ -936,7 +1098,7 @@ const saveCustomGroup = async () => {
     groupingMode.value = 'custom'
     highlightedGroupId.value = latestGroup?.id || ''
   } catch (error) {
-    alert(resolveApiErrorMessage(error, 'ذخیره گروه ناموفق بود.'))
+    notifyError(resolveApiErrorMessage(error, 'ذخیره گروه ناموفق بود.'), { title: 'خطا در ذخیره گروه' })
   }
 }
 
@@ -947,6 +1109,23 @@ const openAssignGroupModal = (customer) => {
   assignGroupModal.selectedGroupIds = customGroups.value
     .filter((group) => group.mode === 'manual' && (group.member_keys || group.memberKeys || []).includes(customer.key))
     .map((group) => group.id)
+}
+
+const prefillGroupBuilderForCustomer = (customer) => {
+  openGroupBuilder()
+  if (!customer) return
+  groupBuilder.mode = 'manual'
+  groupBuilder.name = `گروه ${customer.name || 'مشتری'}`
+  groupBuilder.description = `گروه ساخته‌شده برای ${customer.name || 'این مشتری'}`
+  groupBuilder.manualKeys = customer.key ? [customer.key] : []
+}
+
+const handleGroupAction = (customer) => {
+  if (customGroups.value.length) {
+    openAssignGroupModal(customer)
+    return
+  }
+  prefillGroupBuilderForCustomer(customer)
 }
 
 const closeAssignGroupModal = () => {
@@ -982,7 +1161,7 @@ const saveCustomerGroupAssignment = async () => {
     await loadCustomerClubData({ showLoading: false })
     closeAssignGroupModal()
   } catch (error) {
-    alert(resolveApiErrorMessage(error, 'بروزرسانی گروه‌ها ناموفق بود.'))
+    notifyError(resolveApiErrorMessage(error, 'بروزرسانی گروه‌ها ناموفق بود.'), { title: 'خطا در بروزرسانی گروه‌ها' })
   }
 }
 
@@ -999,6 +1178,125 @@ const closeCustomerDetail = () => {
 const replaceSmsVariables = (message, customer) => String(message || '')
   .replaceAll('[نام مشتری]', customer?.name || 'مشتری')
   .replaceAll('[نام کارواش]', customer?.carwash_name || authStore.user?.tenant_name || 'کارواش')
+
+const previewTemplateBody = (body) => {
+  const text = String(body || '').replace(/\s+/g, ' ').trim()
+  if (!text) return 'قالب خالی است'
+  return text.length > 84 ? `${text.slice(0, 84)}...` : text
+}
+
+const renderSmsVariables = (message, customer) => String(message || '')
+  .replaceAll('[نام مشتری]', customer?.name || 'مشتری')
+  .replaceAll('[نام کارواش]', customer?.carwash_name || authStore.user?.tenant_name || 'کارواش')
+  .replaceAll('[تعداد سفارش]', toFa(customer?.orders_count || 0))
+  .replaceAll('[جمع خرید]', money(customer?.total_spent || 0))
+  .replaceAll('[امتیاز]', toFaDecimal(customer?.score || 0))
+  .replaceAll('[پلاک]', customer?.primary_plate || '-')
+
+const resetTemplateEditor = () => {
+  templateEditor.open = false
+  templateEditor.id = ''
+  templateEditor.code = ''
+  templateEditor.title = ''
+  templateEditor.body = ''
+  templateEditor.displayOrder = smsTemplates.value.length + 10
+}
+
+const openTemplateEditor = (template = null) => {
+  resetTemplateEditor()
+  templateEditor.open = true
+  if (!template) return
+  templateEditor.id = template.id
+  templateEditor.code = template.code || ''
+  templateEditor.title = template.title || ''
+  templateEditor.body = template.body || ''
+  templateEditor.displayOrder = Number(template.display_order || 0)
+}
+
+const closeTemplateEditor = () => {
+  resetTemplateEditor()
+}
+
+const appendTemplateToken = (token) => {
+  templateEditor.body = `${templateEditor.body || ''}${templateEditor.body ? ' ' : ''}${token}`
+}
+
+const useTemplateInComposer = () => {
+  if (!smsComposer.open) {
+    const fallbackTarget = customGroups.value[0]
+    if (fallbackTarget) openSmsComposer({ type: 'group', group: fallbackTarget })
+  }
+  useSmsTemplate(templateEditor.body)
+}
+
+const saveTemplate = async () => {
+  const title = String(templateEditor.title || '').trim()
+  const body = String(templateEditor.body || '').trim()
+  const code = String(templateEditor.code || '').trim()
+  if (!title || !body) {
+    notifyWarning('عنوان و متن قالب الزامی است.', { title: 'اطلاعات ناقص' })
+    return
+  }
+
+  templateSaving.value = true
+  try {
+    const payload = {
+      title,
+      body,
+      code: code || `custom-${Date.now()}`,
+      display_order: Number(templateEditor.displayOrder || smsTemplates.value.length + 10),
+      is_active: true
+    }
+    if (templateEditor.id) {
+      await api.put(`/notifications/sms/templates/${templateEditor.id}/`, payload, { meta: { trackLoading: false } })
+    } else {
+      await api.post('/notifications/sms/templates/', payload, { meta: { trackLoading: false } })
+    }
+    await loadCustomerClubData({ showLoading: false })
+    closeTemplateEditor()
+  } catch (error) {
+    notifyError(resolveApiErrorMessage(error, 'ذخیره قالب ناموفق بود.'), { title: 'خطا در ذخیره قالب' })
+  } finally {
+    templateSaving.value = false
+  }
+}
+
+const deleteTemplate = async () => {
+  if (!templateEditor.id) return
+  templateSaving.value = true
+  try {
+    await api.delete(`/notifications/sms/templates/${templateEditor.id}/`, { meta: { trackLoading: false } })
+    await loadCustomerClubData({ showLoading: false })
+    closeTemplateEditor()
+  } catch (error) {
+    notifyError(resolveApiErrorMessage(error, 'حذف قالب ناموفق بود.'), { title: 'خطا در حذف قالب' })
+  } finally {
+    templateSaving.value = false
+  }
+}
+
+const openPrimaryGroupSmsComposer = () => {
+  if (customGroups.value.length) {
+    openSmsComposer({ type: 'group', group: customGroups.value[0] })
+    return
+  }
+
+  const primarySection = visibleSections.value.find((section) => Array.isArray(section.customers) && section.customers.length)
+  if (primarySection) {
+    openSmsComposer({ type: 'section', section: primarySection })
+    return
+  }
+
+  if (filteredCustomers.value.length) {
+    openSmsComposer({
+      type: 'section',
+      section: {
+        title: 'مشتری‌های فیلترشده',
+        customers: filteredCustomers.value
+      }
+    })
+  }
+}
 
 const openSmsComposer = (payload) => {
   let recipients = []
@@ -1024,7 +1322,7 @@ const openSmsComposer = (payload) => {
     .filter((recipient) => recipient.phone)
 
   if (!normalizedRecipients.length) {
-    alert('شماره موبایل معتبری برای ارسال پیامک وجود ندارد.')
+    notifyWarning('شماره موبایل معتبری برای ارسال پیامک وجود ندارد.', { title: 'ارسال پیامک' })
     return
   }
 
@@ -1087,20 +1385,20 @@ const sendSmsCampaign = async () => {
     const failedCount = Number(data?.failed_count || 0)
 
     if (successCount === 0) {
-      alert(data?.detail || 'هیچ پیامکی ارسال نشد. جزئیات خطا را در گزارش پیامک بررسی کنید.')
+      notifyWarning(data?.detail || 'هیچ پیامکی ارسال نشد. جزئیات خطا را در گزارش پیامک بررسی کنید.', { title: 'ارسال پیامک' })
       return
     }
 
     closeSmsComposer()
     if (failedCount > 0) {
-      alert(`${toFa(successCount)} پیامک ارسال شد و ${toFa(failedCount)} پیامک ناموفق بود.`)
+      notifyWarning(`${toFa(successCount)} پیامک ارسال شد و ${toFa(failedCount)} پیامک ناموفق بود.`, { title: 'ارسال پیامک' })
       return
     }
 
-    alert(`${toFa(successCount)} پیامک با موفقیت در صف ارسال قرار گرفت.`)
+    notifySuccess(`${toFa(successCount)} پیامک با موفقیت در صف ارسال قرار گرفت.`, { title: 'ارسال پیامک' })
   } catch (error) {
     const detail = resolveApiErrorMessage(error, 'ارسال پیامک ناموفق بود.')
-    alert(detail)
+    notifyError(detail, { title: 'خطا در ارسال پیامک' })
     await loadCustomerClubData({ showLoading: false })
   } finally {
     smsSending.value = false
@@ -1114,7 +1412,7 @@ const applySuggestedRule = (type) => {
     groupBuilder.name = 'مشتریان وفادار'
     groupBuilder.description = 'مشتریان با سفارش بالا و امتیاز عالی'
     groupBuilder.rules.minOrders = 5
-    groupBuilder.rules.minSpent = 10000
+    groupBuilder.rules.minSpent = 10000000
     groupBuilder.rules.minScore = 4
   } else {
     groupBuilder.name = 'مشتریان در معرض ریزش'
@@ -1127,7 +1425,7 @@ const applySuggestedRule = (type) => {
 
 const exportCustomers = () => {
   if (!filteredCustomers.value.length) {
-    alert('برای خروجی گرفتن، حداقل یک مشتری باید در لیست باشد.')
+    notifyWarning('برای خروجی گرفتن، حداقل یک مشتری باید در لیست باشد.', { title: 'خروجی اکسل' })
     return
   }
   const rows = [
@@ -1252,11 +1550,21 @@ onMounted(async () => {
   transition: 0.18s ease;
 }
 
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .club-primary-btn {
   padding: 13px 18px;
   color: #fff;
   background: linear-gradient(135deg, #0058be, #0ea5e9);
   box-shadow: 0 18px 30px rgba(0, 88, 190, 0.2);
+}
+
+.club-primary-btn :deep(.iconly-shell) {
+  --iconly-filter: brightness(0) saturate(100%) invert(100%);
 }
 
 .club-primary-btn:disabled {
@@ -1500,22 +1808,26 @@ onMounted(async () => {
 }
 
 .customer-table-wrap {
-  overflow: auto;
+  overflow: hidden;
   margin-top: 14px;
 }
 
 .customer-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .customer-table th,
 .customer-table td {
-  padding: 14px 10px;
+  padding: 10px 8px;
   text-align: right;
   border-bottom: 1px solid rgba(226, 232, 240, 0.9);
   vertical-align: top;
-  white-space: nowrap;
+  white-space: normal;
+  font-size: 11px;
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 .customer-table th {
@@ -1526,17 +1838,34 @@ onMounted(async () => {
 .customer-name-cell {
   display: flex;
   gap: 10px;
-  align-items: center;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.customer-name-cell > div {
+  min-width: 0;
 }
 
 .customer-name-cell strong {
   display: block;
   color: #0f172a;
+  font-size: 12px;
 }
 
 .customer-name-cell small {
   color: #64748b;
   font-size: 11px;
+}
+
+.customer-name-cell :deep(.plate-badge) {
+  max-width: 100%;
+}
+
+.customer-name-cell :deep(.plate-badge.compact) {
+  transform: scale(.82);
+  transform-origin: right top;
+  margin-top: 2px;
+  margin-bottom: -8px;
 }
 
 .avatar-badge {
@@ -1548,6 +1877,13 @@ onMounted(async () => {
   background: linear-gradient(135deg, #dbeafe, #e0f2fe);
   color: #0058be;
   font-weight: 800;
+}
+
+.avatar-badge.large {
+  width: 56px;
+  height: 56px;
+  border-radius: 20px;
+  font-size: 18px;
 }
 
 .mono-cell {
@@ -1571,14 +1907,45 @@ onMounted(async () => {
 }
 
 .icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 9px 12px;
   color: #475569;
   background: #eff6ff;
+  white-space: nowrap;
+  word-break: keep-all;
+  flex: 0 0 auto;
 }
 
 .icon-action.primary {
   color: #fff;
   background: linear-gradient(135deg, #0058be, #2170e4);
+}
+
+.icon-only-action {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.action-icon-image {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+}
+
+.icon-action.primary .action-icon-image {
+  filter: brightness(0) invert(1);
+}
+
+.table-actions {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 8px;
 }
 
 .empty-state {
@@ -1669,6 +2036,20 @@ onMounted(async () => {
   gap: 8px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.template-preview-item {
+  display: grid;
+  gap: 6px;
+}
+
+.template-preview-item strong {
+  color: #0f172a;
+}
+
+.template-preview-item small {
+  color: #64748b;
+  line-height: 1.8;
 }
 
 .sms-log-row:last-child {
@@ -1813,6 +2194,60 @@ onMounted(async () => {
   width: min(760px, 100%);
 }
 
+.customer-profile-shell {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.customer-profile-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #0f172a, #0f4c81 62%, #38bdf8);
+  color: #fff;
+}
+
+.customer-profile-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.customer-profile-title strong,
+.customer-profile-score strong {
+  display: block;
+  font-size: 19px;
+}
+
+.customer-profile-title small,
+.customer-profile-score span {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 11px;
+}
+
+.profile-metrics-grid {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.profile-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.profile-panel {
+  min-height: 100%;
+}
+
+.plate-tag-row {
+  align-items: center;
+}
+
 .detail-grid {
   margin-top: 16px;
   flex-wrap: wrap;
@@ -1828,9 +2263,17 @@ onMounted(async () => {
 
 .detail-metric {
   min-width: 180px;
-  padding: 16px;
+  padding: 14px;
   display: grid;
   gap: 6px;
+}
+
+.customer-profile-shell .detail-metric small {
+  font-size: 10px;
+}
+
+.customer-profile-shell .detail-metric strong {
+  font-size: 17px;
 }
 
 .detail-panel {
@@ -1840,10 +2283,59 @@ onMounted(async () => {
 
 .detail-panel h4 {
   margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.customer-profile-shell .tag,
+.customer-profile-shell .tag.custom {
+  font-size: 10px;
+  padding: 7px 10px;
 }
 
 .sms-modal {
   width: min(1200px, 100%);
+}
+
+.template-editor-modal {
+  width: min(980px, 100%);
+}
+
+.template-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) 320px;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.template-editor-form,
+.template-editor-preview {
+  display: grid;
+  gap: 14px;
+}
+
+.template-token-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-preview-box {
+  min-height: 220px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(191, 219, 254, 0.86);
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
+}
+
+.template-preview-box p {
+  margin: 0;
+  color: #0f172a;
+  line-height: 2;
+}
+
+.danger-btn {
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.28);
 }
 
 .sms-layout {
@@ -1948,7 +2440,9 @@ onMounted(async () => {
   .club-hero,
   .club-body.advanced,
   .group-builder-layout,
-  .sms-layout {
+  .sms-layout,
+  .template-editor-layout,
+  .profile-panel-grid {
     grid-template-columns: 1fr;
   }
 
@@ -2005,19 +2499,22 @@ onMounted(async () => {
     padding: 7px 9px;
   }
 
+  .icon-action {
+    min-width: max-content;
+  }
+
   .club-stats-grid,
   .club-filter-grid,
   .smart-rule-grid,
   .sms-target-card,
   .sms-meta-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .grouping-toolbar,
   .customer-section-head,
   .modal-head,
-  .modal-foot,
-  .table-actions {
+  .modal-foot {
     flex-direction: column;
     align-items: stretch;
   }
@@ -2037,6 +2534,15 @@ onMounted(async () => {
   .customer-table td {
     padding-inline: 8px;
     padding-block: 10px;
+    font-size: 10px;
+  }
+
+  .table-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 6px;
   }
 
   .phone-preview {
@@ -2098,10 +2604,23 @@ onMounted(async () => {
     padding: 6px 8px;
   }
 
+  .icon-action {
+    min-width: max-content;
+  }
+
   .customer-table th,
   .customer-table td {
     padding-inline: 6px;
     padding-block: 8px;
+    font-size: 9px;
+  }
+
+  .club-stats-grid,
+  .club-filter-grid,
+  .smart-rule-grid,
+  .sms-target-card,
+  .sms-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .avatar-badge {
@@ -2109,6 +2628,11 @@ onMounted(async () => {
     height: 34px;
     border-radius: 12px;
     font-size: 10px;
+  }
+
+  .customer-profile-hero {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

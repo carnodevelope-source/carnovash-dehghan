@@ -163,7 +163,7 @@
               </footer>
             </section>
           </div>
-          <div class="release-layout">
+          <div class="release-layout" :class="{ 'release-layout-no-products': !hasReleaseProducts }">
             <div class="release-col">
             <div class="release-title release-title-inline">
               <h3>خدمات</h3>
@@ -192,7 +192,7 @@
             
             </div>
 
-            <div class="release-col release-products-col">
+            <div v-if="hasReleaseProducts" class="release-col release-products-col">
             <div class="release-title">
               <h3>محصولات جانبی</h3>
             </div>
@@ -214,7 +214,16 @@
                   <span>{{ formatMoney(product.sale_price) }}</span>
                 </div>
                 <div class="qty-controls">
-                  <button type="button" @click="decreaseReleaseProduct(product.id)">-</button>
+                  <div class="qty-actions">
+                    <button type="button" @click="decreaseReleaseProduct(product.id)">-</button>
+                    <button
+                      type="button"
+                      @click="increaseReleaseProduct(product.id)"
+                      :disabled="Number(product.available_quantity || 0) <= Number(getReleaseProductQty(product.id))"
+                    >
+                      +
+                    </button>
+                  </div>
                   <input
                     type="number"
                     min="0"
@@ -222,13 +231,6 @@
                     :value="getReleaseProductQty(product.id)"
                     @input="setReleaseProductQty(product.id, $event.target.value)"
                   />
-                  <button
-                    type="button"
-                    @click="increaseReleaseProduct(product.id)"
-                    :disabled="Number(product.available_quantity || 0) <= Number(getReleaseProductQty(product.id))"
-                  >
-                    +
-                  </button>
                 </div>
               </article>
             </div>
@@ -472,11 +474,35 @@
         <header class="modal-head invoice-modal-head">
           <div>
             <h3>پیش‌نمایش فاکتور</h3>
-            <p class="invoice-modal-subtitle">فاکتور سفارش را به‌صورت PDF ببینید و در صورت نیاز دانلود کنید.</p>
+            <p class="invoice-modal-subtitle">قالب چاپ را بین A4، A5 و فیش پرینتر عوض کنید و همان خروجی را برای PDF یا چاپ بگیرید.</p>
           </div>
           <button class="close-btn" @click="closeInvoicePreviewModal">✕</button>
         </header>
         <div class="invoice-modal-body">
+          <div class="invoice-format-toolbar">
+            <div class="invoice-format-presets">
+              <button
+                v-for="option in invoicePresetOptions"
+                :key="option.key"
+                type="button"
+                class="invoice-format-chip"
+                :class="{ active: invoiceLayout.preset === option.key }"
+                @click="invoiceLayout.preset = option.key"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+            <div v-if="invoiceIsThermal" class="invoice-thermal-size-grid">
+              <label>
+                <span>عرض فیش (mm)</span>
+                <input v-model.number="invoiceLayout.thermalWidthMm" type="number" min="48" max="120" step="1" />
+              </label>
+              <label>
+                <span>طول فیش (mm)</span>
+                <input v-model.number="invoiceLayout.thermalHeightMm" type="number" min="80" max="600" step="1" />
+              </label>
+            </div>
+          </div>
           <div class="invoice-modal-actions">
             <button type="button" class="secondary-btn" :disabled="invoiceGenerating" @click="refreshInvoicePreview">
               {{ invoiceGenerating ? 'در حال ساخت...' : 'بروزرسانی فاکتور' }}
@@ -484,12 +510,15 @@
             <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="downloadInvoicePdf">
               دانلود PDF
             </button>
+            <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="printInvoicePdf">
+              چاپ
+            </button>
           </div>
           <div v-if="invoiceGenerating" class="invoice-preview-loading">
             <BaseSpinner size="56px" color="#1d4ed8" ball-color="#60a5fa" label="در حال ساخت فایل PDF فاکتور..." />
           </div>
           <div v-else-if="invoicePdfUrl" class="invoice-preview-frame-wrap">
-            <iframe :src="invoicePreviewUrl" title="invoice-pdf-preview" class="invoice-preview-frame"></iframe>
+            <iframe ref="invoicePreviewFrameRef" :src="invoicePreviewUrl" title="invoice-pdf-preview" class="invoice-preview-frame"></iframe>
           </div>
           <div v-else class="invoice-preview-empty">
             {{ invoiceErrorMessage || 'فاکتور هنوز ساخته نشده است.' }}
@@ -497,14 +526,67 @@
         </div>
       </section>
     </div>
-    <div class="invoice-print-stage">
-      <div ref="invoiceTemplateRef" class="invoice-template">
-        <div class="invoice-sheet">
+    <div class="invoice-print-stage" :style="invoiceStageStyle">
+      <div ref="invoiceTemplateRef" class="invoice-template" :style="invoiceTemplateStyle">
+        <div class="invoice-sheet" :class="invoiceSheetClass" :style="invoiceSheetStyle">
+          <template v-if="invoiceIsThermal">
+            <header class="thermal-sheet-head">
+              <strong>کارنوواش</strong>
+              <span>رسید سفارش #{{ Number(releaseCandidate?.id || 0).toLocaleString('fa-IR') }}</span>
+              <small>{{ invoiceIssuedAt }}</small>
+            </header>
+
+            <section class="thermal-sheet-block">
+              <p><span>مشتری</span><strong>{{ invoiceCustomerName }}</strong></p>
+              <p><span>تلفن</span><strong>{{ invoiceCustomerPhone }}</strong></p>
+              <p><span>خودرو</span><strong>{{ invoiceVehicleTitle }}</strong></p>
+              <p><span>پلاک</span><strong>{{ invoicePlateLabel }}</strong></p>
+              <p><span>پرداخت</span><strong>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</strong></p>
+            </section>
+
+            <section class="thermal-sheet-block">
+              <div class="thermal-lines-head">
+                <strong>خدمات</strong>
+                <span>{{ invoiceServiceLines.length.toLocaleString('fa-IR') }} ردیف</span>
+              </div>
+              <div v-for="(line, lineIndex) in invoiceServiceLines" :key="`thermal-service-${line.id || lineIndex}`" class="thermal-line-row">
+                <div>
+                  <strong>{{ line.service_name }}</strong>
+                  <small>تعداد {{ Number(line.quantity || 1).toLocaleString('fa-IR') }}</small>
+                </div>
+                <span>{{ formatMoney(line.line_total) }}</span>
+              </div>
+              <div v-for="product in invoiceProductLines" :key="`thermal-product-${product.id}`" class="thermal-line-row thermal-line-row-product">
+                <div>
+                  <strong>{{ product.name }}</strong>
+                  <small>محصول × {{ Number(product.quantity || 0).toLocaleString('fa-IR') }}</small>
+                </div>
+                <span>{{ formatMoney(product.total) }}</span>
+              </div>
+            </section>
+
+            <section class="thermal-sheet-block thermal-total-block">
+              <p><span>جمع خدمات</span><strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong></p>
+              <p><span>محصولات</span><strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong></p>
+              <p><span>تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
+              <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
+              <p class="thermal-grand-total"><span>مبلغ نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
+            </section>
+
+            <footer class="thermal-sheet-footer">
+              <p v-if="releasePaymentBreakdownLabel">ترکیبی: {{ releasePaymentBreakdownLabel }}</p>
+              <p v-if="invoiceDueDateLabel">سررسید: {{ invoiceDueDateLabel }}</p>
+              <p v-if="releaseForm.receiptFooterNote">{{ releaseForm.receiptFooterNote }}</p>
+              <p>CarnoWash</p>
+            </footer>
+          </template>
+
+          <template v-else>
           <header class="invoice-sheet-head">
             <div>
               <small>CarnoWash</small>
               <strong>فاکتور نهایی سفارش</strong>
-              <span>شماره سفارش: #{{ Number(releaseCandidate?.id || 0).toLocaleString('fa-IR') }}</span>
+              <span>شماره فاکتور: {{ invoiceNumber }}</span>
             </div>
             <div class="invoice-sheet-meta">
               <strong>کارنوواش | CarnoWash</strong>
@@ -512,54 +594,33 @@
               <span>روش پرداخت: {{ paymentMethodLabel(releaseForm.paymentMethod) }}</span>
             </div>
           </header>
-          <section class="invoice-sheet-grid">
+
+          <section class="invoice-identity-grid">
             <article>
-              <span>مشتری</span>
-              <strong>{{ releaseCandidate?.driverName || releaseCandidate?.driver_name || '-' }}</strong>
+              <small>اطلاعات مشتری</small>
+              <p><span>نام</span><strong>{{ invoiceCustomerName }}</strong></p>
+              <p><span>شماره تماس</span><strong>{{ invoiceCustomerPhone }}</strong></p>
+              <p><span>امتیاز مشتری</span><strong>{{ formatCustomerScore(releaseForm.customerScore) }} | {{ releaseCustomerScoreStars }}</strong></p>
             </article>
             <article>
-              <span>شماره تماس</span>
-              <strong>{{ releaseCandidate?.driverPhone || releaseCandidate?.driver_phone || '-' }}</strong>
+              <small>مشخصات خودرو</small>
+              <p><span>خودرو</span><strong>{{ invoiceVehicleTitle }}</strong></p>
+              <p><span>پلاک</span><strong>{{ invoicePlateLabel }}</strong></p>
+              <p><span>نوع پذیرش</span><strong>{{ invoiceAdmissionLabel }}</strong></p>
             </article>
             <article>
-              <span>خودرو</span>
-              <strong>{{ releaseCandidate?.model || releaseCandidate?.car_model || '-' }}</strong>
-            </article>
-            <article>
-              <span>پلاک</span>
-              <strong>{{ releaseCandidate?.plateDisplay || releaseCandidate?.plate_number || 'قطعه‌شویی' }}</strong>
-            </article>
-            <article>
-              <span>امتیاز مشتری</span>
-              <strong>{{ formatCustomerScore(releaseForm.customerScore) }} | {{ releaseCustomerScoreStars }}</strong>
+              <small>اطلاعات سفارش</small>
+              <p><span>شماره سفارش</span><strong>#{{ Number(releaseCandidate?.id || 0).toLocaleString('fa-IR') }}</strong></p>
+              <p><span>وضعیت پرداخت</span><strong>{{ invoicePaymentStatusLabel }}</strong></p>
+              <p><span>تاریخ ورود</span><strong>{{ invoiceCheckInLabel }}</strong></p>
             </article>
           </section>
 
           <section class="invoice-sheet-section">
             <div class="invoice-section-head">
-              <strong>خدمات</strong>
+              <strong>ریز خدمات انجام‌شده</strong>
             </div>
-            <table class="invoice-table">
-              <thead>
-                <tr>
-                  <th>عنوان</th>
-                  <th>مبلغ</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(line, lineIndex) in invoiceServiceLines" :key="`invoice-service-${line.id || lineIndex}`">
-                  <td>{{ line.service_name }}</td>
-                  <td>{{ formatMoney(line.line_total) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-
-          <section class="invoice-sheet-section" v-if="invoiceProductLines.length">
-            <div class="invoice-section-head">
-              <strong>محصولات جانبی</strong>
-            </div>
-            <table class="invoice-table">
+            <table class="invoice-table invoice-services-table">
               <thead>
                 <tr>
                   <th>عنوان</th>
@@ -568,37 +629,74 @@
                 </tr>
               </thead>
               <tbody>
+                <tr v-for="(line, lineIndex) in invoiceServiceLines" :key="`invoice-service-${line.id || lineIndex}`">
+                  <td>{{ line.service_name }}</td>
+                  <td>{{ Number(line.quantity || 1).toLocaleString('fa-IR') }}</td>
+                  <td>{{ formatMoney(line.line_total) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="invoice-sheet-section" v-if="invoiceProductLines.length">
+            <div class="invoice-section-head">
+              <strong>محصولات جانبی فروخته‌شده</strong>
+            </div>
+            <table class="invoice-table invoice-products-table">
+              <thead>
+                <tr>
+                  <th>عنوان</th>
+                  <th>تعداد</th>
+                  <th>قیمت واحد</th>
+                  <th>مبلغ</th>
+                </tr>
+              </thead>
+              <tbody>
                 <tr v-for="product in invoiceProductLines" :key="`invoice-product-${product.id}`">
                   <td>{{ product.name }}</td>
                   <td>{{ Number(product.quantity || 0).toLocaleString('fa-IR') }}</td>
+                  <td>{{ formatMoney(product.unitPrice) }}</td>
                   <td>{{ formatMoney(product.total) }}</td>
                 </tr>
               </tbody>
             </table>
           </section>
 
+          <section class="invoice-sheet-section invoice-payment-section">
+            <div class="invoice-section-head">
+              <strong>جزئیات پرداخت</strong>
+            </div>
+            <div class="invoice-payment-grid">
+              <p><span>روش پرداخت</span><strong>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</strong></p>
+              <p><span>وضعیت</span><strong>{{ invoicePaymentStatusLabel }}</strong></p>
+              <p v-if="releasePaymentBreakdownLabel"><span>پرداخت ترکیبی</span><strong>{{ releasePaymentBreakdownLabel }}</strong></p>
+              <p v-if="invoiceDueDateLabel"><span>سررسید</span><strong>{{ invoiceDueDateLabel }}</strong></p>
+              <p v-if="invoiceChequeLabel"><span>اطلاعات چک</span><strong>{{ invoiceChequeLabel }}</strong></p>
+            </div>
+          </section>
+
           <section class="invoice-sheet-section invoice-total-section">
+            <div class="invoice-section-head">
+              <strong>خلاصه مالی مشتری</strong>
+            </div>
             <div class="invoice-totals">
+              <p><span>جمع قبل از تخفیف</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
               <p><span>جمع خدمات</span><strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong></p>
               <p><span>جمع محصولات</span><strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong></p>
-              <p><span>تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
+              <p v-if="releaseSummary.customerDiscountAmount > 0"><span>تخفیف امتیاز مشتری</span><strong>{{ formatMoney(releaseSummary.customerDiscountAmount) }}</strong></p>
+              <p v-if="releaseSummary.manualDiscountAmount > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(releaseSummary.manualDiscountAmount) }}</strong></p>
+              <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
               <p class="invoice-grand-total"><span>مبلغ نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </div>
           </section>
 
           <footer class="invoice-sheet-footer">
-            <p v-if="releaseForm.paymentMethod === 'manual' && releasePaymentBreakdownLabel">
-              جزئیات پرداخت: {{ releasePaymentBreakdownLabel }}
-            </p>
-            <p v-if="releaseForm.creditDueDate && ['credit', 'cheque'].includes(releaseForm.paymentMethod)">
-              سررسید پرداخت: {{ releaseForm.creditDueDate }}
-            </p>
-            <p v-if="releaseForm.paymentMethod === 'cheque' && chequeDetailsSummary !== 'جزئیات ثبت نشده'">
-              {{ chequeDetailsSummary }}
-            </p>
+            <p v-if="invoiceCustomerNote">توضیحات سفارش: {{ invoiceCustomerNote }}</p>
+            <p v-if="releaseForm.receiptFooterNote">{{ releaseForm.receiptFooterNote }}</p>
             <p>کارنوواش | CarnoWash</p>
           </footer>
+          </template>
         </div>
       </div>
     </div>
@@ -618,6 +716,7 @@ import { useVehicleStore } from '../../store/vehicle.store'
 import api from '../../services/api'
 import { formatThousandsToman } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import { notifyError, notifyWarning } from '../../utils/notify'
 import { buildPlateNumber, isAnonymousPlate, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
 
 const search = ref('')
@@ -637,7 +736,14 @@ const modalStep = ref(1)
 const vehicleDraft = ref(null)
 const releaseCandidate = ref(null)
 const invoiceTemplateRef = ref(null)
+const invoicePreviewFrameRef = ref(null)
 const tempReleaseServiceIds = ref([])
+const invoiceRenderTimer = ref(null)
+const invoiceLayout = ref({
+  preset: 'a4',
+  thermalWidthMm: 80,
+  thermalHeightMm: 220
+})
 const releasePaymentMethods = ['pos', 'cash', 'transfer', 'cheque', 'credit', 'manual']
 const releaseForm = ref({
   serviceLines: [],
@@ -662,6 +768,8 @@ const releaseForm = ref({
   chequeAmount: 0,
   creditDueDate: '',
   receiptFooterNote: '',
+  receiptPrinterPaperWidth: '80mm',
+  receiptPrintCopies: 1,
   bonusPenaltyAdjustments: [],
   bonusPenaltyNote: '',
   newServiceLines: [],
@@ -695,7 +803,7 @@ const openVehicleDetails = async (vehicleId) => {
     showVehicleDetailsModal.value = true
   } catch (error) {
     console.error('fetchVehicleDetail error:', error?.response?.data || error)
-    alert('بارگذاری جزئیات خودرو ناموفق بود.')
+    notifyError('بارگذاری جزئیات خودرو ناموفق بود.', { title: 'جزئیات خودرو' })
   }
 }
 const closeVehicleDetails = () => {
@@ -775,6 +883,12 @@ const paymentMethodLabel = (value) => ({
   credit: 'نسیه',
   manual: 'اسنادی / ترکیبی'
 }[value] || 'نامشخص')
+const paymentStatusLabel = (value) => ({
+  unpaid: 'پرداخت نشده',
+  partial: 'پرداخت ناقص',
+  paid: 'پرداخت شده',
+  refunded: 'مرجوع شده'
+}[value] || 'در انتظار ثبت')
 const customerScorePercent = (score) => {
   const normalized = Math.max(0, Math.min(5, Number(score || 0)))
   return (normalized / 5) * 100
@@ -831,13 +945,26 @@ const mapVehicleToDraft = (source = {}) => ({
       .filter((id) => Number.isFinite(id) && id > 0)
     : []
 })
+const unassignedWorkerLabels = new Set(['تخصیص نشده', 'نیرو تخصیص نشده', 'بدون نیرو'])
+const normalizeWorkerName = (value) => String(value || '').trim()
+const isRealWorkerName = (value) => {
+  const name = normalizeWorkerName(value)
+  return name.length > 0 && !unassignedWorkerLabels.has(name)
+}
+const uniqueWorkerNames = (items) => (
+  Array.isArray(items)
+    ? items
+      .map((item) => normalizeWorkerName(typeof item === 'string' ? item : item?.name || item?.worker_name))
+      .filter((name, index, arr) => isRealWorkerName(name) && arr.indexOf(name) === index)
+    : []
+)
 const assignedWorkersLabel = (job) => {
   if (!job) return 'تخصیص نشده'
-  const names = Array.isArray(job.assigned_workers_names)
-    ? job.assigned_workers_names.filter((item) => String(item || '').trim().length > 0)
-    : []
+  const names = uniqueWorkerNames(job.assigned_workers_names)
   if (names.length) return names.join('، ')
-  return job.assigned_worker_name || 'تخصیص نشده'
+  const snapshotNames = uniqueWorkerNames(job.assigned_workers_snapshot)
+  if (snapshotNames.length) return snapshotNames.join('، ')
+  return isRealWorkerName(job.assigned_worker_name) ? job.assigned_worker_name : 'تخصیص نشده'
 }
 const hasCompletedStepOneData = (source = {}) => {
   const isPieceWash = Boolean(source.is_piece_wash)
@@ -908,6 +1035,7 @@ const closeInvoicePreviewModal = () => {
   showInvoicePreviewModal.value = false
   invoiceGenerating.value = false
   invoiceErrorMessage.value = ''
+  if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
   revokeInvoicePdfUrl()
 }
 const defaultReleasePaymentMethod = computed(() => {
@@ -956,10 +1084,14 @@ const closeChequeDetailsModal = () => {
   showChequeDetailsModal.value = false
 }
 const normalizeReleaseAssignedWorkers = (workers) => {
-  const items = Array.isArray(workers) ? workers.filter((item) => item.id > 0 && item.name.length > 0) : []
+  const items = Array.isArray(workers)
+    ? workers.filter((item) => String(item?.name || '').trim().length > 0)
+    : []
   const fallbackPercents = defaultWorkerSharePercents(items.length)
   return items.map((item, index) => ({
     ...item,
+    id: Number(item?.id || 0),
+    worker_local_key: String(item?.worker_local_key || `worker-${index + 1}`),
     worker_share_percent: Number(item.worker_share_percent ?? fallbackPercents[index] ?? 0),
     isSelected: true
   }))
@@ -992,50 +1124,54 @@ const visibleReleaseServiceLines = computed(() => (
 const extractReleaseAssignedWorkers = (payload) => {
   const assignedWorkers = Array.isArray(payload?.job?.assigned_workers)
     ? payload.job.assigned_workers
-      .map((item) => ({
+      .map((item, index) => ({
         id: Number(item?.id || 0),
-        name: String(item?.name || '').trim(),
+        name: normalizeWorkerName(item?.name || item?.worker_name),
         tip_share_percent: Number(item?.tip_share_percent || 0),
-        worker_share_percent: Number(item?.worker_share_percent || 0)
+        worker_share_percent: Number(item?.worker_share_percent || 0),
+        worker_local_key: String(item?.worker_local_key || `assigned-worker-${index + 1}`)
       }))
-      .filter((item) => item.id > 0 && item.name.length > 0)
+      .filter((item) => isRealWorkerName(item.name))
     : []
   if (assignedWorkers.length) return assignedWorkers
 
   const snapshotWorkers = Array.isArray(payload?.job?.assigned_workers_snapshot)
     ? payload.job.assigned_workers_snapshot
       .map((item, index) => ({
-        id: Number(item?.id || index + 1),
-        name: String(item?.name || '').trim(),
+        id: Number(item?.id || 0),
+        name: normalizeWorkerName(item?.name || item?.worker_name),
         tip_share_percent: Number(item?.tip_share_percent || 0),
-        worker_share_percent: Number(item?.worker_share_percent || 0)
+        worker_share_percent: Number(item?.worker_share_percent || 0),
+        worker_local_key: String(item?.worker_local_key || `snapshot-worker-${index + 1}`)
       }))
-      .filter((item) => item.id > 0 && item.name.length > 0)
+      .filter((item) => isRealWorkerName(item.name))
     : []
   if (snapshotWorkers.length) return snapshotWorkers
 
   return Array.isArray(payload?.job?.assigned_workers_names)
     ? payload.job.assigned_workers_names
-      .filter((item) => String(item || '').trim().length > 0)
+      .filter((item) => isRealWorkerName(item))
       .map((name, index) => ({
-        id: index + 1,
-        name: String(name || '').trim(),
+        id: 0,
+        name: normalizeWorkerName(name),
         tip_share_percent: 0,
-        worker_share_percent: 0
+        worker_share_percent: 0,
+        worker_local_key: `named-worker-${index + 1}`
       }))
     : (() => {
-      const fallbackName = String(
+      const fallbackName = normalizeWorkerName(
         payload?.job?.assigned_worker_name
         || payload?.workerName
         || payload?.worker_name
         || ''
-      ).trim()
-      return fallbackName
+      )
+      return isRealWorkerName(fallbackName)
         ? [{
-          id: 1,
+          id: 0,
           name: fallbackName,
           tip_share_percent: 0,
-          worker_share_percent: 100
+          worker_share_percent: 100,
+          worker_local_key: 'fallback-worker-1'
         }]
         : []
     })()
@@ -1137,17 +1273,21 @@ const bonusPenaltyWorkers = computed(() => (
   Array.isArray(releaseForm.value.assignedWorkers)
     ? releaseForm.value.assignedWorkers
       .map((worker, index) => ({ ...worker, sourceIndex: index }))
-      .filter((worker) => Number(worker.id || 0) > 0 && String(worker.name || '').trim().length > 0)
+      .filter((worker) => String(worker.name || '').trim().length > 0)
     : []
 ))
 const syncBonusPenaltyAdjustments = () => {
   const workers = bonusPenaltyWorkers.value
   const current = Array.isArray(releaseForm.value.bonusPenaltyAdjustments) ? releaseForm.value.bonusPenaltyAdjustments : []
-  const currentMap = new Map(current.map((item) => [Number(item.worker_id || 0), item]))
+  const currentMap = new Map(
+    current.map((item, index) => [String(item.worker_key || `adjustment-${Number(item.worker_id || 0)}-${index}`), item])
+  )
   releaseForm.value.bonusPenaltyAdjustments = workers.map((worker) => {
-    const existing = currentMap.get(Number(worker.id || 0))
+    const workerKey = String(worker.worker_local_key || `worker-${worker.sourceIndex || 0}`)
+    const existing = currentMap.get(workerKey)
     return {
       worker_id: Number(worker.id || 0),
+      worker_key: workerKey,
       worker_name: worker.name || '',
       bonus: Number(existing?.bonus || 0),
       penalty: Number(existing?.penalty || 0)
@@ -1280,22 +1420,25 @@ const openReleaseModal = async (car) => {
     const resolvedAssignedWorkers = extractReleaseAssignedWorkers(data)
     const sourceSnapshotWorkers = Array.isArray(sourceVehicle?.job?.assigned_workers_snapshot)
       ? sourceVehicle.job.assigned_workers_snapshot
-        .map((item) => ({
+        .map((item, index) => ({
           id: Number(item?.id || 0),
-          name: String(item?.name || '').trim(),
+          name: normalizeWorkerName(item?.name || item?.worker_name),
           tip_share_percent: Number(item?.tip_share_percent || 0),
           worker_share_percent: Number(item?.worker_share_percent || 0),
-          worker_share_amount: Number(item?.worker_share_amount || 0)
+          worker_share_amount: Number(item?.worker_share_amount || 0),
+          worker_local_key: String(item?.worker_local_key || `source-worker-${index + 1}`)
         }))
-        .filter((item) => item.id > 0 && item.name.length > 0)
+        .filter((item) => isRealWorkerName(item.name))
       : []
+    const cardAssignedWorkers = extractReleaseAssignedWorkers({ workerName: car?.workerName || '' })
     const fallbackAssignedWorkers = sourceVehicle
       ? extractReleaseAssignedWorkers(sourceVehicle)
       : extractReleaseAssignedWorkers({ workerName: car?.workerName || '' })
     const preferredAssignedWorkers = pickBestReleaseAssignedWorkers(
+      resolvedAssignedWorkers,
       sourceSnapshotWorkers,
       fallbackAssignedWorkers,
-      resolvedAssignedWorkers
+      cardAssignedWorkers
     )
     const availableProducts = Array.isArray(data?.job?.available_products)
       ? data.job.available_products.map((item) => ({
@@ -1334,6 +1477,8 @@ const openReleaseModal = async (car) => {
       chequeAmount: 0,
       creditDueDate: '',
       receiptFooterNote: settingsResponse?.data?.receipt_footer_note || '',
+      receiptPrinterPaperWidth: settingsResponse?.data?.receipt_printer_paper_width || '80mm',
+      receiptPrintCopies: Math.max(1, Number(settingsResponse?.data?.receipt_print_copies || 1)),
       bonusPenaltyAdjustments: [],
       bonusPenaltyNote: '',
       newServiceLines: [],
@@ -1344,11 +1489,12 @@ const openReleaseModal = async (car) => {
       })) : [],
       selectedServiceToAdd: 0
     }
+    syncInvoiceLayoutFromPrinterSettings(releaseForm.value.receiptPrinterPaperWidth)
     tempReleaseServiceIds.value = [...selectedReleaseServiceIds.value]
     syncBonusPenaltyAdjustments()
   } catch (error) {
     console.error('openReleaseModal error:', error?.response?.data || error)
-    alert(apiErrorText(error, 'بارگذاری اطلاعات ترخیص ناموفق بود.'))
+    notifyError(apiErrorText(error, 'بارگذاری اطلاعات ترخیص ناموفق بود.'), { title: 'خطا در بارگذاری ترخیص' })
     closeReleaseModal()
   } finally {
     releaseCheckoutLoading.value = false
@@ -1358,6 +1504,58 @@ const invoiceServiceLines = computed(() => (
   Array.isArray(releaseForm.value.serviceLines)
     ? releaseForm.value.serviceLines.filter((line) => Boolean(line?.is_completed))
     : []
+))
+const sanitizeMillimeter = (value, fallback, min, max) => {
+  const numeric = Number(value || 0)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(max, Math.max(min, numeric))
+}
+const invoicePresetOptions = [
+  { key: 'a4', label: 'A4' },
+  { key: 'a5', label: 'A5' },
+  { key: 'thermal', label: 'فیش پرینتر' }
+]
+const invoiceIsThermal = computed(() => invoiceLayout.value.preset === 'thermal')
+const invoiceThermalWidthMm = computed(() => sanitizeMillimeter(invoiceLayout.value.thermalWidthMm, 80, 48, 120))
+const invoiceThermalHeightMm = computed(() => sanitizeMillimeter(invoiceLayout.value.thermalHeightMm, 220, 80, 600))
+const invoicePageMetrics = computed(() => {
+  if (invoiceLayout.value.preset === 'a5') {
+    return { width: 148, minHeight: 210, padding: 4.5, gap: 6, margin: [5, 5, 5, 5], format: 'a5' }
+  }
+  if (invoiceLayout.value.preset === 'thermal') {
+    return {
+      width: invoiceThermalWidthMm.value,
+      minHeight: invoiceThermalHeightMm.value,
+      padding: 3.2,
+      gap: 4,
+      margin: [3, 3, 3, 3],
+      format: [invoiceThermalWidthMm.value, invoiceThermalHeightMm.value]
+    }
+  }
+  return { width: 210, minHeight: 297, padding: 5, gap: 7, margin: [6, 6, 6, 6], format: 'a4' }
+})
+const invoiceSheetStyle = computed(() => ({
+  width: `${invoicePageMetrics.value.width}mm`,
+  maxWidth: `${invoicePageMetrics.value.width}mm`,
+  minHeight: `${invoicePageMetrics.value.minHeight}mm`,
+  padding: `${invoicePageMetrics.value.padding}mm`,
+  gap: `${invoicePageMetrics.value.gap}px`
+}))
+const invoiceTemplateStyle = computed(() => ({
+  width: `${invoicePageMetrics.value.width}mm`,
+  maxWidth: `${invoicePageMetrics.value.width}mm`
+}))
+const invoiceStageStyle = computed(() => ({
+  width: `${invoicePageMetrics.value.width}mm`
+}))
+const invoiceSheetClass = computed(() => ({
+  'invoice-sheet-a5': invoiceLayout.value.preset === 'a5',
+  'invoice-sheet-thermal': invoiceLayout.value.preset === 'thermal'
+}))
+const invoiceFileLabel = computed(() => (
+  invoiceLayout.value.preset === 'thermal'
+    ? `receipt-${releaseCandidate.value?.id || 'carwash'}`
+    : `invoice-${releaseCandidate.value?.id || 'carwash'}`
 ))
 const invoicePreviewUrl = computed(() => (
   invoicePdfUrl.value
@@ -1369,17 +1567,57 @@ const invoiceProductLines = computed(() => (
     ? releaseForm.value.availableProducts
       .map((product) => {
         const quantity = getReleaseProductQty(product.id)
+        const unitPrice = Number(product.sale_price || 0)
         return quantity > 0
           ? {
             id: product.id,
             name: product.name,
             quantity,
-            total: quantity * Number(product.sale_price || 0)
+            unitPrice,
+            total: quantity * unitPrice
           }
           : null
       })
       .filter(Boolean)
     : []
+))
+const invoiceNumber = computed(() => `CW-${Number(releaseCandidate.value?.id || 0).toLocaleString('fa-IR')}`)
+const invoiceCustomerName = computed(() => (
+  String(releaseCandidate.value?.driverName || releaseCandidate.value?.driver_name || '').trim() || 'مشتری حضوری'
+))
+const invoiceCustomerPhone = computed(() => (
+  String(releaseCandidate.value?.driverPhone || releaseCandidate.value?.driver_phone || '').trim() || '-'
+))
+const invoiceVehicleTitle = computed(() => {
+  const model = String(releaseCandidate.value?.model || releaseCandidate.value?.car_model || '').trim()
+  const color = String(releaseCandidate.value?.colorName || releaseCandidate.value?.car_color || '').trim()
+  return `${model} ${color}`.trim() || 'قطعه‌شویی'
+})
+const invoicePlateLabel = computed(() => (
+  String(releaseCandidate.value?.plateDisplay || releaseCandidate.value?.plate_number || '').trim() || 'قطعه‌شویی'
+))
+const invoiceAdmissionLabel = computed(() => (
+  releaseCandidate.value?.isPieceWash || releaseCandidate.value?.is_piece_wash ? 'قطعه‌شویی' : 'خودرو'
+))
+const invoiceCheckInLabel = computed(() => {
+  const rawDate = releaseCandidate.value?.checkInAt || releaseCandidate.value?.check_in_at || releaseCandidate.value?.created_at
+  if (!rawDate) return '-'
+  return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(rawDate))
+})
+const invoicePaymentStatusLabel = computed(() => (
+  releaseSummary.value.finalTotal > 0 ? paymentStatusLabel(releaseCandidate.value?.payment_status) : 'تسویه شده'
+))
+const invoiceSubtotal = computed(() => Number((releaseSummary.value.servicesTotal + releaseSummary.value.productsTotal).toFixed(2)))
+const invoiceDueDateLabel = computed(() => (
+  releaseForm.value.creditDueDate && ['credit', 'cheque', 'manual'].includes(releaseForm.value.paymentMethod)
+    ? releaseForm.value.creditDueDate
+    : ''
+))
+const invoiceChequeLabel = computed(() => (
+  chequeDetailsSummary.value !== 'جزئیات ثبت نشده' ? chequeDetailsSummary.value : ''
+))
+const invoiceCustomerNote = computed(() => (
+  String(releaseCandidate.value?.note || releaseCandidate.value?.notes || '').trim()
 ))
 const invoiceIssuedAt = computed(() => new Intl.DateTimeFormat('fa-IR', {
   dateStyle: 'medium',
@@ -1430,12 +1668,32 @@ const setReleaseProductQty = (productId, rawValue) => {
   }
   releaseForm.value.productLinesByProductId[productId] = nextQty
 }
+const syncInvoiceLayoutFromPrinterSettings = (paperWidth) => {
+  const value = String(paperWidth || '').trim().toLowerCase()
+  if (value === 'a4') {
+    invoiceLayout.value.preset = 'a4'
+    return
+  }
+  if (value === 'a5') {
+    invoiceLayout.value.preset = 'a5'
+    return
+  }
+  invoiceLayout.value.preset = 'thermal'
+  if (value === '58mm') {
+    invoiceLayout.value.thermalWidthMm = 58
+  } else if (value === '80mm') {
+    invoiceLayout.value.thermalWidthMm = 80
+  }
+}
 const filteredReleaseProducts = computed(() => {
   const items = releaseForm.value.availableProducts || []
   const query = (releaseForm.value.productSearch || '').trim()
   if (!query) return items
   return items.filter((item) => `${item.name || ''} ${item.sku || ''}`.includes(query))
 })
+const hasReleaseProducts = computed(() => (
+  Array.isArray(releaseForm.value.availableProducts) && releaseForm.value.availableProducts.length > 0
+))
 const addServiceFromSystem = (rawServiceId = null) => {
   const serviceId = Number(rawServiceId || releaseForm.value.selectedServiceToAdd || 0)
   if (!serviceId) return
@@ -1595,11 +1853,11 @@ const buildInvoicePdf = async () => {
     const html2pdf = html2pdfModule.default || html2pdfModule
     const worker = html2pdf()
       .set({
-        margin: [6, 6, 6, 6],
-        filename: `invoice-${releaseCandidate.value?.id || 'carwash'}.pdf`,
+        margin: invoicePageMetrics.value.margin,
+        filename: `${invoiceFileLabel.value}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        html2canvas: { scale: invoiceIsThermal.value ? 2.2 : 2, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: invoicePageMetrics.value.format, orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       })
       .from(invoiceTemplateRef.value)
@@ -1625,22 +1883,38 @@ const downloadInvoicePdf = () => {
   if (!invoicePdfUrl.value) return
   const anchor = document.createElement('a')
   anchor.href = invoicePdfUrl.value
-  anchor.download = `invoice-${releaseCandidate.value?.id || 'carwash'}.pdf`
+  anchor.download = `${invoiceFileLabel.value}.pdf`
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
 }
+const printInvoicePdf = () => {
+  const frame = invoicePreviewFrameRef.value
+  if (frame?.contentWindow) {
+    frame.contentWindow.focus()
+    frame.contentWindow.print()
+    return
+  }
+  if (!invoicePdfUrl.value) return
+  const popup = window.open(invoicePdfUrl.value, '_blank', 'noopener,noreferrer')
+  if (popup) {
+    window.setTimeout(() => {
+      popup.focus()
+      popup.print()
+    }, 400)
+  }
+}
 const confirmReleaseVehicle = async () => {
   if (!releaseCandidate.value?.id) return
   if (releaseForm.value.assignedWorkers.length && !selectedAssignedWorkers.value.length) {
-    alert('حداقل یک نیرو را برای این تسویه انتخاب کنید.')
+    notifyWarning('حداقل یک نیرو را برای این تسویه انتخاب کنید.', { title: 'اطلاعات ناقص تسویه' })
     return
   }
   const usesChequeDetails = releaseForm.value.paymentMethod === 'cheque'
     || (releaseForm.value.paymentMethod === 'manual' && releaseForm.value.manualSecondaryMethod === 'cheque' && Number(releaseForm.value.manualSecondaryAmount || 0) > 0)
   if (usesChequeDetails) {
     if (!releaseForm.value.creditDueDate || !releaseForm.value.chequeSerialNumber || !releaseForm.value.chequeSayadiNumber || !releaseForm.value.chequeBank || !releaseForm.value.chequeShaba || Number(releaseForm.value.chequeAmount || 0) <= 0) {
-      alert('همه جزئیات چک را کامل کنید.')
+      notifyWarning('همه جزئیات چک را کامل کنید.', { title: 'اطلاعات ناقص چک' })
       showChequeDetailsModal.value = true
       return
     }
@@ -1649,16 +1923,16 @@ const confirmReleaseVehicle = async () => {
     const breakdownTotal = releasePaymentBreakdown.value.reduce((sum, item) => sum + Number(item.amount || 0), 0)
     const finalTotal = Math.max(0, Number(releaseSummary.value.finalTotal || 0))
     if (!releasePaymentBreakdown.value.length) {
-      alert('حداقل یک بخش پرداخت برای حالت اسنادی / ترکیبی وارد کنید.')
+      notifyWarning('حداقل یک بخش پرداخت برای حالت اسنادی / ترکیبی وارد کنید.', { title: 'اطلاعات پرداخت' })
       return
     }
     if (Math.abs(breakdownTotal - finalTotal) > 1) {
-      alert('جمع بخش‌های پرداخت باید دقیقا با مبلغ نهایی برابر باشد.')
+      notifyWarning('جمع بخش‌های پرداخت باید دقیقا با مبلغ نهایی برابر باشد.', { title: 'اطلاعات پرداخت' })
       return
     }
   }
   if (hasReleaseBonusOrPenalty.value && !String(releaseForm.value.bonusPenaltyNote || '').trim()) {
-    alert('توضیح پاداش یا جریمه الزامی است.')
+    notifyWarning('توضیح پاداش یا جریمه الزامی است.', { title: 'اطلاعات تعدیل' })
     return
   }
   try {
@@ -1712,7 +1986,7 @@ const confirmReleaseVehicle = async () => {
     closeReleaseModal()
   } catch (error) {
     console.error('confirmReleaseVehicle error:', error?.response?.data || error)
-    alert(apiErrorText(error, 'ترخیص خودرو ناموفق بود.'))
+    notifyError(apiErrorText(error, 'ترخیص خودرو ناموفق بود.'), { title: 'خطا در ترخیص خودرو' })
   } finally {
     releaseSubmitting.value = false
   }
@@ -1739,29 +2013,35 @@ const handleStepOneContinue = async (payload) => {
     modalStep.value = 2
   } catch (error) {
     console.error('continue step one error:', error?.response?.data || error)
-    alert(apiErrorText(error, 'ذخیره اطلاعات مرحله اول ناموفق بود.'))
+    notifyError(apiErrorText(error, 'ذخیره اطلاعات مرحله اول ناموفق بود.'), { title: 'خطا در ثبت خودرو' })
   }
 }
 const buildCreateOrUpdatePayload = (payload, status) => {
   const plateRaw = (payload?.vehicle?.plate || '').trim()
-  const [leftPart = '', letterPart = '', midPart = '', rightPart = ''] = plateRaw.split(/\s+/).filter(Boolean)
-  const left = String(payload?.vehicle?.plateLeft || payload?.vehicle?.plate_left || leftPart || '').trim()
-  const letter = String(payload?.vehicle?.plateLetter || payload?.vehicle?.plate_letter || letterPart || '').trim()
-  const mid = String(payload?.vehicle?.plateMid || payload?.vehicle?.plate_mid || midPart || '').trim()
-  const right = String(payload?.vehicle?.plateRight || payload?.vehicle?.plate_right || rightPart || '').trim()
-  const rebuiltPlate = [left, letter, mid, right].every(Boolean)
-    ? `${left} ${letter} ${mid} ${right}`
-    : plateRaw
+  const plateType = String(payload?.vehicle?.plateType || payload?.vehicle?.plate_type || 'car').trim() || 'car'
+  const resolvedParts = resolvePlateParts({
+    raw: plateRaw,
+    plate_left: payload?.vehicle?.plateLeft || payload?.vehicle?.plate_left || '',
+    plate_letter: payload?.vehicle?.plateLetter || payload?.vehicle?.plate_letter || '',
+    plate_mid: payload?.vehicle?.plateMid || payload?.vehicle?.plate_mid || '',
+    plate_right: payload?.vehicle?.plateRight || payload?.vehicle?.plate_right || '',
+    plate_type: plateType,
+  })
+  const left = String(resolvedParts.left || '').trim()
+  const letter = String(resolvedParts.letter || '').trim()
+  const mid = String(resolvedParts.mid || '').trim()
+  const right = String(resolvedParts.right || '').trim()
+  const rebuiltPlate = buildPlateNumber({ left, letter, mid, right, plateType }) || plateRaw
   const isAnonymous = Boolean(payload?.vehicle?.isAnonymous)
   const isPieceWash = Boolean(payload?.vehicle?.isPieceWash)
 
   return {
     plate_number: isPieceWash ? '' : (isAnonymous ? '' : rebuiltPlate),
-    plate_left: isPieceWash || isAnonymous ? '' : left,
+    plate_left: isPieceWash || isAnonymous || plateType === 'motorcycle' ? '' : left,
     plate_letter: isPieceWash || isAnonymous ? '' : letter,
     plate_mid: isPieceWash || isAnonymous ? '' : mid,
-    plate_right: isPieceWash || isAnonymous ? '' : right,
-    plate_type: String(payload?.vehicle?.plateType || payload?.vehicle?.plate_type || 'car').trim() || 'car',
+    plate_right: isPieceWash || isAnonymous || plateType === 'motorcycle' ? '' : right,
+    plate_type: plateType,
     car_model: isPieceWash ? 'قطعه‌شویی' : (isAnonymous ? '1111' : String(payload?.vehicle?.model || '').trim()),
     car_color: isPieceWash ? '-' : (isAnonymous ? '1111' : String(payload?.vehicle?.color || '').trim()),
     driver_name: (payload?.vehicle?.driver || '').trim(),
@@ -1788,13 +2068,22 @@ const buildCreateOrUpdatePayload = (payload, status) => {
 
 const fetchPlateBlockedStatus = async (payload) => {
   if (payload?.isAnonymous || payload?.vehicle?.isAnonymous) return { is_blocked: false }
+  const plateType = String(payload?.plateType || payload?.vehicle?.plateType || payload?.vehicle?.plate_type || 'car').trim() || 'car'
   const plateRaw = (payload?.plate || payload?.vehicle?.plate || '').trim()
+  const resolvedParts = resolvePlateParts({
+    raw: plateRaw,
+    plate_left: payload?.plateLeft || payload?.vehicle?.plateLeft || payload?.vehicle?.plate_left || '',
+    plate_letter: payload?.plateLetter || payload?.vehicle?.plateLetter || payload?.vehicle?.plate_letter || '',
+    plate_mid: payload?.plateMid || payload?.vehicle?.plateMid || payload?.vehicle?.plate_mid || '',
+    plate_right: payload?.plateRight || payload?.vehicle?.plateRight || payload?.vehicle?.plate_right || '',
+    plate_type: plateType,
+  })
   const params = {
-    plate_number: plateRaw,
-    plate_left: String(payload?.plateLeft || payload?.vehicle?.plateLeft || payload?.vehicle?.plate_left || '').trim(),
-    plate_letter: String(payload?.plateLetter || payload?.vehicle?.plateLetter || payload?.vehicle?.plate_letter || '').trim(),
-    plate_mid: String(payload?.plateMid || payload?.vehicle?.plateMid || payload?.vehicle?.plate_mid || '').trim(),
-    plate_right: String(payload?.plateRight || payload?.vehicle?.plateRight || payload?.vehicle?.plate_right || '').trim()
+    plate_number: buildPlateNumber({ ...resolvedParts, plateType }) || plateRaw,
+    plate_left: plateType === 'motorcycle' ? '' : String(resolvedParts.left || '').trim(),
+    plate_letter: String(resolvedParts.letter || '').trim(),
+    plate_mid: String(resolvedParts.mid || '').trim(),
+    plate_right: plateType === 'motorcycle' ? '' : String(resolvedParts.right || '').trim()
   }
   const { data } = await api.get('/vehicles/plate-status/', { params })
   return data || { is_blocked: false }
@@ -1824,7 +2113,7 @@ const handleStepOneRefer = async (payload) => {
     closeVehicleModal()
   } catch (error) {
     console.error('refer step one error:', error?.response?.data || error)
-    alert(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'))
+    notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
   }
 }
 
@@ -1834,7 +2123,7 @@ const handleStepTwoAssign = async (payload) => {
     closeVehicleModal()
   } catch (error) {
     console.error('assign step two error:', error?.response?.data || error)
-    alert(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'))
+    notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
   }
 }
 const cars = computed(() => vehicles.value.map((item) => ({
@@ -1920,7 +2209,7 @@ const cancelVehicle = async () => {
     if (idx >= 0) vehicleStore.vehicles[idx] = data
   } catch (error) {
     console.error('cancelVehicle error:', error?.response?.data || error)
-    alert('لغو سفارش ناموفق بود.')
+    notifyError('لغو سفارش ناموفق بود.', { title: 'خطا در لغو سفارش' })
   }
 }
 
@@ -1941,7 +2230,7 @@ const blockSelectedVehiclePlate = async () => {
     }
   } catch (error) {
     console.error('blockSelectedVehiclePlate error:', error?.response?.data || error)
-    alert('بلاک کردن پلاک ناموفق بود.')
+    notifyError('بلاک کردن پلاک ناموفق بود.', { title: 'خطا در بلاک پلاک' })
   }
 }
 
@@ -1952,8 +2241,19 @@ watch(hasOperatorModalOpen, (isOpen) => {
   if (isOpen) lockBodyScrollForModal()
   else unlockBodyScrollForModal()
 }, { immediate: true })
+watch(
+  () => [invoiceLayout.value.preset, invoiceLayout.value.thermalWidthMm, invoiceLayout.value.thermalHeightMm],
+  () => {
+    if (!showInvoicePreviewModal.value) return
+    if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
+    invoiceRenderTimer.value = window.setTimeout(() => {
+      buildInvoicePdf()
+    }, 220)
+  }
+)
 onBeforeUnmount(() => {
   unlockBodyScrollForModal()
+  if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
   revokeInvoicePdfUrl()
 })
 </script>
@@ -1964,7 +2264,7 @@ onBeforeUnmount(() => {
 .filters { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; flex-wrap: nowrap; align-items: center; }
 .filters > * { flex: 0 0 auto; }
 .filters > .primary-btn { width: auto; margin-right: 0; }
-.chip { border: none; border-radius: 999px; padding: 10px 16px; background: #e6e8ea; color: #4b5563;font-size:13px; font-weight: 500; white-space: nowrap; }
+.chip { border: none; border-radius: 999px; padding: 10px 16px; background: #e6e8ea; color: #4b5563;font-size:10px; font-weight: 500; white-space: nowrap; }
 .chip.active { background: #0058be; color: #fff; }
 .cards-grid { margin-top: 18px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 20px; width: 100%; max-width: 100%; }
 .car-card { min-width: 0; background: #fff; border-right: 4px solid #0058be; border-radius: 16px; padding: 16px; box-shadow: 0 14px 30px -10px rgba(15,23,42,.12); display: flex; flex-direction: column; gap: 12px; transition: transform .2s ease, box-shadow .2s ease; }
@@ -1978,9 +2278,9 @@ onBeforeUnmount(() => {
 .plate-box { width: 100%; max-width: 100%; min-width: 0; border-radius: 12px; padding: 10px; display: flex; align-items: stretch; justify-content: center; direction: ltr; overflow: hidden; }
 .plate-white-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; background: #6f59ef18; color: #111827; border-radius: 7px 0 0 7px; padding: 4px 12px; }
 .plate-part { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
-.plate-two, .plate-three { font-size: 24px; font-weight: 700; height: 40px; padding-top: 12px; padding-bottom: 8px; }
-.plate-letter { font-size: 24px; font-weight: 700; min-width: 20px; padding-top: 2px; }
-.plate-blue { min-width: 52px; background: #2563eb; color: #ffffff; border-radius: 0 7px 7px 0; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 24px; line-height: 1; padding-top: 12px; padding-bottom: 8px; }
+.plate-two, .plate-three { font-size: 10px; font-weight: 700; height: 16px; padding-top: 2px; padding-bottom: 1px; white-space: nowrap; }
+.plate-letter { font-size: 10px; font-weight: 700; min-width: 8px; padding-top: 0; white-space: nowrap; }
+.plate-blue { min-width: 18px; background: #2563eb; color: #ffffff; border-radius: 0 7px 7px 0; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 8px; line-height: 1; padding-top: 2px; padding-bottom: 1px; white-space: nowrap; }
 .car-info h3 { margin: 0 0 6px; font-size: 15px; }
 .car-info p { margin: 3px 0; font-size: 13px; color: #64748b; }
 .customer-score-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -2015,6 +2315,7 @@ onBeforeUnmount(() => {
   radial-gradient(circle at top right, rgba(34,197,94,.10), transparent 24%),
   radial-gradient(circle at top left, rgba(14,165,233,.14), transparent 28%),
   linear-gradient(180deg,#edf7ff,#eef5ff); }
+.release-layout.release-layout-no-products { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
 .release-col { background: rgba(255,255,255,.88); border: 1px solid rgba(191,215,255,.9); border-radius: 24px; padding: 18px; display: flex; flex-direction: column; min-height: 620px; box-shadow: 0 22px 45px -32px rgba(15,23,42,.45); backdrop-filter: blur(10px); }
 .release-products-col, .release-summary-col { border-right: 1px solid rgba(191,215,255,.85); }
 .release-title-inline{display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -2059,19 +2360,20 @@ onBeforeUnmount(() => {
 .service-check-action label { font-size: 12px; color: #475569; display: inline-flex; align-items: center; gap: 6px; }
 .release-product-search { margin-bottom: 10px; }
 .release-product-search input { width: 100%; height: 46px; border: 1px solid #bfd7ff; border-radius: 14px; padding: 0 14px; background: #f4f9ff; }
-.products-scroll { max-height: 520px; padding-right: 4px; }
-.product-item { border: 1px solid #d4e4ff; border-radius: 22px; padding: 16px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 14px; align-items: center; background:
+.products-scroll { max-height: 360px; padding-right: 4px; }
+.product-item { border: 1px solid #d4e4ff; border-radius: 18px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; background:
  linear-gradient(180deg,#ffffff,#f8fbff);
  box-shadow: 0 18px 32px -28px rgba(15,23,42,.18); }
-.product-item h4 { margin: 0 0 6px; font-size: 15px; color: #111827; }
-.product-item p { margin: 0; font-size: 12px; color: #64748b; }
-.product-item span { display:inline-flex; margin-top:10px; padding:6px 10px; border-radius:999px; background:#ebf8ff; font-size: 13px; color: #00687a; font-weight: 800; }
+.product-item h4 { margin: 0 0 4px; font-size: 13px; color: #111827; line-height: 1.5; }
+.product-item p { margin: 0; font-size: 11px; color: #64748b; }
+.product-item span { display:inline-flex; margin-top:6px; padding:4px 8px; border-radius:999px; background:#ebf8ff; font-size: 11px; color: #00687a; font-weight: 800; }
 .product-item.unavailable { opacity: .55; }
 .product-item p.stock-empty { color: #ba1a1a; }
-.qty-controls { display: inline-flex; align-items: center; gap: 10px; border: 1px solid #d4e4ff; border-radius: 14px; padding: 6px 8px; background: #edf5ff; }
-.qty-controls button { width: 28px; height: 28px; border: 1px solid #bfd7ff; border-radius: 8px; background: #fff; cursor: pointer; }
+.qty-controls { display: grid; gap: 8px; min-width: 84px; }
+.qty-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.qty-controls button { width: 100%; height: 28px; border: none; border-radius: 999px; background: transparent; color: #0f4c81; cursor: pointer; font-size: 20px; font-weight: 800; box-shadow: none; }
 .qty-controls button:disabled { opacity: .45; cursor: not-allowed; }
-.qty-controls input { width: 72px; height: 28px; border: 1px solid #bfd7ff; border-radius: 8px; text-align: center; background: #fff; }
+.qty-controls input { width: 100%; height: 34px; border: 1px solid #bfd7ff; border-radius: 12px; text-align: center; background: #fff; }
 .release-summary-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px;border-radius:22px;background:
  linear-gradient(135deg,#082f49 0%,#0f4c81 40%,#0ea5e9 100%);color:#fff;box-shadow:0 22px 36px -24px rgba(8,47,73,.78)}
 .release-summary-hero small{display:block;font-size:12px;color:rgba(255,255,255,.78);margin-bottom:6px}
@@ -2166,35 +2468,83 @@ onBeforeUnmount(() => {
 .invoice-modal-head{align-items:flex-start}
 .invoice-modal-subtitle{margin:6px 0 0;color:#64748b;font-size:12px}
 .invoice-modal-body{display:grid;grid-template-rows:auto minmax(0,1fr);gap:14px;padding:16px;min-height:0;min-width:0;flex:1;background:linear-gradient(180deg,#f8fbff,#edf5ff)}
+.invoice-format-toolbar{display:grid;gap:12px;padding:14px;border-radius:18px;background:rgba(255,255,255,.88);border:1px solid #dbe7f5}
+.invoice-format-presets{display:flex;gap:8px;flex-wrap:wrap}
+.invoice-format-chip{border:none;border-radius:14px;padding:10px 14px;background:#eef4ff;color:#334155;font-weight:800;cursor:pointer}
+.invoice-format-chip.active{background:linear-gradient(135deg,#c4b5fd,#e9d5ff);color:#4c1d95}
+.invoice-thermal-size-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.invoice-thermal-size-grid label{display:grid;gap:6px}
+.invoice-thermal-size-grid span{font-size:12px;color:#64748b}
 .invoice-modal-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .invoice-preview-loading,.invoice-preview-empty{min-height:380px;border:1px dashed #bfd7ff;border-radius:18px;background:#fff;display:flex;align-items:center;justify-content:center;color:#64748b;padding:20px}
 .invoice-preview-frame-wrap{min-height:0;min-width:0;border-radius:18px;overflow:auto;border:1px solid #dbe7f5;background:#fff;box-shadow:0 16px 36px rgba(15,23,42,.08);height:100%}
 .invoice-preview-frame{display:block;width:100%;height:100%;min-height:0;min-width:0;border:0;background:#fff}
-.invoice-print-stage{position:fixed;left:-99999px;top:0;width:210mm;pointer-events:none}
-.invoice-template{width:210mm;max-width:210mm;background:#fff;padding:0;box-sizing:border-box;overflow:hidden}
-.invoice-sheet{direction:rtl;background:#fff;color:#0f172a;padding:6mm 6mm 5mm;font-family:Tahoma,Arial,sans-serif;display:grid;gap:10px;width:210mm;min-height:297mm;max-width:210mm;box-sizing:border-box;overflow:hidden}
-.invoice-sheet-head{display:flex;justify-content:space-between;gap:14px;padding:14px 16px;border-radius:18px;background:linear-gradient(135deg,#0f172a,#0f4c81 58%,#0ea5e9);color:#fff}
-.invoice-sheet-head small{display:block;font-size:10px;color:rgba(255,255,255,.72);letter-spacing:.06em}
-.invoice-sheet-head strong{display:block;font-size:20px;line-height:1.25;margin-top:2px}
-.invoice-sheet-head span{display:block;margin-top:4px;color:rgba(255,255,255,.78);font-size:10px}
+.invoice-print-stage{position:fixed;left:-99999px;top:0;pointer-events:none}
+.invoice-template{background:#fff;padding:0;box-sizing:border-box;overflow:hidden}
+.invoice-sheet{direction:rtl;background:#fff;color:#0f172a;font-family:Tahoma,Arial,sans-serif;display:grid;box-sizing:border-box;overflow:hidden}
+.invoice-sheet-a5{font-size:.9em}
+.invoice-sheet-thermal{font-size:.82em}
+.invoice-sheet-head{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);justify-content:space-between;gap:8px;padding:10px 12px;border-radius:10px;background:linear-gradient(135deg,#0f172a,#0f4c81 58%,#0ea5e9);color:#fff;min-width:0}
+.invoice-sheet-head small{display:block;font-size:8px;color:rgba(255,255,255,.72);letter-spacing:0}
+.invoice-sheet-head strong{display:block;font-size:15px;line-height:1.35;margin-top:2px;overflow-wrap:anywhere}
+.invoice-sheet-head span{display:block;margin-top:3px;color:rgba(255,255,255,.78);font-size:8px;overflow-wrap:anywhere}
 .invoice-sheet-meta{display:grid;gap:4px;justify-items:end;min-width:0;align-content:center}
-.invoice-sheet-meta strong{font-size:13px}
+.invoice-sheet-meta strong{font-size:10px;overflow-wrap:anywhere}
 .invoice-sheet-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
-.invoice-sheet-grid article{border:1px solid #dbe7f5;border-radius:14px;padding:10px 11px;background:linear-gradient(180deg,#ffffff,#f8fbff);display:grid;gap:3px;min-width:0}
-.invoice-sheet-grid article span{font-size:10px;color:#64748b}
-.invoice-sheet-grid article strong{font-size:11px;min-width:0;overflow-wrap:anywhere}
+.invoice-sheet-grid article{border:1px solid #dbe7f5;border-radius:8px;padding:6px 7px;background:linear-gradient(180deg,#ffffff,#f8fbff);display:grid;gap:2px;min-width:0}
+.invoice-sheet-grid article span{font-size:8px;color:#64748b}
+.invoice-sheet-grid article strong{font-size:9px;line-height:1.6;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.invoice-identity-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.invoice-identity-grid article{border:1px solid #dbe7f5;border-radius:8px;padding:7px;background:linear-gradient(180deg,#ffffff,#f8fbff);display:grid;gap:4px;min-width:0}
+.invoice-identity-grid small{color:#0f4c81;font-size:9px;font-weight:800}
+.invoice-identity-grid p{margin:0;display:grid;grid-template-columns:minmax(0,.62fr) minmax(0,1fr);gap:6px;align-items:start;color:#334155;font-size:8px;line-height:1.5;min-width:0}
+.invoice-identity-grid p span{color:#64748b;min-width:0}
+.invoice-identity-grid p strong{color:#0f172a;font-size:8px;font-weight:800;min-width:0;overflow-wrap:anywhere;word-break:break-word}
 .invoice-sheet-section{display:grid;gap:6px}
-.invoice-section-head strong{font-size:13px;color:#0f172a}
-.invoice-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;border:1px solid #dbe7f5;border-radius:12px;overflow:hidden}
-.invoice-table th,.invoice-table td{padding:6px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:11px;overflow-wrap:anywhere;word-break:break-word}
+.invoice-section-head strong{font-size:10px;color:#0f172a}
+.invoice-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;border:1px solid #dbe7f5;border-radius:8px;overflow:hidden}
+.invoice-table th,.invoice-table td{padding:4px 6px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:9px;line-height:1.6;overflow-wrap:anywhere;word-break:break-word;min-width:0}
 .invoice-table th{background:#eff6ff;color:#334155;font-weight:800}
+.invoice-services-table th:first-child,.invoice-services-table td:first-child{width:58%}
+.invoice-services-table th:nth-child(2),.invoice-services-table td:nth-child(2){width:14%;text-align:center}
+.invoice-services-table th:nth-child(3),.invoice-services-table td:nth-child(3){width:28%}
+.invoice-products-table th:first-child,.invoice-products-table td:first-child{width:48%}
+.invoice-products-table th:nth-child(2),.invoice-products-table td:nth-child(2){width:12%;text-align:center}
+.invoice-products-table th:nth-child(3),.invoice-products-table td:nth-child(3){width:20%}
+.invoice-products-table th:nth-child(4),.invoice-products-table td:nth-child(4){width:20%}
 .invoice-table tr:last-child td{border-bottom:0}
-.invoice-total-section{border:1px solid #dbe7f5;border-radius:16px;padding:12px 14px;background:linear-gradient(180deg,#ffffff,#f8fbff)}
-.invoice-totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}
-.invoice-totals p{margin:0;display:flex;justify-content:space-between;gap:10px;color:#334155;font-size:11px}
-.invoice-grand-total{grid-column:1 / -1;padding-top:6px;border-top:1px dashed #bfd7ff;font-size:13px;font-weight:800;color:#0f172a}
+.invoice-payment-section{border:1px solid #dbe7f5;border-radius:10px;padding:7px 9px;background:#f8fbff}
+.invoice-payment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px}
+.invoice-payment-grid p{margin:0;display:flex;justify-content:space-between;gap:8px;color:#334155;font-size:8px;line-height:1.6;min-width:0}
+.invoice-payment-grid p span,.invoice-payment-grid p strong{min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.invoice-payment-grid p strong{color:#0f172a}
+.invoice-total-section{border:1px solid #dbe7f5;border-radius:10px;padding:8px 10px;background:linear-gradient(180deg,#ffffff,#f8fbff)}
+.invoice-totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px}
+.invoice-totals p{margin:0;display:flex;justify-content:space-between;gap:8px;color:#334155;font-size:9px;min-width:0}
+.invoice-totals strong,.invoice-totals span{min-width:0;overflow-wrap:anywhere}
+.invoice-grand-total{grid-column:1 / -1;padding-top:5px;border-top:1px dashed #bfd7ff;font-size:11px;font-weight:800;color:#0f172a}
 .invoice-sheet-footer{padding-top:6px;border-top:1px dashed #cbd5e1;display:grid;gap:3px}
-.invoice-sheet-footer p{margin:0;color:#475569;font-size:10px;line-height:1.7;overflow-wrap:anywhere}
+.invoice-sheet-footer p{margin:0;color:#475569;font-size:8px;line-height:1.6;overflow-wrap:anywhere;word-break:break-word}
+.thermal-sheet-head{display:grid;justify-items:center;gap:3px;padding:10px 8px;border-bottom:1px dashed #cbd5e1}
+.thermal-sheet-head strong{font-size:15px}
+.thermal-sheet-head span,.thermal-sheet-head small{color:#475569;font-size:11px}
+.thermal-sheet-block{display:grid;gap:8px;padding:8px 0;border-bottom:1px dashed #e2e8f0}
+.thermal-sheet-block p{margin:0;display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#334155}
+.thermal-sheet-block p strong,.thermal-sheet-block p span{min-width:0;overflow-wrap:anywhere}
+.thermal-lines-head{display:flex;justify-content:space-between;gap:8px}
+.thermal-lines-head strong{font-size:12px}
+.thermal-lines-head span{font-size:10px;color:#64748b}
+.thermal-line-row{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #eef2f7}
+.thermal-line-row:last-child{border-bottom:0}
+.thermal-line-row div{display:grid;gap:2px}
+.thermal-line-row strong{font-size:11px}
+.thermal-line-row small{color:#64748b;font-size:10px}
+.thermal-line-row span{font-size:11px;font-weight:800;color:#0f172a}
+.thermal-line-row-product strong{color:#4c1d95}
+.thermal-total-block{gap:6px}
+.thermal-grand-total{padding-top:6px;border-top:1px dashed #cbd5e1;font-size:12px;font-weight:800;color:#0f172a}
+.thermal-sheet-footer{display:grid;gap:4px;padding-top:6px}
+.thermal-sheet-footer p{margin:0;text-align:center;color:#475569;font-size:10px;line-height:1.7}
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .modal-panel { width: min(1280px, 100%); max-width: 100%; max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
 .vehicle-entry-overlay { align-items: center; justify-content: center; }
@@ -2230,12 +2580,9 @@ onBeforeUnmount(() => {
   .release-layout { grid-template-columns: 1fr; }
   .release-col { min-height: auto; }
   .bonus-penalty-row { grid-template-columns: 1fr; }
-  .summary-stat-grid,.worker-selection-grid,.modern-worker-share-editor,.release-secondary-grid,.cheque-fields-grid,.split-payment-grid { grid-template-columns: 1fr; }
+  .release-secondary-grid,.cheque-fields-grid,.split-payment-grid { grid-template-columns: 1fr; }
   .detail-field-wide,.cheque-field-wide { grid-column: auto; }
   .release-secondary-section { margin: 14px 20px 20px; }
-  .invoice-sheet-head,.invoice-sheet-grid{grid-template-columns:1fr;display:grid}
-  .invoice-sheet-meta{justify-items:start}
-  .invoice-totals p{align-items:flex-start}
 }
 @media (max-width: 768px) {
   .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -2251,7 +2598,7 @@ onBeforeUnmount(() => {
   }
   .chip {
     padding: 8px 12px;
-    font-size: 12px;
+    font-size: 5px;
   }
   .primary-btn {
     height: 38px;
@@ -2310,18 +2657,22 @@ onBeforeUnmount(() => {
   .step-two-modal-panel,
   .release-panel,
   .invoice-modal-panel { height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
+  .invoice-format-presets,
+  .invoice-modal-actions { flex-direction: column; }
+  .invoice-thermal-size-grid,
+  .invoice-identity-grid,
+  .invoice-payment-grid,
+  .invoice-totals { grid-template-columns: 1fr; }
+  .invoice-sheet-head { grid-template-columns: 1fr; }
   .primary-btn { margin-right: 0; }
   .card-head,
   .release-actions,
   .selected-worker-box,
-  .service-check-item,
-  .product-item,
   .summary-row,
   .summary-foot-actions,
   .worker-top,
   .worker-jobs,
-  .worker-share-readonly,
-  .qty-controls {
+  .worker-share-readonly {
     flex-direction: column;
     align-items: stretch;
   }
@@ -2333,12 +2684,13 @@ onBeforeUnmount(() => {
     padding: 6px;
   }
   .plate-white-wrap {
-    gap: 6px;
-    padding: 4px 8px;
+    gap: 3px;
+    padding: 2px 5px;
+    flex-wrap: nowrap;
   }
-  .plate-two, .plate-three { font-size: 15px; height: 24px; padding-top: 5px; padding-bottom: 3px; }
-  .plate-letter { font-size: 15px; min-width: 12px; padding-top: 0; }
-  .plate-blue { min-width: 32px; font-size: 13px; padding-top: 5px; padding-bottom: 3px; }
+  .plate-two, .plate-three { font-size: 10px; height: 15px; padding-top: 2px; padding-bottom: 1px; white-space: nowrap; }
+  .plate-letter { font-size: 10px; min-width: 8px; padding-top: 0; white-space: nowrap; }
+  .plate-blue { min-width: 18px; font-size: 8px; padding-top: 2px; padding-bottom: 1px; white-space: nowrap; }
   .car-info h3 {
     font-size: 13px;
     margin-bottom: 2px;
@@ -2407,11 +2759,8 @@ onBeforeUnmount(() => {
     z-index: auto;
     box-shadow: none;
   }
-  .release-list,
-  .products-scroll {
-    max-height: none;
-    overflow: visible;
-  }
+  .release-list { max-height: none; overflow: visible; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .products-scroll { max-height: 248px; overflow: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .release-secondary-section {
     margin: 0 12px;
     padding: 14px;
@@ -2426,6 +2775,16 @@ onBeforeUnmount(() => {
     border-radius: 16px;
     padding: 12px;
   }
+  .service-check-item {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .product-item {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: 9px 10px;
+  }
   .release-title h3 {
     font-size: 17px;
   }
@@ -2438,6 +2797,7 @@ onBeforeUnmount(() => {
   }
   .summary-stat-grid {
     gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .summary-stat-card {
     border-radius: 16px;
@@ -2458,10 +2818,19 @@ onBeforeUnmount(() => {
     padding-top: 12px;
     background: none;
   }
+  .worker-selection-grid,
+  .modern-worker-share-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .confirm-release-btn {
+    min-height: 52px;
+  }
+  .empty-row {
+    grid-column: 1 / -1;
+  }
   .invoice-preview-loading,.invoice-preview-empty{min-height:220px}
   .invoice-modal-panel{height:calc(100vh - 16px)}
   .invoice-modal-actions{flex-direction:column}
-  .invoice-totals p{flex-direction:column}
 }
 @media (max-width: 480px) {
   .filters {
@@ -2480,6 +2849,27 @@ onBeforeUnmount(() => {
     transform-origin: center right;
     margin: 0;
   }
+  .plate-white-wrap {
+    gap: 4px;
+    padding: 3px 6px;
+  }
+  .plate-two, .plate-three {
+    font-size: 8px;
+    height: 12px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+  }
+  .plate-letter {
+    font-size: 8px;
+    min-width: 7px;
+    padding-top: 0;
+  }
+  .plate-blue {
+    min-width: 16px;
+    font-size: 7px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+  }
   .car-info h3 {
     font-size: 12px;
   }
@@ -2488,7 +2878,7 @@ onBeforeUnmount(() => {
   }
   .chip {
     padding: 7px 10px;
-    font-size: 11px;
+    font-size: 10px;
   }
   .primary-btn {
     font-size: 12px;
@@ -2515,9 +2905,14 @@ onBeforeUnmount(() => {
     margin: 0 10px;
     padding: 12px;
   }
+  .release-list { max-height: none; }
+  .products-scroll { max-height: 232px; }
   .release-list,
-  .products-scroll {
-    max-height: none;
+  .products-scroll,
+  .summary-stat-grid,
+  .worker-selection-grid,
+  .modern-worker-share-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .release-col {
     padding: 12px;
@@ -2533,6 +2928,12 @@ onBeforeUnmount(() => {
   .summary-final {
     font-size: 17px;
     padding: 14px;
+  }
+  .product-item h4 { font-size: 12px; }
+  .product-item p,
+  .product-item span { font-size: 10px; }
+  .confirm-release-btn {
+    min-height: 54px;
   }
 }
 </style>

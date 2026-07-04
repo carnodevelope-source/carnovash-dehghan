@@ -1,7 +1,7 @@
 ﻿<template>
   <section class="entry-step">
     <div class="step-layout">
-      <article class="ai-panel">
+      <article v-if="showAiPanel" class="ai-panel">
         <header class="panel-head">
           <h3>دوربین و هوش مصنوعی</h3>
           <p>می‌توانید عکس پلاک بگیرید یا اطلاعات را دستی وارد کنید.</p>
@@ -17,9 +17,6 @@
         >
           <video ref="cameraVideoRef" class="camera-video" autoplay playsinline muted></video>
           <canvas ref="cameraCanvasRef" class="camera-canvas"></canvas>
-          <div class="camera-overlay">
-            <div class="plate-guide">{{ cameraGuideText }}</div>
-          </div>
           <span>{{ cameraHintText }}</span>
         </div>
 
@@ -84,6 +81,12 @@
           <h3>فرم تکمیلی</h3>
           <p>{{ form.isPieceWash ? 'برای قطعه‌شویی، فقط شماره تماس برای ادامه الزامی است.' : 'در این مرحله فقط شماره تماس برای ادامه الزامی است.' }}</p>
         </header>
+
+        <div v-if="isMobileViewport" class="ai-toggle-row">
+          <button type="button" class="ai-toggle-btn" @click="toggleAiPanel">
+            {{ isAiPanelCollapsed ? 'پلاک خوان' : 'بستن پلاک خوان' }}
+          </button>
+        </div>
 
         <label v-if="!form.isPieceWash" class="field">
           <span>شماره پلاک</span>
@@ -174,7 +177,7 @@
           <label class="field">
             <span>شماره تماس</span>
             <input v-model="form.mobile" dir="ltr" placeholder="0912..." @input="onlyDigits('mobile')" />
-            <small v-if="form.mobile && !isPhoneValid" class="field-error">شماره تماس باید دقیقا 11 رقم و با 0 شروع شود.</small>
+            <small v-if="form.mobile && !isPhoneValid" class="field-error">شماره تماس باید دقیقا 11 رقم و با 09 شروع شود.</small>
           </label>
         </div>
 
@@ -249,6 +252,9 @@ const cameraState = reactive({
   livePaused: false
 })
 const letterSuggestions = ref([])
+const isAiPanelCollapsed = ref(false)
+const isMobileViewport = ref(window.matchMedia('(max-width: 640px)').matches)
+const mobileViewportQuery = window.matchMedia('(max-width: 640px)')
 let liveRecognitionTimer = null
 let liveRecognitionCooldown = 0
 const aiSessionId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -262,6 +268,19 @@ const OCR_LETTER_CONFUSIONS = {
   ی: ['ی', 'ق'],
   ر: ['ر', 'ط'],
   ط: ['ط', 'ر']
+}
+const showAiPanel = computed(() => !isMobileViewport.value || !isAiPanelCollapsed.value)
+
+const syncMobileViewport = (event) => {
+  isMobileViewport.value = Boolean(event?.matches ?? mobileViewportQuery.matches)
+  if (!isMobileViewport.value) isAiPanelCollapsed.value = false
+}
+
+const toggleAiPanel = () => {
+  isAiPanelCollapsed.value = !isAiPanelCollapsed.value
+  if (!isAiPanelCollapsed.value && !cameraState.active && !form.isAnonymous && !form.isPieceWash && navigator.mediaDevices?.getUserMedia && canUseLiveCamera) {
+    startCamera().catch(() => {})
+  }
 }
 
 const isMotorcyclePlate = () => form.plateType === 'motorcycle'
@@ -614,6 +633,7 @@ const recognizePlateImage = async (imageDataUrl, options = {}) => {
         ? `پلاک ${plate.value} از روی سابقه مشتری اصلاح و ثبت شد${confidenceText}.`
         : `پلاک ${plate.value} ثبت شد${confidenceText}.`
     )
+    if (isMobileViewport.value) isAiPanelCollapsed.value = true
   } catch (error) {
     const detail = error?.response?.data?.detail || 'ارتباط با سرویس تشخیص پلاک برقرار نشد.'
     setCameraMessage(detail, !isLive)
@@ -686,12 +706,6 @@ const detectedPlate = computed(() => (
     plateType: detectedPlateType.value
   }) || (detectedPlateType.value === 'motorcycle' ? '--- -----' : '-- - --- --')
 ))
-const cameraGuideText = computed(() => {
-  if (cameraState.loading) return 'در حال پردازش پلاک...'
-  if (cameraState.liveEnabled) return 'تشخیص زنده فعال'
-  if (cameraState.livePaused) return 'پلاک ثبت شد'
-  return 'محل قرارگیری پلاک'
-})
 const cameraHintText = computed(() => {
   if (!cameraState.active) return 'ابتدا دوربین را باز کنید'
   if (cameraState.liveEnabled) return 'پلاک را ثابت داخل کادر نگه دارید'
@@ -785,6 +799,7 @@ watch(
 )
 
 onMounted(async () => {
+  mobileViewportQuery.addEventListener('change', syncMobileViewport)
   if (form.isAnonymous || form.isPieceWash) return
   if (!isMobileDevice) return
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -799,6 +814,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  mobileViewportQuery.removeEventListener('change', syncMobileViewport)
   stopCamera()
 })
 </script>
@@ -911,14 +927,7 @@ onBeforeUnmount(() => {
 }
 
 .camera-overlay {
-  position: absolute;
-  inset: 16px;
-  border: 2px dashed #9cc4f5;
-  border-radius: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
+  display: none;
 }
 
 .plate-guide {
@@ -931,8 +940,7 @@ onBeforeUnmount(() => {
 }
 
 .camera-box.active .camera-overlay {
-  border-color: rgba(255, 255, 255, 0.74);
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.06), rgba(15, 23, 42, 0.24));
+  display: none;
 }
 
 .camera-box.active .plate-guide {
@@ -962,7 +970,7 @@ onBeforeUnmount(() => {
 
 .camera-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
 }
 
@@ -1036,6 +1044,23 @@ onBeforeUnmount(() => {
   margin-top: 4px;
 }
 
+.ai-toggle-row {
+  display: none;
+}
+
+.ai-toggle-btn {
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff, #eff6ff);
+  color: #0f4c81;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .form-panel {
   gap: 14px;
 }
@@ -1058,7 +1083,7 @@ onBeforeUnmount(() => {
 
 .tariff-bubbles {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1464,6 +1489,10 @@ onBeforeUnmount(() => {
     border-bottom: 1px solid rgba(205, 223, 247, 0.95);
     overflow: visible;
   }
+  .ai-toggle-row {
+    display: flex;
+    justify-content: flex-start;
+  }
   .panel-head h3 {
     font-size: 17px;
   }
@@ -1471,9 +1500,10 @@ onBeforeUnmount(() => {
     font-size: 11px;
     margin-top: 5px;
   }
+  .ai-result-grid { grid-template-columns: 1fr; }
+  .camera-actions,
   .grid-2,
-  .ai-result-grid,
-  .camera-actions { grid-template-columns: 1fr; }
+  .tariff-bubbles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tariff-type-row {
     padding: 10px;
     border-radius: 16px;
@@ -1485,8 +1515,30 @@ onBeforeUnmount(() => {
     height: 34px;
     font-size: 11px;
   }
+  .camera-action {
+    min-height: 40px;
+    padding: 8px;
+    font-size: 11px;
+    line-height: 1.6;
+  }
   .plate-tools,
-  .piece-wash-toggle-row { flex-direction: column; align-items: stretch; }
+  .piece-wash-toggle-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .plate-type-select,
+  .toggle-check {
+    font-size: 10px;
+    gap: 5px;
+  }
+  .plate-type-select select {
+    height: 32px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
   .plate-row {
     gap: 4px;
   }
@@ -1509,48 +1561,48 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
   .plate-input {
-    height: 24px;
+    height: 20px;
     line-height: 1;
     border-radius: 6px;
-    font-size: 15px;
+    font-size: 11px;
   }
   .plate-input.letter {
-    font-size: 15px;
+    font-size: 11px;
   }
   .manual-plate-car .plate-input.right,
   .manual-plate-car .plate-input.left {
-    width: 56px;
+    width: 40px;
   }
   .manual-plate-car .plate-input.mid {
-    width: 78px;
+    width: 56px;
   }
   .manual-plate-car .plate-input.letter {
-    width: 38px;
-    min-width: 22px;
+    width: 24px;
+    min-width: 18px;
   }
   .manual-plate-blue {
-    min-width: 32px;
-    font-size: 13px;
-    padding-top: 5px;
-    padding-bottom: 3px;
+    min-width: 24px;
+    font-size: 10px;
+    padding-top: 4px;
+    padding-bottom: 2px;
   }
   .manual-plate-blue-motor {
     gap: 4px;
     font-size: 8px;
   }
   .manual-plate-motorcycle .plate-input.mid {
-    max-width: 132px;
-    height: 42px;
-    line-height: 42px;
+    max-width: 108px;
+    height: 34px;
+    line-height: 34px;
     border-radius: 14px;
-    font-size: 24px;
+    font-size: 16px;
   }
   .manual-plate-motorcycle .motor-bottom-input {
-    width: min(100%, 180px);
-    height: 42px;
-    line-height: 42px;
+    width: min(100%, 150px);
+    height: 34px;
+    line-height: 34px;
     border-radius: 14px;
-    font-size: 20px;
+    font-size: 14px;
   }
   .field input {
     height: 40px;
@@ -1579,6 +1631,31 @@ onBeforeUnmount(() => {
   .field > span {
     font-size: 11px;
   }
+  .result-card :deep(.plate-badge) {
+    padding: 2px;
+    border-radius: 8px;
+  }
+  .result-card :deep(.plate-white-wrap) {
+    gap: 3px;
+    padding: 2px 4px;
+  }
+  .result-card :deep(.plate-two),
+  .result-card :deep(.plate-three) {
+    height: 14px;
+    font-size: 9px;
+    padding-top: 2px;
+    padding-bottom: 1px;
+  }
+  .result-card :deep(.plate-letter) {
+    min-width: 8px;
+    font-size: 9px;
+  }
+  .result-card :deep(.plate-blue) {
+    min-width: 18px;
+    font-size: 8px;
+    padding-top: 2px;
+    padding-bottom: 1px;
+  }
   .plate-guide {
     font-size: 11px;
     border-radius: 14px;
@@ -1603,36 +1680,36 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
   .plate-input {
-    height: 24px;
-    font-size: 13px;
+    height: 18px;
+    font-size: 10px;
     border-radius: 6px;
   }
   .plate-input.letter {
-    font-size: 13px;
+    font-size: 10px;
   }
   .manual-plate-car .plate-input.right,
   .manual-plate-car .plate-input.left {
-    width: 46px;
+    width: 34px;
   }
   .manual-plate-car .plate-input.mid {
-    width: 66px;
+    width: 48px;
   }
   .manual-plate-car .plate-input.letter {
-    width: 32px;
+    width: 20px;
   }
   .manual-plate-motorcycle .plate-input.mid {
-    max-width: 108px;
-    height: 36px;
-    line-height: 36px;
+    max-width: 92px;
+    height: 30px;
+    line-height: 30px;
     border-radius: 12px;
-    font-size: 20px;
+    font-size: 14px;
   }
   .manual-plate-motorcycle .motor-bottom-input {
-    width: min(100%, 152px);
-    height: 36px;
-    line-height: 36px;
+    width: min(100%, 132px);
+    height: 30px;
+    line-height: 30px;
     border-radius: 12px;
-    font-size: 16px;
+    font-size: 12px;
   }
   .field input {
     padding-inline: 10px;
@@ -1640,6 +1717,16 @@ onBeforeUnmount(() => {
   .tariff-bubble {
     height: 32px;
     font-size: 10px;
+  }
+  .camera-actions,
+  .grid-2,
+  .tariff-bubbles {
+    gap: 6px;
+  }
+  .camera-action {
+    min-height: 38px;
+    font-size: 10px;
+    padding-inline: 6px;
   }
 }
 </style>

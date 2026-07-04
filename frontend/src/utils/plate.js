@@ -60,4 +60,4 @@ export const isAnonymousPlate = (vehicle = {}) => (
 
 export const normalizePhone = (value) => normalizeDigits(value).replace(/\D/g, '').slice(0, 11)
 
-export const isValidIranMobile = (value) => /^0\d{10}$/.test(normalizePhone(value))
+export const isValidIranMobile = (value) => /^09\d{9}$/.test(normalizePhone(value))

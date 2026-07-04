@@ -13,6 +13,10 @@
     </template>
 
     <div class="support-page">
+      <section class="support-sla-banner">
+        تیکت‌ها در تایم اداری حداکثر نیم ساعت و در تایم غیر اداری حداکثر ۲۴ ساعت پاسخ داده خواهند شد.
+      </section>
+
       <section class="stats-grid">
         <article
           v-for="item in statusTrack"
@@ -144,6 +148,26 @@
               </article>
             </section>
 
+            <section v-if="detailState.ticket.attachments?.length" class="ticket-attachments-shell">
+              <div class="reply-head">
+                <strong>فایل‌های پیوست</strong>
+                <small>{{ toFa(detailState.ticket.attachments.length) }} فایل</small>
+              </div>
+              <div class="ticket-attachments-list">
+                <a
+                  v-for="attachment in detailState.ticket.attachments"
+                  :key="attachment.id"
+                  class="ticket-attachment-item"
+                  :href="attachment.file_url"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <strong>{{ attachment.original_name || 'فایل پیوست' }}</strong>
+                  <span>مشاهده فایل</span>
+                </a>
+              </div>
+            </section>
+
             <section ref="messageThreadRef" class="message-thread">
               <article
                 v-for="message in detailState.ticket.messages || []"
@@ -266,9 +290,14 @@
 
         <div class="modal-layout">
           <form class="modal-form" @submit.prevent="submitTicket">
+            <div v-if="isWalletCardPaymentDraft" class="wallet-ticket-notice full">
+              <strong>ثبت آماده برای مدیر کارواش</strong>
+              <p>{{ walletCardPaymentNotice }}</p>
+            </div>
+
             <label>
               <span>دسته‌بندی</span>
-              <select v-model="ticketModal.category">
+              <select v-model="ticketModal.category" :disabled="isWalletCardPaymentDraft">
                 <option value="technical">مشکل فنی</option>
                 <option value="financial">مشکل پرداخت</option>
                 <option value="operations">سفارش و عملیات</option>
@@ -279,7 +308,7 @@
 
             <label>
               <span>اولویت</span>
-              <select v-model="ticketModal.priority">
+              <select v-model="ticketModal.priority" :disabled="isWalletCardPaymentDraft">
                 <option value="low">کم</option>
                 <option value="medium">متوسط</option>
                 <option value="high">زیاد</option>
@@ -289,16 +318,16 @@
 
             <label class="full">
               <span>عنوان تیکت</span>
-              <input v-model.trim="ticketModal.subject" required placeholder="مثلا: پرداخت انجام شد ولی سفارش ثبت نشد" />
+              <input v-model.trim="ticketModal.subject" :readonly="isWalletCardPaymentDraft" required placeholder="مثلا: پرداخت انجام شد ولی سفارش ثبت نشد" />
             </label>
 
             <label class="full">
-              <span>شرح کامل</span>
+              <span>{{ isWalletCardPaymentDraft ? 'شرح آماده مدیر + تکمیل اطلاعات تراکنش' : 'شرح کامل' }}</span>
               <textarea
                 v-model.trim="ticketModal.description"
                 rows="5"
                 required
-                placeholder="زمان رخداد، نتیجه مورد انتظار، خطا یا جزئیات مرتبط را کامل بنویسید..."
+                :placeholder="isWalletCardPaymentDraft ? 'متن آماده را نگه دارید و فقط اطلاعات تراکنش یا توضیح رسید را تکمیل کنید...' : 'زمان رخداد، نتیجه مورد انتظار، خطا یا جزئیات مرتبط را کامل بنویسید...'"
               />
             </label>
 
@@ -313,7 +342,7 @@
               </label>
               <label>
                 <span>تاریخ پرداخت</span>
-                <input v-model.trim="ticketModal.context.payment_date" placeholder="1405/03/16" />
+                <BaseDatePicker v-model="ticketModal.context.payment_date" placeholder="انتخاب تاریخ پرداخت" :clearable="false" />
               </label>
               <label>
                 <span>شماره سفارش</span>
@@ -359,65 +388,21 @@
             </template>
 
             <div class="form-note full">
-              <strong>نکته امنیتی</strong>
-              <p>رمز عبور، اطلاعات کامل کارت بانکی یا کدهای امنیتی را داخل تیکت ارسال نکنید.</p>
+              <strong>{{ isWalletCardPaymentDraft ? 'راهنمای ثبت پرداخت' : 'نکته امنیتی' }}</strong>
+              <p>{{ isWalletCardPaymentDraft ? 'اگر امکان ارسال رسید در همین تیکت را دارید، تصویر رسید را هم اضافه کنید. در غیر این صورت شماره تراکنش، مبلغ و زمان پرداخت را کامل بنویسید و ساختار آماده را تغییر ندهید.' : 'رمز عبور، اطلاعات کامل کارت بانکی یا کدهای امنیتی را داخل تیکت ارسال نکنید.' }}</p>
             </div>
+
+            <label v-if="ticketModal.category === 'financial'" class="full receipt-upload-field">
+              <span>آپلود رسید</span>
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" @change="handleReceiptFileChange" />
+              <small v-if="selectedReceiptName" class="receipt-file-name">{{ selectedReceiptName }}</small>
+            </label>
 
             <div class="modal-actions full">
               <button type="button" class="secondary-btn" @click="closeCreateTicketModal">انصراف</button>
               <button type="submit" class="primary-btn">ثبت تیکت</button>
             </div>
           </form>
-
-          <aside class="modal-side">
-            <section class="side-card">
-              <div class="block-head">
-                <h4>پیشنهاد قبل از ثبت</h4>
-                <span>{{ ticketModalArticles.length.toLocaleString('fa-IR') }} راهنما</span>
-              </div>
-              <div class="stack-list">
-                <article v-for="article in ticketModalArticles" :key="article.id" class="helper-card">
-                  <strong>{{ article.title }}</strong>
-                  <p>{{ article.summary }}</p>
-                </article>
-              </div>
-            </section>
-
-            <section class="side-card">
-              <div class="block-head">
-                <h4>تیکت‌های مشابه</h4>
-                <span>{{ duplicateOpenTickets.length.toLocaleString('fa-IR') }} مورد</span>
-              </div>
-              <div v-if="duplicateOpenTickets.length" class="stack-list">
-                <article v-for="ticket in duplicateOpenTickets.slice(0, 4)" :key="ticket.id" class="helper-card compact">
-                  <strong>{{ ticket.subject }}</strong>
-                  <p>{{ clientStatusLabel(ticket) }} · {{ formatDateTime(ticket.updated_at) }}</p>
-                </article>
-              </div>
-              <p v-else class="empty-inline">در حال حاضر تیکت باز مشابهی دیده نشد.</p>
-            </section>
-
-            <section class="side-card">
-              <div class="block-head">
-                <h4>پیش‌نمایش داده</h4>
-                <span>{{ categoryLabel(ticketModal.category) }}</span>
-              </div>
-              <div class="detail-list">
-                <div class="detail-row">
-                  <span>عنوان</span>
-                  <strong>{{ ticketModal.subject || 'ثبت نشده' }}</strong>
-                </div>
-                <div class="detail-row">
-                  <span>اولویت</span>
-                  <strong>{{ priorityLabel(ticketModal.priority) }}</strong>
-                </div>
-                <div class="detail-row">
-                  <span>طول توضیح</span>
-                  <strong>{{ toFa(ticketModal.description.length) }} کاراکتر</strong>
-                </div>
-              </div>
-            </section>
-          </aside>
         </div>
       </section>
     </div>
@@ -426,37 +411,19 @@
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppShell from '../../components/layout/AppShell.vue'
+import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import api from '../../services/api'
 import { formatJalaliDateTime } from '../../utils/date'
 
+const route = useRoute()
+const router = useRouter()
 const searchQuery = ref('')
 const activeStatusTab = ref('open')
 const activeCategoryTab = ref('all')
 const tickets = ref([])
 const messageThreadRef = ref(null)
-
-const knowledgeArticles = {
-  technical: [
-    { id: 'tech-1', title: 'راهنمای خطاهای رایج ورود', summary: 'اگر خطای لاگین یا دریافت کد دارید، این نکات را قبل از ثبت تیکت بررسی کنید.' },
-    { id: 'tech-2', title: 'گزارش خطای مرورگر یا اپ', summary: 'مدل دستگاه، نسخه مرورگر و زمان رخداد را بنویسید تا بررسی سریع‌تر انجام شود.' }
-  ],
-  financial: [
-    { id: 'fin-1', title: 'پیگیری پرداخت ناموفق', summary: 'شماره تراکنش، مبلغ و زمان پرداخت را آماده داشته باشید.' },
-    { id: 'fin-2', title: 'تاخیر در ثبت شارژ', summary: 'اگر شارژ یا پرداخت ثبت نشده، رسید و زمان تراکنش را داخل شرح تیکت بنویسید.' }
-  ],
-  operations: [
-    { id: 'ops-1', title: 'اختلال در سفارش یا عملیات', summary: 'شماره سفارش و نام سرویس را ثبت کنید تا مسیر بررسی کوتاه شود.' },
-    { id: 'ops-2', title: 'پیگیری مشکل ثبت خودرو', summary: 'اگر سفارش یا خودرو ثبت نشده، زمان رخداد و مرحله‌ای که متوقف شده را توضیح دهید.' }
-  ],
-  account: [
-    { id: 'acc-1', title: 'مشکل ورود یا حساب کاربری', summary: 'شماره موبایل حساب و شرح دقیق مشکل را بنویسید.' },
-    { id: 'acc-2', title: 'تغییر اطلاعات حساب', summary: 'برای تغییر شماره یا مشخصات، دلیل و اطلاعات فعلی حساب را ثبت کنید.' }
-  ],
-  other: [
-    { id: 'other-1', title: 'ثبت درخواست عمومی', summary: 'عنوان روشن و توضیح کامل، بهترین مسیر برای دریافت پاسخ دقیق است.' }
-  ]
-}
 
 const getEmptyContext = () => ({
   transaction_id: '',
@@ -470,6 +437,18 @@ const getEmptyContext = () => ({
   account_phone: '',
   account_issue: ''
 })
+
+const getTodayJalaliString = () => {
+  const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date())
+  const year = parts.find((item) => item.type === 'year')?.value || '1405'
+  const month = parts.find((item) => item.type === 'month')?.value || '01'
+  const day = parts.find((item) => item.type === 'day')?.value || '01'
+  return `${year}/${month}/${day}`
+}
 
 const statusCount = computed(() => tickets.value.reduce((acc, item) => {
   if (acc[item.status] === undefined) acc[item.status] = 0
@@ -495,11 +474,13 @@ const categoryTabs = [
 
 const ticketModal = reactive({
   open: false,
+  mode: 'default',
   subject: '',
   description: '',
   category: 'technical',
   priority: 'medium',
-  context: getEmptyContext()
+  context: getEmptyContext(),
+  receiptFile: null
 })
 
 const detailState = reactive({
@@ -534,22 +515,12 @@ const filteredTickets = computed(() => {
   })
 })
 
-const ticketModalArticles = computed(() => knowledgeArticles[ticketModal.category] || knowledgeArticles.other)
-const sidebarArticles = computed(() => {
-  const category = detailState.ticket?.category || 'other'
-  return knowledgeArticles[category] || knowledgeArticles.other
+const isWalletCardPaymentDraft = computed(() => ticketModal.mode === 'wallet-card-payment')
+const walletCardPaymentNotice = computed(() => {
+  if (!isWalletCardPaymentDraft.value) return ''
+  return 'این متن از طرف مدیر کارواش برای ثبت پرداخت کارت به کارت آماده شده است. فقط شماره یا کد تراکنش را تکمیل کنید. اگر امکان بارگذاری رسید را دارید، رسید واریز را هم به تیکت اضافه کنید و بدون تغییر ساختار آماده، ثبت را بزنید.'
 })
-
-const duplicateOpenTickets = computed(() => {
-  const subject = String(ticketModal.subject || '').trim().toLowerCase()
-  if (!subject) return []
-  return tickets.value.filter((ticket) => {
-    if (ticket.status === 'closed') return false
-    if (ticket.category !== ticketModal.category) return false
-    const target = `${ticket.subject} ${ticket.message || ''}`.toLowerCase()
-    return target.includes(subject) || subject.includes(String(ticket.subject || '').toLowerCase())
-  })
-})
+const selectedReceiptName = computed(() => ticketModal.receiptFile?.name || '')
 
 const ticketActivityFeed = computed(() => {
   const ticket = detailState.ticket
@@ -710,14 +681,45 @@ const buildStructuredMessage = () => {
 
 const openCreateTicketModal = () => {
   ticketModal.open = true
+  ticketModal.mode = 'default'
+}
+
+const openWalletPaymentTicketModal = () => {
+  const amount = String(route.query.amount || '').trim()
+  const walletName = String(route.query.wallet_name || '').trim()
+  const walletId = String(route.query.wallet_id || '').trim()
+  ticketModal.open = true
+  ticketModal.mode = 'wallet-card-payment'
+  ticketModal.category = 'financial'
+  ticketModal.priority = 'high'
+  ticketModal.subject = 'درخواست بررسی پرداخت کارت به کارت و شارژ کیف پول'
+  ticketModal.description = [
+    'نوع درخواست: wallet-card-payment',
+    'اینجانب مدیر کارواش، مبلغ شارژ کیف پول را به صورت کارت به کارت پرداخت کرده‌ام.',
+    'درخواست دارم پرداخت بررسی شود و در صورت تایید، کیف پول کارواش شارژ شود.',
+    walletId ? `شناسه کیف پول مقصد: ${walletId}` : '',
+    'شماره یا کد تراکنش و مشخصات رسید واریز را در این تیکت تکمیل می‌کنم.'
+  ].filter(Boolean).join('\n')
+  Object.assign(ticketModal.context, getEmptyContext(), {
+    payment_amount: amount,
+    payment_date: getTodayJalaliString(),
+    order_number: walletName
+  })
+}
+
+const handleReceiptFileChange = (event) => {
+  const [file] = Array.from(event?.target?.files || [])
+  ticketModal.receiptFile = file || null
 }
 
 const closeCreateTicketModal = () => {
   ticketModal.open = false
+  ticketModal.mode = 'default'
   ticketModal.subject = ''
   ticketModal.description = ''
   ticketModal.category = 'technical'
   ticketModal.priority = 'medium'
+  ticketModal.receiptFile = null
   Object.assign(ticketModal.context, getEmptyContext())
 }
 
@@ -806,12 +808,15 @@ const loadTickets = async (options = {}) => {
 }
 
 const submitTicket = async () => {
-  const { data } = await api.post('/auth/support/tickets/', {
-    subject: ticketModal.subject,
-    message: buildStructuredMessage(),
-    category: ticketModal.category,
-    priority: ticketModal.priority
-  })
+  const payload = new FormData()
+  payload.append('subject', ticketModal.subject)
+  payload.append('message', buildStructuredMessage())
+  payload.append('category', ticketModal.category)
+  payload.append('priority', ticketModal.priority)
+  if (ticketModal.receiptFile) {
+    payload.append('attachments', ticketModal.receiptFile)
+  }
+  const { data } = await api.post('/auth/support/tickets/', payload)
   activeStatusTab.value = 'open'
   closeCreateTicketModal()
   await loadTickets({ preserveSelection: true })
@@ -830,8 +835,18 @@ watch(searchQuery, async () => {
   await ensureActiveTicket()
 })
 
+watch(() => ticketModal.category, (value) => {
+  if (value === 'financial' && !ticketModal.context.payment_date) {
+    ticketModal.context.payment_date = getTodayJalaliString()
+  }
+})
+
 onMounted(async () => {
   await loadTickets()
+  if (route.query.prefill === 'wallet-card-payment') {
+    openWalletPaymentTicketModal()
+    router.replace({ path: route.path, query: {} })
+  }
 })
 </script>
 
@@ -839,6 +854,16 @@ onMounted(async () => {
 .support-page {
   display: grid;
   gap: 18px;
+}
+
+.support-sla-banner {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #ffffff, #f4edff);
+  border: 1px solid #e8d9ff;
+  color: #5b3f8c;
+  font-weight: 800;
+  line-height: 1.9;
 }
 
 .surface-card,
@@ -1341,8 +1366,8 @@ onMounted(async () => {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid rgba(203, 213, 225, 0.8);
-  border-radius: 18px;
-  padding: 12px 14px;
+  border-radius: 16px;
+  padding: 10px 12px;
   font: inherit;
   background: rgba(248, 251, 255, 0.96);
   color: #0f172a;
@@ -1354,6 +1379,11 @@ onMounted(async () => {
   min-height: 100px;
 }
 
+.modal-form textarea {
+  min-height: 112px;
+  max-height: 180px;
+}
+
 .reply-form textarea:focus,
 .feedback-shell textarea:focus,
 .modal-form input:focus,
@@ -1362,6 +1392,14 @@ onMounted(async () => {
   outline: none;
   border-color: rgba(59, 130, 246, 0.35);
   box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08);
+}
+
+.modal-form input[readonly],
+.modal-form select:disabled {
+  opacity: 0.78;
+  cursor: not-allowed;
+  background: rgba(237, 242, 247, 0.96);
+  color: #64748b;
 }
 
 .rating-stars {
@@ -1390,7 +1428,7 @@ onMounted(async () => {
 .sidebar-block,
 .side-card {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .detail-list {
@@ -1399,9 +1437,56 @@ onMounted(async () => {
 }
 
 .detail-row {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 18px;
   background: rgba(248, 250, 252, 0.94);
+}
+
+.receipt-upload-field input[type="file"] {
+  padding: 12px;
+  border: 1px dashed rgba(168, 85, 247, 0.34);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(250, 245, 255, 0.96), rgba(255, 255, 255, 0.98));
+}
+
+.receipt-file-name {
+  color: #6d28d9;
+  font-weight: 700;
+}
+
+.ticket-attachments-shell {
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(226, 232, 240, 0.86);
+  background: rgba(255, 255, 255, 0.92);
+  display: grid;
+  gap: 12px;
+}
+
+.ticket-attachments-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.ticket-attachment-item {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  text-decoration: none;
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(245, 243, 255, 0.98));
+  border: 1px solid rgba(216, 180, 254, 0.34);
+}
+
+.ticket-attachment-item strong {
+  color: #1e293b;
+}
+
+.ticket-attachment-item span {
+  color: #7c3aed;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .activity-row {
@@ -1433,7 +1518,7 @@ onMounted(async () => {
 }
 
 .helper-card.compact {
-  padding: 14px;
+  padding: 12px;
 }
 
 .empty-inline {
@@ -1474,13 +1559,17 @@ onMounted(async () => {
   z-index: 90;
   display: grid;
   place-items: center;
-  padding: 22px;
+  padding: 16px;
   background: rgba(15, 23, 42, 0.44);
   backdrop-filter: blur(8px);
+  overflow: hidden;
 }
 
 .modal-panel {
-  width: min(1220px, 100%);
+  width: min(980px, 100%);
+  max-height: min(86vh, 820px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
   background:
     radial-gradient(circle at top right, rgba(14, 165, 233, 0.1), transparent 24%),
@@ -1492,7 +1581,7 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
-  padding: 22px 24px 18px;
+  padding: 16px 20px 14px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.8);
 }
 
@@ -1508,12 +1597,16 @@ onMounted(async () => {
 }
 
 .modal-layout {
-  grid-template-columns: minmax(0, 1.25fr) 340px;
-  padding: 20px 24px 24px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px 20px 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .modal-form {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .modal-form label {
@@ -1526,19 +1619,34 @@ onMounted(async () => {
 }
 
 .form-note {
-  padding: 16px;
+  padding: 12px 14px;
   border-radius: 20px;
   background: rgba(254, 242, 242, 0.96);
   border: 1px solid rgba(254, 202, 202, 0.8);
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
-.modal-side {
+.wallet-ticket-notice {
   display: grid;
-  gap: 14px;
-  align-content: start;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(236, 228, 255, 0.92), rgba(255, 255, 255, 0.98));
+  border: 1px solid rgba(196, 181, 253, 0.72);
 }
+
+.wallet-ticket-notice strong {
+  color: #4c1d95;
+}
+
+.wallet-ticket-notice p {
+  margin: 0;
+  color: #5b4b7a;
+  line-height: 1.9;
+}
+
+.modal-side { display: none; }
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -1564,12 +1672,31 @@ onMounted(async () => {
 
 }
 
+@media (max-height: 760px) and (min-width: 761px) {
+  .modal-panel {
+    width: min(900px, 100%);
+    max-height: calc(100vh - 24px);
+  }
+
+  .modal-layout {
+    grid-template-columns: 1fr;
+    padding: 14px 18px 18px;
+  }
+
+  .modal-form textarea {
+    min-height: 86px;
+  }
+}
+
 @media (max-width: 760px) {
   .inbox-card,
   .conversation-card,
-  .modal-layout,
-  .modal-head {
+  .modal-layout {
     padding: 16px;
+  }
+
+  .modal-head {
+    padding: 14px 16px 12px;
   }
 
   .hero-copy h2 {
@@ -1584,7 +1711,7 @@ onMounted(async () => {
   }
 
   .modal-form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .modal-form .full {
@@ -1631,7 +1758,8 @@ onMounted(async () => {
 
   .modal-panel {
     max-height: calc(100vh - 20px);
-    overflow: auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
   }
 }
 </style>

@@ -1,5 +1,6 @@
 ﻿from datetime import datetime, time, timedelta
 from collections import defaultdict
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -15,10 +16,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.inventory.models import ExpenseEntry, StockMovement
+from apps.notifications.models import NotificationLog
+from apps.notifications.services import normalize_phone, send_provider_sms
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
 from apps.vehicles.models import VehicleEntry
 from apps.workers.models import WorkerAttendance, WorkerProfile
-from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketMessage, User
+from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketAttachment, SupportTicketMessage, User
+from .sms import (
+    send_registration_credentials_sms as send_system_registration_credentials_sms,
+    send_user_credentials_sms as send_system_user_credentials_sms,
+)
 from .serializers import (
     CarWashCreateSerializer,
     CarWashListSerializer,
@@ -30,6 +37,7 @@ from .serializers import (
     SupportTicketCreateSerializer,
     SupportTicketDetailSerializer,
     SupportTicketFeedbackSerializer,
+    HqTicketWalletTransferSerializer,
     SupportTicketListSerializer,
     SupportTicketMessageSerializer,
     SupportTicketReplySerializer,
@@ -68,6 +76,42 @@ def _is_hq_admin(user):
     return _platform_role(user) == User.PlatformRoles.HQ_ADMIN
 
 
+def _default_hq_support_user():
+    return (
+        User.objects.filter(platform_role=User.PlatformRoles.HQ_SUPPORT, is_active=True)
+        .order_by('-id')
+        .first()
+    )
+
+
+def _is_wallet_card_payment_ticket(ticket):
+    text = f'{getattr(ticket, "subject", "")}\n{getattr(ticket, "message", "")}'.lower()
+    return (
+        'wallet-card-payment' in text
+        or ('کارت به کارت' in text and 'کیف پول' in text)
+    )
+
+
+def _parse_wallet_id_from_ticket(ticket):
+    match = re.search(r'شناسه کیف پول مقصد\s*:\s*(\d+)', getattr(ticket, 'message', '') or '')
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _send_ticket_assigned_sms(ticket):
+    assignee = getattr(ticket, 'assigned_to', None)
+    phone = normalize_phone(getattr(assignee, 'phone', '') or '')
+    if not phone:
+        return {'sent': False, 'reason': 'no_assignee_phone'}
+    label = 'تیکت پرداخت جدید ثبت شد' if _is_wallet_card_payment_ticket(ticket) else 'تیکت جدید ثبت شد'
+    body = f'{label}\nشماره تیکت: {ticket.id}\nکارواش: {ticket.tenant.name if ticket.tenant_id else "-"}'
+    try:
+        return send_provider_sms(None, body, [phone])
+    except Exception as exc:
+        return {'sent': False, 'error': str(exc)}
+
+
 def _auth_payload(user):
     feature_keys = set(user.tenant.active_feature_keys()) if getattr(user, 'tenant_id', None) else set()
     return {
@@ -86,6 +130,101 @@ def _auth_payload(user):
         'is_hq': _is_hq_user(user),
         'is_hq_admin': _is_hq_admin(user),
     }
+
+
+def _build_unique_carwash_slug(name, explicit_slug=''):
+    base_slug = slugify(explicit_slug or name) or 'carwash'
+    unique_slug = base_slug
+    index = 1
+    while CarWash.objects.filter(slug=unique_slug).exists():
+        index += 1
+        unique_slug = f'{base_slug}-{index}'
+    return unique_slug
+
+
+def _send_registration_credentials_sms(*, carwash_name, phone, username, password):
+    normalized_phone = normalize_phone(phone)
+    if not normalized_phone:
+        return {'attempted': False, 'ok': False, 'message': 'شماره موبایل مدیر معتبر نیست.'}
+
+    text = (
+        f'ثبت کارواش {carwash_name} انجام شد.\n'
+        f'نام کاربری: {username}\n'
+        f'رمز عبور: {password}\n'
+        f'با تشکر از انتخاب خوب شما  -  کارنوواش'
+    )
+    result = send_provider_sms(None, text, [normalized_phone])
+    return {
+        'attempted': True,
+        'ok': bool(result.get('ok')),
+        'message': result.get('message', ''),
+        'provider_status': result.get('provider_status', 0),
+    }
+
+
+def _role_sms_label(role):
+    return {
+        'manager': 'مدیر',
+        'admin': 'ادمین',
+        'operator': 'اپراتور',
+        'accountant': 'حسابدار',
+        'worker': 'نیرو',
+        'hq_support': 'پشتیبان مرکزی',
+    }.get(role, 'کاربر')
+
+
+def _send_user_credentials_sms(*, tenant_name, phone, username, password, role):
+    normalized_phone = normalize_phone(phone)
+    if not normalized_phone:
+        return {'attempted': False, 'ok': False, 'message': 'شماره موبایل کاربر معتبر نیست.'}
+
+    text = (
+        f'{_role_sms_label(role)} جدید برای {tenant_name} ثبت شد.\n'
+        f'نام کاربری: {username}\n'
+        f'رمز عبور: {password}\n'
+        f'ورود از پنل کارنوواش'
+    )
+    result = send_provider_sms(None, text, [normalized_phone])
+    return {
+        'attempted': True,
+        'ok': bool(result.get('ok')),
+        'message': result.get('message', ''),
+        'provider_status': result.get('provider_status', 0),
+    }
+
+
+def _create_sms_log(*, tenant, recipient, template_code, payload, result, created_by=None):
+    NotificationLog.objects.create(
+        tenant=tenant,
+        channel=NotificationLog.Channel.SMS,
+        recipient=recipient or '',
+        template_code=template_code,
+        payload=payload or {},
+        status=NotificationLog.Status.SENT if result.get('ok') else NotificationLog.Status.FAILED,
+        sent_at=timezone.now() if result.get('ok') else None,
+        provider_message_id=str(result.get('provider_id') or ''),
+        provider_response=str(result.get('message') or ''),
+        created_by=created_by if getattr(created_by, 'is_authenticated', False) else None,
+    )
+
+
+def _send_logged_user_credentials_sms(*, tenant, tenant_name, phone, username, password, role, created_by=None, template_code='user_credentials'):
+    result = _send_user_credentials_sms(
+        tenant_name=tenant_name,
+        phone=phone,
+        username=username,
+        password=password,
+        role=role,
+    )
+    _create_sms_log(
+        tenant=tenant,
+        recipient=normalize_phone(phone) or phone,
+        template_code=template_code,
+        payload={'username': username, 'role': role, 'tenant_name': tenant_name},
+        result=result,
+        created_by=created_by,
+    )
+    return result
 
 
 def _sync_tenant_feature_purchases(tenant, feature_keys):
@@ -240,7 +379,7 @@ def _tenant_ticket_queryset():
     visible_messages = SupportTicketMessage.objects.filter(is_internal=False).select_related('sender').order_by('created_at', 'id')
     return (
         SupportTicket.objects.select_related('tenant', 'created_by', 'assigned_to', 'responded_by')
-        .prefetch_related(Prefetch('messages', queryset=visible_messages))
+        .prefetch_related(Prefetch('messages', queryset=visible_messages), 'attachments')
     )
 
 
@@ -289,6 +428,17 @@ class UserManagementView(APIView):
         serializer = UserCreateSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        raw_password = getattr(user, '_raw_password', '')
+        if raw_password and getattr(user, 'phone', ''):
+            send_system_user_credentials_sms(
+                tenant=getattr(request.user, 'tenant', None),
+                tenant_name=request.user.tenant.name if getattr(request.user, 'tenant_id', None) else 'کارواش',
+                phone=user.phone,
+                username=user.username,
+                password=raw_password,
+                role=user.role,
+                created_by=request.user,
+            )
         return Response(UserListSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
@@ -301,9 +451,6 @@ class TenantRegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        if CarWash.objects.filter(slug=data['carwash_slug']).exists():
-            return Response({'carwash_slug': ['این شناسه قبلا ثبت شده است.']}, status=status.HTTP_400_BAD_REQUEST)
-
         user_model = get_user_model()
         if user_model.objects.filter(username=data['manager_username']).exists():
             return Response({'manager_username': ['این نام کاربری قبلا ثبت شده است.']}, status=status.HTTP_400_BAD_REQUEST)
@@ -311,9 +458,20 @@ class TenantRegisterView(APIView):
         if user_model.objects.filter(phone=data['manager_phone']).exists():
             return Response({'manager_phone': ['این شماره موبایل قبلا ثبت شده است.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        tenant = CarWash.objects.create(name=data['carwash_name'], slug=data['carwash_slug'], is_active=True)
+        requested_slug = str(data.get('carwash_slug', '') or '').strip()
+        if requested_slug and CarWash.objects.filter(slug=requested_slug).exists():
+            return Response({'carwash_slug': ['این شناسه قبلا ثبت شده است.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        tenant = CarWash.objects.create(
+            name=data['carwash_name'],
+            slug=requested_slug or _build_unique_carwash_slug(data['carwash_name']),
+            address=(data.get('carwash_address') or '').strip(),
+            is_active=True,
+        )
         manager = user_model.objects.create(
             username=data['manager_username'],
+            first_name=data.get('manager_first_name', ''),
+            last_name=data.get('manager_last_name', ''),
             full_name=data['manager_full_name'],
             phone=data['manager_phone'],
             tenant=tenant,
@@ -324,11 +482,31 @@ class TenantRegisterView(APIView):
         )
         manager.set_password(data['manager_password'])
         manager.save(update_fields=['password'])
+        sms_result = send_system_registration_credentials_sms(
+            tenant=tenant,
+            carwash_name=tenant.name,
+            phone=manager.phone,
+            username=manager.username,
+            password=data['manager_password'],
+        )
 
         return Response(
             {
-                'tenant': {'id': tenant.id, 'name': tenant.name, 'slug': tenant.slug},
-                'manager': {'id': manager.id, 'username': manager.username, 'full_name': manager.full_name, 'role': manager.role},
+                'tenant': {'id': tenant.id, 'name': tenant.name, 'slug': tenant.slug, 'address': tenant.address},
+                'manager': {
+                    'id': manager.id,
+                    'username': manager.username,
+                    'full_name': manager.full_name,
+                    'first_name': manager.first_name,
+                    'last_name': manager.last_name,
+                    'phone': manager.phone,
+                    'role': manager.role,
+                },
+                'credentials': {
+                    'username': manager.username,
+                    'password': data['manager_password'],
+                },
+                'sms': sms_result,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -353,6 +531,7 @@ class SupportTicketListCreateView(APIView):
         serializer = SupportTicketCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        assignee = _default_hq_support_user()
         ticket = SupportTicket.objects.create(
             tenant=tenant,
             created_by=request.user,
@@ -361,10 +540,21 @@ class SupportTicketListCreateView(APIView):
             category=data.get('category') or SupportTicket.Category.OTHER,
             priority=data.get('priority') or SupportTicket.Priority.MEDIUM,
             status=SupportTicket.Status.OPEN,
+            assigned_to=assignee,
             last_message_at=timezone.now(),
         )
         SupportTicketMessage.objects.create(ticket=ticket, sender=request.user, body=data['message'])
-        return Response(SupportTicketDetailSerializer(ticket).data, status=status.HTTP_201_CREATED)
+        for uploaded_file in request.FILES.getlist('attachments'):
+            SupportTicketAttachment.objects.create(
+                ticket=ticket,
+                uploaded_by=request.user,
+                file=uploaded_file,
+                original_name=getattr(uploaded_file, 'name', '')[:255],
+            )
+        if ticket.assigned_to_id:
+            _send_ticket_assigned_sms(ticket)
+        ticket = _tenant_ticket_queryset().filter(pk=ticket.pk).first()
+        return Response(SupportTicketDetailSerializer(ticket, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
 class SupportTicketDetailView(APIView):
@@ -374,7 +564,7 @@ class SupportTicketDetailView(APIView):
         ticket = _tenant_ticket_queryset().filter(pk=pk, tenant=request.user.tenant).first()
         if not ticket:
             return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(SupportTicketDetailSerializer(ticket).data, status=status.HTTP_200_OK)
+        return Response(SupportTicketDetailSerializer(ticket, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class SupportTicketFeedbackView(APIView):
@@ -399,7 +589,7 @@ class SupportTicketFeedbackView(APIView):
         ticket.save(update_fields=['customer_satisfaction', 'customer_feedback', 'updated_at'])
         _recalculate_support_metrics(ticket.assigned_to)
         refreshed_ticket = _tenant_ticket_queryset().filter(pk=ticket.pk, tenant=request.user.tenant).first()
-        return Response(SupportTicketDetailSerializer(refreshed_ticket).data, status=status.HTTP_200_OK)
+        return Response(SupportTicketDetailSerializer(refreshed_ticket, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class SupportTicketMessageCreateView(APIView):
@@ -789,6 +979,18 @@ class HqSupportUserListCreateView(HqBaseView):
         serializer = HqSupportUserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        raw_password = getattr(user, '_raw_password', '')
+        if raw_password and getattr(user, 'phone', ''):
+            send_system_user_credentials_sms(
+                tenant=getattr(user, 'tenant', None),
+                tenant_name=(user.tenant.name if getattr(user, 'tenant_id', None) else 'پنل مرکزی'),
+                phone=user.phone,
+                username=user.username,
+                password=raw_password,
+                role='hq_support',
+                created_by=request.user,
+                template_code='hq_support_credentials',
+            )
         return Response(HqSupportUserListSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
@@ -873,9 +1075,12 @@ class HqTicketListView(HqBaseView):
         )
         if not _is_hq_admin(request.user):
             tenant = getattr(request.user, 'tenant', None)
-            if not tenant:
+            if not tenant and not request.user.id:
                 return Response([], status=status.HTTP_200_OK)
-            queryset = queryset.filter(tenant=tenant)
+            tenant_filter = Q(assigned_to=request.user)
+            if tenant:
+                tenant_filter |= Q(tenant=tenant)
+            queryset = queryset.filter(tenant_filter).distinct()
         if status_filter in {choice[0] for choice in SupportTicket.Status.choices}:
             queryset = queryset.filter(status=status_filter)
         if priority_filter in {choice[0] for choice in SupportTicket.Priority.choices}:
@@ -903,17 +1108,20 @@ class HqTicketDetailView(HqBaseView):
         queryset = (
             SupportTicket.objects.filter(pk=pk)
             .select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
-            .prefetch_related('messages__sender')
+            .prefetch_related('messages__sender', 'attachments')
         )
         if not _is_hq_admin(request.user):
             tenant = getattr(request.user, 'tenant', None)
-            if not tenant:
+            if not tenant and not request.user.id:
                 return Response({'detail': 'کارواش پشتیبان مشخص نشده است.'}, status=status.HTTP_403_FORBIDDEN)
-            queryset = queryset.filter(tenant=tenant)
+            tenant_filter = Q(assigned_to=request.user)
+            if tenant:
+                tenant_filter |= Q(tenant=tenant)
+            queryset = queryset.filter(tenant_filter).distinct()
         ticket = queryset.first()
         if not ticket:
             return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(SupportTicketDetailSerializer(ticket).data, status=status.HTTP_200_OK)
+        return Response(SupportTicketDetailSerializer(ticket, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class HqTicketMessageCreateView(HqBaseView):
@@ -926,9 +1134,12 @@ class HqTicketMessageCreateView(HqBaseView):
         queryset = SupportTicket.objects.filter(pk=pk).select_related('assigned_to', 'tenant')
         if not _is_hq_admin(request.user):
             tenant = getattr(request.user, 'tenant', None)
-            if not tenant:
+            if not tenant and not request.user.id:
                 return Response({'detail': 'کارواش پشتیبان مشخص نشده است.'}, status=status.HTTP_403_FORBIDDEN)
-            queryset = queryset.filter(tenant=tenant)
+            tenant_filter = Q(assigned_to=request.user)
+            if tenant:
+                tenant_filter |= Q(tenant=tenant)
+            queryset = queryset.filter(tenant_filter).distinct()
         ticket = queryset.first()
         if not ticket:
             return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
@@ -991,6 +1202,83 @@ class HqTicketMessageCreateView(HqBaseView):
         if ticket.assigned_to_id:
             _recalculate_support_metrics(ticket.assigned_to)
         return Response(SupportTicketMessageSerializer(message).data, status=status.HTTP_201_CREATED)
+
+
+class HqTicketWalletTransferView(HqBaseView):
+    @transaction.atomic
+    def post(self, request, pk):
+        forbidden = self.forbid_if_not_hq(request)
+        if forbidden:
+            return forbidden
+
+        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).select_related('tenant', 'assigned_to')
+        if not _is_hq_admin(request.user):
+            tenant = getattr(request.user, 'tenant', None)
+            tenant_filter = Q(assigned_to=request.user)
+            if tenant:
+                tenant_filter |= Q(tenant=tenant)
+            queryset = queryset.filter(tenant_filter).distinct()
+        ticket = queryset.first()
+        if not ticket:
+            return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        if not _is_wallet_card_payment_ticket(ticket):
+            return Response({'detail': 'انتقال وجه فقط برای تیکت پرداخت کارت به کارت کیف پول مجاز است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = HqTicketWalletTransferSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        amount = serializer.validated_data['amount']
+        wallet_id = serializer.validated_data.get('wallet_id') or _parse_wallet_id_from_ticket(ticket)
+        if not wallet_id:
+            return Response({'detail': 'کیف پول مقصد در تیکت مشخص نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        wallet = Wallet.objects.select_for_update().filter(pk=wallet_id, tenant=ticket.tenant, is_active=True).first()
+        if not wallet:
+            return Response({'detail': 'کیف پول مقصد معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        wallet.balance = Decimal(str(wallet.balance or 0)) + amount
+        wallet.save(update_fields=['balance', 'updated_at'])
+        cashflow = CashflowTransaction.objects.create(
+            tenant=ticket.tenant,
+            wallet=wallet,
+            direction=CashflowTransaction.Direction.IN,
+            amount=amount,
+            description=f'شارژ کارت به کارت از تیکت #{ticket.id}',
+            reference_type='wallet_card_ticket',
+            reference_id=ticket.id,
+            created_by=request.user,
+        )
+        message = SupportTicketMessage.objects.create(
+            ticket=ticket,
+            sender=request.user,
+            body=f'انتقال وجه کارت به کارت تایید شد و مبلغ {amount:,.0f} تومان به کیف پول «{wallet.name}» اضافه شد.',
+            is_internal=True,
+        )
+        ticket.status = SupportTicket.Status.ANSWERED
+        ticket.responded_by = request.user
+        ticket.responded_at = message.created_at
+        if not ticket.first_response_at:
+            ticket.first_response_at = message.created_at
+        ticket.last_message_at = message.created_at
+        ticket.save(update_fields=[
+            'status',
+            'responded_by',
+            'responded_at',
+            'first_response_at',
+            'last_message_at',
+            'updated_at',
+        ])
+        if ticket.assigned_to_id:
+            _recalculate_support_metrics(ticket.assigned_to)
+        return Response(
+            {
+                'wallet_id': wallet.id,
+                'wallet_name': wallet.name,
+                'wallet_balance': wallet.balance,
+                'transaction_id': cashflow.id,
+                'ticket': SupportTicketDetailSerializer(ticket).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def _build_hq_report_snapshot(start=None, end=None):

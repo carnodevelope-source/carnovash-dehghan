@@ -10,6 +10,31 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
+DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
+    '[خطاب مشتری]\n'
+    'خودروی شما با پلاک [پلاک] در ساعت [ساعت تخصیص] روز [تاریخ تخصیص] در کارواش [نام کارواش] '
+    'برای انجام خدمات ثبت و تخصیص داده شد.'
+)
+
+DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = (
+    'پیش فاکتور خدمات:\n'
+    '[خلاصه خدمات]\n'
+    'جمع کل: [جمع کل]\n'
+    'خودروی شما حدود 1 ساعت کاری دیگر آماده ترخیص است.\n'
+    'از اعتماد شما سپاسگزاریم 🌿'
+)
+
+DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
+    '[خطاب مشتری]\n'
+    'خودروی شما در ساعت [ساعت ترخیص] روز [تاریخ ترخیص] از کارواش [نام کارواش] ترخیص شد.\n'
+    'امتیاز شما: [امتیاز مشتری] از ۵\n'
+    'درصد تخفیف سفارش بعد: [درصد تخفیف سفارش بعد]\n'
+    'مبلغ نهایی: [مبلغ نهایی]\n'
+    'جمع تخفیف: [جمع تخفیف]\n'
+    '[نام کارواش]'
+)
+
+
 class ServiceCategory(TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
@@ -149,6 +174,12 @@ class GeneralSettings(TimestampedModel):
     receipt_show_logo = models.BooleanField(default=False)
     receipt_show_qr = models.BooleanField(default=False)
     receipt_footer_note = models.TextField(blank=True)
+    sms_provider_base_url = models.CharField(max_length=255, blank=True, default='https://api.iranpayamak.com')
+    sms_provider_api_key = models.CharField(max_length=255, blank=True)
+    sms_provider_line_number = models.CharField(max_length=50, blank=True)
+    sms_vehicle_assigned_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE)
+    sms_vehicle_assigned_invoice_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE)
+    sms_vehicle_released_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE)
 
     class Meta:
         verbose_name = 'General Settings'
