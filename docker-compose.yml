@@ -53,9 +53,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      plate-ai:
-        condition: service_healthy
-        required: false
     expose:
       - "8000"
     volumes:
@@ -70,6 +67,7 @@ services:
     restart: unless-stopped
 
   plate-ai:
+    profiles: ["ai"]
     build:
       context: ./ai
       dockerfile: Dockerfile
