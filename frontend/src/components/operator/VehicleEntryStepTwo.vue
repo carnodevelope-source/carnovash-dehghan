@@ -228,8 +228,7 @@
             <div class="summary-row">
               <span>تخفیف دستی (هزار تومان):</span>
               <input :value="toThousandsInput(manualDiscountTotal)" type="text" inputmode="numeric" @input="manualDiscountTotal = fromThousandsInput($event.target.value)" />
-              <small class="unit-note">عدد تخفیف را به هزار تومان وارد کنید.</small>
-            </div>
+              </div>
             <div class="summary-row">
               <span>مبلغ کل خدمات:</span>
               <strong>{{ formatMoney(servicesTotal) }}</strong>
