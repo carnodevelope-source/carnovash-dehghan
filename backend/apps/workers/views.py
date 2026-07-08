@@ -6,6 +6,8 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.auth.sms import send_user_credentials_sms
+
 from .models import WorkerAttendance, WorkerProfile
 from .serializers import (
     WorkerAttendanceEventSerializer,
@@ -199,6 +201,18 @@ class WorkerProfileListCreateView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
+        credentials = getattr(serializer, 'created_credentials', None) or {}
+        if credentials:
+            send_user_credentials_sms(
+                tenant=credentials.get('tenant') or instance.tenant,
+                tenant_name=getattr(credentials.get('tenant') or instance.tenant, 'name', ''),
+                phone=credentials.get('phone') or getattr(instance.user, 'phone', ''),
+                username=credentials.get('username') or getattr(instance.user, 'username', ''),
+                password=credentials.get('password') or '',
+                role=credentials.get('role') or getattr(instance.user, 'role', ''),
+                created_by=request.user,
+                template_code='worker_credentials',
+            )
         output = WorkerProfileListSerializer(instance, context=self.get_serializer_context())
         return Response(output.data, status=status.HTTP_201_CREATED)
 

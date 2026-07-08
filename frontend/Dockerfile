@@ -1,9 +1,14 @@
+# syntax=docker/dockerfile:1.7
+
 FROM node:20-alpine AS build
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm config set registry https://registry.npmjs.org/ \
+    && npm config set cache /root/.npm \
+    && npm ci --prefer-offline --no-audit --progress=false
 
 COPY . .
 

@@ -4,7 +4,14 @@ from django.db.models.deletion import ProtectedError
 from rest_framework import generics, status
 from rest_framework.response import Response
 
-from .models import GeneralSettings, Service, ServiceChangeLog
+from .models import (
+    DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE,
+    DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE,
+    DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE,
+    GeneralSettings,
+    Service,
+    ServiceChangeLog,
+)
 from .serializers import GeneralSettingsSerializer, ServiceChangeLogSerializer, ServiceSerializer
 
 
@@ -158,6 +165,28 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
                 'receipt_show_logo': False,
                 'receipt_show_qr': False,
                 'receipt_footer_note': '',
+                'sms_provider_base_url': 'https://api.iranpayamak.com',
+                'sms_provider_api_key': '',
+                'sms_provider_line_number': '',
+                'sms_vehicle_assigned_template': DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE,
+                'sms_vehicle_assigned_invoice_template': DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE,
+                'sms_vehicle_released_template': DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE,
             },
         )
+        changed_fields = []
+        if not str(settings_obj.sms_provider_base_url or '').strip():
+            settings_obj.sms_provider_base_url = 'https://api.iranpayamak.com'
+            changed_fields.append('sms_provider_base_url')
+        if not str(settings_obj.sms_vehicle_assigned_template or '').strip():
+            settings_obj.sms_vehicle_assigned_template = DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
+            changed_fields.append('sms_vehicle_assigned_template')
+        if not str(settings_obj.sms_vehicle_assigned_invoice_template or '').strip():
+            settings_obj.sms_vehicle_assigned_invoice_template = DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE
+            changed_fields.append('sms_vehicle_assigned_invoice_template')
+        if not str(settings_obj.sms_vehicle_released_template or '').strip():
+            settings_obj.sms_vehicle_released_template = DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE
+            changed_fields.append('sms_vehicle_released_template')
+        if changed_fields:
+            changed_fields.append('updated_at')
+            settings_obj.save(update_fields=changed_fields)
         return settings_obj

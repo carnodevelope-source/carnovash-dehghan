@@ -1,3 +1,4 @@
+from django.conf import settings
 from decimal import Decimal
 
 from rest_framework import serializers
@@ -52,6 +53,9 @@ class ServiceChangeLogSerializer(serializers.ModelSerializer):
 
 
 class GeneralSettingsSerializer(serializers.ModelSerializer):
+    sms_provider_api_key_configured = serializers.SerializerMethodField(read_only=True)
+    sms_provider_source = serializers.SerializerMethodField(read_only=True)
+
     def validate_discount_percent_per_half_star(self, value):
         if value < Decimal('0') or value > Decimal('100'):
             raise serializers.ValidationError('درصد تخفیف باید بین ۰ تا ۱۰۰ باشد.')
@@ -92,10 +96,29 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
             'payment_methods_note',
             'receipt_printer_name',
             'receipt_footer_note',
+            'sms_vehicle_assigned_template',
+            'sms_vehicle_assigned_invoice_template',
+            'sms_vehicle_released_template',
         ]:
             if key in attrs:
                 attrs[key] = str(attrs.get(key) or '').strip()
         return attrs
+
+    def get_sms_provider_api_key_configured(self, _obj):
+        return bool(str(getattr(settings, 'IRANPAYAMAK_API_KEY', '') or '').strip())
+
+    def get_sms_provider_source(self, _obj):
+        return 'env'
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['sms_provider_base_url'] = str(
+            getattr(settings, 'IRANPAYAMAK_BASE_URL', 'https://api.iranpayamak.com')
+            or 'https://api.iranpayamak.com'
+        ).rstrip('/')
+        data['sms_provider_line_number'] = str(getattr(settings, 'IRANPAYAMAK_LINE_NUMBER', '') or '').strip()
+        data['sms_provider_api_key'] = ''
+        return data
 
     class Meta:
         model = GeneralSettings
@@ -117,6 +140,21 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
             'receipt_show_logo',
             'receipt_show_qr',
             'receipt_footer_note',
+            'sms_provider_base_url',
+            'sms_provider_api_key',
+            'sms_provider_line_number',
+            'sms_provider_api_key_configured',
+            'sms_provider_source',
+            'sms_vehicle_assigned_template',
+            'sms_vehicle_assigned_invoice_template',
+            'sms_vehicle_released_template',
             'created_at',
             'updated_at',
+        ]
+        read_only_fields = [
+            'sms_provider_base_url',
+            'sms_provider_api_key',
+            'sms_provider_line_number',
+            'sms_provider_api_key_configured',
+            'sms_provider_source',
         ]

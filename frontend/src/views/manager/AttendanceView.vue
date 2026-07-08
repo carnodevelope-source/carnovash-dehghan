@@ -25,11 +25,11 @@
 
       <section class="toolbar-card">
         <label class="search-field">
-          <span>جستجوی نیرو</span>
+          <span><IconlyIcon name="search" size="xs" />جستجوی نیرو</span>
           <input v-model.trim="filters.q" type="text" placeholder="نام، شماره موبایل یا وضعیت..." />
         </label>
         <label class="filter-field">
-          <span>وضعیت</span>
+          <span><IconlyIcon name="category" size="xs" />وضعیت</span>
           <select v-model="filters.status">
             <option value="all">همه</option>
             <option value="in">حاضر</option>
@@ -37,7 +37,7 @@
           </select>
         </label>
         <label class="filter-field">
-          <span>بار کاری</span>
+          <span><IconlyIcon name="graph" size="xs" />بار کاری</span>
           <select v-model="filters.load">
             <option value="all">همه</option>
             <option value="free">آزاد</option>
@@ -45,7 +45,7 @@
             <option value="busy">شلوغ</option>
           </select>
         </label>
-        <button class="ghost-btn" @click="loadDashboard">بروزرسانی</button>
+        <button class="ghost-btn btn-with-icon" @click="loadDashboard"><IconlyIcon name="show" size="sm" />بروزرسانی</button>
       </section>
 
       <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
@@ -104,14 +104,14 @@
 
                 <div class="worker-actions">
                   <button class="primary-btn" :disabled="submittingWorkerId === worker.id || worker.current_status === 'in'" @click="submitManagerEvent(worker, 'in')">
-                    ثبت ورود
+                    <IconlyIcon name="calendar" size="sm" />ثبت ورود
                   </button>
                   <button class="secondary-btn" :disabled="submittingWorkerId === worker.id || worker.current_status !== 'in'" @click="submitManagerEvent(worker, 'out')">
-                    ثبت خروج
+                    <IconlyIcon name="logout" size="sm" />ثبت خروج
                   </button>
-                  <button class="ghost-inline-btn" @click="copyLink(worker)">کپی لینک</button>
-                  <button class="ghost-inline-btn" @click="openLink(worker)">باز کردن</button>
-                  <button class="danger-inline-btn" @click="refreshToken(worker)">بازسازی لینک</button>
+                  <button class="ghost-inline-btn" @click="copyLink(worker)"><IconlyIcon name="document" size="sm" />کپی لینک</button>
+                  <button class="ghost-inline-btn" @click="openLink(worker)"><IconlyIcon name="show" size="sm" />باز کردن</button>
+                  <button class="danger-inline-btn" @click="refreshToken(worker)"><IconlyIcon name="editSquare" size="sm" />بازسازی لینک</button>
                 </div>
               </article>
             </div>
@@ -185,6 +185,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
+import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import api from '../../services/api'
 import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
 import { resolveApiErrorMessage } from '../../utils/apiError'
@@ -292,13 +293,13 @@ onMounted(loadDashboard)
 .hero-tag{display:inline-flex;padding:6px 12px;border-radius:999px;background:#ffffff1a;border:1px solid #ffffff2b;font-size:12px;letter-spacing:.04em}
 .hero-copy h2{margin:14px 0 10px;font-size:32px}
 .hero-copy p{margin:0;max-width:560px;color:#d9ecff;line-height:1.9}
-.hero-stats{display:grid;grid-template-columns:1fr;gap:12px}
+.hero-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .hero-stat{padding:18px 20px;border-radius:22px;background:#ffffff14;border:1px solid #ffffff24;backdrop-filter:blur(8px)}
 .hero-stat span{display:block;color:#dbeafe;font-size:12px}
 .hero-stat strong{display:block;margin-top:10px;font-size:26px}
 .toolbar-card{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:12px;padding:16px;border:1px solid #dbe5f0;border-radius:24px;background:linear-gradient(180deg,#ffffff,#f8fbff)}
 .search-field,.filter-field{display:grid;gap:6px}
-.search-field span,.filter-field span{font-size:12px;color:#475569;font-weight:700}
+.search-field span,.filter-field span{font-size:12px;color:#475569;font-weight:700;display:inline-flex;align-items:center;gap:6px}
 .search-field input,.filter-field select{height:46px;border:1px solid #cbd5e1;border-radius:16px;padding:0 14px;background:#fff;font:inherit}
 .content-grid{display:grid;grid-template-columns:1.25fr .75fr;gap:16px;align-items:start}
 .section-card{padding:18px;border:1px solid #dbe5f0;border-radius:28px;background:#fff;box-shadow:0 18px 45px rgba(15,23,42,.05)}
@@ -327,11 +328,15 @@ onMounted(loadDashboard)
 .qr-copy code{display:block;padding:10px 12px;border-radius:14px;background:#fff;border:1px solid #dbeafe;color:#0f172a;font-size:11px;word-break:break-all}
 .qr-copy small{color:#64748b}
 .worker-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-.primary-btn,.secondary-btn,.ghost-btn,.ghost-inline-btn,.danger-inline-btn{height:42px;border:none;border-radius:14px;padding:0 14px;font:inherit;cursor:pointer}
+.primary-btn,.secondary-btn,.ghost-btn,.ghost-inline-btn,.danger-inline-btn{height:42px;border:none;border-radius:14px;padding:0 14px;font:inherit;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .primary-btn{background:linear-gradient(135deg,#0284c7,#06b6d4);color:#fff;box-shadow:0 12px 24px rgba(6,182,212,.18)}
 .secondary-btn{background:#0f172a;color:#fff}
 .ghost-btn,.ghost-inline-btn{background:#eff6ff;color:#1d4ed8}
 .danger-inline-btn{background:#fef2f2;color:#b91c1c}
+.btn-with-icon{display:inline-flex;align-items:center;gap:8px}
+.primary-btn :deep(.iconly-shell),
+.secondary-btn :deep(.iconly-shell) { --iconly-filter: brightness(0) saturate(100%) invert(100%); }
+.danger-inline-btn :deep(.iconly-shell) { --iconly-filter: brightness(0) saturate(100%) invert(20%) sepia(78%) saturate(2280%) hue-rotate(345deg) brightness(97%) contrast(92%); }
 .primary-btn:disabled,.secondary-btn:disabled{opacity:.55;cursor:not-allowed}
 .kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .kpi-card{padding:14px;border-radius:20px;border:1px solid #dbeafe;background:linear-gradient(180deg,#ffffff,#eff6ff)}
@@ -355,5 +360,5 @@ onMounted(loadDashboard)
 .error-box{padding:12px 14px;border-radius:18px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
 @media (max-width:1280px){.content-grid{grid-template-columns:1fr}.hero-panel{grid-template-columns:1fr}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:900px){.toolbar-card{grid-template-columns:1fr 1fr}.search-field{grid-column:1/-1}.worker-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.qr-row{grid-template-columns:1fr}.qr-frame{justify-self:center}}
-@media (max-width:640px){.section-card,.hero-panel{border-radius:24px}.toolbar-card,.worker-actions,.kpi-grid{grid-template-columns:1fr}.hero-stats{grid-template-columns:1fr}.worker-head,.feed-item{grid-template-columns:1fr}.status-pill{justify-self:start}.trend-item{grid-template-columns:1fr}.section-head,.worker-actions{flex-direction:column;align-items:stretch}.hero-copy h2{font-size:26px}.hero-panel,.section-card{padding:16px}.qr-frame{width:100%;height:auto;aspect-ratio:1/1;max-width:180px}.meta-chip strong{font-size:14px}}
+@media (max-width:640px){.section-card,.hero-panel{border-radius:24px}.toolbar-card,.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.worker-head,.feed-item{grid-template-columns:1fr}.status-pill{justify-self:start}.trend-item{grid-template-columns:1fr}.section-head{flex-direction:column;align-items:stretch}.hero-copy h2{font-size:26px}.hero-panel,.section-card{padding:16px}.qr-frame{width:100%;height:auto;aspect-ratio:1/1;max-width:180px}.meta-chip strong{font-size:14px}.hero-stat{padding:12px 10px;border-radius:16px}.hero-stat strong{font-size:18px}.worker-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.primary-btn,.secondary-btn,.ghost-inline-btn,.danger-inline-btn{padding:0 10px;font-size:12px}}
 </style>

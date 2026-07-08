@@ -2,7 +2,6 @@ services:
   db:
     image: mysql:8.4
     command:
-      - --default-authentication-plugin=mysql_native_password
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     environment:
@@ -54,9 +53,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      plate-ai:
-        condition: service_healthy
-        required: false
     expose:
       - "8000"
     volumes:
@@ -71,19 +67,45 @@ services:
     restart: unless-stopped
 
   plate-ai:
+    profiles: ["ai"]
     build:
-      context: ./ai/tst/Persian-License-Plate-Recognition
+      context: ./ai
       dockerfile: Dockerfile
     environment:
       PYTHONUNBUFFERED: "1"
       TZ: ${TZ:-Asia/Tehran}
-    command: ["python", "plate_http_service.py", "--host", "0.0.0.0", "--port", "8765"]
+      PLATE_AI_PORT: ${PLATE_AI_PORT:-8765}
+      PLATE_AI_IMGSZ: ${PLATE_AI_IMGSZ:-640}
+      PLATE_AI_THRESHOLD: ${PLATE_AI_THRESHOLD:-0.45}
+      PLATE_AI_MIN_BOX_AREA: ${PLATE_AI_MIN_BOX_AREA:-300}
+      PLATE_AI_BATCH_SIZE: ${PLATE_AI_BATCH_SIZE:-8}
+      PLATE_AI_BATCH_WAIT_MS: ${PLATE_AI_BATCH_WAIT_MS:-12}
+      PLATE_AI_QUEUE_SIZE: ${PLATE_AI_QUEUE_SIZE:-256}
+    command:
+      - python
+      - plate_http_service.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - ${PLATE_AI_PORT:-8765}
+      - --imgsz
+      - ${PLATE_AI_IMGSZ:-640}
+      - --threshold
+      - ${PLATE_AI_THRESHOLD:-0.45}
+      - --min-box-area
+      - ${PLATE_AI_MIN_BOX_AREA:-300}
+      - --batch-size
+      - ${PLATE_AI_BATCH_SIZE:-8}
+      - --batch-wait-ms
+      - ${PLATE_AI_BATCH_WAIT_MS:-12}
+      - --queue-size
+      - ${PLATE_AI_QUEUE_SIZE:-256}
     expose:
-      - "8765"
+      - "${PLATE_AI_PORT:-8765}"
     volumes:
       - plate_ai_output:/app/io/output
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://127.0.0.1:8765/health', timeout=5).read()\""]
+      test: ["CMD-SHELL", "python -c \"import os; from urllib.request import urlopen; port = os.environ.get('PLATE_AI_PORT', '8765'); urlopen(f'http://127.0.0.1:{port}/health', timeout=5).read()\""]
       interval: 30s
       timeout: 5s
       retries: 6

@@ -548,6 +548,43 @@
               <button type="button" class="scope-chip danger-chip" @click="ticketReply.status = 'closed'">بستن تیکت</button>
             </div>
 
+            <section v-if="isWalletCardPaymentTicket(selectedTicket)" class="wallet-ticket-transfer-card">
+              <div>
+                <span>عملیات تیکت پرداخت</span>
+                <strong>انتقال پول به کیف پول مقصد</strong>
+                <p>بعد از بررسی رسید، مبلغ تایید شده را وارد کنید تا مستقیم به کیف پول صاحب تیکت اضافه شود.</p>
+              </div>
+              <label>
+                <span>مبلغ انتقال (تومان)</span>
+                <input v-model="walletTransfer.amountText" inputmode="numeric" placeholder="مثلا ۲۵۰۰۰۰" />
+              </label>
+              <button type="button" class="primary-btn wallet-transfer-btn" :disabled="walletTransfer.submitting" @click="submitWalletTransfer">
+                {{ walletTransfer.submitting ? 'در حال انتقال...' : 'انتقال پول' }}
+              </button>
+              <small v-if="walletTransfer.error" class="transfer-feedback error">{{ walletTransfer.error }}</small>
+              <small v-if="walletTransfer.success" class="transfer-feedback success">{{ walletTransfer.success }}</small>
+            </section>
+
+            <section v-if="selectedTicket.attachments?.length" class="hq-ticket-attachments">
+              <div class="reply-head">
+                <strong>رسیدها و فایل‌های پیوست</strong>
+                <small>{{ toFa(selectedTicket.attachments.length) }} فایل</small>
+              </div>
+              <div class="hq-ticket-attachments-list">
+                <a
+                  v-for="attachment in selectedTicket.attachments"
+                  :key="attachment.id"
+                  class="hq-ticket-attachment-item"
+                  :href="attachment.file_url"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <strong>{{ attachment.original_name || 'فایل پیوست' }}</strong>
+                  <span>باز کردن فایل</span>
+                </a>
+              </div>
+            </section>
+
             <div class="chat-stream ticket-chat-stream desk-ticket-stream">
               <div
                 v-for="message in selectedTicket.messages"
@@ -1185,6 +1222,12 @@ const ticketReply = reactive({
   assign_to_user_id: 0,
   is_internal: false
 })
+const walletTransfer = reactive({
+  amountText: '',
+  submitting: false,
+  error: '',
+  success: ''
+})
 
 const reports = reactive({ summary: {}, rows: [], trends: [], highlights: {} })
 const reportTab = ref('revenue')
@@ -1462,6 +1505,14 @@ const reportPeriodLabel = computed(() => {
 
 const money = (value) => formatThousandsToman(value)
 const toFa = (value) => Number(value || 0).toLocaleString('fa-IR')
+const normalizeDigits = (value) => String(value || '')
+  .replace(/[۰-۹]/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))
+  .replace(/[٠-٩]/g, (digit) => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
+const parseTransferAmount = (value) => Number(normalizeDigits(value).replace(/,/g, ''))
+const isWalletCardPaymentTicket = (ticket) => {
+  const text = `${ticket?.subject || ''}\n${ticket?.message || ''}`.toLowerCase()
+  return text.includes('wallet-card-payment') || (text.includes('کارت به کارت') && text.includes('کیف پول'))
+}
 const initials = (value) => {
   const parts = String(value || '').trim().split(' ').filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`
@@ -1707,6 +1758,9 @@ const selectTicket = async (ticketId) => {
   ticketReply.status = ''
   ticketReply.assign_to_user_id = Number(data?.assigned_to || 0)
   ticketReply.is_internal = false
+  walletTransfer.amountText = ''
+  walletTransfer.error = ''
+  walletTransfer.success = ''
 }
 
 const sendTicketReply = async () => {
@@ -1721,6 +1775,31 @@ const sendTicketReply = async () => {
   await selectTicket(selectedTicket.value.id)
   await loadTickets()
   await loadOverview()
+}
+
+const submitWalletTransfer = async () => {
+  walletTransfer.error = ''
+  walletTransfer.success = ''
+  if (!selectedTicket.value?.id || walletTransfer.submitting) return
+  const amount = parseTransferAmount(walletTransfer.amountText)
+  if (!amount || amount <= 0) {
+    walletTransfer.error = 'مبلغ انتقال را به تومان وارد کنید.'
+    return
+  }
+  walletTransfer.submitting = true
+  try {
+    await api.post(`/auth/hq/tickets/${selectedTicket.value.id}/wallet-transfer/`, { amount })
+    walletTransfer.amountText = ''
+    walletTransfer.success = 'انتقال وجه ثبت شد و کیف پول مقصد شارژ شد.'
+    await selectTicket(selectedTicket.value.id)
+    await loadTickets()
+    await loadOverview()
+  } catch (error) {
+    const { data } = error?.response || {}
+    walletTransfer.error = data?.detail || 'انتقال وجه ثبت نشد. اطلاعات تیکت یا کیف پول را بررسی کنید.'
+  } finally {
+    walletTransfer.submitting = false
+  }
 }
 
 const loadReports = async () => {
@@ -3935,6 +4014,101 @@ td strong {
   color: var(--primary);
 }
 
+.wallet-ticket-transfer-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(180px, 0.8fr) auto;
+  gap: 14px;
+  align-items: end;
+  margin: 12px 0 18px;
+  padding: 18px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(246, 240, 255, 0.96), rgba(255, 255, 255, 0.96));
+  box-shadow: 0 18px 48px rgba(121, 92, 168, 0.14);
+}
+
+.wallet-ticket-transfer-card strong {
+  display: block;
+  margin-top: 4px;
+  color: #33224f;
+}
+
+.wallet-ticket-transfer-card p,
+.wallet-ticket-transfer-card span {
+  margin: 0;
+  color: #7a6c91;
+}
+
+.wallet-ticket-transfer-card label {
+  display: grid;
+  gap: 8px;
+}
+
+.wallet-ticket-transfer-card input {
+  min-height: 46px;
+  border: 0;
+  border-radius: 18px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #33224f;
+  outline: none;
+}
+
+.wallet-transfer-btn {
+  min-height: 46px;
+  white-space: nowrap;
+}
+
+.transfer-feedback {
+  grid-column: 1 / -1;
+  padding: 8px 12px;
+  border-radius: 14px;
+}
+
+.transfer-feedback.error {
+  color: #a33030;
+  background: rgba(255, 229, 229, 0.74);
+}
+
+.transfer-feedback.success {
+  color: #23744a;
+  background: rgba(225, 249, 235, 0.8);
+}
+
+.hq-ticket-attachments {
+  display: grid;
+  gap: 12px;
+  margin: 8px 0 18px;
+  padding: 18px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(245, 243, 255, 0.96));
+  box-shadow: 0 16px 40px rgba(51, 34, 79, 0.08);
+}
+
+.hq-ticket-attachments-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.hq-ticket-attachment-item {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.hq-ticket-attachment-item strong {
+  color: #33224f;
+}
+
+.hq-ticket-attachment-item span {
+  color: #7c3aed;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @media (max-width: 1280px) {
   .hq-page {
     grid-template-columns: 1fr;
@@ -4113,6 +4287,10 @@ td strong {
   }
 
   .hq-ticket-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wallet-ticket-transfer-card {
     grid-template-columns: 1fr;
   }
 

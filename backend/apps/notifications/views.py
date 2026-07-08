@@ -3,8 +3,6 @@ import math
 import uuid
 from collections import Counter
 from decimal import Decimal
-from urllib import error as urllib_error
-from urllib import request as urllib_request
 
 from django.conf import settings
 from django.db import transaction
@@ -17,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.payments.models import CashflowTransaction, Wallet
+from apps.services.models import GeneralSettings
 from .models import CustomerGroup, NotificationLog, SmsTemplate
 from .serializers import (
     CustomerGroupSerializer,
@@ -29,6 +28,7 @@ from .services import (
     ensure_default_sms_templates,
     extract_log_metadata,
     group_sms_batches,
+    send_provider_sms,
 )
 
 
@@ -97,10 +97,25 @@ class SmsWalletMixin:
 class SmsProviderMixin:
     provider_url = '/ws/v1/sms/simple'
 
+    def _general_settings(self):
+        tenant = getattr(self.request.user, 'tenant', None)
+        if not tenant:
+            return None
+        return GeneralSettings.objects.filter(tenant=tenant).first()
+
     def _provider_config(self):
-        api_key = str(getattr(settings, 'IRANPAYAMAK_API_KEY', '') or '').strip()
-        line_number = str(getattr(settings, 'IRANPAYAMAK_LINE_NUMBER', '') or '').strip()
-        base_url = str(getattr(settings, 'IRANPAYAMAK_BASE_URL', 'https://api.iranpayamak.com') or '').rstrip('/')
+        api_key = str(
+            getattr(settings, 'IRANPAYAMAK_API_KEY', '')
+            or ''
+        ).strip()
+        line_number = str(
+            getattr(settings, 'IRANPAYAMAK_LINE_NUMBER', '')
+            or ''
+        ).strip()
+        base_url = str(
+            getattr(settings, 'IRANPAYAMAK_BASE_URL', 'https://api.iranpayamak.com')
+            or 'https://api.iranpayamak.com'
+        ).rstrip('/')
         if not api_key or not line_number:
             raise ValidationError({'detail': 'تنظیمات سرویس پیامک کامل نیست.'})
         return {
@@ -127,87 +142,12 @@ class SmsProviderMixin:
 
     def _send_provider_request(self, *, text, recipients):
         config = self._provider_config()
-        payload = {
-            'text': text,
-            'line_number': config['line_number'],
-            'recipients': recipients,
-            'number_format': 'english',
-            'schedule': None,
-        }
-        req = urllib_request.Request(
-            url=f"{config['base_url']}{self.provider_url}",
-            data=json.dumps(payload).encode('utf-8'),
-            headers={
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'Api-Key': config['api_key'],
-            },
-            method='POST',
+        return send_provider_sms(
+            getattr(self.request.user, 'tenant', None),
+            text,
+            recipients,
+            provider_config=config,
         )
-
-        try:
-            with urllib_request.urlopen(req, timeout=15) as response:
-                raw_body = response.read().decode('utf-8')
-                response_status = response.status
-        except urllib_error.HTTPError as exc:
-            raw_body = exc.read().decode('utf-8', errors='replace')
-            try:
-                provider_data = json.loads(raw_body or '{}')
-            except json.JSONDecodeError:
-                provider_data = {'message': raw_body}
-            return {
-                'ok': False,
-                'provider_status': exc.code,
-                'raw_body': raw_body,
-                'provider_data': provider_data,
-                'message': self._provider_message_text(provider_data, fallback='سرویس پیامک درخواست را نپذیرفت.'),
-                'payload': payload,
-            }
-        except urllib_error.URLError as exc:
-            provider_response = str(getattr(exc, 'reason', exc))
-            return {
-                'ok': False,
-                'provider_status': 0,
-                'raw_body': provider_response,
-                'provider_data': {'message': provider_response},
-                'message': 'ارتباط با سرویس پیامک برقرار نشد.',
-                'payload': payload,
-            }
-
-        try:
-            provider_data = json.loads(raw_body or '{}')
-        except json.JSONDecodeError:
-            provider_data = {'status': 'error', 'message': raw_body}
-
-        if response_status not in {200, 201} or provider_data.get('status') != 'success':
-            return {
-                'ok': False,
-                'provider_status': response_status,
-                'raw_body': raw_body,
-                'provider_data': provider_data,
-                'message': self._provider_message_text(provider_data),
-                'payload': payload,
-            }
-
-        data = provider_data.get('data')
-        provider_id = ''
-        provider_delivery_status = ''
-        if isinstance(data, dict):
-            provider_id = str(data.get('id') or '')
-            provider_delivery_status = str(data.get('status') or '')
-        elif data is not None:
-            provider_id = str(data)
-
-        return {
-            'ok': True,
-            'provider_status': response_status,
-            'raw_body': raw_body,
-            'provider_data': provider_data,
-            'message': 'پیامک با موفقیت در صف ارسال قرار گرفت.',
-            'provider_id': provider_id,
-            'provider_delivery_status': provider_delivery_status,
-            'payload': payload,
-        }
 
 
 class CustomerClubDashboardView(APIView, SmsWalletMixin):
@@ -442,7 +382,7 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
         if success_count and failed_count:
             detail = 'بخشی از پیامک‌ها ارسال شد و بخشی ناموفق بود.'
         elif failed_count and not success_count:
-            detail = 'هیچ پیامکی ارسال نشد.'
+            detail = str(results[0].get('message') or 'هیچ پیامکی ارسال نشد.') if results else 'هیچ پیامکی ارسال نشد.'
 
         return Response(
             {

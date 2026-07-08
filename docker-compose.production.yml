@@ -1,0 +1,35 @@
+services:
+  frontend:
+    ports: []
+    expose:
+      - "80"
+
+  edge-nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      frontend:
+        condition: service_healthy
+    environment:
+      PRIMARY_DOMAIN: ${PRIMARY_DOMAIN:-carnowash.ir}
+      SECONDARY_DOMAIN: ${SECONDARY_DOMAIN:-www.carnowash.ir}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/edge-nginx/templates:/etc/nginx/templates:ro
+      - ./docker/edge-nginx/start-nginx.sh:/start-nginx.sh:ro
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    command: ["/bin/sh", "/start-nginx.sh"]
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["ops"]
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+
+volumes:
+  certbot_www:
+  certbot_certs:

@@ -1,6 +1,8 @@
 import axios from 'axios'
 import { getActivePinia } from 'pinia'
 import { useLoadingStore } from '../store/loading.store'
+import { resolveApiErrorMessage, getApiErrorStatus } from '../utils/apiError'
+import { notifyError } from '../utils/notify'
 
 const resolveBaseURL = () => {
   const configured = import.meta.env.VITE_API_BASE_URL || ''
@@ -50,6 +52,22 @@ const stopGlobalLoading = () => {
   useLoadingStore().stop()
 }
 
+const shouldSkipErrorToast = (config = {}) => config?.meta?.showErrorToast === false
+
+const shouldAutoNotifyError = (error) => {
+  const config = error?.config || {}
+  if (shouldSkipErrorToast(config)) return false
+  if (config?.meta?.showErrorToast === true) return true
+
+  const url = String(config?.url || '')
+  const status = getApiErrorStatus(error)
+
+  if (!error?.response) return true
+  if (status >= 500) return true
+  if ((status === 401 || status === 403) && !url.includes('/auth/me/') && !url.includes('/auth/csrf/')) return true
+  return false
+}
+
 api.interceptors.request.use((config) => {
   const csrfToken = getCookie('csrftoken')
   if (csrfToken) {
@@ -77,6 +95,13 @@ api.interceptors.response.use((response) => {
   if (error?.config?.meta?._trackedByGlobalLoader) {
     stopGlobalLoading()
   }
+
+  if (shouldAutoNotifyError(error)) {
+    notifyError(resolveApiErrorMessage(error, 'عملیات ناموفق بود.'), {
+      title: 'خطا در ارتباط با سامانه'
+    })
+  }
+
   return Promise.reject(error)
 })
 

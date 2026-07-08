@@ -31,6 +31,10 @@ class CustomerProfile(TimestampedModel):
 
 
 class VehicleEntry(TimestampedModel):
+    class PlateType(models.TextChoices):
+        CAR = 'car', 'Car'
+        MOTORCYCLE = 'motorcycle', 'Motorcycle'
+
     class Status(models.TextChoices):
         ENTERED = 'entered', 'Entered'
         ASSIGNED = 'assigned', 'Assigned'
@@ -70,6 +74,7 @@ class VehicleEntry(TimestampedModel):
     plate_letter = models.CharField(max_length=5, blank=True)
     plate_mid = models.CharField(max_length=3, blank=True)
     plate_right = models.CharField(max_length=2, blank=True)
+    plate_type = models.CharField(max_length=20, choices=PlateType.choices, default=PlateType.CAR)
     car_model = models.CharField(max_length=120)
     car_color = models.CharField(max_length=60)
     driver_name = models.CharField(max_length=120)
@@ -138,6 +143,7 @@ class BlockedPlate(TimestampedModel):
     plate_letter = models.CharField(max_length=5, blank=True)
     plate_mid = models.CharField(max_length=3, blank=True)
     plate_right = models.CharField(max_length=2, blank=True)
+    plate_type = models.CharField(max_length=20, choices=VehicleEntry.PlateType.choices, default=VehicleEntry.PlateType.CAR)
     note = models.CharField(max_length=255, blank=True)
     blocked_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

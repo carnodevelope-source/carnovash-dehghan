@@ -1,6 +1,6 @@
-﻿const item = (label, route) => ({ label, route })
+const item = (label, route, iconName = '') => ({ label, route, iconName })
 
-const supportItem = item('پشتیبانی', '/support')
+const supportItem = item('پشتیبانی', '/support', 'chat')
 
 export const navigationByRole = {
   accountant: [
@@ -8,7 +8,7 @@ export const navigationByRole = {
       key: 'finance',
       label: 'مالی',
       items: [
-        item('کیف پول', '/manager/wallet'),
+        item('کیف پول', '/manager/wallet', 'wallet'),
         supportItem
       ]
     }
@@ -18,12 +18,12 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/'),
-        item('باشگاه مشتریان', '/manager/customer-club'),
-        item('گزارشات', '/manager/reports'),
-        item('ورود و خروج', '/manager/attendance'),
-        item('تنظیمات', '/manager/settings'),
-        item('کیف پول', '/manager/wallet'),
+        item('مدیریت خودروها', '/', 'home'),
+        item('باشگاه مشتریان', '/manager/customer-club', 'users3'),
+        item('گزارشات', '/manager/reports', 'graph'),
+        item('ورود و خروج', '/manager/attendance', 'calendar'),
+        item('تنظیمات', '/manager/settings', 'setting'),
+        item('کیف پول', '/manager/wallet', 'wallet'),
         supportItem
       ]
     }
@@ -33,12 +33,12 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/'),
-        item('باشگاه مشتریان', '/manager/customer-club'),
-        item('گزارشات', '/manager/reports'),
-        item('ورود و خروج', '/manager/attendance'),
-        item('تنظیمات', '/manager/settings'),
-        item('کیف پول', '/manager/wallet'),
+        item('مدیریت خودروها', '/', 'home'),
+        item('باشگاه مشتریان', '/manager/customer-club', 'users3'),
+        item('گزارشات', '/manager/reports', 'graph'),
+        item('ورود و خروج', '/manager/attendance', 'calendar'),
+        item('تنظیمات', '/manager/settings', 'setting'),
+        item('کیف پول', '/manager/wallet', 'wallet'),
         supportItem
       ]
     }
@@ -48,7 +48,7 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/'),
+        item('مدیریت خودروها', '/', 'home'),
         supportItem
       ]
     }
@@ -58,7 +58,7 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/'),
+        item('مدیریت خودروها', '/', 'home'),
         supportItem
       ]
     }
@@ -68,12 +68,20 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/'),
+        item('مدیریت خودروها', '/', 'home'),
         supportItem
       ]
     }
   ]
 }
+
+export const navigationRouteMeta = Object.values(navigationByRole)
+  .flatMap((groups) => groups || [])
+  .flatMap((group) => group.items || [])
+  .reduce((acc, navItem) => {
+    acc[navItem.route] = navItem
+    return acc
+  }, {})
 
 export const defaultRouteByRole = {
   accountant: '/manager/wallet',

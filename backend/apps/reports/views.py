@@ -8,10 +8,10 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.reports.models import WorkerPayoutTransaction
 from apps.payments.models import Payment
 from apps.vehicles.models import VehicleEntry, VehicleJob
 from apps.workers.models import WorkerAttendance, WorkerProfile
+from apps.reports.models import WorkerPayoutTransaction
 
 
 def _parse_dt(value, end_of_day=False):
@@ -246,10 +246,28 @@ class ReportsDashboardView(APIView):
 
         rows = []
         worker_jobs = []
+        job_ids = [vehicle.job.id for vehicle in vehicles if getattr(vehicle, 'job', None)]
+        adjustment_map = {}
+        if job_ids:
+            adjustment_rows = (
+                WorkerPayoutTransaction.objects
+                .filter(tenant=tenant, vehicle_job_id__in=job_ids, kind__in=[
+                    WorkerPayoutTransaction.Kind.BONUS,
+                    WorkerPayoutTransaction.Kind.PENALTY,
+                ])
+                .values('vehicle_job_id', 'kind')
+                .annotate(total=Coalesce(Sum('amount'), Value(Decimal('0'))))
+            )
+            for item in adjustment_rows:
+                job_id = int(item['vehicle_job_id'])
+                if job_id not in adjustment_map:
+                    adjustment_map[job_id] = {'bonus_total': Decimal('0'), 'penalty_total': Decimal('0')}
+                adjustment_map[job_id][f"{item['kind']}_total"] = _normalize_decimal(item['total'])
         for idx, vehicle in enumerate(vehicles, start=1):
             job = getattr(vehicle, 'job', None)
             if worker_id and job and _job_has_worker(job, worker_id):
                 worker_jobs.append(job)
+            job_adjustments = adjustment_map.get(job.id if job else 0, {'bonus_total': Decimal('0'), 'penalty_total': Decimal('0')})
             product_names = []
             service_names = []
             if job:
@@ -265,10 +283,18 @@ class ReportsDashboardView(APIView):
                 'driver_name': vehicle.driver_name,
                 'driver_phone': vehicle.driver_phone,
                 'car_model': vehicle.car_model,
+                'car_color': vehicle.car_color,
                 'plate_number': vehicle.plate_number,
+                'plate_left': vehicle.plate_left,
+                'plate_letter': vehicle.plate_letter,
+                'plate_mid': vehicle.plate_mid,
+                'plate_right': vehicle.plate_right,
+                'plate_type': vehicle.plate_type,
                 'status': vehicle.status,
                 'carwash_share': float(job.carwash_share_amount) if job else 0,
                 'worker_share': float(job.worker_share_amount) if job else 0,
+                'bonus_total': float(job_adjustments['bonus_total']),
+                'penalty_total': float(job_adjustments['penalty_total']),
                 'discount_total': float(job.discount_total) if job else 0,
                 'tip_amount': float(job.tip_amount) if job else 0,
                 'worker_name': _worker_name(job.assigned_worker) if job else '-',
@@ -291,7 +317,13 @@ class ReportsDashboardView(APIView):
             'driver_name': r['driver_name'],
             'driver_phone': r['driver_phone'],
             'car_model': r['car_model'],
+            'car_color': r['car_color'],
             'plate_number': r['plate_number'],
+            'plate_left': r['plate_left'],
+            'plate_letter': r['plate_letter'],
+            'plate_mid': r['plate_mid'],
+            'plate_right': r['plate_right'],
+            'plate_type': r['plate_type'],
             'carwash_share': r['carwash_share'],
             'worker_name': r['worker_name'],
             'created_at': r['created_at'],
@@ -304,7 +336,14 @@ class ReportsDashboardView(APIView):
             'driver_phone': r['driver_phone'],
             'car_model': r['car_model'],
             'plate_number': r['plate_number'],
+            'plate_left': r['plate_left'],
+            'plate_letter': r['plate_letter'],
+            'plate_mid': r['plate_mid'],
+            'plate_right': r['plate_right'],
+            'plate_type': r['plate_type'],
             'worker_share': r['worker_share'],
+            'bonus_total': r['bonus_total'],
+            'penalty_total': r['penalty_total'],
             'worker_name': r['worker_name'],
             'created_at': r['created_at'],
         } for i, r in enumerate(rows)]
@@ -316,6 +355,11 @@ class ReportsDashboardView(APIView):
             'driver_phone': r['driver_phone'],
             'car_model': r['car_model'],
             'plate_number': r['plate_number'],
+            'plate_left': r['plate_left'],
+            'plate_letter': r['plate_letter'],
+            'plate_mid': r['plate_mid'],
+            'plate_right': r['plate_right'],
+            'plate_type': r['plate_type'],
             'tip_amount': r['tip_amount'],
             'worker_name': r['worker_name'],
             'products': r['products'],
@@ -340,6 +384,11 @@ class ReportsDashboardView(APIView):
                 'car_model': vehicle.car_model,
                 'car_color': vehicle.car_color,
                 'plate_number': vehicle.plate_number,
+                'plate_left': vehicle.plate_left,
+                'plate_letter': vehicle.plate_letter,
+                'plate_mid': vehicle.plate_mid,
+                'plate_right': vehicle.plate_right,
+                'plate_type': vehicle.plate_type,
                 'payment_method': payment.method,
                 'payment_status': payment.status,
                 'service_amount': float(payment.service_amount or 0),

@@ -2,9 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth.store'
 import { defaultRouteByRole } from '../config/navigation'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess } from '../utils/attendanceAccess'
+import { notifyWarning } from '../utils/notify'
 
 const routes = [
-  { path: '/login', name: 'login', component: () => import('../views/auth/LoginView.vue') },
+  { path: '/login', name: 'login', component: () => import('../views/auth/LoginView.vue'), meta: { public: true } },
   { path: '/attendance/:token', name: 'worker-attendance-public', component: () => import('../views/attendance/WorkerAttendancePunchView.vue'), meta: { public: true } },
   { path: '/hq', name: 'hq-panel', component: () => import('../views/hq/HqPanelView.vue'), meta: { hqOnly: true } },
   { path: '/', name: 'operator-dashboard', component: () => import('../views/operator/DashboardView.vue'), meta: { roles: ['admin', 'owner', 'manager', 'operator', 'worker'] } },
@@ -28,11 +29,23 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  const authStore = useAuthStore()
+
+  if (to.path === '/login') {
+    if (!authStore.user) {
+      await authStore.fetchMe()
+    }
+    if (authStore.user) {
+      if (authStore.isHq) return '/hq'
+      return defaultRouteByRole[authStore.role] || '/'
+    }
+    return true
+  }
+
   if (to.meta?.public) {
     return true
   }
 
-  const authStore = useAuthStore()
   if (!authStore.user) {
     await authStore.fetchMe()
   }
@@ -52,12 +65,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.path === ATTENDANCE_ROUTE && !hasAttendanceAccess(authStore.user)) {
-    if (typeof window !== 'undefined') window.alert(getAttendanceUpgradeMessage())
-    return defaultRouteByRole[authStore.role] || '/'
-  }
-
-  if (to.path === '/login' && authStore.user) {
-    if (authStore.isHq) return '/hq'
+    notifyWarning(getAttendanceUpgradeMessage(), { title: 'دسترسی محدود' })
     return defaultRouteByRole[authStore.role] || '/'
   }
 

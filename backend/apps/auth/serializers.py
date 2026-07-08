@@ -1,7 +1,7 @@
 ﻿from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
 
-from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketMessage
+from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketAttachment, SupportTicketMessage
 
 
 def feature_access_map(feature_keys):
@@ -132,16 +132,43 @@ class UserCreateSerializer(serializers.ModelSerializer):
         user = user_model(**validated_data)
         user.set_password(password)
         user.save()
+        user._raw_password = password
         return user
 
 
 class TenantRegisterSerializer(serializers.Serializer):
     carwash_name = serializers.CharField(max_length=150)
-    carwash_slug = serializers.SlugField(max_length=160)
-    manager_full_name = serializers.CharField(max_length=150)
+    carwash_address = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    carwash_slug = serializers.SlugField(max_length=160, required=False, allow_blank=True)
+    manager_full_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    manager_first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    manager_last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     manager_username = serializers.CharField(max_length=150)
     manager_phone = serializers.CharField(max_length=20)
     manager_password = serializers.CharField(write_only=True, min_length=6)
+
+    def validate(self, attrs):
+        first_name = str(attrs.get('manager_first_name', '') or '').strip()
+        last_name = str(attrs.get('manager_last_name', '') or '').strip()
+        full_name = str(attrs.get('manager_full_name', '') or '').strip()
+
+        if not full_name:
+            full_name = f'{first_name} {last_name}'.strip()
+        if not full_name:
+            raise serializers.ValidationError({'manager_first_name': ['نام مدیر را وارد کنید.']})
+
+        if not first_name and full_name:
+            parts = full_name.split()
+            attrs['manager_first_name'] = parts[0]
+            attrs['manager_last_name'] = ' '.join(parts[1:]) if len(parts) > 1 else ''
+        else:
+            attrs['manager_first_name'] = first_name
+            attrs['manager_last_name'] = last_name
+
+        attrs['manager_full_name'] = full_name
+        attrs['carwash_address'] = str(attrs.get('carwash_address', '') or '').strip()
+        attrs['carwash_slug'] = str(attrs.get('carwash_slug', '') or '').strip()
+        return attrs
 
 
 class CarWashManagerSerializer(serializers.ModelSerializer):
@@ -304,6 +331,7 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
         )
         user.set_password(password)
         user.save(update_fields=['password'])
+        user._raw_password = password
         return user
 
 
@@ -364,6 +392,22 @@ class SupportTicketMessageSerializer(serializers.ModelSerializer):
         if obj.sender.platform_role:
             return obj.sender.get_platform_role_display()
         return obj.sender.get_role_display()
+
+
+class SupportTicketAttachmentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupportTicketAttachment
+        fields = ['id', 'original_name', 'file_url', 'created_at']
+
+    def get_file_url(self, obj):
+        if not obj.file:
+            return ''
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.file.url)
+        return obj.file.url
 
 
 class SupportTicketListSerializer(serializers.ModelSerializer):
@@ -430,9 +474,10 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
 
 class SupportTicketDetailSerializer(SupportTicketListSerializer):
     messages = SupportTicketMessageSerializer(many=True, read_only=True)
+    attachments = SupportTicketAttachmentSerializer(many=True, read_only=True)
 
     class Meta(SupportTicketListSerializer.Meta):
-        fields = SupportTicketListSerializer.Meta.fields + ['messages']
+        fields = SupportTicketListSerializer.Meta.fields + ['messages', 'attachments']
 
 
 class SupportTicketCreateSerializer(serializers.Serializer):
@@ -452,3 +497,8 @@ class SupportTicketReplySerializer(serializers.Serializer):
 class SupportTicketFeedbackSerializer(serializers.Serializer):
     customer_satisfaction = serializers.IntegerField(min_value=1, max_value=5)
     customer_feedback = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class HqTicketWalletTransferSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1)
+    wallet_id = serializers.IntegerField(required=False)

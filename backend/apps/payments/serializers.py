@@ -63,5 +63,12 @@ class WalletDepositSerializer(serializers.Serializer):
 
 class WalletWithdrawSerializer(serializers.Serializer):
     wallet_id = serializers.IntegerField(required=False)
+    source_wallet_id = serializers.IntegerField(required=False)
+    destination_type = serializers.ChoiceField(
+        choices=[('bank', 'Bank'), ('wallet', 'Wallet')],
+        required=False,
+        default='bank',
+    )
+    destination_wallet_id = serializers.IntegerField(required=False)
     amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0.01)
     description = serializers.CharField(max_length=255, required=False, allow_blank=True)

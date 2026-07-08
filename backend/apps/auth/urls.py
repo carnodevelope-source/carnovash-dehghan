@@ -12,6 +12,7 @@ from .views import (
     HqTicketDetailView,
     HqTicketListView,
     HqTicketMessageCreateView,
+    HqTicketWalletTransferView,
     LoginView,
     LogoutView,
     MeView,
@@ -43,5 +44,6 @@ urlpatterns = [
     path('hq/tickets/', HqTicketListView.as_view(), name='hq-tickets'),
     path('hq/tickets/<int:pk>/', HqTicketDetailView.as_view(), name='hq-ticket-detail'),
     path('hq/tickets/<int:pk>/messages/', HqTicketMessageCreateView.as_view(), name='hq-ticket-message'),
+    path('hq/tickets/<int:pk>/wallet-transfer/', HqTicketWalletTransferView.as_view(), name='hq-ticket-wallet-transfer'),
     path('hq/reports/', HqReportsView.as_view(), name='hq-reports'),
 ]

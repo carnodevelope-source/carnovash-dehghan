@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from .models import CustomerGroup, SmsTemplate
-from .services import normalize_phone, to_english_digits
+from .services import is_valid_iran_mobile, normalize_phone, to_english_digits
 
 
 class SmsTemplateSerializer(serializers.ModelSerializer):
@@ -68,8 +68,8 @@ class SmsSendRecipientSerializer(serializers.Serializer):
 
     def validate_phone(self, value):
         phone = normalize_phone(value)
-        if len(phone) != 11 or not phone.startswith('0'):
-            raise serializers.ValidationError('شماره گیرنده نامعتبر است.')
+        if not is_valid_iran_mobile(phone):
+            raise serializers.ValidationError('شماره گیرنده باید موبایل معتبر و با 09 شروع شود.')
         return phone
 
 
@@ -109,7 +109,7 @@ class SimpleSmsSendSerializer(serializers.Serializer):
             phone = ''.join(char for char in phone if char.isdigit())
             if phone.startswith('98') and len(phone) == 12:
                 phone = f'0{phone[2:]}'
-            if len(phone) != 11 or not phone.startswith('0'):
-                raise serializers.ValidationError('شماره گیرنده نامعتبر است.')
+            if not is_valid_iran_mobile(phone):
+                raise serializers.ValidationError('شماره گیرنده باید موبایل معتبر و با 09 شروع شود.')
             normalized.append(phone)
         return list(dict.fromkeys(normalized))

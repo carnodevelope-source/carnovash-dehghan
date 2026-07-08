@@ -17,10 +17,13 @@ const firstMessage = (value) => {
   return ''
 }
 
+export const getApiErrorStatus = (error) => Number(error?.response?.status || 0)
+
 export const resolveApiErrorMessage = (error, fallback = 'عملیات ناموفق بود.') => {
   const payload = error?.response?.data
   const message = firstMessage(payload?.detail) || firstMessage(payload)
   if (message) return message
   if (error?.request && !error?.response) return 'ارتباط با سرور برقرار نشد. اتصال شبکه و اجرای بک‌اند را بررسی کنید.'
+  if (getApiErrorStatus(error) >= 500) return 'در پردازش درخواست از سمت سرور خطا رخ داد. چند لحظه دیگر دوباره تلاش کنید.'
   return fallback
 }

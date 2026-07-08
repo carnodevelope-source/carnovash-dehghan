@@ -2,27 +2,9 @@
   <section class="step-two" dir="rtl">
     <header class="step-two-header">
       <div class="header-main">
-        <div v-if="!isPieceWash" class="plate-badge" dir="ltr">
-          <div class="plate-blue">IR</div>
-          <div class="plate-white">
-            <span>{{ plateParts.left }}</span>
-            <span>{{ plateParts.letter }}</span>
-            <span>{{ plateParts.mid }}</span>
-            <span class="plate-separator"></span>
-            <span>{{ plateParts.right }}</span>
-          </div>
-        </div>
-
-        <div class="vehicle-meta">
-          <div class="vehicle-title-row">
-            <h3>{{ vehicleTitle }}</h3>
-            <span class="badge-muted" :class="{ 'badge-danger': isPlateBlocked }">{{ isPlateBlocked ? 'پلاک بلاک‌شده' : 'عادی' }}</span>
-          </div>
-          <p>
-            <span>{{ vehicleDriver || 'بدون نام راننده' }}</span>
-            <span class="dot"></span>
-            <span>{{ vehiclePhone || 'شماره ثبت نشده' }}</span>
-          </p>
+        <div class="header-copy">
+          <h3>تخصیص خدمات و نیروها</h3>
+          <p>خدمات را نهایی کنید و نیروهای حاضر را به این خودرو وصل کنید.</p>
         </div>
       </div>
 
@@ -37,15 +19,52 @@
       </div>
     </header>
 
+    <div v-if="isServicePickerOpen && !isPieceWash" class="service-picker-overlay" role="dialog" aria-modal="true">
+      <section class="service-picker-panel">
+        <header class="service-picker-head">
+          <div>
+            <h4>انتخاب خدمات</h4>
+            <p>{{ toFaNumber(tempSelectedServiceIds.length) }} خدمت انتخاب شده</p>
+          </div>
+          <button type="button" class="icon-btn" aria-label="بستن" @click="closeServicePicker">
+            ×
+          </button>
+        </header>
+
+        <div class="service-picker-grid">
+          <button
+            v-for="service in services"
+            :key="service.id"
+            type="button"
+            class="service-bubble"
+            :class="{ selected: isTempServiceSelected(service.id) }"
+            :title="service.name"
+            @click="toggleTempService(service.id)"
+          >
+            {{ service.name }}
+          </button>
+        </div>
+
+        <p v-if="!loading && !services.length" class="empty">خدمتی پیدا نشد.</p>
+        <div v-if="loading" class="empty spinner-empty">
+          <BaseSpinner size="52px" color="#1d4ed8" ball-color="#60a5fa" label="   ..." />
+        </div>
+
+        <footer class="service-picker-foot">
+          <button type="button" class="secondary-foot-btn" @click="closeServicePicker">انصراف</button>
+          <button type="button" class="primary-btn" @click="confirmServicePicker">ثبت خدمات</button>
+        </footer>
+      </section>
+    </div>
+
     <div class="step-two-grid">
       <section class="col services-col">
         <div class="col-head">
-          <h4>انتخاب خدمات</h4>
-          <div v-if="!isPieceWash" class="search-box">
-            <input v-model="serviceSearch" type="text" placeholder="جستجوی خدمات..." />
-          </div>
-          <div class="category-row">
-            
+          <div class="service-title-row">
+            <h4>خدمات</h4>
+            <button v-if="!isPieceWash" type="button" class="edit-services-btn" @click="openServicePicker">
+              ویرایش
+            </button>
           </div>
         </div>
 
@@ -55,7 +74,7 @@
               <h5>خدمت ثابت: قطعه‌شویی</h5>
               <label class="service-discount-row">
                 <span>مبلغ قطعه‌شویی (تومان)</span>
-                <input :value="toThousandsInput(pieceWashPrice)" type="number" min="0" @input="pieceWashPrice = fromThousandsInput($event.target.value)" />
+                <input :value="toThousandsInput(pieceWashPrice)" type="text" inputmode="numeric" @input="pieceWashPrice = fromThousandsInput($event.target.value)" />
                 <small class="unit-note">عدد را به هزار تومان وارد کنید.</small>
               </label>
               <label class="service-discount-row textarea-row">
@@ -64,35 +83,29 @@
               </label>
             </article>
           </template>
-          <label
-            v-else
-            v-for="service in filteredServices"
-            :key="service.id"
-            class="service-card"
-            :class="{ selected: isServiceSelected(service.id) }"
-          >
-            <input
-              :checked="isServiceSelected(service.id)"
-              type="checkbox"
-              @change="toggleService(service.id)"
-            />
-            <div class="checkmark">✓</div>
-
-            <div class="service-body">
-              <div class="service-head">
-                <h5>{{ service.name }}</h5>
-                <strong>{{ formatMoney(service.base_price) }}</strong>
+          <template v-else>
+            <article
+              v-for="service in selectedServices"
+              :key="service.id"
+              class="service-card selected listed-service-card"
+            >
+              <div class="service-body">
+                <div class="service-head">
+                  <h5>{{ service.name }}</h5>
+                  <strong>{{ formatMoney(service.adjusted_price ?? service.base_price) }}</strong>
+                </div>
+                <div class="service-meta-row">
+                  <p>{{ service.description || 'بدون توضیحات' }}</p>
+                  <div class="service-adjuster">
+                    <button type="button" class="service-adjust-btn" @click="adjustServicePrice(service.id, 'decrease')">-</button>
+                    <button type="button" class="service-adjust-btn" @click="adjustServicePrice(service.id, 'increase')">+</button>
+                  </div>
+                </div>
               </div>
-              <div class="service-discount-row">
-                <label>درصد تخفیف خدمت</label>
-                <input type="number" min="0" max="100" :value="serviceDiscountPercents[service.id] || 0" @input="setServiceDiscountPercent(service.id, $event.target.value)" />
-                <small class="unit-note">اگر وارد نشود ۰٪ در نظر گرفته می‌شود.</small>
-              </div>
-              <p>{{ service.description || 'بدون توضیحات' }}</p>
-            </div>
-          </label>
+            </article>
+          </template>
 
-          <p v-if="!loading && !filteredServices.length" class="empty">خدمتی پیدا نشد.</p>
+          <p v-if="!loading && !isPieceWash && !selectedServices.length" class="empty">برای انتخاب خدمات روی ویرایش بزنید.</p>
           <div v-if="loading" class="empty spinner-empty">
             <BaseSpinner size="52px" color="#1d4ed8" ball-color="#60a5fa" label="   ..." />
           </div>
@@ -104,7 +117,6 @@
         <div class="col-head">
           <div class="staff-title-row">
             <h4>تخصیص پرسنل</h4>
-            <span>{{ availableWorkersCount }} نر حاضر</span>
           </div>
           <div class="search-box">
             <input v-model="workerSearch" type="text" placeholder="جستجوی نام پرسنل..." />
@@ -121,7 +133,6 @@
           >
             <div class="worker-top">
               <div class="worker-ident">
-                <div class="avatar">{{ workerAvatar(worker) }}</div>
                 <div>
                   <h5>{{ worker.full_name }}</h5>
                   <p>{{ worker.role || 'پرسنل کارواش' }}</p>
@@ -174,7 +185,7 @@
             <div v-if="selectedServices.length" class="summary-list">
               <div v-for="service in selectedServices" :key="service.id" class="summary-row">
                 <span>{{ service.name }}</span>
-                <strong>{{ formatMoney(service.base_price) }}</strong>
+                <strong>{{ formatMoney(service.adjusted_price ?? service.base_price) }}</strong>
               </div>
             </div>
             <p v-else class="empty">خدمتی انتخاب نشده است.</p>
@@ -186,7 +197,6 @@
             <h6>پرسنل مجری</h6>
             <div v-if="selectedWorkers.length" class="selected-worker-list">
               <div v-for="worker in selectedWorkers" :key="worker.id" class="selected-worker-box">
-                <div class="avatar small">{{ workerAvatar(worker) }}</div>
                 <div class="selected-worker-copy">
                   <p>{{ worker.full_name }}</p>
                   <small>{{ selectedWorkers.length > 1 ? 'درصد سهم اجرا' : 'سهم اجرا: ۱۰۰٪' }}</small>
@@ -216,13 +226,31 @@
               این پلاک بلاک شده است. برای ثبت خودرو و ساخت کارت، پرداخت باید همین حالا تایید شود.
             </p>
             <div class="summary-row">
-              <span>تخفیف دستی (تومان):</span>
-              <input :value="toThousandsInput(manualDiscountTotal)" type="number" min="0" @input="manualDiscountTotal = fromThousandsInput($event.target.value)" />
-              <small class="unit-note">عدد تخفیف را به هزار تومان وارد کنید.</small>
-            </div>
+              <span>تخفیف دستی (هزار تومان):</span>
+              <input :value="toThousandsInput(manualDiscountTotal)" type="text" inputmode="numeric" @input="manualDiscountTotal = fromThousandsInput($event.target.value)" />
+              </div>
             <div class="summary-row">
               <span>مبلغ کل خدمات:</span>
               <strong>{{ formatMoney(servicesTotal) }}</strong>
+            </div>
+            <div v-if="manualServiceIncreaseTotal > 0" class="summary-row service-adjust-summary increase-row">
+              <span>جمع افزایش دستی</span>
+              <strong>{{ formatMoney(manualServiceIncreaseTotal) }}</strong>
+            </div>
+            <div v-if="manualServiceDecreaseTotal > 0" class="summary-row service-adjust-summary decrease-row">
+              <span>جمع کاهش دستی</span>
+              <strong>{{ formatMoney(manualServiceDecreaseTotal) }}</strong>
+            </div>
+            <div class="summary-row discount-row">
+              <span>
+                تخفیف دستی
+                <template v-if="manualDiscountPercent > 0">({{ toFaNumber(manualDiscountPercent) }}٪)</template>
+              </span>
+              <strong>{{ formatMoney(effectiveManualDiscountTotal) }}</strong>
+            </div>
+            <div class="summary-row net-row">
+              <span>مبلغ بعد از تخفیف</span>
+              <strong>{{ formatMoney(discountedServicesTotal) }}</strong>
             </div>
             <div class="summary-row share-row">
               <span>
@@ -261,6 +289,7 @@ import api from '../../services/api'
 import BaseSpinner from '../base/BaseSpinner.vue'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import { resolvePlateParts } from '../../utils/plate'
 
 const props = defineProps({
   vehicleInfo: { type: Object, default: () => ({}) }
@@ -273,18 +302,20 @@ const errorMessage = ref('')
 const services = ref([])
 const workers = ref([])
 const selectedServiceIds = ref([])
+const tempSelectedServiceIds = ref([])
 const selectedWorkerIds = ref([])
 const shareType = ref('percent')
 const shareValueInput = ref('40')
-const serviceSearch = ref('')
 const workerSearch = ref('')
-const activeCategory = ref('همه موارد')
 const manualDiscountTotal = ref(0)
-const serviceDiscountPercents = ref({})
 const workerSharePercents = ref({})
+const servicePriceAdjustments = ref({})
 const blockedPlatePaymentConfirmed = ref(false)
 const pieceWashPrice = ref(0)
 const pieceDetails = ref('')
+const isServicePickerOpen = ref(false)
+const hasOpenedInitialServicePicker = ref(false)
+const activeVehicleKey = ref('')
 
 const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -296,19 +327,10 @@ const formatMoney = (value) => formatThousandsToman(value)
 const toThousandsInput = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
 const fromThousandsInput = (value) => fromThousandsTomanInput(normalizeDigits(value))
 
-const parsePlate = (raw) => {
-  const parts = String(raw || '').trim().split(/\s+/).filter(Boolean)
-  return {
-    left: parts[0] || '--',
-    letter: parts[1] || '-',
-    mid: parts[2] || '---',
-    right: parts[3] || '--'
-  }
-}
-
 const normalizedVehicle = computed(() => {
   const data = props.vehicleInfo || {}
-  const fromRaw = parsePlate(data.plate || data.plate_number)
+  const plateType = String(data.plateType || data.plate_type || 'car').trim() || 'car'
+  const fromRaw = resolvePlateParts({ raw: data.plate || data.plate_number, plate_type: plateType })
   const providedStaffIds = Array.isArray(data.staffIds)
     ? data.staffIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
     : []
@@ -319,6 +341,7 @@ const normalizedVehicle = computed(() => {
     plateLetter: String(data.plateLetter || data.plate_letter || fromRaw.letter || '').trim(),
     plateMid: String(data.plateMid || data.plate_mid || fromRaw.mid || '').trim(),
     plateRight: String(data.plateRight || data.plate_right || fromRaw.right || '').trim(),
+    plateType,
     model: String(data.model || data.car_model || '').trim(),
     color: String(data.color || data.car_color || '').trim(),
     driver: String(data.driver || data.driver_name || '').trim(),
@@ -370,30 +393,9 @@ const isPlateBlocked = computed(() => Boolean(props.vehicleInfo?.is_plate_blocke
 
 const isWorkerPresent = (worker) => String(worker?.current_status || '').toLowerCase() === 'in'
 const isQueueSelectableWorker = (worker) => isWorkerPresent(worker) && worker?.is_available !== false
-const availableWorkersCount = computed(() => workers.value.filter(isWorkerPresent).length)
 const queueFrontWorkerId = computed(() => {
   const preferred = workers.value.find(isQueueSelectableWorker) || workers.value.find(isWorkerPresent) || workers.value[0]
   return preferred ? Number(preferred.id) : null
-})
-
-const serviceCategories = computed(() => {
-  const unique = new Set(['همه موارد'])
-  services.value.forEach((item) => {
-    const label = (item.category_name || '').trim()
-    if (label) unique.add(label)
-  })
-  return [...unique]
-})
-
-const filteredServices = computed(() => {
-  if (isPieceWash.value) return []
-  const query = serviceSearch.value.trim().toLowerCase()
-  return services.value.filter((item) => {
-    const matchesCategory = activeCategory.value === 'همه موارد' || (item.category_name || '') === activeCategory.value
-    if (!matchesCategory) return false
-    if (!query) return true
-    return `${item.name || ''} ${item.description || ''} ${item.code || ''}`.toLowerCase().includes(query)
-  })
 })
 
 const filteredWorkers = computed(() => {
@@ -411,7 +413,16 @@ const selectedServices = computed(() => {
       : []
   }
   const idSet = new Set(selectedServiceIds.value.map((id) => Number(id)))
-  return services.value.filter((item) => idSet.has(Number(item.id)))
+  return services.value
+    .filter((item) => idSet.has(Number(item.id)))
+    .map((item) => {
+      const adjustment = Number(servicePriceAdjustments.value[Number(item.id)] || 0)
+      return {
+        ...item,
+        manual_adjustment: adjustment,
+        adjusted_price: Math.max(0, Number(item.base_price || 0) + adjustment)
+      }
+    })
 })
 
 const selectedWorkers = computed(() => {
@@ -421,16 +432,24 @@ const selectedWorkers = computed(() => {
 const primarySelectedWorker = computed(() => selectedWorkers.value[0] || null)
 const selectedWorkerPercentIds = computed(() => selectedWorkers.value.map((worker) => Number(worker.id)))
 
-const servicesTotal = computed(() => selectedServices.value.reduce((sum, item) => sum + Number(item.base_price || 0), 0))
-const serviceDiscountAmount = (service) => {
-  const basePrice = Number(service?.base_price || 0)
-  const percent = Math.max(0, Math.min(100, Number(serviceDiscountPercents.value[service?.id] || 0)))
-  return Math.round((basePrice * percent) / 100)
-}
-const servicesDiscountTotal = computed(() => (
-  isPieceWash.value
-    ? 0
-    : selectedServices.value.reduce((sum, item) => sum + serviceDiscountAmount(item), 0)
+const manualServiceIncreaseTotal = computed(() => selectedServices.value.reduce((sum, item) => {
+  const adjustment = Number(item.manual_adjustment || 0)
+  return sum + (adjustment > 0 ? adjustment : 0)
+}, 0))
+const manualServiceDecreaseTotal = computed(() => selectedServices.value.reduce((sum, item) => {
+  const adjustment = Number(item.manual_adjustment || 0)
+  return sum + (adjustment < 0 ? Math.abs(adjustment) : 0)
+}, 0))
+const servicesTotal = computed(() => selectedServices.value.reduce((sum, item) => sum + Number((item.adjusted_price ?? item.base_price) || 0), 0))
+const effectiveManualDiscountTotal = computed(() => Math.min(
+  servicesTotal.value,
+  Math.max(0, Number(manualDiscountTotal.value || 0))
+))
+const discountedServicesTotal = computed(() => Math.max(0, servicesTotal.value - effectiveManualDiscountTotal.value))
+const manualDiscountPercent = computed(() => (
+  servicesTotal.value > 0
+    ? Number(((effectiveManualDiscountTotal.value / servicesTotal.value) * 100).toFixed(1))
+    : 0
 ))
 
 const shareValueNumeric = computed(() => Number(normalizeDigits(shareValueInput.value) || 0))
@@ -440,12 +459,12 @@ const clampedPercent = computed(() => Math.min(100, Math.max(0, shareValueNumeri
 const workerShareAmount = computed(() => {
   if (!primarySelectedWorker.value) return 0
   if (shareType.value === 'fixed') {
-    return Math.min(servicesTotal.value, Math.max(0, shareValueNumeric.value))
+    return Math.min(discountedServicesTotal.value, Math.max(0, shareValueNumeric.value))
   }
-  return Math.round((servicesTotal.value * clampedPercent.value) / 100)
+  return Math.round((discountedServicesTotal.value * clampedPercent.value) / 100)
 })
 
-const carwashShareAmount = computed(() => Math.max(0, servicesTotal.value - workerShareAmount.value))
+const carwashShareAmount = computed(() => Math.max(0, discountedServicesTotal.value - workerShareAmount.value))
 const defaultWorkerSharePercents = (count) => {
   const workerCount = Math.max(0, Number(count || 0))
   if (!workerCount) return []
@@ -494,29 +513,19 @@ const normalizeWorkerSharePercents = (ids, source = workerSharePercents.value) =
     return accumulator
   }, {})
 }
-const setServiceDiscountPercent = (serviceId, value) => {
-  const nextValue = Math.max(0, Math.min(100, Math.floor(Number(normalizeDigits(value) || 0))))
-  serviceDiscountPercents.value = {
-    ...serviceDiscountPercents.value,
-    [serviceId]: nextValue
-  }
-}
 
 const hasRequiredVehicleInfo = computed(() => {
   const v = normalizedVehicle.value
   const hasPhone = normalizeDigits(v.mobile).length > 0
   if (v.isPieceWash) {
-    return String(v.driver || '').trim().length > 0 && hasPhone
+    return hasPhone
   }
-  const hasPlate = v.plateLeft.length === 2 && v.plateLetter.length === 1 && v.plateMid.length === 3 && v.plateRight.length === 2
-  const hasModel = v.model.length > 0
-  const hasColor = v.color.length > 0
-  return hasPlate && hasModel && hasColor && hasPhone
+  return hasPhone
 })
 const hasValidShare = computed(() => {
   if (!shareValueInput.value.trim()) return false
-  if (shareType.value === 'percent') return clampedPercent.value > 0 && clampedPercent.value <= 100
-  return shareValueNumeric.value > 0
+  if (shareType.value === 'percent') return clampedPercent.value >= 0 && clampedPercent.value <= 100
+  return shareValueNumeric.value >= 0
 })
 const canAssign = computed(() => (
   hasRequiredVehicleInfo.value
@@ -527,15 +536,31 @@ const canAssign = computed(() => (
   && (!isPlateBlocked.value || blockedPlatePaymentConfirmed.value)
 ))
 
-const isServiceSelected = (id) => selectedServiceIds.value.includes(Number(id))
-
-const toggleService = (id) => {
+const isTempServiceSelected = (id) => tempSelectedServiceIds.value.includes(Number(id))
+const openServicePicker = () => {
+  if (isPieceWash.value) return
+  tempSelectedServiceIds.value = [...selectedServiceIds.value]
+  isServicePickerOpen.value = true
+}
+const closeServicePicker = () => {
+  isServicePickerOpen.value = false
+}
+const confirmServicePicker = () => {
+  selectedServiceIds.value = [...tempSelectedServiceIds.value]
+  closeServicePicker()
+}
+const toggleTempService = (id) => {
   const normalizedId = Number(id)
-  if (isServiceSelected(normalizedId)) {
-    selectedServiceIds.value = selectedServiceIds.value.filter((item) => Number(item) !== normalizedId)
+  if (isTempServiceSelected(normalizedId)) {
+    tempSelectedServiceIds.value = tempSelectedServiceIds.value.filter((item) => Number(item) !== normalizedId)
     return
   }
-  selectedServiceIds.value = [...selectedServiceIds.value, normalizedId]
+  tempSelectedServiceIds.value = [...tempSelectedServiceIds.value, normalizedId]
+}
+const openInitialServicePicker = () => {
+  if (hasOpenedInitialServicePicker.value || isPieceWash.value || !services.value.length) return
+  hasOpenedInitialServicePicker.value = true
+  openServicePicker()
 }
 
 const workerStatus = (worker) => {
@@ -556,6 +581,20 @@ const toggleWorker = (id) => {
     return
   }
   selectedWorkerIds.value = [...selectedWorkerIds.value, normalizedId]
+}
+const adjustServicePrice = (serviceId, direction) => {
+  const normalizedId = Number(serviceId || 0)
+  if (!normalizedId) return
+  const service = services.value.find((item) => Number(item.id) === normalizedId)
+  if (!service) return
+  const step = 10000
+  const current = Number(servicePriceAdjustments.value[normalizedId] || 0)
+  const next = direction === 'increase' ? current + step : current - step
+  const minAdjustment = -Math.max(0, Number(service.base_price || 0))
+  servicePriceAdjustments.value = {
+    ...servicePriceAdjustments.value,
+    [normalizedId]: Math.max(minAdjustment, next)
+  }
 }
 const setWorkerSharePercent = (id, rawValue) => {
   const workerId = Number(id)
@@ -583,16 +622,6 @@ const setWorkerSharePercent = (id, rawValue) => {
   workerSharePercents.value = nextPercents
 }
 
-const workerAvatar = (worker) => {
-  const raw = String(worker?.avatar || '').trim()
-  if (raw) return raw
-  const name = String(worker?.full_name || '').trim()
-  if (!name) return '--'
-  const parts = name.split(' ').filter(Boolean)
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`
-  return name.slice(0, 2)
-}
-
 const formatQueueTime = (value) => {
   if (!value) return '-'
   const date = new Date(value)
@@ -603,16 +632,31 @@ const formatQueueTime = (value) => {
   }).format(date)
 }
 
-const applyWorkerPaymentDefaults = (worker) => {
-  if (!worker) {
+const resolveWorkerPaymentConfig = (worker) => {
+  if (!worker) return { type: 'percent', value: 0 }
+  const paymentType = worker.payment_type || ((Number(worker.default_fixed_wage || 0) > 0) ? 'fixed' : 'percent')
+  const paymentValue = Math.max(0, Number(worker.payment_value || 0))
+  return {
+    type: paymentType === 'fixed' ? 'fixed' : paymentType === 'hourly' ? 'fixed' : 'percent',
+    value: paymentValue
+  }
+}
+
+const applyWorkerPaymentDefaults = (workersList = selectedWorkers.value) => {
+  const normalizedWorkers = Array.isArray(workersList) ? workersList.filter(Boolean) : []
+  if (!normalizedWorkers.length) {
     shareType.value = 'percent'
     shareValueInput.value = '0'
     return
   }
-  const paymentType = worker.payment_type || ((Number(worker.default_fixed_wage || 0) > 0) ? 'fixed' : 'percent')
-  const paymentValue = Number(worker.payment_value || 0)
-  shareType.value = paymentType === 'fixed' ? 'fixed' : 'percent'
-  shareValueInput.value = String(Math.max(0, paymentValue))
+  const configs = normalizedWorkers.map(resolveWorkerPaymentConfig)
+  const uniqueTypes = [...new Set(configs.map((item) => item.type))]
+  const resolvedType = uniqueTypes.length === 1 ? uniqueTypes[0] : configs[0].type
+  const averageValue = configs.length
+    ? configs.reduce((sum, item) => sum + Number(item.value || 0), 0) / configs.length
+    : 0
+  shareType.value = resolvedType === 'fixed' ? 'fixed' : 'percent'
+  shareValueInput.value = String(Number(averageValue.toFixed(2)))
 }
 
 const buildPayload = () => {
@@ -630,6 +674,7 @@ const buildPayload = () => {
       plateLetter: vehicle.plateLetter,
       plateMid: vehicle.plateMid,
       plateRight: vehicle.plateRight,
+      plateType: vehicle.plateType,
       model: vehicle.model,
       color: vehicle.color,
       driver: vehicle.driver,
@@ -647,8 +692,8 @@ const buildPayload = () => {
       : selectedServices.value.map((item) => ({
           id: item.id,
           title: item.name,
-          price: Number(item.base_price || 0),
-          discount_amount: serviceDiscountAmount(item)
+          price: Number(item.manual_adjustment || 0) < 0 ? Number(item.base_price || 0) : Number((item.adjusted_price ?? item.base_price) || 0),
+          discount_amount: Number(item.manual_adjustment || 0) < 0 ? Math.abs(Number(item.manual_adjustment || 0)) : 0
         })),
     staff: primarySelectedWorker.value
       ? {
@@ -665,7 +710,7 @@ const buildPayload = () => {
       type: shareType.value,
       value: shareType.value === 'percent' ? clampedPercent.value : Math.max(0, shareValueNumeric.value)
     },
-    manual_discount_total: Math.max(0, Number(manualDiscountTotal.value || 0)) + servicesDiscountTotal.value,
+    manual_discount_total: effectiveManualDiscountTotal.value,
     blocked_plate_payment_confirmed: blockedPlatePaymentConfirmed.value
   }
 }
@@ -677,10 +722,24 @@ const onAssign = () => {
 
 const hydrateFromVehicleInfo = () => {
   const vehicle = normalizedVehicle.value
+  const nextVehicleKey = [
+    vehicle.id || '',
+    vehicle.plateLeft,
+    vehicle.plateLetter,
+    vehicle.plateMid,
+    vehicle.plateRight,
+    vehicle.isPieceWash ? 'piece' : 'vehicle'
+  ].join('|')
+  if (nextVehicleKey !== activeVehicleKey.value) {
+    activeVehicleKey.value = nextVehicleKey
+    hasOpenedInitialServicePicker.value = false
+    isServicePickerOpen.value = false
+  }
   selectedServiceIds.value = [...new Set(vehicle.serviceIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id)))]
+  tempSelectedServiceIds.value = [...selectedServiceIds.value]
+  servicePriceAdjustments.value = {}
   selectedWorkerIds.value = [...new Set((vehicle.staffIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
   blockedPlatePaymentConfirmed.value = false
-  serviceDiscountPercents.value = {}
   pieceDetails.value = vehicle.pieceDetails || ''
   pieceWashPrice.value = isPieceWash.value ? Math.max(0, Number(vehicle.pieceWashPrice || 0)) : 0
   const existingWorkerSharePercents = (vehicle.staffMembers || []).reduce((accumulator, item) => {
@@ -689,6 +748,7 @@ const hydrateFromVehicleInfo = () => {
   }, {})
   workerSharePercents.value = normalizeWorkerSharePercents(selectedWorkerIds.value, existingWorkerSharePercents)
   ensureDefaultWorkerSelection()
+  openInitialServicePicker()
 }
 
 const ensureDefaultWorkerSelection = () => {
@@ -712,11 +772,9 @@ const loadInitialData = async () => {
 
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
 
-    const hasDefaultCategory = serviceCategories.value.includes(activeCategory.value)
-    if (!hasDefaultCategory) activeCategory.value = 'همه موارد'
-
     const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
     selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
+    tempSelectedServiceIds.value = tempSelectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
     if (isPieceWash.value && pieceWashPrice.value <= 0) {
       const pieceWashService = services.value.find((item) => String(item.name || '').trim() === 'قطعه‌شویی')
       pieceWashPrice.value = Number(pieceWashService?.base_price || 0)
@@ -725,6 +783,7 @@ const loadInitialData = async () => {
     const validWorkerIds = new Set(workers.value.map((item) => Number(item.id)))
     selectedWorkerIds.value = selectedWorkerIds.value.filter((id) => validWorkerIds.has(Number(id)))
     ensureDefaultWorkerSelection()
+    openInitialServicePicker()
   } catch (error) {
     errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری اطلاعات خدمات و پرسنل ناموفق بود.')
   } finally {
@@ -733,7 +792,9 @@ const loadInitialData = async () => {
 }
 
 watch(() => props.vehicleInfo, hydrateFromVehicleInfo, { immediate: true, deep: true })
-watch(primarySelectedWorker, applyWorkerPaymentDefaults, { immediate: true })
+watch(selectedWorkers, (workersList) => {
+  applyWorkerPaymentDefaults(workersList)
+}, { immediate: true, deep: true })
 watch(selectedWorkerPercentIds, (ids) => {
   workerSharePercents.value = normalizeWorkerSharePercents(ids, workerSharePercents.value)
 }, { immediate: true })
@@ -772,13 +833,29 @@ onMounted(loadInitialData)
   gap: 22px;
 }
 
+.header-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.header-copy h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #191c1e;
+}
+
+.header-copy p {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
 .plate-badge {
   display: flex;
   align-items: stretch;
-  border: 2px solid #001a42;
   border-radius: 10px;
   overflow: hidden;
-  background: #001a42;
 }
 
 .plate-blue {
@@ -909,9 +986,108 @@ onMounted(loadInitialData)
   background: #e6f1ff;
 }
 
+.service-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.service-picker-panel {
+  width: min(1180px, 100%);
+  max-height: calc(100vh - 32px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(191, 215, 255, 0.92);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at top right, rgba(0, 88, 190, 0.1), transparent 26%),
+    #ffffff;
+  box-shadow: 0 28px 70px -40px rgba(15, 23, 42, 0.7);
+  overflow: hidden;
+}
+
+.service-picker-head,
+.service-picker-foot,
+.service-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.service-picker-head h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 22px;
+}
+
+.service-picker-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.service-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.service-bubble {
+  flex: 0 0 auto;
+  min-width: fit-content;
+  max-width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  color: #263241;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.service-bubble.selected {
+  border-color: #0058be;
+  background: linear-gradient(180deg, #0b6bdc, #0058be);
+  color: #ffffff;
+  box-shadow: 0 10px 22px -16px rgba(0, 88, 190, 0.65);
+}
+
+.edit-services-btn {
+  border: 1px solid rgba(0, 88, 190, 0.18);
+  border-radius: 12px;
+  background: #e6f1ff;
+  color: #0058be;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 8px 14px;
+}
+
+.edit-services-btn:hover {
+  background: #dbeafe;
+}
+
 .step-two-grid {
   display: grid;
-  grid-template-columns: 35% 35% 30%;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.95fr);
   gap: 16px;
   padding: 18px;
   min-height: 0;
@@ -1038,10 +1214,15 @@ onMounted(loadInitialData)
   background: rgba(255, 255, 255, 0.88);
   padding: 14px;
   display: grid;
-  grid-template-columns: 26px 1fr;
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 8px;
   cursor: pointer;
   box-shadow: 0 18px 32px -30px rgba(15, 23, 42, 0.28);
+  min-width: 0;
+}
+
+.listed-service-card {
+  cursor: default;
 }
 
 .service-card input {
@@ -1050,28 +1231,16 @@ onMounted(loadInitialData)
   pointer-events: none;
 }
 
-.checkmark {
-  width: 22px;
-  height: 22px;
-  border: 2px solid #727785;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: transparent;
-  margin-top: 2px;
+.checkmark,
+.worker-jobs,
+.worker-share-readonly {
+  display: none !important;
 }
 
 .service-card.selected {
   background: linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(219, 234, 254, 0.72));
   border: 2px solid #0058be;
   border-right-width: 5px;
-}
-
-.service-card.selected .checkmark {
-  border-color: #0058be;
-  background: #0058be;
-  color: #fff;
 }
 
 .service-head {
@@ -1093,12 +1262,78 @@ onMounted(loadInitialData)
   font-size: 15px;
 }
 
+.service-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 8px;
+}
+
 .service-body p {
-  margin: 6px 0 0;
+  margin: 0;
   color: #424754;
   font-size: 13px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
+  flex: 1;
+  min-width: 0;
 }
+
+.service-adjuster {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.service-adjust-btn {
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #dbeafe 100%);
+  color: #fff;
+  color: #0f3a8a;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.14);
+}
+
+.service-adjust-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(29, 78, 216, 0.4);
+  background: linear-gradient(180deg, #eff6ff 0%, #bfdbfe 100%);
+}
+
+.service-adjust-btn:active {
+  transform: translateY(0);
+}
+
+.service-adjust-summary {
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+
+.increase-row {
+  background: rgba(220, 252, 231, 0.9);
+  color: #166534;
+}
+
+.decrease-row {
+  background: rgba(254, 242, 242, 0.92);
+  color: #b91c1c;
+}
+
+.increase-row strong,
+.decrease-row strong {
+  color: inherit;
+}
+
 .service-discount-row {
   margin-top: 8px;
   display: grid;
@@ -1114,7 +1349,8 @@ onMounted(loadInitialData)
   border: 1px solid #bfd7ff;
   border-radius: 8px;
   padding: 0 8px;
-  width: 140px;
+  width: 100%;
+  max-width: 160px;
 }
 .unit-note {
   color: #64748b;
@@ -1159,12 +1395,18 @@ onMounted(loadInitialData)
 .worker-card.selected {
   border: 2px solid #0058be;
   border-right-width: 5px;
+  background: linear-gradient(180deg, rgba(232, 244, 255, 0.98), rgba(219, 234, 254, 0.92));
   box-shadow: 0 16px 28px -22px rgba(0, 88, 190, 0.35);
 }
 
 .worker-card.queue-front {
   background: linear-gradient(180deg, rgba(240, 253, 250, 0.96), rgba(236, 253, 245, 0.86));
   border-color: rgba(20, 184, 166, 0.55);
+}
+
+.worker-card.selected.queue-front {
+  border-color: #0058be;
+  background: linear-gradient(180deg, rgba(232, 244, 255, 0.98), rgba(219, 234, 254, 0.92));
 }
 
 .worker-top {
@@ -1407,10 +1649,16 @@ onMounted(loadInitialData)
   gap: 10px;
   color: #191c1e;
   font-size: 14px;
+  min-width: 0;
 }
 
 .summary-row strong {
   color: #191c1e;
+}
+
+.summary-row span,
+.summary-row strong {
+  min-width: 0;
 }
 
 .selected-worker-box {
@@ -1425,6 +1673,7 @@ onMounted(loadInitialData)
 
 .selected-worker-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1510,6 +1759,17 @@ onMounted(loadInitialData)
 
 .share-row strong {
   color: #6b38d4;
+}
+
+.net-row {
+  background: rgba(14, 165, 233, 0.08);
+  border-radius: 12px;
+  padding: 11px;
+  color: #0f4c81;
+}
+
+.net-row strong {
+  color: #0f4c81;
 }
 
 .final-row {
@@ -1618,6 +1878,10 @@ onMounted(loadInitialData)
     grid-template-columns: 1fr;
   }
 
+  .service-picker-grid {
+    justify-content: flex-start;
+  }
+
   .services-col,
   .staff-col {
     border-left: none;
@@ -1629,6 +1893,36 @@ onMounted(loadInitialData)
 }
 
 @media (max-width: 768px) {
+  .service-picker-overlay {
+    padding: 8px;
+  }
+
+  .service-picker-panel {
+    max-height: calc(100vh - 16px);
+    border-radius: 20px;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .service-picker-head h4 {
+    font-size: 16px;
+  }
+
+  .service-picker-head p,
+  .edit-services-btn {
+    font-size: 11px;
+  }
+
+  .service-picker-grid {
+    gap: 5px;
+  }
+
+  .service-bubble {
+    min-height: 30px;
+    padding: 4px 10px;
+    font-size: 10px;
+  }
+
   .step-two {
     padding: 10px;
     gap: 10px;
@@ -1652,6 +1946,14 @@ onMounted(loadInitialData)
     align-items: center;
     gap: 10px;
     min-width: 0;
+  }
+
+  .header-copy h3 {
+    font-size: 16px;
+  }
+
+  .header-copy p {
+    font-size: 10px;
   }
 
   .header-actions {
@@ -1742,6 +2044,14 @@ onMounted(loadInitialData)
     gap: 10px;
   }
 
+  .services-col .col-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .staff-col .col-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .summary-col {
     position: static;
     bottom: auto;
@@ -1784,9 +2094,7 @@ onMounted(loadInitialData)
 
   .summary-foot-actions,
   .staff-title-row,
-  .worker-top,
-  .worker-jobs,
-  .worker-share-readonly {
+  .worker-top {
     display: grid;
     grid-template-columns: 1fr;
   }
@@ -1839,9 +2147,11 @@ onMounted(loadInitialData)
     font-size: 14px;
   }
 
+  .selected-worker-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .service-head strong,
-  .worker-jobs,
-  .worker-share-readonly,
   .service-body p,
   .empty,
   .error,
@@ -1907,6 +2217,19 @@ onMounted(loadInitialData)
 }
 
 @media (max-width: 480px) {
+  .service-picker-grid {
+    justify-content: flex-start;
+  }
+
+  .service-bubble {
+    min-height: 28px;
+    font-size: 9px;
+  }
+
+  .service-picker-foot {
+    gap: 8px;
+  }
+
   .step-two-header {
     padding: 10px 12px;
   }
@@ -1915,22 +2238,12 @@ onMounted(loadInitialData)
     align-items: start;
   }
 
-  .plate-badge {
-    transform: scale(0.82);
-    margin-right: -8px;
+  .header-copy h3 {
+    font-size: 14px;
   }
 
-  .vehicle-title-row {
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .vehicle-meta h3 {
-    font-size: 13px;
-  }
-
-  .vehicle-meta p {
-    font-size: 10px;
+  .header-copy p {
+    font-size: 9px;
   }
 
   .col-head,
@@ -1951,6 +2264,14 @@ onMounted(loadInitialData)
   .services-col .col-list,
   .staff-col .col-list {
     max-height: none;
+  }
+
+  .services-col .col-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .staff-col .col-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .summary-body {
@@ -1990,4 +2311,3 @@ onMounted(loadInitialData)
   }
 }
 </style>
-
