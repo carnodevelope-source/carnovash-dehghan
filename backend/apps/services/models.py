@@ -35,6 +35,23 @@ DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
 )
 
 
+CAR_SERVICE_TIER_KEYS = ('type_1', 'type_2', 'type_3', 'type_4')
+MOTORCYCLE_SERVICE_TIER_KEYS = ('type_1', 'type_2')
+
+
+def default_service_tiers(keys, *, sale_price=0, duration_minutes=30):
+    normalized_price = float(sale_price or 0)
+    normalized_duration = int(duration_minutes or 0) or 30
+    return {
+        key: {
+            'list_price': normalized_price,
+            'sale_price': normalized_price,
+            'duration_minutes': normalized_duration,
+        }
+        for key in keys
+    }
+
+
 class ServiceCategory(TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
@@ -90,6 +107,9 @@ class Service(TimestampedModel):
         max_length=20, choices=PricingMode.choices, default=PricingMode.FIXED
     )
     estimated_duration_minutes = models.PositiveIntegerField(default=30)
+    pricing_tiers = models.JSONField(default=dict, blank=True)
+    motorcycle_enabled = models.BooleanField(default=False)
+    motorcycle_pricing_tiers = models.JSONField(default=dict, blank=True)
     allow_price_override = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     display_order = models.PositiveIntegerField(default=0)
@@ -111,6 +131,42 @@ class Service(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    def normalized_pricing_tiers(self, *, plate_type='car'):
+        keys = MOTORCYCLE_SERVICE_TIER_KEYS if plate_type == 'motorcycle' else CAR_SERVICE_TIER_KEYS
+        source = self.motorcycle_pricing_tiers if plate_type == 'motorcycle' else self.pricing_tiers
+        defaults = default_service_tiers(
+            keys,
+            sale_price=self.base_price,
+            duration_minutes=self.estimated_duration_minutes,
+        )
+        if not isinstance(source, dict):
+            return defaults
+
+        normalized = {}
+        for key in keys:
+            raw_item = source.get(key, {}) if isinstance(source.get(key, {}), dict) else {}
+            normalized[key] = {
+                'list_price': float(raw_item.get('list_price', defaults[key]['list_price']) or 0),
+                'sale_price': float(raw_item.get('sale_price', defaults[key]['sale_price']) or 0),
+                'duration_minutes': int(raw_item.get('duration_minutes', defaults[key]['duration_minutes']) or defaults[key]['duration_minutes']),
+            }
+        return normalized
+
+    def resolve_pricing(self, *, tariff_type='type_1', plate_type='car'):
+        normalized_plate_type = 'motorcycle' if plate_type == 'motorcycle' else 'car'
+        tiers = self.normalized_pricing_tiers(plate_type=normalized_plate_type)
+        fallback_key = MOTORCYCLE_SERVICE_TIER_KEYS[0] if normalized_plate_type == 'motorcycle' else CAR_SERVICE_TIER_KEYS[0]
+        tier_key = str(tariff_type or fallback_key).strip().lower() or fallback_key
+        if tier_key not in tiers:
+            tier_key = fallback_key
+        tier = tiers[tier_key]
+        return {
+            'tariff_type': tier_key,
+            'list_price': tier['list_price'],
+            'sale_price': tier['sale_price'],
+            'duration_minutes': tier['duration_minutes'],
+        }
 
 
 class ServiceChangeLog(TimestampedModel):

@@ -3,11 +3,22 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import GeneralSettings, Service, ServiceChangeLog
+from .models import (
+    CAR_SERVICE_TIER_KEYS,
+    MOTORCYCLE_SERVICE_TIER_KEYS,
+    GeneralSettings,
+    Service,
+    ServiceChangeLog,
+    default_service_tiers,
+)
 
 
 class ServiceSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
+    resolved_tariff_type = serializers.SerializerMethodField()
+    resolved_list_price = serializers.SerializerMethodField()
+    resolved_sale_price = serializers.SerializerMethodField()
+    resolved_duration_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = Service
@@ -21,12 +32,96 @@ class ServiceSerializer(serializers.ModelSerializer):
             'base_price',
             'pricing_mode',
             'estimated_duration_minutes',
+            'pricing_tiers',
+            'motorcycle_enabled',
+            'motorcycle_pricing_tiers',
+            'resolved_tariff_type',
+            'resolved_list_price',
+            'resolved_sale_price',
+            'resolved_duration_minutes',
             'allow_price_override',
             'is_active',
             'display_order',
             'created_at',
             'updated_at',
         ]
+
+    def _request_plate_type(self):
+        request = self.context.get('request')
+        raw_value = ''
+        if request:
+            raw_value = request.query_params.get('plate_type', '')
+        return 'motorcycle' if str(raw_value or '').strip().lower() == 'motorcycle' else 'car'
+
+    def _request_tariff_type(self):
+        request = self.context.get('request')
+        raw_value = ''
+        if request:
+            raw_value = request.query_params.get('tariff_type', '')
+        fallback = 'type_1'
+        return str(raw_value or fallback).strip().lower() or fallback
+
+    def _resolved_pricing(self, obj):
+        return obj.resolve_pricing(
+            tariff_type=self._request_tariff_type(),
+            plate_type=self._request_plate_type(),
+        )
+
+    def get_resolved_tariff_type(self, obj):
+        return self._resolved_pricing(obj)['tariff_type']
+
+    def get_resolved_list_price(self, obj):
+        return self._resolved_pricing(obj)['list_price']
+
+    def get_resolved_sale_price(self, obj):
+        return self._resolved_pricing(obj)['sale_price']
+
+    def get_resolved_duration_minutes(self, obj):
+        return self._resolved_pricing(obj)['duration_minutes']
+
+    def _normalize_tiers(self, raw_value, *, keys, sale_price, duration_minutes):
+        defaults = default_service_tiers(keys, sale_price=sale_price, duration_minutes=duration_minutes)
+        source = raw_value if isinstance(raw_value, dict) else {}
+        normalized = {}
+        for key in keys:
+            current = source.get(key, {}) if isinstance(source.get(key, {}), dict) else {}
+            list_price = Decimal(str(current.get('list_price', defaults[key]['list_price']) or 0))
+            sale_price_value = Decimal(str(current.get('sale_price', defaults[key]['sale_price']) or 0))
+            duration_value = int(current.get('duration_minutes', defaults[key]['duration_minutes']) or defaults[key]['duration_minutes'])
+            if list_price < 0 or sale_price_value < 0:
+                raise serializers.ValidationError('مبالغ هر تیپ نمی‌توانند منفی باشند.')
+            if duration_value < 1:
+                raise serializers.ValidationError('زمان هر تیپ باید حداقل ۱ دقیقه باشد.')
+            normalized[key] = {
+                'list_price': float(list_price),
+                'sale_price': float(sale_price_value),
+                'duration_minutes': duration_value,
+            }
+        return normalized
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        base_price = Decimal(str(attrs.get('base_price', getattr(self.instance, 'base_price', 0)) or 0))
+        estimated_duration_minutes = int(attrs.get('estimated_duration_minutes', getattr(self.instance, 'estimated_duration_minutes', 30)) or 30)
+        motorcycle_enabled = bool(attrs.get('motorcycle_enabled', getattr(self.instance, 'motorcycle_enabled', False)))
+
+        attrs['pricing_tiers'] = self._normalize_tiers(
+            attrs.get('pricing_tiers', getattr(self.instance, 'pricing_tiers', {})),
+            keys=CAR_SERVICE_TIER_KEYS,
+            sale_price=base_price,
+            duration_minutes=estimated_duration_minutes,
+        )
+        attrs['motorcycle_pricing_tiers'] = self._normalize_tiers(
+            attrs.get('motorcycle_pricing_tiers', getattr(self.instance, 'motorcycle_pricing_tiers', {})),
+            keys=MOTORCYCLE_SERVICE_TIER_KEYS,
+            sale_price=base_price,
+            duration_minutes=estimated_duration_minutes,
+        ) if motorcycle_enabled else {}
+
+        primary_tier = attrs['pricing_tiers'].get('type_1', {})
+        attrs['base_price'] = Decimal(str(primary_tier.get('sale_price', base_price) or 0))
+        attrs['estimated_duration_minutes'] = int(primary_tier.get('duration_minutes', estimated_duration_minutes) or estimated_duration_minutes)
+        return attrs
 
 
 class ServiceChangeLogSerializer(serializers.ModelSerializer):

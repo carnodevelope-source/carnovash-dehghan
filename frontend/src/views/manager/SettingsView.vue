@@ -172,8 +172,9 @@
                   <th>ردیف</th>
                   <th>نام</th>
                   <th>شرح</th>
-                  <th>قیمت</th>
-                  <th>مدت</th>
+                  <th>فروش تیپ ۱ خودرو</th>
+                  <th>زمان تیپ ۱</th>
+                  <th>موتور سیکلت</th>
                   <th>تاریخ بروزرسانی</th>
                   <th>فعال</th>
                   <th>عملیات</th>
@@ -184,8 +185,9 @@
                   <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
                   <td>{{ item.name }}</td>
                   <td>{{ item.description || '-' }}</td>
-                  <td>{{ money(item.base_price) }}</td>
-                  <td>{{ item.estimated_duration_minutes }} دقیقه</td>
+                  <td>{{ money(item.pricing_tiers?.type_1?.sale_price ?? item.base_price) }}</td>
+                  <td>{{ item.pricing_tiers?.type_1?.duration_minutes ?? item.estimated_duration_minutes }} دقیقه</td>
+                  <td>{{ item.motorcycle_enabled ? 'دارد' : 'ندارد' }}</td>
                   <td>{{ formatDate(item.updated_at) }}</td>
                   <td>{{ item.is_active ? 'بله' : 'خیر' }}</td>
                   <td>
@@ -433,9 +435,67 @@
           <template v-else>
             <label><span>نام خدمت</span><input v-model="forms.service.name" required /></label>
             <label class="full"><span>شرح</span><textarea v-model="forms.service.description" rows="3" /></label>
-            <label><span>قیمت پایه (هزار تومان)</span><input type="number" min="0" v-model.number="forms.service.base_price" required /></label>
-            <label><span>مدت (دقیقه)</span><input type="number" min="1" v-model.number="forms.service.estimated_duration_minutes" required /></label>
             <label class="row-check"><input type="checkbox" v-model="forms.service.is_active" /><span>فعال</span></label>
+            <section class="full service-tier-panel">
+              <div class="service-tier-panel-head">
+                <div>
+                  <strong>تیپ‌های خودرو</strong>
+                  <p class="helper-text">برای هر تیپ، مبلغ نرخ نامه، مبلغ فروش و زمان انجام خدمت را به هزارتومان و دقیقه ثبت کنید.</p>
+                </div>
+              </div>
+              <div class="service-tier-grid">
+                <article v-for="tier in carServiceTierOptions" :key="`car-${tier.key}`" class="service-tier-card">
+                  <header>
+                    <strong>{{ tier.label }}</strong>
+                    <small>خودرو</small>
+                  </header>
+                  <label>
+                    <span>مبلغ نرخ نامه</span>
+                    <input type="number" min="0" v-model.number="forms.service.pricing_tiers[tier.key].list_price" required />
+                  </label>
+                  <label>
+                    <span>مبلغ فروش</span>
+                    <input type="number" min="0" v-model.number="forms.service.pricing_tiers[tier.key].sale_price" required />
+                  </label>
+                  <label>
+                    <span>زمان (دقیقه)</span>
+                    <input type="number" min="1" v-model.number="forms.service.pricing_tiers[tier.key].duration_minutes" required />
+                  </label>
+                </article>
+              </div>
+            </section>
+            <section class="full service-tier-panel" :class="{ active: forms.service.motorcycle_enabled }">
+              <div class="service-tier-panel-head">
+                <div>
+                  <strong>تیپ‌های موتور سیکلت</strong>
+                  <p class="helper-text">اگر این خدمت برای موتور سیکلت هم فعال است، تیپ ۱ و ۲ را هم جداگانه تعریف کنید.</p>
+                </div>
+                <label class="row-check service-tier-toggle">
+                  <input type="checkbox" v-model="forms.service.motorcycle_enabled" />
+                  <span>این خدمت برای موتور سیکلت هم فعال باشد</span>
+                </label>
+              </div>
+              <div v-if="forms.service.motorcycle_enabled" class="service-tier-grid motorcycle-tier-grid">
+                <article v-for="tier in motorcycleServiceTierOptions" :key="`motor-${tier.key}`" class="service-tier-card motorcycle">
+                  <header>
+                    <strong>{{ tier.label }}</strong>
+                    <small>موتور سیکلت</small>
+                  </header>
+                  <label>
+                    <span>مبلغ نرخ نامه</span>
+                    <input type="number" min="0" v-model.number="forms.service.motorcycle_pricing_tiers[tier.key].list_price" required />
+                  </label>
+                  <label>
+                    <span>مبلغ فروش</span>
+                    <input type="number" min="0" v-model.number="forms.service.motorcycle_pricing_tiers[tier.key].sale_price" required />
+                  </label>
+                  <label>
+                    <span>زمان (دقیقه)</span>
+                    <input type="number" min="1" v-model.number="forms.service.motorcycle_pricing_tiers[tier.key].duration_minutes" required />
+                  </label>
+                </article>
+              </div>
+            </section>
           </template>
 
           <div class="modal-actions">
@@ -627,7 +687,16 @@ const forms = reactive({
   product: { name: '', description: '', sale_price: 0, cost_price: 0, unit: 'unit', min_stock: 0, is_active: true },
   purchase: { product_id: 0, quantity: 1, unit_cost: 0, sale_price: 0, note: '' },
   expense: { title: '', amount: 0, details: '' },
-  service: { name: '', description: '', base_price: 0, estimated_duration_minutes: 30, is_active: true }
+  service: {
+    name: '',
+    description: '',
+    base_price: 0,
+    estimated_duration_minutes: 30,
+    is_active: true,
+    motorcycle_enabled: false,
+    pricing_tiers: {},
+    motorcycle_pricing_tiers: {}
+  }
 })
 
 const toast = reactive({ show: false, type: 'success', msg: '' })
@@ -664,6 +733,46 @@ const serviceChangeSummaryText = (summary) => {
   if (!entries.length) return 'بدون جزئیات'
   return entries.map((item) => `${item.label}: ${item.from ?? '-'} ← ${item.to ?? '-'}`).join(' | ')
 }
+const carServiceTierOptions = [
+  { key: 'type_1', label: 'تیپ ۱' },
+  { key: 'type_2', label: 'تیپ ۲' },
+  { key: 'type_3', label: 'تیپ ۳' },
+  { key: 'type_4', label: 'تیپ ۴' }
+]
+const motorcycleServiceTierOptions = [
+  { key: 'type_1', label: 'تیپ ۱' },
+  { key: 'type_2', label: 'تیپ ۲' }
+]
+const createServiceTierState = (salePrice = 0, durationMinutes = 30) => ({
+  list_price: salePrice,
+  sale_price: salePrice,
+  duration_minutes: durationMinutes
+})
+const normalizeServiceTierMap = (rawValue, tierOptions, fallbackSalePrice = 0, fallbackDurationMinutes = 30) => {
+  const source = rawValue && typeof rawValue === 'object' ? rawValue : {}
+  return tierOptions.reduce((result, tier) => {
+    const current = source?.[tier.key] && typeof source[tier.key] === 'object' ? source[tier.key] : {}
+    result[tier.key] = createServiceTierState(
+      toThousandsDisplay(current?.sale_price ?? current?.list_price ?? fallbackSalePrice),
+      Number(current?.duration_minutes || fallbackDurationMinutes || 30)
+    )
+    result[tier.key].list_price = toThousandsDisplay(current?.list_price ?? current?.sale_price ?? fallbackSalePrice)
+    result[tier.key].sale_price = toThousandsDisplay(current?.sale_price ?? current?.list_price ?? fallbackSalePrice)
+    return result
+  }, {})
+}
+const buildServiceTiersPayload = (tierMap, tierOptions) => tierOptions.reduce((result, tier) => {
+  const current = tierMap?.[tier.key] || {}
+  result[tier.key] = {
+    list_price: fromThousandsInput(current?.list_price || 0),
+    sale_price: fromThousandsInput(current?.sale_price || 0),
+    duration_minutes: Math.max(1, Number(current?.duration_minutes || 30))
+  }
+  return result
+}, {})
+
+forms.service.pricing_tiers = normalizeServiceTierMap({}, carServiceTierOptions, 0, 30)
+forms.service.motorcycle_pricing_tiers = normalizeServiceTierMap({}, motorcycleServiceTierOptions, 0, 30)
 
 const stockByProductId = computed(() => {
   const map = {}
@@ -969,12 +1078,17 @@ const openServiceModal = (item = null) => {
   modal.type = 'services'
   modal.id = item?.id || null
   modal.title = modal.id ? 'ویرایش خدمت' : 'افزودن خدمت'
+  const fallbackSalePrice = item?.pricing_tiers?.type_1?.sale_price ?? item?.base_price ?? 0
+  const fallbackDuration = Number((item?.pricing_tiers?.type_1?.duration_minutes ?? item?.estimated_duration_minutes) || 30)
   Object.assign(forms.service, {
     name: item?.name || '',
     description: item?.description || '',
-    base_price: toThousandsDisplay(item?.base_price),
-    estimated_duration_minutes: Number(item?.estimated_duration_minutes || 30),
-    is_active: item?.is_active ?? true
+    base_price: toThousandsDisplay(fallbackSalePrice),
+    estimated_duration_minutes: fallbackDuration,
+    is_active: item?.is_active ?? true,
+    motorcycle_enabled: Boolean(item?.motorcycle_enabled),
+    pricing_tiers: normalizeServiceTierMap(item?.pricing_tiers, carServiceTierOptions, fallbackSalePrice, fallbackDuration),
+    motorcycle_pricing_tiers: normalizeServiceTierMap(item?.motorcycle_pricing_tiers, motorcycleServiceTierOptions, fallbackSalePrice, fallbackDuration)
   })
 }
 
@@ -1049,9 +1163,18 @@ const submitModal = async () => {
       else await api.post('/inventory/expenses/', payload)
       t(modal.id ? 'هزینه ویرایش شد' : 'هزینه ثبت شد')
     } else {
+      const pricingTiers = buildServiceTiersPayload(forms.service.pricing_tiers, carServiceTierOptions)
+      const motorcyclePricingTiers = forms.service.motorcycle_enabled
+        ? buildServiceTiersPayload(forms.service.motorcycle_pricing_tiers, motorcycleServiceTierOptions)
+        : {}
+      const primaryCarTier = pricingTiers.type_1 || { sale_price: 0, duration_minutes: 30 }
       const payload = {
         ...forms.service,
-        base_price: fromThousandsInput(forms.service.base_price)
+        base_price: Number(primaryCarTier.sale_price || 0),
+        estimated_duration_minutes: Number(primaryCarTier.duration_minutes || 30),
+        motorcycle_enabled: Boolean(forms.service.motorcycle_enabled),
+        pricing_tiers: pricingTiers,
+        motorcycle_pricing_tiers: motorcyclePricingTiers
       }
       if (modal.id) await api.patch(`/services/${modal.id}/`, payload)
       else await api.post('/services/', payload)
@@ -1169,6 +1292,54 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   height: 42px;
   margin-left: 0;
 }
+.service-tier-panel {
+  grid-column: 1 / -1;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid #dbe7f5;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+  display: grid;
+  gap: 14px;
+}
+.service-tier-panel.active {
+  border-color: #bfd7ff;
+  box-shadow: 0 14px 30px rgba(37, 99, 235, 0.1);
+}
+.service-tier-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.service-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.motorcycle-tier-grid {
+  grid-template-columns: repeat(2, minmax(0, min(320px, 1fr)));
+}
+.service-tier-card {
+  padding: 14px;
+  border: 1px solid #dbe7f5;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.85);
+  display: grid;
+  gap: 10px;
+}
+.service-tier-card.motorcycle {
+  border-color: #cbe7da;
+  background: linear-gradient(180deg, #ffffff 0%, #f2fbf6 100%);
+}
+.service-tier-card header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.service-tier-card strong { color: #0f172a; }
+.service-tier-card small { color: #64748b; }
+.service-tier-toggle { white-space: nowrap; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; grid-column: 1 / -1; }
 .history-loading, .history-body { padding: 14px; }
 .history-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
@@ -1315,6 +1486,9 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .modal-form, .history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .entrusted-head, .entrusted-grid { grid-template-columns: 1fr; display: grid; }
   .entrusted-item-row { grid-template-columns: 1fr; }
+  .service-tier-panel-head { flex-direction: column; align-items: stretch; }
+  .service-tier-grid,
+  .motorcycle-tier-grid { grid-template-columns: 1fr; }
   .entrusted-list-head { align-items: stretch; }
   .expense-summary-strip { grid-template-columns: 1fr; }
   .discount-editor-grid,

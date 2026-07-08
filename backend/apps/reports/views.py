@@ -193,7 +193,7 @@ class ReportsDashboardView(APIView):
         ).prefetch_related('job__product_lines__product', 'job__service_lines__service', 'payments').filter(tenant=tenant)
 
     @classmethod
-    def _build_filtered_vehicles(cls, start, end, query, tenant, worker_id=None, plate_number=''):
+    def _build_filtered_vehicles(cls, start, end, query, tenant, worker_id=None, plate_number='', plate_type=''):
         vehicles = cls._base_queryset(tenant)
         if start:
             vehicles = vehicles.filter(check_in_at__gte=start)
@@ -210,6 +210,8 @@ class ReportsDashboardView(APIView):
             ).distinct()
         if plate_number:
             vehicles = vehicles.filter(plate_number__icontains=plate_number)
+        if plate_type in {'car', 'motorcycle'}:
+            vehicles = vehicles.filter(plate_type=plate_type)
 
         records = list(vehicles.order_by('-check_in_at'))
         if worker_id:
@@ -225,6 +227,7 @@ class ReportsDashboardView(APIView):
         plate_letter = request.query_params.get('plate_letter', '').strip()
         plate_mid = request.query_params.get('plate_mid', '').strip()
         plate_right = request.query_params.get('plate_right', '').strip()
+        plate_type = request.query_params.get('plate_type', '').strip().lower()
         if not plate_number:
             plate_parts = [plate_left, plate_letter, plate_mid, plate_right]
             plate_number = ' '.join([part for part in plate_parts if part])
@@ -242,6 +245,7 @@ class ReportsDashboardView(APIView):
             tenant=tenant,
             worker_id=worker_id,
             plate_number=plate_number,
+            plate_type=plate_type,
         )
 
         rows = []
@@ -464,6 +468,7 @@ class ReportsDashboardView(APIView):
                 'plate_letter': plate_letter,
                 'plate_mid': plate_mid,
                 'plate_right': plate_right,
+                'plate_type': plate_type,
             },
             'summary': {
                 'vehicles_count': len(rows),

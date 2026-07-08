@@ -70,10 +70,10 @@
       <section class="club-filter-shell">
         <div class="club-filter-grid">
           <label class="filter-field">
-            <span>کارواش</span>
-            <select v-model="filters.carwash">
-              <option value="">همه کارواش‌ها</option>
-              <option v-for="carwash in availableCarwashes" :key="carwash" :value="carwash">{{ carwash }}</option>
+            <span>گروه‌بندی</span>
+            <select v-model="filters.groupId">
+              <option value="">همه مشتریان</option>
+              <option v-for="group in availableGroups" :key="group.id" :value="String(group.id)">{{ group.name }}</option>
             </select>
           </label>
 
@@ -293,11 +293,19 @@
               <h4>گزارش پیامک‌ها</h4>
               <span>{{ toFa(smsLogs.length) }} رکورد</span>
             </div>
-            <div v-if="smsLogs.length" class="sms-log-list">
-              <div v-for="log in smsLogs.slice(0, 10)" :key="log.id" class="sms-log-row">
-                <div>
-                  <strong>{{ log.recipient_name }}</strong>
-                  <small>{{ log.target_label }}</small>
+            <div v-if="smsLogs.length" class="sms-log-list sms-log-scroll">
+              <div v-for="log in smsLogs" :key="log.id" class="sms-log-row">
+                <div class="sms-log-main">
+                  <div class="sms-log-head">
+                    <strong>{{ log.recipient_name || log.phone || 'گیرنده نامشخص' }}</strong>
+                    <small>{{ log.target_label || log.phone || 'بدون برچسب' }}</small>
+                  </div>
+                  <p class="sms-log-message">{{ logMessageText(log) }}</p>
+                  <div class="sms-log-meta">
+                    <span>{{ log.phone || 'بدون شماره' }}</span>
+                    <span>{{ date(log.created_at) }}</span>
+                  </div>
+                  <p v-if="log.provider_response" class="sms-log-response">{{ log.provider_response }}</p>
                 </div>
                 <span class="status-badge" :class="log.status">{{ smsStatusLabel(log.status) }}</span>
               </div>
@@ -742,7 +750,7 @@ const smsPricePerSegment = ref(500)
 const highlightedGroupId = ref('')
 
 const filters = reactive({
-  carwash: '',
+  groupId: '',
   minOrders: 0,
   minSpent: 0,
   minScore: 0,
@@ -805,6 +813,7 @@ const availableCarwashes = computed(() => {
   const set = new Set(customers.value.map((item) => item.carwash_name).filter(Boolean))
   return [...set]
 })
+const availableGroups = computed(() => customGroups.value.filter((group) => group?.id))
 
 const activeCustomersCount = computed(() => customers.value.filter((item) => item.orders_count >= 2).length)
 const averageScore = computed(() => {
@@ -822,8 +831,9 @@ const smsCreditStateLabel = computed(() => {
 const filteredCustomers = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   const minSpentValue = Number(filters.minSpent || 0)
+  const activeGroup = customGroups.value.find((group) => String(group.id) === String(filters.groupId || ''))
   const items = customers.value.filter((customer) => {
-    if (filters.carwash && customer.carwash_name !== filters.carwash) return false
+    if (activeGroup && !resolveGroupMembers(activeGroup).some((item) => item.key === customer.key)) return false
     if (Number(customer.orders_count || 0) < Number(filters.minOrders || 0)) return false
     if (Number(customer.total_spent || 0) < minSpentValue) return false
     if (Number(customer.score || 0) < Number(filters.minScore || 0)) return false
@@ -917,6 +927,13 @@ const smsStatusCount = computed(() => smsLogs.value.reduce((acc, item) => {
 
 const money = (value) => formatThousandsToman(value)
 const date = (value) => formatJalaliDate(value)
+const logMessageText = (log) => {
+  const message = String(log?.message || '').trim()
+  if (message) return message
+  const response = String(log?.provider_response || '').trim()
+  if (response) return `متن پیام ثبت نشده است. پاسخ سرویس: ${response}`
+  return 'متن پیام در این لاگ ذخیره نشده است.'
+}
 const toFa = (value) => Number(value || 0).toLocaleString('fa-IR')
 const toFaDecimal = (value) => Number(value || 0).toLocaleString('fa-IR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 const initials = (value) => {
@@ -2030,12 +2047,60 @@ onMounted(async () => {
 }
 
 .sms-log-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 0;
   border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.sms-log-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sms-log-head {
+  display: grid;
+  gap: 3px;
+}
+
+.sms-log-head strong {
+  color: #0f172a;
+}
+
+.sms-log-head small,
+.sms-log-meta {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.sms-log-message,
+.sms-log-response {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.9;
+  font-size: 13px;
+}
+
+.sms-log-message {
+  color: #1e293b;
+}
+
+.sms-log-response {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  color: #475569;
+}
+
+.sms-log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .template-preview-item {
@@ -2054,6 +2119,12 @@ onMounted(async () => {
 
 .sms-log-row:last-child {
   border-bottom: 0;
+}
+
+.sms-log-scroll {
+  max-height: 560px;
+  overflow-y: auto;
+  padding-left: 4px;
 }
 
 .status-badge.success {

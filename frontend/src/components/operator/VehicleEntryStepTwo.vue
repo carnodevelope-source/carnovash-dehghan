@@ -75,7 +75,7 @@
               <label class="service-discount-row">
                 <span>مبلغ قطعه‌شویی (تومان)</span>
                 <input :value="toThousandsInput(pieceWashPrice)" type="text" inputmode="numeric" @input="pieceWashPrice = fromThousandsInput($event.target.value)" />
-                <small class="unit-note">عدد را به هزار تومان وارد کنید.</small>
+                <small class="unit-note">عدد را به هزارتومن وارد کنید.</small>
               </label>
               <label class="service-discount-row textarea-row">
                 <span>اطلاعات قطعه</span>
@@ -342,6 +342,7 @@ const normalizedVehicle = computed(() => {
     plateMid: String(data.plateMid || data.plate_mid || fromRaw.mid || '').trim(),
     plateRight: String(data.plateRight || data.plate_right || fromRaw.right || '').trim(),
     plateType,
+    tariffType: String(data.tariffType || data.tariff_type || 'type_1').trim() || 'type_1',
     model: String(data.model || data.car_model || '').trim(),
     color: String(data.color || data.car_color || '').trim(),
     driver: String(data.driver || data.driver_name || '').trim(),
@@ -587,7 +588,7 @@ const adjustServicePrice = (serviceId, direction) => {
   if (!normalizedId) return
   const service = services.value.find((item) => Number(item.id) === normalizedId)
   if (!service) return
-  const step = 10000
+  const step = 5000
   const current = Number(servicePriceAdjustments.value[normalizedId] || 0)
   const next = direction === 'increase' ? current + step : current - step
   const minAdjustment = -Math.max(0, Number(service.base_price || 0))
@@ -675,6 +676,7 @@ const buildPayload = () => {
       plateMid: vehicle.plateMid,
       plateRight: vehicle.plateRight,
       plateType: vehicle.plateType,
+      tariffType: vehicle.tariffType,
       model: vehicle.model,
       color: vehicle.color,
       driver: vehicle.driver,
@@ -763,11 +765,21 @@ const loadInitialData = async () => {
   errorMessage.value = ''
   try {
     const [serviceResp, workerResp] = await Promise.all([
-      api.get('/services/'),
+      api.get('/services/', {
+        params: {
+          plate_type: normalizedVehicle.value.plateType,
+          tariff_type: normalizedVehicle.value.tariffType,
+        },
+      }),
       api.get('/workers/')
     ])
     services.value = (Array.isArray(serviceResp.data) ? serviceResp.data : [])
       .filter((item) => item.is_active !== false)
+      .map((item) => ({
+        ...item,
+        base_price: Number((item.resolved_sale_price ?? item.base_price) || 0),
+        estimated_duration_minutes: Number((item.resolved_duration_minutes ?? item.estimated_duration_minutes) || 0),
+      }))
       .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
 
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])

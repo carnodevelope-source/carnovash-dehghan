@@ -69,7 +69,11 @@ class ServiceListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)
-        return Service.objects.select_related('category').filter(tenant=tenant, is_active=True).order_by('display_order', 'name')
+        queryset = Service.objects.select_related('category').filter(tenant=tenant, is_active=True)
+        plate_type = str(self.request.query_params.get('plate_type', '') or '').strip().lower()
+        if plate_type == 'motorcycle':
+            queryset = queryset.filter(motorcycle_enabled=True)
+        return queryset.order_by('display_order', 'name')
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None

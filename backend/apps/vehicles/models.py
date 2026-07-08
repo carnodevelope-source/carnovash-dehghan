@@ -31,6 +31,12 @@ class CustomerProfile(TimestampedModel):
 
 
 class VehicleEntry(TimestampedModel):
+    class TariffType(models.TextChoices):
+        TYPE_1 = 'type_1', 'Type 1'
+        TYPE_2 = 'type_2', 'Type 2'
+        TYPE_3 = 'type_3', 'Type 3'
+        TYPE_4 = 'type_4', 'Type 4'
+
     class PlateType(models.TextChoices):
         CAR = 'car', 'Car'
         MOTORCYCLE = 'motorcycle', 'Motorcycle'
@@ -75,6 +81,7 @@ class VehicleEntry(TimestampedModel):
     plate_mid = models.CharField(max_length=3, blank=True)
     plate_right = models.CharField(max_length=2, blank=True)
     plate_type = models.CharField(max_length=20, choices=PlateType.choices, default=PlateType.CAR)
+    tariff_type = models.CharField(max_length=20, choices=TariffType.choices, default=TariffType.TYPE_1)
     car_model = models.CharField(max_length=120)
     car_color = models.CharField(max_length=60)
     driver_name = models.CharField(max_length=120)

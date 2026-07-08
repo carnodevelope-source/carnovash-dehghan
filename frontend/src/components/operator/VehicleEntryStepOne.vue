@@ -63,7 +63,7 @@
           <span>تیپ نرخنامه</span>
           <div class="tariff-bubbles">
             <button
-              v-for="option in tariffTypeOptions"
+              v-for="option in availableTariffTypeOptions"
               :key="option.value"
               type="button"
               class="tariff-bubble"
@@ -94,8 +94,8 @@
             <label class="plate-type-select">
               <span>نوع پلاک</span>
               <select v-model="form.plateType">
-                <option value="car">پلاک ماشین</option>
-                <option value="motorcycle">پلاک موتور</option>
+                <option value="car">خودرو</option>
+                <option value="motorcycle">موتور سیکلت</option>
               </select>
             </label>
             <label class="toggle-check">
@@ -222,11 +222,15 @@ const form = reactive({
   isAnonymous: false,
   isPieceWash: false
 })
-const tariffTypeOptions = [
+const carTariffTypeOptions = [
   { value: 'type_1', label: 'تیپ ۱' },
   { value: 'type_2', label: 'تیپ ۲' },
   { value: 'type_3', label: 'تیپ ۳' },
   { value: 'type_4', label: 'تیپ ۴' }
+]
+const motorcycleTariffTypeOptions = [
+  { value: 'type_1', label: 'تیپ ۱' },
+  { value: 'type_2', label: 'تیپ ۲' }
 ]
 const detectedPlateSnapshot = ref({
   left: '',
@@ -270,6 +274,9 @@ const OCR_LETTER_CONFUSIONS = {
   ط: ['ط', 'ر']
 }
 const showAiPanel = computed(() => !isMobileViewport.value || !isAiPanelCollapsed.value)
+const availableTariffTypeOptions = computed(() => (
+  form.plateType === 'motorcycle' ? motorcycleTariffTypeOptions : carTariffTypeOptions
+))
 
 const syncMobileViewport = (event) => {
   isMobileViewport.value = Boolean(event?.matches ?? mobileViewportQuery.matches)
@@ -655,7 +662,7 @@ const plate = computed(() => {
 
 const isPhoneValid = computed(() => isValidIranMobile(form.mobile))
 const canSubmit = computed(() => {
-  return isPhoneValid.value && tariffTypeOptions.some((option) => option.value === form.tariffType)
+  return isPhoneValid.value && availableTariffTypeOptions.value.some((option) => option.value === form.tariffType)
 })
 
 const payload = () => ({
@@ -761,6 +768,9 @@ watch(() => form.plateType, (value) => {
   } else {
     form.plateLetter = normalizePlateLetter(form.plateLetter)
     syncLetterSuggestions(form.plateLetter)
+  }
+  if (!availableTariffTypeOptions.value.some((option) => option.value === form.tariffType)) {
+    form.tariffType = 'type_1'
   }
   detectedPlateSnapshot.value = {
     ...detectedPlateSnapshot.value,

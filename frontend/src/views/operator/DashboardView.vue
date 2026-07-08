@@ -2042,6 +2042,7 @@ const buildCreateOrUpdatePayload = (payload, status) => {
     plate_mid: isPieceWash || isAnonymous ? '' : mid,
     plate_right: isPieceWash || isAnonymous || plateType === 'motorcycle' ? '' : right,
     plate_type: plateType,
+    tariff_type: String(payload?.vehicle?.tariffType || payload?.vehicle?.tariff_type || 'type_1').trim() || 'type_1',
     car_model: isPieceWash ? 'قطعه‌شویی' : (isAnonymous ? '1111' : String(payload?.vehicle?.model || '').trim()),
     car_color: isPieceWash ? '-' : (isAnonymous ? '1111' : String(payload?.vehicle?.color || '').trim()),
     driver_name: (payload?.vehicle?.driver || '').trim(),

@@ -34,15 +34,29 @@
             <option v-for="worker in workers" :key="worker.id" :value="String(worker.id)">{{ worker.full_name }}</option>
           </select>
         </div>
+        <div class="field">
+          <span><IconlyIcon name="category" size="xs" />نوع وسیله</span>
+          <select v-model="filters.plateType">
+            <option value="">همه</option>
+            <option value="car">خودرو</option>
+            <option value="motorcycle">موتور سیکلت</option>
+          </select>
+        </div>
         <div class="field plate-field">
           <span><IconlyIcon name="filter" size="xs" />پلاک خودرو</span>
           <div class="plate-filter-shell">
-            <div class="plate-filter-row plate-filter-row-car" dir="ltr">
+            <div v-if="filters.plateType === 'motorcycle'" class="plate-filter-row plate-filter-row-motorcycle" dir="ltr">
+              <div class="plate-filter-motor-main">
+                <input v-model="filters.plateMid" type="text" maxlength="3" placeholder="345" />
+                <input v-model="filters.plateLetter" type="text" maxlength="5" placeholder="67890" />
+              </div>
+              <span class="plate-filter-blue plate-filter-blue-motor">IR</span>
+            </div>
+            <div v-else class="plate-filter-row plate-filter-row-car" dir="ltr">
               <input v-model="filters.plateRight" type="text" maxlength="2" placeholder="67" />
               <input v-model="filters.plateLetter" type="text" maxlength="1" placeholder="ب" />
               <input v-model="filters.plateMid" type="text" maxlength="3" placeholder="345" />
-              <span class="plate-filter-blue">12</span>
-              <input v-model="filters.plateLeft" type="text" maxlength="2" placeholder="12" />
+              <input v-model="filters.plateLeft" class="plate-filter-blue plate-filter-blue-input" type="text" maxlength="2" placeholder="12" />
             </div>
           </div>
         </div>
@@ -139,6 +153,14 @@
           </tbody></table></div>
         </template>
 
+        <template v-else-if="activeTab === 'attendance'">
+          <h3>گزارش ورود و خروج</h3>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام پرسنل</th><th>نوع رویداد</th><th>منبع ثبت</th><th>زمان</th></tr></thead><tbody>
+            <tr v-for="row in data.attendance_report" :key="`a-${row.row}`"><td>{{ row.row }}</td><td>{{ row.worker_name }}</td><td>{{ row.event_type === 'in' ? 'ورود' : 'خروج' }}</td><td>{{ row.source === 'manager' ? 'مدیر' : row.source === 'link' ? 'لینک پرسنل' : (row.source || '-') }}</td><td>{{ dateTime(row.event_at) }}</td></tr>
+            <tr v-if="!data.attendance_report.length"><td colspan="5">رکوردی برای این بازه پیدا نشد.</td></tr>
+          </tbody></table></div>
+        </template>
+
       </section>
     </div>
   </AppShell>
@@ -210,6 +232,7 @@ const filters = reactive({
   endJalali: '',
   q: '',
   workerId: '',
+  plateType: '',
   plateLeft: '',
   plateLetter: '',
   plateMid: '',
@@ -230,7 +253,8 @@ const tabs = [
   { key: 'carwash', label: 'حق کارواش', icon: 'wallet' },
   { key: 'worker', label: 'حق نیرو', icon: 'users3' },
   { key: 'tips', label: 'انعام', icon: 'message' },
-  { key: 'revenue', label: 'گزارش درآمد', icon: 'graph' }
+  { key: 'revenue', label: 'گزارش درآمد', icon: 'graph' },
+  { key: 'attendance', label: 'ورود و خروج', icon: 'calendar' }
 ]
 
 const money = (v) => formatThousandsToman(v)
@@ -291,6 +315,15 @@ const visibleSummaryCards = computed(() => {
   if (activeTab.value === 'revenue') {
     return [
       { key: 'revenue_total', label: 'درآمد وصول‌شده', value: money(sectionTotals.revenue.revenue_total) }
+    ]
+  }
+  if (activeTab.value === 'attendance') {
+    const checkins = data.attendance_report.filter((item) => item.event_type === 'in').length
+    const checkouts = data.attendance_report.filter((item) => item.event_type === 'out').length
+    return [
+      { key: 'attendance_count', label: 'کل رویدادها', value: Number(sectionTotals.attendance.count || 0).toLocaleString('fa-IR') },
+      { key: 'attendance_checkins', label: 'ورودها', value: Number(checkins || 0).toLocaleString('fa-IR') },
+      { key: 'attendance_checkouts', label: 'خروج‌ها', value: Number(checkouts || 0).toLocaleString('fa-IR') },
     ]
   }
   return []
@@ -382,10 +415,17 @@ const normalizePlateLetter = (value) => {
 }
 
 const normalizePlateFilters = () => {
+  if (filters.plateType !== 'motorcycle' && filters.plateType !== 'car') filters.plateType = ''
   filters.plateLeft = normalizeDigits(filters.plateLeft).replace(/\D/g, '').slice(0, 2)
   filters.plateRight = normalizeDigits(filters.plateRight).replace(/\D/g, '').slice(0, 2)
   filters.plateMid = normalizeDigits(filters.plateMid).replace(/\D/g, '').slice(0, 3)
-  filters.plateLetter = normalizePlateLetter(filters.plateLetter)
+  filters.plateLetter = filters.plateType === 'motorcycle'
+    ? normalizeDigits(filters.plateLetter).replace(/\D/g, '').slice(0, 5)
+    : normalizePlateLetter(filters.plateLetter)
+  if (filters.plateType === 'motorcycle') {
+    filters.plateLeft = ''
+    filters.plateRight = ''
+  }
 }
 
 const fetchWorkers = async () => {
@@ -419,6 +459,7 @@ const fetchReports = async () => {
         end: end || undefined,
         q: (filters.q || '').trim() || undefined,
         worker_id: Number.isInteger(workerId) && workerId > 0 ? workerId : undefined,
+        plate_type: filters.plateType || undefined,
         plate_left: filters.plateLeft || undefined,
         plate_letter: filters.plateLetter || undefined,
         plate_mid: filters.plateMid || undefined,
@@ -454,6 +495,7 @@ const resetFilters = () => {
   filters.endJalali = ''
   filters.q = ''
   filters.workerId = ''
+  filters.plateType = ''
   filters.plateLeft = ''
   filters.plateLetter = ''
   filters.plateMid = ''
@@ -579,7 +621,7 @@ const submitAdjustment = async () => {
 }
 
 let filterTimer = null
-watch(() => [filters.q, filters.rangeKey, filters.startJalali, filters.endJalali, filters.workerId, filters.plateLeft, filters.plateLetter, filters.plateMid, filters.plateRight], () => {
+watch(() => [filters.q, filters.rangeKey, filters.startJalali, filters.endJalali, filters.workerId, filters.plateType, filters.plateLeft, filters.plateLetter, filters.plateMid, filters.plateRight], () => {
   normalizePlateFilters()
   if (filterTimer) clearTimeout(filterTimer)
   filterTimer = setTimeout(fetchReports, 280)
@@ -596,7 +638,7 @@ onMounted(async () => {
 .range-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .range-chip{border:1px solid #cbd5e1;background:#fff;color:#334155;padding:9px 16px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:8px}
 .range-chip.active{background:#2563eb;border-color:#2563eb;color:#fff}
-.filters-card{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;padding:14px;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:10px;align-items:end;background:linear-gradient(180deg,#fff,#f8fbff)}
+.filters-card{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;padding:14px;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:10px;align-items:end;background:linear-gradient(180deg,#fff,#f8fbff)}
 .field{display:grid;gap:5px;font-size:12px}
 .field span{display:inline-flex;align-items:center;gap:6px}
 .field input,.field select{height:38px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;font-size:12px;background:#fff}
@@ -607,7 +649,22 @@ onMounted(async () => {
 .plate-filter-row span{display:inline-flex;align-items:center;justify-content:center;height:38px;color:#64748b;font-weight:700}
 .plate-filter-row input{text-align:center;padding:0;border:1px solid #c9d6e5;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.8)}
 .plate-filter-row-car{direction:ltr}
-.plate-filter-blue{border-radius:10px;background:#2563eb;color:#fff !important;border:1px solid #1d4ed8}
+.plate-filter-blue{border-radius:10px;background-color:#2563eb;border:1px solid #1d4ed8}
+.plate-filter-blue-input{
+  font-weight:700;
+  background-color:#2563eb
+}
+.plate-filter-row .plate-filter-blue-input:focus{
+  outline:none;
+  border-color:#ffffff;
+  box-shadow:0 0 0 3px rgba(191,219,254,.28);
+  background-color:#2563eb
+}
+.plate-filter-row .plate-filter-blue-input::placeholder{color:rgba(255,255,255,.78);
+  background-color:#2563eb}
+.plate-filter-row-motorcycle{grid-template-columns:minmax(0,1fr) 44px}
+.plate-filter-motor-main{display:grid;grid-template-columns:86px 1fr;gap:8px;align-items:center}
+.plate-filter-blue-motor{min-width:44px}
 .summary-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;margin-bottom:10px}
 .kpi-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fbff}
 .kpi-card p{margin:0;color:#64748b;font-size:12px}
@@ -665,6 +722,15 @@ th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-spa
 .modal-body{padding:16px}
 .modal-body{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}
 .modal-body label{display:grid;gap:6px}
+
+.plate-filter-row .plate-filter-blue-input{
+  outline:none;
+  border-color:#bfdbfe;
+  box-shadow:0 0 0 3px rgba(191,219,254,.28);
+  color: white;
+  background-color:#2563eb
+}
+
 .modal-body input,.modal-body select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px}
 @media (max-width:1400px){.summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (max-width:1200px){.filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-field,.plate-field{grid-column:span 2}.worker-summary-grid{grid-template-columns:repeat(2,1fr)}}

@@ -802,15 +802,22 @@ class VehicleReleaseCheckoutView(APIView):
                 }
             )
 
-        available_services = [
-            {
-                'id': service.id,
-                'name': service.name,
-                'base_price': service.base_price,
-                'estimated_duration_minutes': service.estimated_duration_minutes,
-            }
-            for service in Service.objects.filter(is_active=True, tenant=tenant).order_by('display_order', 'name')
-        ]
+        available_services = []
+        for service in Service.objects.filter(is_active=True, tenant=tenant).order_by('display_order', 'name'):
+            pricing = service.resolve_pricing(
+                tariff_type=getattr(vehicle, 'tariff_type', 'type_1'),
+                plate_type=getattr(vehicle, 'plate_type', 'car'),
+            )
+            available_services.append(
+                {
+                    'id': service.id,
+                    'name': service.name,
+                    'base_price': pricing['sale_price'],
+                    'list_price': pricing['list_price'],
+                    'estimated_duration_minutes': pricing['duration_minutes'],
+                    'tariff_type': pricing['tariff_type'],
+                }
+            )
 
         services_total = (
             vehicle.job.service_lines.filter(is_completed=True).aggregate(total=Sum('line_total')).get('total')
@@ -858,6 +865,7 @@ class VehicleReleaseCheckoutView(APIView):
                     'driver_phone': vehicle.driver_phone,
                     'status': vehicle.status,
                     'payment_status': vehicle.payment_status,
+                    'tariff_type': vehicle.tariff_type,
                     'customer_score': float(customer_score),
                 },
                 'job': {
@@ -1061,7 +1069,13 @@ class VehicleReleaseCheckoutView(APIView):
             if not service_name:
                 continue
             quantity = Decimal(str(item.get('quantity', 1) or 1))
-            default_price = service_obj.base_price if service_obj and service_obj.base_price is not None else 0
+            default_price = 0
+            if service_obj:
+                pricing = service_obj.resolve_pricing(
+                    tariff_type=getattr(vehicle, 'tariff_type', 'type_1'),
+                    plate_type=getattr(vehicle, 'plate_type', 'car'),
+                )
+                default_price = pricing['sale_price']
             unit_price = Decimal(str(item.get('unit_price', item.get('price', default_price)) or 0))
             is_completed = bool(item.get('is_completed', True))
             if quantity <= 0 or unit_price < 0:

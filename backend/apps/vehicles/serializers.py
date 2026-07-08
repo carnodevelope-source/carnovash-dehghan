@@ -158,6 +158,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     plate_letter = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     plate_mid = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     plate_right = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    tariff_type = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     services = serializers.ListField(write_only=True, required=False, default=list)
     products = serializers.ListField(write_only=True, required=False, default=list)
     staff_members = serializers.ListField(write_only=True, required=False, default=list)
@@ -247,6 +248,21 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         return payment_configs[0]
 
+    def _normalized_tariff_type(self, value, *, plate_type='car'):
+        normalized = str(value or VehicleEntry.TariffType.TYPE_1).strip().lower() or VehicleEntry.TariffType.TYPE_1
+        allowed = {'type_1', 'type_2'} if plate_type == VehicleEntry.PlateType.MOTORCYCLE else {
+            'type_1', 'type_2', 'type_3', 'type_4'
+        }
+        if normalized not in allowed:
+            return VehicleEntry.TariffType.TYPE_1
+        return normalized
+
+    def _resolve_service_defaults(self, service_obj, *, tariff_type, plate_type, fallback_price):
+        if service_obj:
+            pricing = service_obj.resolve_pricing(tariff_type=tariff_type, plate_type=plate_type)
+            return Decimal(str(pricing.get('sale_price', fallback_price) or 0))
+        return Decimal(str(fallback_price or 0))
+
     @transaction.atomic
     def create(self, validated_data):
         request = self.context.get('request')
@@ -261,6 +277,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         worker_id = validated_data.pop('worker_id', None)
         worker_name = (validated_data.pop('worker_name', '') or '').strip()
         requested_status = validated_data.get('status') or VehicleEntry.Status.ENTERED
+        plate_type = validated_data.get('plate_type') or VehicleEntry.PlateType.CAR
+        validated_data['tariff_type'] = self._normalized_tariff_type(
+            validated_data.get('tariff_type'),
+            plate_type=plate_type,
+        )
         if (
             requested_status == VehicleEntry.Status.READY_TO_SETTLE
             and self._is_plate_blocked(
@@ -312,11 +333,20 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         services_total = Decimal('0')
         normalized_services = []
         for item in services_payload:
-            unit_price = Decimal(str(item.get('price', 0) or 0))
+            service_obj = None
+            service_id = item.get('id') or item.get('service_id')
+            if service_id:
+                service_obj = Service.objects.filter(id=service_id, tenant=tenant, is_active=True).first()
+            unit_price = self._resolve_service_defaults(
+                service_obj,
+                tariff_type=validated_data.get('tariff_type'),
+                plate_type=plate_type,
+                fallback_price=item.get('price', 0),
+            )
             discount_amount = max(Decimal('0'), Decimal(str(item.get('discount_amount', 0) or 0)))
             line_total = max(Decimal('0'), unit_price - discount_amount)
             services_total += line_total
-            normalized_services.append((item, unit_price, discount_amount, line_total))
+            normalized_services.append((item, service_obj, unit_price, discount_amount, line_total))
         products_total = Decimal('0')
         product_lines_data = []
         for item in products_payload:
@@ -378,13 +408,14 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         )
         self._mark_workers_assigned(tenant, staff_members_payload, assigned_worker)
 
-        for item, unit_price, discount_amount, line_total in normalized_services:
+        for item, service_obj, unit_price, discount_amount, line_total in normalized_services:
             title = (item.get('title') or '').strip() or 'خدمت بدون نام'
-            service_obj, _ = Service.objects.get_or_create(
-                name=title,
-                tenant=tenant,
-                defaults={'base_price': unit_price, 'is_active': True},
-            )
+            if not service_obj:
+                service_obj, _ = Service.objects.get_or_create(
+                    name=title,
+                    tenant=tenant,
+                    defaults={'base_price': unit_price, 'is_active': True},
+                )
             VehicleJobService.objects.create(
                 tenant=tenant,
                 vehicle_job=vehicle_job,
@@ -455,6 +486,12 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         tip_amount_payload = validated_data.pop('tip_amount', None)
         manual_discount_payload = validated_data.pop('manual_discount_total', None)
         share_payload = validated_data.pop('share', None)
+        plate_type = validated_data.get('plate_type') or getattr(instance, 'plate_type', VehicleEntry.PlateType.CAR)
+        if 'tariff_type' in validated_data:
+            validated_data['tariff_type'] = self._normalized_tariff_type(
+                validated_data.get('tariff_type'),
+                plate_type=plate_type,
+            )
         blocked_plate_payment_confirmed = bool(validated_data.pop('blocked_plate_payment_confirmed', False))
         worker_id = validated_data.pop('worker_id', None)
         worker_name = (validated_data.pop('worker_name', '') or '').strip()
@@ -547,14 +584,24 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             vehicle_job.service_lines.all().delete()
             for item in (services_payload or []):
                 title = (item.get('title') or '').strip() or 'خدمت بدون نام'
-                unit_price = Decimal(str(item.get('price', 0) or 0))
+                service_obj = None
+                service_id = item.get('id') or item.get('service_id')
+                if service_id:
+                    service_obj = Service.objects.filter(id=service_id, tenant=tenant, is_active=True).first()
+                unit_price = self._resolve_service_defaults(
+                    service_obj,
+                    tariff_type=validated_data.get('tariff_type', getattr(instance, 'tariff_type', VehicleEntry.TariffType.TYPE_1)),
+                    plate_type=plate_type,
+                    fallback_price=item.get('price', 0),
+                )
                 discount_amount = max(Decimal('0'), Decimal(str(item.get('discount_amount', 0) or 0)))
                 line_total = max(Decimal('0'), unit_price - discount_amount)
-                service_obj, _ = Service.objects.get_or_create(
-                    name=title,
-                    tenant=tenant,
-                    defaults={'base_price': unit_price, 'is_active': True},
-                )
+                if not service_obj:
+                    service_obj, _ = Service.objects.get_or_create(
+                        name=title,
+                        tenant=tenant,
+                        defaults={'base_price': unit_price, 'is_active': True},
+                    )
                 VehicleJobService.objects.create(
                     tenant=tenant,
                     vehicle_job=vehicle_job,
@@ -678,6 +725,9 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('نوع پلاک نامعتبر است.')
         return normalized
 
+    def validate_tariff_type(self, value):
+        return str(value or VehicleEntry.TariffType.TYPE_1).strip().lower()
+
     def _incoming_plate_type(self):
         if isinstance(getattr(self, 'initial_data', None), dict):
             raw_value = self.initial_data.get('plate_type')
@@ -692,6 +742,10 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             or getattr(self.instance, 'plate_type', VehicleEntry.PlateType.CAR)
             or VehicleEntry.PlateType.CAR
         ).strip().lower()
+        attrs['tariff_type'] = self._normalized_tariff_type(
+            attrs.get('tariff_type', getattr(self.instance, 'tariff_type', VehicleEntry.TariffType.TYPE_1)),
+            plate_type=plate_type,
+        )
         if plate_type == VehicleEntry.PlateType.MOTORCYCLE:
             attrs['plate_left'] = ''
             attrs['plate_right'] = ''
@@ -921,6 +975,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'plate_mid',
             'plate_right',
             'plate_type',
+            'tariff_type',
             'car_model',
             'car_color',
             'driver_name',
