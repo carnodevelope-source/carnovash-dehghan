@@ -58,7 +58,7 @@
           <div>
             <p class="panel-kicker">ثبت نام کارواش</p>
             <h3>اطلاعات کارواش و مدیر را کامل کنید</h3>
-            <span>پس از ثبت، کارواش ساخته می‌شود و اطلاعات ورود مدیر نمایش داده شده و با پیامک هم ارسال می‌شود.</span>
+            <span>پس از ثبت، مدارک به پشتیبانی ارسال می‌شود. بعد از تایید پشتیبان، پیامک فعال‌سازی فرستاده می‌شود و لاگین مدیر باز خواهد شد.</span>
           </div>
           <button class="modal-close" type="button" @click="closeRegisterModal">×</button>
         </header>
@@ -77,6 +77,14 @@
               <label class="field field-soft full">
                 <span>آدرس کامل کارواش</span>
                 <textarea v-model.trim="registerForm.carwash_address" rows="3" placeholder="شهر، خیابان، پلاک یا توضیح موقعیت" />
+              </label>
+              <label class="field field-soft full">
+                <span>مدارک شناسایی کسب‌وکار</span>
+                <input type="file" multiple accept=".jpg,.jpeg,.png,.pdf,.webp" @change="onRegisterDocumentsChange" />
+                <small class="upload-hint">حداقل یک فایل بارگذاری کنید. فرمت‌های مجاز: تصویر یا PDF</small>
+                <div v-if="registerForm.business_identity_documents.length" class="upload-file-list">
+                  <span v-for="file in registerForm.business_identity_documents" :key="`${file.name}-${file.size}`">{{ file.name }}</span>
+                </div>
               </label>
             </div>
           </section>
@@ -111,29 +119,29 @@
                 <button class="field-toggle align-start" type="button" @click="showRegisterPassword = !showRegisterPassword">
                   {{ showRegisterPassword ? 'پنهان کردن رمز' : 'نمایش رمز' }}
                 </button>
-                <p>همین نام کاربری و رمز داخل پیامک هم برای مدیر ارسال می‌شود.</p>
+                <p>بعد از تایید پشتیبانی، همین نام کاربری و رمز برای مدیر پیامک می‌شود و امکان ورود فعال خواهد شد.</p>
               </div>
             </div>
           </section>
 
           <p v-if="registerError" class="error-text register-error">{{ registerError }}</p>
 
-          <section v-if="registerSuccess.credentials.username" class="register-result">
+          <section v-if="registerSuccess.pendingApproval" class="register-result">
             <div class="register-result-head">
-              <strong>ثبت نام انجام شد</strong>
+              <strong>درخواست ثبت شد</strong>
               <span>{{ registerSuccess.tenantName }}</span>
             </div>
             <div class="credential-grid">
               <article>
-                <small>نام کاربری مدیر</small>
-                <strong>{{ registerSuccess.credentials.username }}</strong>
+                <small>شماره پیگیری تیکت</small>
+                <strong>#{{ registerSuccess.ticketId || '-' }}</strong>
               </article>
               <article>
-                <small>رمز عبور اولیه</small>
-                <strong>{{ registerSuccess.credentials.password }}</strong>
+                <small>وضعیت</small>
+                <strong>در انتظار تایید پشتیبانی</strong>
               </article>
             </div>
-            <p class="sms-note" :class="{ danger: registerSuccess.smsAttempted && !registerSuccess.smsOk }">
+            <p class="sms-note">
               {{ registerSuccess.smsMessage }}
             </p>
           </section>
@@ -181,38 +189,49 @@ const registerForm = reactive({
   manager_last_name: '',
   manager_username: '',
   manager_phone: '',
-  manager_password: ''
+  manager_password: '',
+  business_identity_documents: []
 })
 
 const registerModal = reactive({ open: false })
 const registerSuccess = reactive({
   tenantName: '',
-  credentials: {
-    username: '',
-    password: ''
-  },
-  smsAttempted: false,
-  smsOk: false,
+  pendingApproval: false,
+  ticketId: 0,
   smsMessage: ''
 })
 
 const resetRegisterState = () => {
   registerError.value = ''
   registerSuccess.tenantName = ''
-  registerSuccess.credentials.username = ''
-  registerSuccess.credentials.password = ''
-  registerSuccess.smsAttempted = false
-  registerSuccess.smsOk = false
+  registerSuccess.pendingApproval = false
+  registerSuccess.ticketId = 0
   registerSuccess.smsMessage = ''
+}
+
+const resetRegisterForm = () => {
+  registerForm.carwash_name = ''
+  registerForm.carwash_address = ''
+  registerForm.manager_first_name = ''
+  registerForm.manager_last_name = ''
+  registerForm.manager_username = ''
+  registerForm.manager_phone = ''
+  registerForm.manager_password = ''
+  registerForm.business_identity_documents = []
 }
 
 const openRegisterModal = () => {
   resetRegisterState()
+  resetRegisterForm()
   registerModal.open = true
 }
 
 const closeRegisterModal = () => {
   registerModal.open = false
+}
+
+const onRegisterDocumentsChange = (event) => {
+  registerForm.business_identity_documents = Array.from(event?.target?.files || [])
 }
 
 const onSubmit = async () => {
@@ -243,31 +262,35 @@ const onSubmit = async () => {
 const submitRegister = async () => {
   if (registerLoading.value) return
   resetRegisterState()
+  if (!registerForm.business_identity_documents.length) {
+    registerError.value = 'بارگذاری حداقل یک مدرک شناسایی کسب‌وکار الزامی است.'
+    return
+  }
 
   registerLoading.value = true
   try {
     await ensureCsrfToken()
-    const { data } = await api.post('/auth/tenants/register/', {
-      carwash_name: registerForm.carwash_name,
-      carwash_address: registerForm.carwash_address,
-      manager_first_name: registerForm.manager_first_name,
-      manager_last_name: registerForm.manager_last_name,
-      manager_username: registerForm.manager_username,
-      manager_phone: registerForm.manager_phone,
-      manager_password: registerForm.manager_password
+    const payload = new FormData()
+    payload.append('carwash_name', registerForm.carwash_name)
+    payload.append('carwash_address', registerForm.carwash_address || '')
+    payload.append('manager_first_name', registerForm.manager_first_name)
+    payload.append('manager_last_name', registerForm.manager_last_name)
+    payload.append('manager_username', registerForm.manager_username)
+    payload.append('manager_phone', registerForm.manager_phone)
+    payload.append('manager_password', registerForm.manager_password)
+    registerForm.business_identity_documents.forEach((file) => {
+      payload.append('business_identity_documents', file)
     })
-
+    const { data } = await api.post('/auth/tenants/register/', payload, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
     registerSuccess.tenantName = data?.tenant?.name || registerForm.carwash_name
-    registerSuccess.credentials.username = data?.credentials?.username || registerForm.manager_username
-    registerSuccess.credentials.password = data?.credentials?.password || registerForm.manager_password
-    registerSuccess.smsAttempted = Boolean(data?.sms?.attempted)
-    registerSuccess.smsOk = Boolean(data?.sms?.ok)
-    registerSuccess.smsMessage = data?.sms?.ok
-      ? 'نام کاربری و رمز عبور برای مدیر پیامک شد.'
-      : (data?.sms?.message || 'ثبت انجام شد اما پیامک ارسال نشد.')
-
-    form.username = registerSuccess.credentials.username
-    form.password = registerSuccess.credentials.password
+    registerSuccess.pendingApproval = data?.registration?.status === 'pending'
+    registerSuccess.ticketId = Number(data?.registration?.ticket_id || 0)
+    registerSuccess.smsMessage = data?.registration?.message || 'درخواست شما برای بررسی پشتیبانی ثبت شد.'
+    form.username = registerForm.manager_username
+    form.password = ''
+    resetRegisterForm()
   } catch (error) {
     registerError.value = resolveApiErrorMessage(error, 'ثبت نام ناموفق بود.')
   } finally {
@@ -615,6 +638,29 @@ const submitRegister = async () => {
 .field-soft input,
 .field-soft textarea {
   background: rgba(255, 255, 255, 0.72);
+}
+
+.upload-hint {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.upload-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.upload-file-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  color: #334155;
 }
 
 .full {

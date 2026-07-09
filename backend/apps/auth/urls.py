@@ -6,6 +6,7 @@ from .views import (
     HqCarWashInsightView,
     HqCarWashListCreateView,
     HqCarWashUpdateView,
+    HqTicketApproveRegistrationView,
     HqReportsView,
     HqSupportUserDetailView,
     HqSupportUserListCreateView,
@@ -44,6 +45,7 @@ urlpatterns = [
     path('hq/tickets/', HqTicketListView.as_view(), name='hq-tickets'),
     path('hq/tickets/<int:pk>/', HqTicketDetailView.as_view(), name='hq-ticket-detail'),
     path('hq/tickets/<int:pk>/messages/', HqTicketMessageCreateView.as_view(), name='hq-ticket-message'),
+    path('hq/tickets/<int:pk>/approve-registration/', HqTicketApproveRegistrationView.as_view(), name='hq-ticket-approve-registration'),
     path('hq/tickets/<int:pk>/wallet-transfer/', HqTicketWalletTransferView.as_view(), name='hq-ticket-wallet-transfer'),
     path('hq/reports/', HqReportsView.as_view(), name='hq-reports'),
 ]

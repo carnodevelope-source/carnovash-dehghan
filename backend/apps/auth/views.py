@@ -21,7 +21,7 @@ from apps.notifications.services import normalize_phone, send_provider_sms
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
 from apps.vehicles.models import VehicleEntry
 from apps.workers.models import WorkerAttendance, WorkerProfile
-from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketAttachment, SupportTicketMessage, User
+from .models import CarWash, CarWashFeaturePurchase, PendingTenantRegistration, SupportTicket, SupportTicketAttachment, SupportTicketMessage, User
 from .sms import (
     send_registration_credentials_sms as send_system_registration_credentials_sms,
     send_user_credentials_sms as send_system_user_credentials_sms,
@@ -110,7 +110,6 @@ def _send_ticket_assigned_sms(ticket):
         return send_provider_sms(None, body, [phone])
     except Exception as exc:
         return {'sent': False, 'error': str(exc)}
-
 
 def _auth_payload(user):
     feature_keys = set(user.tenant.active_feature_keys()) if getattr(user, 'tenant_id', None) else set()
@@ -378,13 +377,14 @@ def _recalculate_support_metrics(user):
 def _tenant_ticket_queryset():
     visible_messages = SupportTicketMessage.objects.filter(is_internal=False).select_related('sender').order_by('created_at', 'id')
     return (
-        SupportTicket.objects.select_related('tenant', 'created_by', 'assigned_to', 'responded_by')
+        SupportTicket.objects.select_related('tenant', 'created_by', 'assigned_to', 'responded_by', 'registration_request__manager')
         .prefetch_related(Prefetch('messages', queryset=visible_messages), 'attachments')
     )
 
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = 'login'
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -408,6 +408,7 @@ class MeView(APIView):
 @method_decorator(ensure_csrf_cookie, name='dispatch')
 class CsrfView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = 'csrf'
 
     def get(self, request):
         return Response({'detail': 'CSRF cookie set.'}, status=status.HTTP_200_OK)
@@ -444,6 +445,7 @@ class UserManagementView(APIView):
 
 class TenantRegisterView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = 'tenant_register'
 
     @transaction.atomic
     def post(self, request):
@@ -462,11 +464,15 @@ class TenantRegisterView(APIView):
         if requested_slug and CarWash.objects.filter(slug=requested_slug).exists():
             return Response({'carwash_slug': ['این شناسه قبلا ثبت شده است.']}, status=status.HTTP_400_BAD_REQUEST)
 
+        documents = request.FILES.getlist('business_identity_documents')
+        if not documents:
+            return Response({'business_identity_documents': ['بارگذاری حداقل یک مدرک شناسایی کسب‌وکار الزامی است.']}, status=status.HTTP_400_BAD_REQUEST)
+
         tenant = CarWash.objects.create(
             name=data['carwash_name'],
             slug=requested_slug or _build_unique_carwash_slug(data['carwash_name']),
             address=(data.get('carwash_address') or '').strip(),
-            is_active=True,
+            is_active=False,
         )
         manager = user_model.objects.create(
             username=data['manager_username'],
@@ -476,23 +482,57 @@ class TenantRegisterView(APIView):
             phone=data['manager_phone'],
             tenant=tenant,
             role='manager',
-            is_active=True,
+            is_active=False,
             is_staff=True,
             is_superuser=False,
         )
         manager.set_password(data['manager_password'])
         manager.save(update_fields=['password'])
-        sms_result = send_system_registration_credentials_sms(
+        assignee = _default_hq_support_user()
+        ticket = SupportTicket.objects.create(
             tenant=tenant,
-            carwash_name=tenant.name,
-            phone=manager.phone,
-            username=manager.username,
-            password=data['manager_password'],
+            created_by=manager,
+            subject=f'درخواست تایید ثبت‌نام کارواش: {tenant.name}',
+            message=(
+                f'ثبت‌نام جدید برای کارواش «{tenant.name}» ثبت شد.\n'
+                f'مدیر: {manager.full_name or manager.username}\n'
+                f'نام کاربری: {manager.username}\n'
+                f'شماره موبایل: {manager.phone}\n'
+                f'آدرس: {tenant.address or "-"}\n'
+                f'لطفا مدارک کسب‌وکار را بررسی و در صورت تایید، حساب را فعال کنید.'
+            ),
+            category=SupportTicket.Category.ACCOUNT,
+            priority=SupportTicket.Priority.HIGH,
+            status=SupportTicket.Status.OPEN,
+            assigned_to=assignee,
+            last_message_at=timezone.now(),
+            is_registration_request=True,
         )
+        SupportTicketMessage.objects.create(
+            ticket=ticket,
+            sender=manager,
+            body='درخواست ثبت‌نام و مدارک شناسایی کسب‌وکار برای بررسی پشتیبانی ارسال شد.',
+        )
+        for uploaded_file in documents:
+            SupportTicketAttachment.objects.create(
+                ticket=ticket,
+                uploaded_by=manager,
+                file=uploaded_file,
+                original_name=getattr(uploaded_file, 'name', '')[:255],
+            )
+        PendingTenantRegistration.objects.create(
+            tenant=tenant,
+            manager=manager,
+            support_ticket=ticket,
+            status=PendingTenantRegistration.Status.PENDING,
+            temp_password=data['manager_password'],
+        )
+        if ticket.assigned_to_id:
+            _send_ticket_assigned_sms(ticket)
 
         return Response(
             {
-                'tenant': {'id': tenant.id, 'name': tenant.name, 'slug': tenant.slug, 'address': tenant.address},
+                'tenant': {'id': tenant.id, 'name': tenant.name, 'slug': tenant.slug, 'address': tenant.address, 'is_active': tenant.is_active},
                 'manager': {
                     'id': manager.id,
                     'username': manager.username,
@@ -501,12 +541,14 @@ class TenantRegisterView(APIView):
                     'last_name': manager.last_name,
                     'phone': manager.phone,
                     'role': manager.role,
+                    'is_active': manager.is_active,
                 },
-                'credentials': {
-                    'username': manager.username,
-                    'password': data['manager_password'],
+                'registration': {
+                    'status': PendingTenantRegistration.Status.PENDING,
+                    'ticket_id': ticket.id,
+                    'documents_count': len(documents),
+                    'message': 'درخواست ثبت‌نام شما همراه با مدارک برای پشتیبانی ارسال شد. بعد از تایید، پیامک فعال‌سازی ارسال می‌شود و لاگین شما باز خواهد شد.',
                 },
-                'sms': sms_result,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -1070,6 +1112,7 @@ class HqTicketListView(HqBaseView):
 
         queryset = (
             SupportTicket.objects.select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
+            .select_related('registration_request__manager')
             .prefetch_related('messages__sender')
             .order_by('-last_message_at', '-created_at')
         )
@@ -1108,6 +1151,7 @@ class HqTicketDetailView(HqBaseView):
         queryset = (
             SupportTicket.objects.filter(pk=pk)
             .select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
+            .select_related('registration_request__manager')
             .prefetch_related('messages__sender', 'attachments')
         )
         if not _is_hq_admin(request.user):
@@ -1276,6 +1320,116 @@ class HqTicketWalletTransferView(HqBaseView):
                 'wallet_balance': wallet.balance,
                 'transaction_id': cashflow.id,
                 'ticket': SupportTicketDetailSerializer(ticket).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class HqTicketApproveRegistrationView(HqBaseView):
+    @transaction.atomic
+    def post(self, request, pk):
+        forbidden = self.forbid_if_not_hq(request)
+        if forbidden:
+            return forbidden
+
+        queryset = (
+            SupportTicket.objects.select_for_update()
+            .filter(pk=pk, is_registration_request=True)
+            .select_related('tenant', 'assigned_to', 'registration_request__manager')
+        )
+        if not _is_hq_admin(request.user):
+            tenant = getattr(request.user, 'tenant', None)
+            tenant_filter = Q(assigned_to=request.user)
+            if tenant:
+                tenant_filter |= Q(tenant=tenant)
+            queryset = queryset.filter(tenant_filter).distinct()
+        ticket = queryset.first()
+        if not ticket:
+            return Response({'detail': 'درخواست ثبت‌نام یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        registration = getattr(ticket, 'registration_request', None)
+        if not registration:
+            return Response({'detail': 'اطلاعات ثبت‌نام برای این تیکت کامل نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+        if registration.status != PendingTenantRegistration.Status.PENDING:
+            return Response({'detail': 'این درخواست قبلا بررسی شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        tenant = ticket.tenant
+        manager = registration.manager
+        approval_time = timezone.now()
+
+        tenant.is_active = True
+        tenant.save(update_fields=['is_active', 'updated_at'])
+
+        manager.is_active = True
+        if registration.temp_password:
+            manager.set_password(registration.temp_password)
+            manager.save(update_fields=['is_active', 'password'])
+        else:
+            manager.save(update_fields=['is_active'])
+
+        sms_result = send_system_registration_credentials_sms(
+            tenant=tenant,
+            carwash_name=tenant.name,
+            phone=manager.phone,
+            username=manager.username,
+            password=registration.temp_password,
+        ) if registration.temp_password else {
+            'attempted': False,
+            'ok': False,
+            'message': 'رمز عبور موقت برای ارسال پیامک در دسترس نیست.',
+        }
+
+        note_body = (
+            'مدارک کسب‌وکار تایید شد و حساب کارواش فعال گردید.'
+            if sms_result.get('ok') else
+            f'مدارک کسب‌وکار تایید شد و حساب فعال گردید، اما ارسال پیامک ناموفق بود: {sms_result.get("message") or "-"}'
+        )
+        message = SupportTicketMessage.objects.create(
+            ticket=ticket,
+            sender=request.user,
+            body=note_body,
+            is_internal=False,
+        )
+        ticket.status = SupportTicket.Status.CLOSED
+        ticket.response_text = note_body
+        ticket.responded_by = request.user
+        ticket.responded_at = approval_time
+        if not ticket.first_response_at:
+            ticket.first_response_at = approval_time
+        ticket.closed_at = approval_time
+        ticket.last_message_at = message.created_at
+        ticket.save(update_fields=[
+            'status',
+            'response_text',
+            'responded_by',
+            'responded_at',
+            'first_response_at',
+            'closed_at',
+            'last_message_at',
+            'updated_at',
+        ])
+
+        registration.status = PendingTenantRegistration.Status.APPROVED
+        registration.reviewed_by = request.user
+        registration.reviewed_at = approval_time
+        registration.temp_password = ''
+        registration.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'temp_password', 'updated_at'])
+
+        if ticket.assigned_to_id:
+            _recalculate_support_metrics(ticket.assigned_to)
+
+        refreshed = (
+            SupportTicket.objects.filter(pk=ticket.pk)
+            .select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
+            .select_related('registration_request__manager')
+            .prefetch_related('messages__sender', 'attachments')
+            .first()
+        )
+        return Response(
+            {
+                'detail': 'ثبت‌نام کارواش تایید و حساب فعال شد.',
+                'sms': sms_result,
+                'ticket': SupportTicketDetailSerializer(refreshed, context={'request': request}).data,
             },
             status=status.HTTP_200_OK,
         )

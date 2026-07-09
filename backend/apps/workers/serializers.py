@@ -1,4 +1,5 @@
 ﻿from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import serializers
 import secrets
 
@@ -47,6 +48,7 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
     address = serializers.CharField(read_only=True)
     payment_type = serializers.SerializerMethodField()
     payment_value = serializers.SerializerMethodField()
+    insurance_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     entrusted_items = serializers.SerializerMethodField()
     attendance_token = serializers.SerializerMethodField()
     attendance_path = serializers.SerializerMethodField()
@@ -134,6 +136,7 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
             'active_jobs_count',
             'payment_type',
             'payment_value',
+            'insurance_amount',
             'tip_share_percent',
             'default_commission_percent',
             'default_fixed_wage',
@@ -197,6 +200,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
     is_available = serializers.BooleanField(default=True)
     payment_type = serializers.ChoiceField(choices=['percent', 'fixed', 'hourly'], default='percent')
     payment_value = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
+    insurance_amount = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
     tip_share_percent = serializers.DecimalField(max_digits=5, decimal_places=2, default=0)
     has_entrusted_item = serializers.BooleanField(default=False)
     entrusted_items = serializers.ListField(child=serializers.DictField(), required=False, default=list)
@@ -257,6 +261,9 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError({'payment_value': 'مقدار پرداخت نمی‌تواند منفی باشد.'})
         if payment_type == 'percent' and payment_value > 100:
             raise serializers.ValidationError({'payment_value': 'درصد پرداخت باید بین ۰ تا ۱۰۰ باشد.'})
+        insurance_amount = attrs.get('insurance_amount', 0) or 0
+        if insurance_amount < 0:
+            raise serializers.ValidationError({'insurance_amount': 'مبلغ حق بیمه نمی‌تواند منفی باشد.'})
         tip_share_percent = attrs.get('tip_share_percent', 0) or 0
         if tip_share_percent < 0 or tip_share_percent > 100:
             raise serializers.ValidationError({'tip_share_percent': 'درصد انعام باید بین ۰ تا ۱۰۰ باشد.'})
@@ -351,7 +358,8 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         if profile.tenant_id is None:
             profile.tenant = tenant
         profile.is_available = validated_data.get('is_available', True)
-        profile.started_at = validated_data.get('started_at')
+        joined_at = timezone.localtime(user.date_joined) if timezone.is_aware(user.date_joined) else user.date_joined
+        profile.started_at = joined_at.date()
         profile.address = str(validated_data.get('address') or '').strip()
         profile.has_entrusted_item = bool(validated_data.get('has_entrusted_item', False))
         profile.entrusted_items = validated_data.get('entrusted_items', [])
@@ -361,6 +369,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         payment_type = validated_data.get('payment_type', 'percent')
         payment_value = validated_data.get('payment_value', 0) or 0
         profile.tip_share_percent = validated_data.get('tip_share_percent', 0) or 0
+        profile.insurance_amount = validated_data.get('insurance_amount', 0) or 0
         if payment_type == 'fixed':
             profile.default_fixed_wage = payment_value
             profile.default_hourly_wage = 0
@@ -376,7 +385,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             profile.default_fixed_wage = 0
             profile.default_hourly_wage = 0
             profile.payment_type = 'percent'
-        profile.save(update_fields=['tenant', 'is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
+        profile.save(update_fields=['tenant', 'is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'insurance_amount', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
 
         return profile
 
@@ -411,6 +420,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         payment_type = validated_data.get('payment_type', 'percent')
         payment_value = validated_data.get('payment_value', 0) or 0
         instance.tip_share_percent = validated_data.get('tip_share_percent', 0) or 0
+        instance.insurance_amount = validated_data.get('insurance_amount', instance.insurance_amount) or 0
         if payment_type == 'fixed':
             instance.default_fixed_wage = payment_value
             instance.default_hourly_wage = 0
@@ -426,6 +436,6 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             instance.default_fixed_wage = 0
             instance.default_hourly_wage = 0
             instance.payment_type = 'percent'
-        instance.save(update_fields=['is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
+        instance.save(update_fields=['is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'insurance_amount', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
 
         return instance

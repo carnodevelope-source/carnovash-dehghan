@@ -47,6 +47,7 @@ class WorkerPayoutTransaction(TimestampedModel):
     class Kind(models.TextChoices):
         WAGE_PAYMENT = 'wage_payment', 'Wage Payment'
         TIP_PAYMENT = 'tip_payment', 'Tip Payment'
+        INSURANCE_PAYMENT = 'insurance_payment', 'Insurance Payment'
         BONUS = 'bonus', 'Bonus'
         PENALTY = 'penalty', 'Penalty'
 
@@ -71,6 +72,7 @@ class WorkerPayoutTransaction(TimestampedModel):
     )
     kind = models.CharField(max_length=20, choices=Kind.choices)
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reference_month = models.CharField(max_length=7, blank=True)
     note = models.CharField(max_length=255, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -84,5 +86,6 @@ class WorkerPayoutTransaction(TimestampedModel):
         ordering = ['-created_at', '-id']
         indexes = [
             models.Index(fields=['worker', 'kind', 'created_at']),
+            models.Index(fields=['worker', 'kind', 'reference_month']),
             models.Index(fields=['tenant', 'created_at']),
         ]

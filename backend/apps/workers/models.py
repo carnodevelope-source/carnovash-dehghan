@@ -38,6 +38,7 @@ class WorkerProfile(TimestampedModel):
     )
     default_fixed_wage = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     default_hourly_wage = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    insurance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     payment_type = models.CharField(max_length=20, choices=PaymentType.choices, default=PaymentType.PERCENT)
     tip_share_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     last_assigned_at = models.DateTimeField(null=True, blank=True)

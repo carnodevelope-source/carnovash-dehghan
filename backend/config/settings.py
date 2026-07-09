@@ -1,6 +1,7 @@
 import socket
 from pathlib import Path
 from decouple import config
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -38,6 +39,10 @@ ALLOWED_HOSTS = list(
         ]
     )
 )
+if not DEBUG and SECRET_KEY == 'replace-me':
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set in production.')
+if not DEBUG and ('*' in ALLOWED_HOSTS or not ALLOWED_HOSTS):
+    raise ImproperlyConfigured('DJANGO_ALLOWED_HOSTS must be explicitly set in production.')
 PLATE_AI_SERVICE_URL = config('PLATE_AI_SERVICE_URL', default='http://127.0.0.1:8765')
 PLATE_AI_TIMEOUT_SECONDS = config('PLATE_AI_TIMEOUT_SECONDS', default=5.0, cast=float)
 
@@ -131,10 +136,18 @@ SESSION_COOKIE_SECURE = config('DJANGO_SESSION_COOKIE_SECURE', default=not DEBUG
 CSRF_COOKIE_SECURE = config('DJANGO_CSRF_COOKIE_SECURE', default=not DEBUG, cast=bool)
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False
-SECURE_SSL_REDIRECT = config('DJANGO_SECURE_SSL_REDIRECT', default=False, cast=bool)
+SESSION_COOKIE_SAMESITE = config('DJANGO_SESSION_COOKIE_SAMESITE', default='Lax')
+CSRF_COOKIE_SAMESITE = config('DJANGO_CSRF_COOKIE_SAMESITE', default='Lax')
+SECURE_SSL_REDIRECT = config('DJANGO_SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
 SECURE_REDIRECT_EXEMPT = [r'^api/health/$']
 if config('DJANGO_SECURE_PROXY_SSL_HEADER', default=not DEBUG, cast=bool):
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_REFERRER_POLICY = config('DJANGO_SECURE_REFERRER_POLICY', default='same-origin')
+SECURE_HSTS_SECONDS = config('DJANGO_SECURE_HSTS_SECONDS', default=(3600 if not DEBUG else 0), cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = config('DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS', default=not DEBUG, cast=bool)
+SECURE_HSTS_PRELOAD = config('DJANGO_SECURE_HSTS_PRELOAD', default=False, cast=bool)
 
 CORS_ALLOW_ALL_ORIGINS = False
 DEFAULT_DEV_ORIGINS = [
@@ -156,11 +169,20 @@ CSRF_TRUSTED_ORIGINS = _csv_config(
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'EXCEPTION_HANDLER': 'config.api.exception_handler',
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'login': config('DJANGO_THROTTLE_LOGIN', default='10/minute'),
+        'tenant_register': config('DJANGO_THROTTLE_TENANT_REGISTER', default='5/hour'),
+        'attendance_public': config('DJANGO_THROTTLE_ATTENDANCE_PUBLIC', default='30/minute'),
+        'csrf': config('DJANGO_THROTTLE_CSRF', default='60/minute'),
+    },
 }
 
 IRANPAYAMAK_BASE_URL = config('IRANPAYAMAK_BASE_URL', default='https://api.iranpayamak.com')

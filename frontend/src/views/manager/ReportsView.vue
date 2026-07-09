@@ -35,6 +35,10 @@
           </select>
         </div>
         <div class="field">
+          <span><IconlyIcon name="calendar" size="xs" />ماه بیمه</span>
+          <BaseDatePicker v-model="filters.insuranceMonthJalali" placeholder="1405/01/01" />
+        </div>
+        <div class="field">
           <span><IconlyIcon name="category" size="xs" />نوع وسیله</span>
           <select v-model="filters.plateType">
             <option value="">همه</option>
@@ -125,6 +129,7 @@
             <h3>گزارش حق نیرو</h3>
             <div v-if="selectedWorkerSummary" class="action-row">
               <button class="primary-btn btn-with-icon" @click="openPayoutModal('wage')"><IconlyIcon name="wallet" size="sm" />{{ payoutButtonLabel }}</button>
+              <button class="primary-btn btn-with-icon" @click="openPayoutModal('insurance')"><IconlyIcon name="wallet" size="sm" />{{ insurancePayoutButtonLabel }}</button>
               <button class="secondary-btn btn-with-icon" @click="openPayoutModal('tip')"><IconlyIcon name="wallet" size="sm" />{{ tipPayoutButtonLabel }}</button>
             </div>
           </div>
@@ -134,6 +139,9 @@
             <article class="payout-card"><p>جریمه</p><strong>{{ money(selectedWorkerSummary.penalty_total) }}</strong></article>
             <article class="payout-card"><p>پرداخت شده</p><strong>{{ money(selectedWorkerSummary.wage_paid_total) }}</strong></article>
             <article class="payout-card"><p>مانده حقوق</p><strong>{{ money(selectedWorkerSummary.payable_total) }}</strong></article>
+            <article class="payout-card"><p>حق بیمه هر ماه</p><strong>{{ money(selectedWorkerSummary.insurance_monthly_amount) }}</strong></article>
+            <article class="payout-card"><p>پرداخت بیمه تا این ماه</p><strong>{{ money(selectedWorkerSummary.insurance_paid_total) }}</strong></article>
+            <article class="payout-card"><p>مانده بیمه تا این ماه</p><strong>{{ money(selectedWorkerSummary.insurance_balance) }}</strong></article>
             <article class="payout-card"><p>انعام</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
           </div>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
@@ -147,9 +155,9 @@
                 <button class="secondary-btn danger-soft btn-with-icon" @click="openAdjustmentModal('penalty')"><IconlyIcon name="trash" size="sm" />ثبت جریمه</button>
               </div>
             </div>
-            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نوع</th><th>مبلغ</th><th>سفارش</th><th>توضیح</th><th>زمان</th></tr></thead><tbody>
-              <tr v-for="(row, index) in selectedWorkerTransactions" :key="row.id"><td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td><td>{{ payoutKindLabel(row.kind) }}</td><td>{{ money(row.amount) }}</td><td>{{ row.vehicle_job_id || '-' }}</td><td>{{ row.note || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
-              <tr v-if="!selectedWorkerTransactions.length"><td colspan="6">تراکنشی ثبت نشده است.</td></tr>
+            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نوع</th><th>مبلغ</th><th>ماه بیمه</th><th>سفارش</th><th>توضیح</th><th>زمان</th></tr></thead><tbody>
+              <tr v-for="(row, index) in selectedWorkerTransactions" :key="row.id"><td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td><td>{{ payoutKindLabel(row.kind) }}</td><td>{{ money(row.amount) }}</td><td>{{ row.reference_month || '-' }}</td><td>{{ row.vehicle_job_id || '-' }}</td><td>{{ row.note || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+              <tr v-if="!selectedWorkerTransactions.length"><td colspan="7">تراکنشی ثبت نشده است.</td></tr>
             </tbody></table></div>
           </div>
         </template>
@@ -208,17 +216,27 @@
   <div v-if="payoutModal.open" class="modal-overlay" @click.self="closePayoutModal">
     <section class="modal-panel action-panel">
       <header class="modal-head">
-        <h3>{{ payoutModal.target === 'tip' ? 'پرداخت انعام' : 'پرداخت حقوق' }} {{ selectedWorkerSummary?.worker_name || '' }}</h3>
+        <h3>{{ payoutModal.target === 'tip' ? 'پرداخت انعام' : payoutModal.target === 'insurance' ? 'پرداخت حق بیمه' : 'پرداخت حقوق' }} {{ selectedWorkerSummary?.worker_name || '' }}</h3>
         <button class="close-btn" @click="closePayoutModal">✕</button>
       </header>
       <div class="modal-body">
-        <label><span>نوع پرداخت</span><select v-model="payoutModal.mode"><option value="full">{{ payoutModal.target === 'tip' ? 'کل انعام' : 'کل حقوق' }}</option><option value="partial">{{ payoutModal.target === 'tip' ? 'بخشی از انعام' : 'بخشی از حقوق' }}</option></select></label>
+        <label><span>نوع پرداخت</span><select v-model="payoutModal.mode"><option value="full">{{ payoutModal.target === 'tip' ? 'کل انعام' : payoutModal.target === 'insurance' ? 'کل حق بیمه' : 'کل حقوق' }}</option><option value="partial">{{ payoutModal.target === 'tip' ? 'بخشی از انعام' : payoutModal.target === 'insurance' ? 'بخشی از حق بیمه' : 'بخشی از حقوق' }}</option></select></label>
+        <label v-if="payoutModal.target === 'insurance'">
+          <span>ماه بیمه (شمسی)</span>
+          <select v-model="payoutModal.insuranceMonth">
+            <option value="" disabled>انتخاب ماه</option>
+            <option v-for="item in insuranceMonthOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+          </select>
+        </label>
         <label v-if="payoutModal.mode === 'partial'"><span>مبلغ (هزار تومان)</span><input v-model.number="payoutModal.amount" type="number" min="1" /></label>
         <p v-if="payoutModal.mode === 'partial'" class="helper-note" :class="{ error: payoutValidationMessage }">
           {{ payoutValidationMessage || `مانده قابل پرداخت: ${money(payoutModalMaxAmount)}. مبلغ باید کمتر از مانده باشد.` }}
         </p>
+        <p v-if="payoutSubmitError" class="helper-note error">
+          {{ payoutSubmitError }}
+        </p>
         <label><span>توضیح</span><input v-model="payoutModal.note" type="text" /></label>
-        <button class="primary-btn" :disabled="payoutModal.submitting || !isPayoutAmountValid" @click="submitPayout">{{ payoutModal.submitting ? 'در حال ثبت...' : 'ثبت پرداخت' }}</button>
+        <button class="primary-btn" :disabled="payoutModal.submitting" @click="submitPayout">{{ payoutModal.submitting ? 'در حال ثبت...' : 'ثبت پرداخت' }}</button>
       </div>
     </section>
   </div>
@@ -265,6 +283,7 @@ const filters = reactive({
   endJalali: '',
   q: '',
   workerId: '',
+  insuranceMonthJalali: '',
   plateType: '',
   plateLeft: '',
   plateLetter: '',
@@ -278,7 +297,8 @@ const expandedServiceRows = ref({})
 const selectedWorkerSummary = ref(null)
 const selectedWorkerTransactions = ref([])
 const vehicleModal = reactive({ open: false, loading: false, data: null })
-const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '' })
+const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '' })
+const payoutSubmitError = ref('')
 const adjustmentModal = reactive({ open: false, submitting: false, kind: 'bonus', amount: 0, note: '' })
 const reportExportRef = ref(null)
 const exportState = reactive({ csvLoading: false, pdfLoading: false })
@@ -293,11 +313,26 @@ const tabs = [
   { key: 'blacklist', label: 'لیست سیاه', icon: 'danger' }
 ]
 
+const insuranceMonthOptions = [
+  { value: '01', label: 'فروردین' },
+  { value: '02', label: 'اردیبهشت' },
+  { value: '03', label: 'خرداد' },
+  { value: '04', label: 'تیر' },
+  { value: '05', label: 'مرداد' },
+  { value: '06', label: 'شهریور' },
+  { value: '07', label: 'مهر' },
+  { value: '08', label: 'آبان' },
+  { value: '09', label: 'آذر' },
+  { value: '10', label: 'دی' },
+  { value: '11', label: 'بهمن' },
+  { value: '12', label: 'اسفند' }
+]
+
 const money = (v) => formatThousandsToman(v)
 const dateTime = (v) => formatJalaliDate(v)
 const dateOnly = (v) => formatJalaliDate(v)
 const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assigned: 'در انتظار تکمیل', in_progress: 'در حال انجام', ready_to_settle: 'در انتظار تکمیل', released: 'ترخیص شده', cancelled: 'لغو' }[value] || '-')
-const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
+const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', insurance_payment: 'پرداخت حق بیمه', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
 const paymentMethodLabel = (value) => ({ cash: 'نقدی', transfer: 'کارت به کارت', cheque: 'چک', credit: 'نسیه', pos: 'کارت‌خوان', manual: 'دستی' }[value] || value || '-')
 const paymentStateLabel = (value) => ({ success: 'تسویه شده', pending: 'در انتظار', failed: 'ناموفق', refunded: 'مرجوعی' }[value] || value || '-')
 const normalizeServicesValue = (value) => {
@@ -339,6 +374,7 @@ const visibleSummaryCards = computed(() => {
     return [
       { key: 'worker_total', label: 'حق نیرو', value: money(summary.worker_total) },
       { key: 'payable_worker_total', label: 'مانده حق نیرو', value: money(summary.payable_worker_total) },
+      { key: 'insurance_total', label: 'مانده حق بیمه', value: money(summary.insurance_total) },
       { key: 'bonus_total', label: 'پاداش', value: money(summary.bonus_total) },
       { key: 'penalty_total', label: 'جریمه', value: money(summary.penalty_total) }
     ]
@@ -419,6 +455,7 @@ const buildReportParams = () => {
     end: end || undefined,
     q: (filters.q || '').trim() || undefined,
     worker_id: Number.isInteger(workerId) && workerId > 0 ? workerId : undefined,
+    insurance_month: normalizeInsuranceMonth(filters.insuranceMonthJalali),
     plate_type: filters.plateType || undefined,
     plate_left: filters.plateLeft || undefined,
     plate_letter: filters.plateLetter || undefined,
@@ -428,11 +465,25 @@ const buildReportParams = () => {
 }
 
 const payoutButtonLabel = computed(() => `پرداخت حقوق ${selectedWorkerSummary.value?.worker_name || ''}`)
+const insurancePayoutButtonLabel = computed(() => `پرداخت حق بیمه ${selectedWorkerSummary.value?.worker_name || ''}`)
 const tipPayoutButtonLabel = computed(() => `پرداخت انعام ${selectedWorkerSummary.value?.worker_name || ''}`)
+const selectedInsuranceMonthKey = computed(() => normalizeInsuranceMonth(payoutModal.insuranceMonth) || selectedWorkerSummary.value?.insurance_month || '')
+const selectedInsuranceMonthPaidAmount = computed(() => {
+  if (!selectedInsuranceMonthKey.value) return 0
+  return selectedWorkerTransactions.value
+    .filter((item) => item.kind === 'insurance_payment' && item.reference_month === selectedInsuranceMonthKey.value)
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0)
+})
+const selectedInsuranceMonthBalance = computed(() => {
+  const monthlyAmount = Number(selectedWorkerSummary.value?.insurance_monthly_amount || 0)
+  return Math.max(0, monthlyAmount - selectedInsuranceMonthPaidAmount.value)
+})
 const payoutModalMaxAmount = computed(() => (
   payoutModal.target === 'tip'
     ? Number(selectedWorkerSummary.value?.tip_balance || 0)
-    : Number(selectedWorkerSummary.value?.payable_total || 0)
+    : payoutModal.target === 'insurance'
+      ? selectedInsuranceMonthBalance.value
+      : Number(selectedWorkerSummary.value?.payable_total || 0)
 ))
 const payoutValidationMessage = computed(() => {
   if (payoutModal.mode !== 'partial') return ''
@@ -488,6 +539,44 @@ const parseJalaliToIso = (input) => {
     gm += 1
   }
   return `${gy}-${String(gm + 1).padStart(2, '0')}-${String(gDayNo + 1).padStart(2, '0')}`
+}
+
+const normalizeInsuranceMonth = (value) => {
+  const normalized = String(value || '').trim().replace(/-/g, '/')
+  const parts = normalized.split('/')
+  if (parts.length === 1) {
+    const monthOnly = normalizeDigits(parts[0]).replace(/\D/g, '').slice(0, 2)
+    const year = resolveInsuranceYear()
+    return monthOnly && year ? `${year}/${monthOnly.padStart(2, '0')}` : ''
+  }
+  if (parts.length < 2) return ''
+  const year = normalizeDigits(parts[0]).replace(/\D/g, '').slice(0, 4)
+  const month = normalizeDigits(parts[1]).replace(/\D/g, '').slice(0, 2)
+  if (!year || !month) return ''
+  return `${year}/${month.padStart(2, '0')}`
+}
+
+const insuranceMonthToFilterDate = (value) => {
+  const monthValue = normalizeInsuranceMonth(value)
+  return monthValue ? `${monthValue}/01` : ''
+}
+
+const getCurrentJalaliYear = () => {
+  const formatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric' })
+  const yearPart = formatter.formatToParts(new Date()).find((item) => item.type === 'year')
+  return normalizeDigits(yearPart?.value || '').replace(/\D/g, '').slice(0, 4)
+}
+
+const resolveInsuranceYear = () => {
+  const candidates = [
+    selectedWorkerSummary.value?.insurance_month,
+    filters.insuranceMonthJalali,
+  ]
+  for (const item of candidates) {
+    const match = normalizeDigits(String(item || '')).match(/(\d{4})/)
+    if (match?.[1]) return match[1]
+  }
+  return getCurrentJalaliYear()
 }
 
 const normalizePlateLetter = (value) => {
@@ -621,6 +710,7 @@ const resetFilters = () => {
   filters.endJalali = ''
   filters.q = ''
   filters.workerId = ''
+  filters.insuranceMonthJalali = ''
   filters.plateType = ''
   filters.plateLeft = ''
   filters.plateLetter = ''
@@ -686,24 +776,45 @@ const blockVehiclePlate = async () => {
 
 const openPayoutModal = (target = 'wage') => {
   payoutModal.open = true
+  payoutSubmitError.value = ''
   payoutModal.target = target
   payoutModal.mode = 'full'
+  payoutModal.note = ''
+  payoutModal.insuranceMonth = String(selectedWorkerSummary.value?.insurance_month || '').split('/')[1] || '01'
   payoutModal.amount = Math.max(0, Math.round(toThousandsToman(
     target === 'tip'
       ? selectedWorkerSummary.value?.tip_balance || 0
-      : selectedWorkerSummary.value?.payable_total || 0
+      : target === 'insurance'
+        ? selectedInsuranceMonthBalance.value || 0
+        : selectedWorkerSummary.value?.payable_total || 0
   )))
-  payoutModal.note = ''
 }
 const closePayoutModal = () => {
   payoutModal.open = false
   payoutModal.submitting = false
   payoutModal.target = 'wage'
+  payoutModal.insuranceMonth = ''
+  payoutSubmitError.value = ''
 }
 const submitPayout = async () => {
   if (!selectedWorkerSummary.value?.worker_id) return
+  payoutSubmitError.value = ''
+  const normalizedInsuranceMonth = payoutModal.target === 'insurance'
+    ? normalizeInsuranceMonth(payoutModal.insuranceMonth)
+    : ''
+  if (payoutModal.target === 'insurance' && !normalizedInsuranceMonth) {
+    payoutSubmitError.value = 'الان نمی‌توانید ثبت کنید، چون ماه بیمه به‌صورت معتبر انتخاب نشده است.'
+    errorMessage.value = payoutSubmitError.value
+    return
+  }
+  if (payoutModal.target === 'insurance' && selectedInsuranceMonthBalance.value <= 0) {
+    payoutSubmitError.value = `الان نمی‌توانید ثبت کنید، چون ماه ${normalizedInsuranceMonth} قبلا تسویه شده است.`
+    errorMessage.value = payoutSubmitError.value
+    return
+  }
   if (!isPayoutAmountValid.value) {
-    errorMessage.value = 'مبلغ پرداخت باید بیشتر از صفر و کمتر از مانده کل باشد.'
+    payoutSubmitError.value = 'الان نمی‌توانید ثبت کنید، چون مبلغ باید بیشتر از صفر و کمتر از مانده مجاز باشد.'
+    errorMessage.value = payoutSubmitError.value
     return
   }
   payoutModal.submitting = true
@@ -713,12 +824,25 @@ const submitPayout = async () => {
       payout_target: payoutModal.target,
       mode: payoutModal.mode,
       amount: payoutModal.mode === 'partial' ? fromThousandsTomanInput(payoutModal.amount || 0) : undefined,
+      insurance_month: normalizedInsuranceMonth || undefined,
       note: payoutModal.note || undefined
     })
+    if (payoutModal.target === 'insurance' && normalizedInsuranceMonth) {
+      filters.insuranceMonthJalali = insuranceMonthToFilterDate(normalizedInsuranceMonth)
+    }
     closePayoutModal()
     await fetchReports()
   } catch (error) {
-    errorMessage.value = resolveApiErrorMessage(error, payoutModal.target === 'tip' ? 'ثبت پرداخت انعام ناموفق بود.' : 'ثبت پرداخت ناموفق بود.')
+    const fallback = payoutModal.target === 'tip'
+      ? 'الان نمی‌توانید پرداخت انعام را ثبت کنید.'
+      : payoutModal.target === 'insurance'
+        ? 'الان نمی‌توانید پرداخت حق بیمه را ثبت کنید.'
+        : 'الان نمی‌توانید پرداخت را ثبت کنید.'
+    const reason = resolveApiErrorMessage(error, fallback)
+    payoutSubmitError.value = reason.startsWith('الان نمی‌توانید')
+      ? reason
+      : `الان نمی‌توانید ثبت کنید، چون ${reason}`
+    errorMessage.value = payoutSubmitError.value
   } finally {
     payoutModal.submitting = false
   }
@@ -758,10 +882,15 @@ const submitAdjustment = async () => {
 }
 
 let filterTimer = null
-watch(() => [filters.q, filters.rangeKey, filters.startJalali, filters.endJalali, filters.workerId, filters.plateType, filters.plateLeft, filters.plateLetter, filters.plateMid, filters.plateRight], () => {
+watch(() => [filters.q, filters.rangeKey, filters.startJalali, filters.endJalali, filters.workerId, filters.insuranceMonthJalali, filters.plateType, filters.plateLeft, filters.plateLetter, filters.plateMid, filters.plateRight], () => {
   normalizePlateFilters()
   if (filterTimer) clearTimeout(filterTimer)
   filterTimer = setTimeout(fetchReports, 280)
+})
+
+watch(() => [payoutModal.target, payoutModal.mode, payoutModal.insuranceMonth], () => {
+  if (payoutModal.target !== 'insurance' || payoutModal.mode !== 'full') return
+  payoutModal.amount = Math.max(0, Math.round(toThousandsToman(selectedInsuranceMonthBalance.value || 0)))
 })
 
 onMounted(async () => {

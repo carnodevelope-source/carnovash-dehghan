@@ -1,7 +1,7 @@
 ﻿from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
 
-from .models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketAttachment, SupportTicketMessage
+from .models import CarWash, CarWashFeaturePurchase, PendingTenantRegistration, SupportTicket, SupportTicketAttachment, SupportTicketMessage
 
 
 def feature_access_map(feature_keys):
@@ -27,10 +27,13 @@ class LoginSerializer(serializers.Serializer):
         if user_by_phone:
             resolved_username = user_by_phone.username
 
-        user = authenticate(username=resolved_username, password=password)
-        if not user:
+        user = user_model.objects.filter(username=resolved_username).select_related('tenant').first()
+        if not user or not user.check_password(password):
             raise serializers.ValidationError('نام کاربری یا رمز عبور اشتباه است.')
         if not user.is_active:
+            pending_request = getattr(getattr(user, 'tenant', None), 'pending_registration', None)
+            if pending_request and pending_request.status == PendingTenantRegistration.Status.PENDING:
+                raise serializers.ValidationError('ثبت‌نام شما هنوز توسط پشتیبانی تایید نشده است. بعد از تایید، پیامک فعال‌سازی برای شما ارسال می‌شود.')
             raise serializers.ValidationError('حساب کاربری غیرفعال است.')
 
         attrs['user'] = user
@@ -417,6 +420,10 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
     assigned_to_name = serializers.SerializerMethodField()
     messages_count = serializers.SerializerMethodField()
     last_message_preview = serializers.SerializerMethodField()
+    is_registration_request = serializers.BooleanField(read_only=True)
+    registration_status = serializers.SerializerMethodField()
+    registration_manager_username = serializers.SerializerMethodField()
+    registration_manager_phone = serializers.SerializerMethodField()
 
     class Meta:
         model = SupportTicket
@@ -443,6 +450,10 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
             'last_message_at',
             'messages_count',
             'last_message_preview',
+            'is_registration_request',
+            'registration_status',
+            'registration_manager_username',
+            'registration_manager_phone',
             'created_at',
             'updated_at',
         ]
@@ -470,6 +481,27 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
         if not last_message:
             return (obj.message or '')[:120]
         return (last_message.body or '')[:120]
+
+    def _registration_request(self, obj):
+        return getattr(obj, 'registration_request', None)
+
+    def get_registration_status(self, obj):
+        request = self._registration_request(obj)
+        if not request:
+            return ''
+        return request.status
+
+    def get_registration_manager_username(self, obj):
+        request = self._registration_request(obj)
+        if not request or not request.manager_id:
+            return ''
+        return request.manager.username
+
+    def get_registration_manager_phone(self, obj):
+        request = self._registration_request(obj)
+        if not request or not request.manager_id:
+            return ''
+        return request.manager.phone
 
 
 class SupportTicketDetailSerializer(SupportTicketListSerializer):

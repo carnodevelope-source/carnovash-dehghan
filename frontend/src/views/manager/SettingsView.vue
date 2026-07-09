@@ -40,6 +40,7 @@
                   <th>شماره</th>
                   <th>نوع پرداخت</th>
                   <th>مقدار پرداخت</th>
+                  <th>حق بیمه</th>
                   <th>درصد انعام</th>
                   <th>تاریخ بروزرسانی</th>
                   <th>وضعیت</th>
@@ -55,6 +56,7 @@
                   <td>{{ item.phone || '-' }}</td>
                   <td>{{ item.payment_type === 'fixed' ? 'تومانی' : item.payment_type === 'hourly' ? 'ساعتی' : 'درصدی' }}</td>
                   <td>{{ formatWorkerPayment(item) }}</td>
+                  <td>{{ money(item.insurance_amount || 0) }}</td>
                   <td>{{ Number(item.tip_share_percent || 0).toLocaleString('fa-IR') }}٪</td>
                   <td>{{ formatDate(item.updated_at) }}</td>
                   <td>{{ item.is_available ? 'فعال' : 'غیرفعال' }}</td>
@@ -344,10 +346,7 @@
                 <option value="operator">اپراتور</option>
               </select>
             </label>
-            <label class="full">
-              <span>تاریخ</span>
-              <BaseDatePicker v-model="forms.worker.started_at_jalali" placeholder="1405/01/01" />
-            </label>
+            <p class="full helper-text modal-helper-text">تاریخ شروع همکاری این پرسنل به‌صورت خودکار از زمان ثبت در سامانه ذخیره می‌شود.</p>
             <template v-if="forms.worker.role !== 'worker'">
               <label><span>نام کاربری</span><input v-model.trim="forms.worker.username" required /></label>
               <label>
@@ -369,6 +368,10 @@
             <label>
               <span>{{ forms.worker.payment_type === 'percent' ? 'درصد دریافتی' : forms.worker.payment_type === 'hourly' ? 'مبلغ ساعتی (هزار تومان)' : 'مبلغ دریافتی (هزار تومان)' }}</span>
               <input type="number" :min="0" :max="forms.worker.payment_type === 'percent' ? 100 : null" v-model.number="forms.worker.payment_value" required />
+            </label>
+            <label>
+              <span>حق بیمه (هزار تومان)</span>
+              <input type="number" min="0" v-model.number="forms.worker.insurance_amount" />
             </label>
             <label><span>درصد انعام</span><input type="number" min="0" max="100" v-model.number="forms.worker.tip_share_percent" required /></label>
             <label class="row-check"><input type="checkbox" v-model="forms.worker.is_available" /><span>فعال</span></label>
@@ -705,6 +708,7 @@ const forms = reactive({
     address: '',
     payment_type: 'percent',
     payment_value: 0,
+    insurance_amount: 0,
     tip_share_percent: 0,
     is_available: true,
     has_entrusted_item: false,
@@ -1039,7 +1043,6 @@ const openWorkerModal = (item = null) => {
   modal.title = modal.id ? 'ویرایش پرسنل' : 'افزودن پرسنل'
   forms.worker.full_name = item?.full_name || ''
   forms.worker.role = item?.role_key || 'worker'
-  forms.worker.started_at_jalali = toJalaliInput(item?.started_at)
   forms.worker.username = (item?.role_key || 'worker') === 'worker' ? '' : (item?.username || '')
   forms.worker.password = ''
   forms.worker.phone = item?.phone || ''
@@ -1048,6 +1051,7 @@ const openWorkerModal = (item = null) => {
   forms.worker.payment_value = ['fixed', 'hourly'].includes(forms.worker.payment_type)
     ? toThousandsDisplay(item?.payment_value || 0)
     : Number(item?.payment_value || 0)
+  forms.worker.insurance_amount = toThousandsDisplay(item?.insurance_amount || 0)
   forms.worker.tip_share_percent = Number(item?.tip_share_percent || 0)
   forms.worker.is_available = item?.is_available ?? true
   forms.worker.has_entrusted_item = Boolean(item?.has_entrusted_item)
@@ -1219,7 +1223,6 @@ const submitModal = async () => {
       const workerPayload = {
         full_name: forms.worker.full_name,
         role: forms.worker.role || 'worker',
-        started_at: parseJalaliToIso(forms.worker.started_at_jalali) || null,
         username: forms.worker.role === 'worker' ? '' : forms.worker.username,
         password: forms.worker.role === 'worker' ? '' : forms.worker.password,
         phone: forms.worker.phone,
@@ -1227,6 +1230,7 @@ const submitModal = async () => {
         is_available: forms.worker.is_available,
         payment_type: forms.worker.payment_type,
         payment_value: Number.isFinite(Number(paymentValueNormalized)) ? Number(paymentValueNormalized) : 0,
+        insurance_amount: fromThousandsInput(forms.worker.insurance_amount || 0),
         tip_share_percent: Number(forms.worker.tip_share_percent || 0),
         has_entrusted_item: Boolean(forms.worker.has_entrusted_item),
         entrusted_items: entrustedItemsPayload,

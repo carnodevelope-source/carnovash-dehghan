@@ -373,6 +373,7 @@ class AttendanceTokenRefreshView(APIView):
 class AttendancePublicView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
+    throttle_scope = 'attendance_public'
 
     def get_worker(self, token):
         return WorkerProfile.objects.select_related('user', 'tenant').filter(attendance_token=token).first()

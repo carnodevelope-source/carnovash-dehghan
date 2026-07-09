@@ -548,6 +548,19 @@
               <button type="button" class="scope-chip danger-chip" @click="ticketReply.status = 'closed'">بستن تیکت</button>
             </div>
 
+            <section v-if="canApproveRegistration" class="registration-approval-card">
+              <div>
+                <span>تایید ثبت‌نام کارواش</span>
+                <strong>مدارک بارگذاری‌شده را بررسی کنید و بعد حساب را فعال کنید.</strong>
+                <p>بعد از تایید، لاگین مدیر باز می‌شود و پیامک فعال‌سازی برای شماره ثبت‌شده ارسال خواهد شد.</p>
+              </div>
+              <button type="button" class="primary-btn" :disabled="registrationApproval.submitting" @click="approveRegistrationTicket">
+                {{ registrationApproval.submitting ? 'در حال تایید...' : 'تایید ثبت‌نام و فعال‌سازی' }}
+              </button>
+              <small v-if="registrationApproval.message" class="transfer-feedback success">{{ registrationApproval.message }}</small>
+              <small v-if="registrationApproval.error" class="transfer-feedback error">{{ registrationApproval.error }}</small>
+            </section>
+
             <section v-if="isWalletCardPaymentTicket(selectedTicket)" class="wallet-ticket-transfer-card">
               <div>
                 <span>عملیات تیکت پرداخت</span>
@@ -1228,6 +1241,11 @@ const walletTransfer = reactive({
   error: '',
   success: ''
 })
+const registrationApproval = reactive({
+  submitting: false,
+  error: '',
+  message: ''
+})
 
 const reports = reactive({ summary: {}, rows: [], trends: [], highlights: {} })
 const reportTab = ref('revenue')
@@ -1391,6 +1409,10 @@ const selectedTicketInternalNotesCount = computed(() => {
   const items = selectedTicket.value?.messages || []
   return items.filter((item) => item.is_internal).length
 })
+const canApproveRegistration = computed(() => (
+  Boolean(selectedTicket.value?.is_registration_request)
+  && selectedTicket.value?.registration_status === 'pending'
+))
 const selectedTicketActivityFeed = computed(() => {
   const ticket = selectedTicket.value
   if (!ticket) return []
@@ -1761,6 +1783,8 @@ const selectTicket = async (ticketId) => {
   walletTransfer.amountText = ''
   walletTransfer.error = ''
   walletTransfer.success = ''
+  registrationApproval.error = ''
+  registrationApproval.message = ''
 }
 
 const sendTicketReply = async () => {
@@ -1799,6 +1823,27 @@ const submitWalletTransfer = async () => {
     walletTransfer.error = data?.detail || 'انتقال وجه ثبت نشد. اطلاعات تیکت یا کیف پول را بررسی کنید.'
   } finally {
     walletTransfer.submitting = false
+  }
+}
+
+const approveRegistrationTicket = async () => {
+  registrationApproval.error = ''
+  registrationApproval.message = ''
+  if (!selectedTicket.value?.id || registrationApproval.submitting || !canApproveRegistration.value) return
+  registrationApproval.submitting = true
+  try {
+    const { data } = await api.post(`/auth/hq/tickets/${selectedTicket.value.id}/approve-registration/`, {})
+    registrationApproval.message = data?.sms?.ok
+      ? 'ثبت‌نام تایید شد و پیامک فعال‌سازی هم ارسال شد.'
+      : (data?.sms?.message || data?.detail || 'ثبت‌نام تایید شد.')
+    await selectTicket(selectedTicket.value.id)
+    await loadTickets()
+    await loadOverview()
+    if (authStore.isHqAdmin) await loadCarwashes()
+  } catch (error) {
+    registrationApproval.error = error?.response?.data?.detail || 'تایید ثبت‌نام انجام نشد.'
+  } finally {
+    registrationApproval.submitting = false
   }
 }
 
@@ -4026,6 +4071,30 @@ td strong {
   box-shadow: 0 18px 48px rgba(121, 92, 168, 0.14);
 }
 
+.registration-approval-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto;
+  gap: 14px;
+  align-items: end;
+  margin: 12px 0 18px;
+  padding: 18px;
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(236, 253, 245, 0.96), rgba(255, 255, 255, 0.96));
+  box-shadow: 0 18px 48px rgba(21, 128, 61, 0.12);
+}
+
+.registration-approval-card strong {
+  display: block;
+  margin-top: 4px;
+  color: #14532d;
+}
+
+.registration-approval-card p,
+.registration-approval-card span {
+  margin: 0;
+  color: #3f6b53;
+}
+
 .wallet-ticket-transfer-card strong {
   display: block;
   margin-top: 4px;
@@ -4291,6 +4360,10 @@ td strong {
   }
 
   .wallet-ticket-transfer-card {
+    grid-template-columns: 1fr;
+  }
+
+  .registration-approval-card {
     grid-template-columns: 1fr;
   }
 
