@@ -320,17 +320,10 @@ const submitRegister = async () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: saturate(1.05) blur(1px);
+  filter: blur(6px);
   transform: scale(1.04);
 }
 
-.login-video-veil {
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(216, 180, 254, 0.28), transparent 34%),
-    linear-gradient(180deg, rgba(252, 249, 255, 0.80) 0%, rgba(243, 236, 252, 0.72) 52%, rgba(247, 243, 252, 0.84) 100%);
-  backdrop-filter: blur(6px);
-}
 
 .topbar {
   height: 76px;
@@ -414,9 +407,8 @@ const submitRegister = async () => {
   width: min(460px, 100%);
   border-radius: 32px;
   padding: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.56);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.22) 100%);
-  backdrop-filter: blur(22px);
+  backdrop-filter: blur(5px);
   box-shadow: 0 18px 60px rgba(114, 78, 167, 0.12);
 }
 
@@ -546,11 +538,11 @@ const submitRegister = async () => {
 
 .login-foot p {
   margin: 0;
-  color: #5f7087;
+  color: #91bfff;
 }
 
 .text-btn {
-  color: #9d6cff;
+  color: #5b5a74;
   font-weight: 800;
 }
 
@@ -558,7 +550,7 @@ const submitRegister = async () => {
   position: fixed;
   inset: 0;
   background: rgba(237, 229, 246, 0.44);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(9px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -573,7 +565,7 @@ const submitRegister = async () => {
   overflow: auto;
   padding: 22px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.74) 0%, rgba(250, 246, 255, 0.82) 100%);
-  backdrop-filter: blur(24px);
+  backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.56);
   box-shadow: 0 24px 80px rgba(125, 90, 173, 0.12);
 }
@@ -728,6 +720,60 @@ const submitRegister = async () => {
 }
 
 @media (max-width: 640px) {
+  .login-page {
+    background: url('/e5eb861941aac79bcfd5d1fdabf1d569.jpg') center center/cover no-repeat;
+  }
+
+  .login-video {
+    display: none;
+  }
+
+  .login-video-veil {
+    display: none;
+  }
+
+  .login-card {
+    border-color: rgba(255, 255, 255, 0.282);
+    background: linear-gradient(180deg, rgba(62, 63, 67, 0.562) 0%, rgba(19, 45, 246, 0) 100%);
+    backdrop-filter: blur(3px);
+    box-shadow: 0 22px 56px rgba(15, 23, 42, 0.22);
+  }
+
+  .field input,
+  .field textarea {
+    background: rgba(255, 255, 255, 0.82);
+    border-color: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(5px);
+  }
+
+  .field input:focus,
+  .field textarea:focus {
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.22);
+  }
+
+  .brand-title,
+  .brand-subtitle,
+  .panel-kicker,
+  .login-head h2,
+  .login-head span,
+  .field span,
+  .field-toggle,
+  .login-foot p,
+  .text-btn {
+    color: #f8fbff;
+  }
+
+  .login-head h2 {
+    text-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+  }
+
+  .brand-subtitle,
+  .login-head span,
+  .login-foot p {
+    color: rgba(248, 251, 255, 0.9);
+  }
+
   .topbar,
   .login-main,
   .register-modal {

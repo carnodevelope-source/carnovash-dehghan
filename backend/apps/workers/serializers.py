@@ -25,6 +25,17 @@ def ensure_attendance_token(profile):
     return profile.attendance_token
 
 
+def _generate_worker_username(user_model, phone=''):
+    digits = ''.join(ch for ch in str(phone or '') if ch.isdigit())
+    base = f"worker-{digits[-4:]}" if digits else 'worker'
+    candidate = base
+    suffix = 1
+    while user_model.objects.filter(username__iexact=candidate).exists():
+        suffix += 1
+        candidate = f'{base}-{suffix}'
+    return candidate
+
+
 class WorkerProfileListSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
@@ -32,6 +43,8 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     avatar = serializers.SerializerMethodField()
     phone = serializers.CharField(source='user.phone', read_only=True)
+    started_at = serializers.DateField(read_only=True)
+    address = serializers.CharField(read_only=True)
     payment_type = serializers.SerializerMethodField()
     payment_value = serializers.SerializerMethodField()
     entrusted_items = serializers.SerializerMethodField()
@@ -111,6 +124,8 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
             'full_name',
             'username',
             'phone',
+            'started_at',
+            'address',
             'role',
             'role_key',
             'avatar',
@@ -173,10 +188,12 @@ class WorkerAttendanceEventSerializer(serializers.ModelSerializer):
 
 class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=150)
-    username = serializers.CharField(max_length=150)
+    username = serializers.CharField(max_length=150, required=False, allow_blank=True)
     password = serializers.CharField(max_length=128, required=False, allow_blank=True, write_only=True)
     phone = serializers.CharField(max_length=20)
     role = serializers.ChoiceField(choices=['operator', 'worker'], default='worker')
+    started_at = serializers.DateField(required=False, allow_null=True)
+    address = serializers.CharField(required=False, allow_blank=True)
     is_available = serializers.BooleanField(default=True)
     payment_type = serializers.ChoiceField(choices=['percent', 'fixed', 'hourly'], default='percent')
     payment_value = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -215,6 +232,9 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
     def validate_username(self, value):
         value = str(value or '').strip()
         if not value:
+            role = str(self.initial_data.get('role') or 'worker').strip().lower()
+            if role == 'worker':
+                return ''
             raise serializers.ValidationError('نام کاربری الزامی است.')
         user_model = get_user_model()
         instance = getattr(self, 'instance', None)
@@ -228,7 +248,8 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
     def validate(self, attrs):
         instance = getattr(self, 'instance', None)
         password = str(attrs.get('password') or '')
-        if instance is None and not password.strip():
+        role = str(attrs.get('role') or self.initial_data.get('role') or 'worker').strip().lower()
+        if instance is None and role != 'worker' and not password.strip():
             raise serializers.ValidationError({'password': 'رمز عبور برای پرسنل جدید الزامی است.'})
         payment_type = attrs.get('payment_type', 'percent')
         payment_value = attrs.get('payment_value', 0) or 0
@@ -244,6 +265,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         normalized_items = []
         for index, item in enumerate(entrusted_items):
             title = str(item.get('title') or item.get('description') or '').strip()
+            entrusted_at = str(item.get('entrusted_at') or item.get('date') or '').strip()
             quantity = item.get('quantity', 0) or 0
             price = item.get('price', 0) or 0
             try:
@@ -261,6 +283,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({'entrusted_items': f'قیمت ردیف {index + 1} نمی‌تواند منفی باشد.'})
             normalized_items.append({
                 'title': title,
+                'entrusted_at': entrusted_at,
                 'quantity': quantity,
                 'price': price,
             })
@@ -295,9 +318,15 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         user_model = get_user_model()
         phone = validated_data['phone']
         full_name = validated_data['full_name']
-        username = validated_data['username']
-        password = str(validated_data.get('password') or '').strip()
         role = validated_data.get('role', 'worker')
+        username = str(validated_data.get('username') or '').strip()
+        if not username:
+            username = _generate_worker_username(user_model, phone=phone)
+        password = str(validated_data.get('password') or '').strip()
+        generated_password = False
+        if not password and role == 'worker':
+            password = secrets.token_urlsafe(10)
+            generated_password = True
         self.created_credentials = None
         user = user_model.objects.create(
             username=username,
@@ -309,7 +338,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         )
         user.set_password(password)
         user.save()
-        if password:
+        if password and not generated_password:
             self.created_credentials = {
                 'tenant': tenant,
                 'phone': phone,
@@ -322,6 +351,8 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         if profile.tenant_id is None:
             profile.tenant = tenant
         profile.is_available = validated_data.get('is_available', True)
+        profile.started_at = validated_data.get('started_at')
+        profile.address = str(validated_data.get('address') or '').strip()
         profile.has_entrusted_item = bool(validated_data.get('has_entrusted_item', False))
         profile.entrusted_items = validated_data.get('entrusted_items', [])
         profile.entrusted_item_description = (validated_data.get('entrusted_item_description') or '').strip()
@@ -345,14 +376,16 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             profile.default_fixed_wage = 0
             profile.default_hourly_wage = 0
             profile.payment_type = 'percent'
-        profile.save(update_fields=['tenant', 'is_available', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
+        profile.save(update_fields=['tenant', 'is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
 
         return profile
 
     def update(self, instance, validated_data):
         user_model = get_user_model()
         next_phone = validated_data.get('phone', instance.user.phone)
-        next_username = validated_data.get('username', instance.user.username)
+        next_username = str(validated_data.get('username', instance.user.username) or '').strip()
+        if not next_username:
+            next_username = instance.user.username or _generate_worker_username(user_model, phone=next_phone)
         if user_model.objects.exclude(id=instance.user_id).filter(phone=next_phone).exists():
             raise serializers.ValidationError({'phone': 'این شماره موبایل قبلا ثبت شده است.'})
         if user_model.objects.exclude(id=instance.user_id).filter(username__iexact=next_username).exists():
@@ -368,6 +401,8 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             update_fields.append('password')
         instance.user.save(update_fields=update_fields)
         instance.is_available = validated_data.get('is_available', instance.is_available)
+        instance.started_at = validated_data.get('started_at', instance.started_at)
+        instance.address = str(validated_data.get('address', instance.address) or '').strip()
         instance.has_entrusted_item = bool(validated_data.get('has_entrusted_item', instance.has_entrusted_item))
         instance.entrusted_items = validated_data.get('entrusted_items', instance.entrusted_items)
         instance.entrusted_item_description = (validated_data.get('entrusted_item_description', instance.entrusted_item_description) or '').strip()
@@ -391,6 +426,6 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             instance.default_fixed_wage = 0
             instance.default_hourly_wage = 0
             instance.payment_type = 'percent'
-        instance.save(update_fields=['is_available', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
+        instance.save(update_fields=['is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
 
         return instance

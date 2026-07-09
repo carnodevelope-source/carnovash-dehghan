@@ -90,6 +90,10 @@
           </button>
         </div>
 
+        <div class="mobile-sidebar-login-art" aria-hidden="true">
+          <img :src="mobileLoginArtSrc" alt="" />
+        </div>
+
         <nav>
           <RouterLink
             v-for="item in navItems"
@@ -122,6 +126,11 @@
       </aside>
 
       <main class="content">
+        <section v-if="walletWarning.smsZero" class="global-sms-warning">
+          <strong>هشدار پیامک</strong>
+          <span>موجودی کیف پول پیامک صفر است و هیچ پیامکی ارسال نخواهد شد.</span>
+        </section>
+
         <header v-if="!hidePageHeader" class="page-head">
           <div class="page-title-wrap">
             <span class="page-title-icon">
@@ -171,10 +180,11 @@ const authStore = useAuthStore()
 const isProfileMenuOpen = ref(false)
 const isLoggingOut = ref(false)
 const profileMenuRef = ref(null)
-const walletWarning = ref({ active: false, label: '' })
+const walletWarning = ref({ active: false, label: '', smsZero: false })
 const isMobileMenuOpen = ref(false)
 const topbarRef = ref(null)
 const topbarHeight = ref(64)
+const mobileLoginArtSrc = `${import.meta.env.BASE_URL}e5eb861941aac79bcfd5d1fdabf1d569.jpg`
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const navItems = computed(() => (
@@ -313,12 +323,14 @@ const loadWalletWarning = async () => {
     const smsBalance = Number(data?.summary?.sms_balance || 0)
     const regularLow = regularBalance <= 100000
     const smsLow = smsBalance <= 50000
+    const smsZero = smsBalance <= 0
     walletWarning.value = {
       active: regularLow || smsLow,
-      label: regularLow && smsLow ? 'کمبود موجودی' : regularLow ? 'موجودی کم' : 'شارژ پیامک کم'
+      label: regularLow && smsLow ? 'کمبود موجودی' : regularLow ? 'موجودی کم' : 'شارژ پیامک کم',
+      smsZero
     }
   } catch (_error) {
-    walletWarning.value = { active: false, label: '' }
+    walletWarning.value = { active: false, label: '', smsZero: false }
   }
 }
 
@@ -619,6 +631,19 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
+.mobile-sidebar-login-art {
+  display: none;
+}
+
+.mobile-sidebar-login-art img {
+  display: block;
+  width: 100%;
+  height: 172px;
+  object-fit: cover;
+  border-radius: 20px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+}
+
 .sidebar nav {
   display: flex;
   flex-direction: column;
@@ -695,6 +720,29 @@ onBeforeUnmount(() => {
   max-width: 100%;
   padding: 24px;
   overflow-x: hidden;
+}
+
+.global-sms-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid #fdba74;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff7ed, #ffedd5);
+  color: #9a3412;
+}
+
+.global-sms-warning strong {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.global-sms-warning span {
+  font-size: 13px;
+  line-height: 1.8;
 }
 
 .mobile-sidebar-overlay {
@@ -840,6 +888,11 @@ onBeforeUnmount(() => {
     border-bottom: 1px solid rgba(203, 213, 225, 0.7);
   }
 
+  .mobile-sidebar-login-art {
+    display: block;
+    margin: 0 0 14px;
+  }
+
   .sidebar nav,
   .premium-actions {
     display: grid;
@@ -876,6 +929,11 @@ onBeforeUnmount(() => {
     padding: 10px;
   }
 
+  .mobile-sidebar-login-art img {
+    height: 150px;
+    border-radius: 18px;
+  }
+
   .menu-item {
     padding: 10px 10px;
     font-size: 13px;
@@ -888,6 +946,11 @@ onBeforeUnmount(() => {
 
   .content {
     padding: 12px;
+  }
+
+  .global-sms-warning {
+    align-items: flex-start;
+    padding: 12px 14px;
   }
 
   .brand-wrap {
@@ -999,10 +1062,25 @@ onBeforeUnmount(() => {
     padding: 10px;
   }
 
+  .global-sms-warning {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
   .sidebar {
     width: auto;
     max-width: none;
     padding: calc(var(--mobile-topbar-offset, 64px) + 8px) 10px 14px;
+  }
+
+  .mobile-sidebar-login-art {
+    margin-bottom: 12px;
+  }
+
+  .mobile-sidebar-login-art img {
+    height: 132px;
+    border-radius: 16px;
   }
 
   .menu-item {

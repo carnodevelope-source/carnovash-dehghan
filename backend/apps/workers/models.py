@@ -47,6 +47,8 @@ class WorkerProfile(TimestampedModel):
     )
     active_jobs_count = models.PositiveIntegerField(default=0)
     attendance_token = models.CharField(max_length=120, unique=True, null=True, blank=True)
+    started_at = models.DateField(null=True, blank=True)
+    address = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     has_entrusted_item = models.BooleanField(default=False)
     entrusted_items = models.JSONField(default=list, blank=True)

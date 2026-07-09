@@ -50,8 +50,8 @@
                 <tr v-for="(item, index) in filteredWorkers" :key="item.id">
                   <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
                   <td>{{ item.full_name }}</td>
-                  <td>{{ item.role || '-' }}</td>
-                  <td>{{ item.username || '-' }}</td>
+                  <td>{{ workerRoleLabel(item.role_key || item.role) }}</td>
+                  <td>{{ item.role_key === 'worker' ? '-' : (item.username || '-') }}</td>
                   <td>{{ item.phone || '-' }}</td>
                   <td>{{ item.payment_type === 'fixed' ? 'تومانی' : item.payment_type === 'hourly' ? 'ساعتی' : 'درصدی' }}</td>
                   <td>{{ formatWorkerPayment(item) }}</td>
@@ -60,7 +60,7 @@
                   <td>{{ item.is_available ? 'فعال' : 'غیرفعال' }}</td>
                   <td>
                     <button class="table-btn" @click="openWorkerModal(item)">ویرایش</button>
-                    <button class="table-btn danger" @click="deleteWorker(item)">حذف</button>
+                    <button class="table-btn danger" type="button" disabled title="حذف پرسنل غیرفعال است">حذف</button>
                   </td>
                 </tr>
               </tbody>
@@ -133,6 +133,7 @@
                   <th>مبلغ</th>
                   <th>نوع ثبت</th>
                   <th>جزئیات</th>
+                  <th>پیوست</th>
                   <th>ثبت‌کننده</th>
                   <th>تاریخ</th>
                   <th>عملیات</th>
@@ -147,6 +148,12 @@
                     <span class="source-badge" :class="`source-${item.source_type}`">{{ item.source_label }}</span>
                   </td>
                   <td class="details-cell">{{ item.details || '-' }}</td>
+                  <td>
+                    <a v-if="item.attachment_url" class="table-link" :href="item.attachment_url" target="_blank" rel="noopener noreferrer">
+                      {{ item.attachment_name || 'مشاهده فایل' }}
+                    </a>
+                    <span v-else>-</span>
+                  </td>
                   <td>{{ item.created_by_name || '-' }}</td>
                   <td>{{ dateTime(item.spent_at || item.created_at) }}</td>
                   <td>
@@ -333,16 +340,24 @@
             <label>
               <span>نقش پرسنل</span>
               <select v-model="forms.worker.role">
-                <option value="worker">پرسنل</option>
+                <option value="worker">نیرو</option>
                 <option value="operator">اپراتور</option>
               </select>
             </label>
-            <label><span>نام کاربری</span><input v-model.trim="forms.worker.username" required /></label>
-            <label>
-              <span>{{ modal.id ? 'رمز عبور جدید (اختیاری)' : 'رمز عبور' }}</span>
-              <input v-model="forms.worker.password" type="text" :required="!modal.id" />
+            <label class="full">
+              <span>تاریخ</span>
+              <BaseDatePicker v-model="forms.worker.started_at_jalali" placeholder="1405/01/01" />
             </label>
+            <template v-if="forms.worker.role !== 'worker'">
+              <label><span>نام کاربری</span><input v-model.trim="forms.worker.username" required /></label>
+              <label>
+                <span>{{ modal.id ? 'رمز عبور جدید (اختیاری)' : 'رمز عبور' }}</span>
+                <input v-model="forms.worker.password" type="text" :required="!modal.id" />
+              </label>
+            </template>
+            <p v-else class="full helper-text modal-helper-text">برای نیرو، نام کاربری و رمز به‌صورت خودکار ساخته می‌شود.</p>
             <label><span>شماره موبایل</span><input v-model="forms.worker.phone" required /></label>
+            <label class="full"><span>آدرس</span><textarea v-model.trim="forms.worker.address" rows="3" placeholder="آدرس نیرو را وارد کنید" /></label>
             <label>
               <span>نوع پرداخت پرسنل</span>
               <select v-model="forms.worker.payment_type">
@@ -381,6 +396,10 @@
                   <label class="full">
                     <span>شرح</span>
                     <textarea v-model.trim="entrustedItem.title" rows="2" placeholder="مثلا: کاردک، دستگاه، لباس کار یا هر مورد امانی" />
+                  </label>
+                  <label>
+                    <span>تاریخ</span>
+                    <BaseDatePicker v-model="entrustedItem.entrusted_at" placeholder="1405/01/01" />
                   </label>
                   <label>
                     <span>تعداد</span>
@@ -429,6 +448,13 @@
           <template v-else-if="modal.type === 'expenses'">
             <label><span>شرح هزینه</span><input v-model.trim="forms.expense.title" required placeholder="مثلا تعمیر کولر" /></label>
             <label><span>مبلغ (هزار تومان)</span><input type="number" min="0" v-model.number="forms.expense.amount" required /></label>
+            <label class="full"><span>تاریخ</span><BaseDatePicker v-model="forms.expense.spent_at_jalali" placeholder="1405/01/01" /></label>
+            <label class="full">
+              <span>پیوست</span>
+              <input type="file" @change="handleExpenseAttachmentChange" />
+              <small v-if="forms.expense.attachment_name" class="field-file-note">{{ forms.expense.attachment_name }}</small>
+              <a v-if="forms.expense.attachment_url" class="table-link" :href="forms.expense.attachment_url" target="_blank" rel="noopener noreferrer">مشاهده پیوست فعلی</a>
+            </label>
             <label class="full"><span>جزئیات</span><textarea v-model.trim="forms.expense.details" rows="4" placeholder="کجا، چرا و برای چه موردی هزینه شده است" /></label>
           </template>
 
@@ -614,6 +640,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import AppShell from '../../components/layout/AppShell.vue'
+import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, fromThousandsTomanInput } from '../../utils/money'
@@ -671,9 +698,11 @@ const forms = reactive({
   worker: {
     full_name: '',
     role: 'worker',
+    started_at_jalali: '',
     username: '',
     password: '',
     phone: '',
+    address: '',
     payment_type: 'percent',
     payment_value: 0,
     tip_share_percent: 0,
@@ -686,7 +715,7 @@ const forms = reactive({
   },
   product: { name: '', description: '', sale_price: 0, cost_price: 0, unit: 'unit', min_stock: 0, is_active: true },
   purchase: { product_id: 0, quantity: 1, unit_cost: 0, sale_price: 0, note: '' },
-  expense: { title: '', amount: 0, details: '' },
+  expense: { title: '', amount: 0, details: '', spent_at_jalali: '', attachment: null, attachment_name: '', attachment_url: '' },
   service: {
     name: '',
     description: '',
@@ -713,10 +742,61 @@ const t = (msg, type = 'success') => {
 const money = (v) => formatThousandsToman(v)
 const toThousandsDisplay = (value) => Math.round(Number(value || 0) / 1000)
 const fromThousandsInput = (value) => fromThousandsTomanInput(value)
-const createEntrustedItem = () => ({ title: '', quantity: 1, price: 0 })
+const createEntrustedItem = () => ({ title: '', entrusted_at: '', quantity: 1, price: 0 })
 
 const apiErrorText = (error) => resolveApiErrorMessage(error, 'ثبت ناموفق بود')
 
+const parseJalaliToIso = (input) => {
+  const value = (input || '').trim().replace(/-/g, '/')
+  const match = value.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/)
+  if (!match) return ''
+  const jy = Number(match[1]) - 979
+  const jm = Number(match[2]) - 1
+  const jd = Number(match[3]) - 1
+  const jDaysInMonth = [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29]
+  let jDayNo = 365 * jy + Math.floor(jy / 33) * 8 + Math.floor(((jy % 33) + 3) / 4)
+  for (let i = 0; i < jm; i += 1) jDayNo += jDaysInMonth[i]
+  jDayNo += jd
+  let gDayNo = jDayNo + 79
+  let gy = 1600 + 400 * Math.floor(gDayNo / 146097)
+  gDayNo %= 146097
+  let leap = true
+  if (gDayNo >= 36525) {
+    gDayNo -= 1
+    gy += 100 * Math.floor(gDayNo / 36524)
+    gDayNo %= 36524
+    if (gDayNo >= 365) gDayNo += 1
+    else leap = false
+  }
+  gy += 4 * Math.floor(gDayNo / 1461)
+  gDayNo %= 1461
+  if (gDayNo >= 366) {
+    leap = false
+    gDayNo -= 1
+    gy += Math.floor(gDayNo / 365)
+    gDayNo %= 365
+  }
+  const gdMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  let gm = 0
+  while (gm < 12 && gDayNo >= gdMonth[gm]) {
+    gDayNo -= gdMonth[gm]
+    gm += 1
+  }
+  return `${gy}-${String(gm + 1).padStart(2, '0')}-${String(gDayNo + 1).padStart(2, '0')}`
+}
+
+const toJalaliInput = (value) => {
+  if (!value) return ''
+  const formatted = String(formatJalaliDate(value) || '').trim()
+  if (!formatted || formatted === '-') return ''
+  return formatted.replace(/-/g, '/')
+}
+
+const workerRoleLabel = (value) => {
+  if (value === 'worker' || value === 'Worker') return 'نیرو'
+  if (value === 'operator' || value === 'Operator') return 'اپراتور'
+  return value || '-'
+}
 
 const formatWorkerPayment = (worker) => {
   if (['fixed', 'hourly'].includes(worker?.payment_type || 'percent')) return money(worker?.payment_value || 0)
@@ -809,6 +889,13 @@ watch(() => forms.worker.has_entrusted_item, (enabled) => {
     return
   }
   if (!enabled) forms.worker.entrusted_items = []
+})
+
+watch(() => forms.worker.role, (role) => {
+  if (role === 'worker') {
+    forms.worker.username = ''
+    forms.worker.password = ''
+  }
 })
 
 const loadAll = async () => {
@@ -952,11 +1039,13 @@ const openWorkerModal = (item = null) => {
   modal.title = modal.id ? 'ویرایش پرسنل' : 'افزودن پرسنل'
   forms.worker.full_name = item?.full_name || ''
   forms.worker.role = item?.role_key || 'worker'
-  forms.worker.username = item?.username || ''
+  forms.worker.started_at_jalali = toJalaliInput(item?.started_at)
+  forms.worker.username = (item?.role_key || 'worker') === 'worker' ? '' : (item?.username || '')
   forms.worker.password = ''
   forms.worker.phone = item?.phone || ''
+  forms.worker.address = item?.address || ''
   forms.worker.payment_type = item?.payment_type || 'percent'
-  forms.worker.payment_value = forms.worker.payment_type === 'fixed'
+  forms.worker.payment_value = ['fixed', 'hourly'].includes(forms.worker.payment_type)
     ? toThousandsDisplay(item?.payment_value || 0)
     : Number(item?.payment_value || 0)
   forms.worker.tip_share_percent = Number(item?.tip_share_percent || 0)
@@ -965,6 +1054,7 @@ const openWorkerModal = (item = null) => {
   forms.worker.entrusted_items = Array.isArray(item?.entrusted_items) && item.entrusted_items.length
     ? item.entrusted_items.map((entrustedItem) => ({
         title: entrustedItem?.title || '',
+        entrusted_at: entrustedItem?.entrusted_at || '',
         quantity: Number(entrustedItem?.quantity || 0),
         price: toThousandsDisplay(entrustedItem?.price || 0)
       }))
@@ -1019,8 +1109,18 @@ const openExpenseModal = (item = null) => {
   Object.assign(forms.expense, {
     title: item?.title || '',
     amount: toThousandsDisplay(item?.amount || 0),
-    details: item?.details || ''
+    details: item?.details || '',
+    spent_at_jalali: toJalaliInput(item?.spent_at || item?.created_at),
+    attachment: null,
+    attachment_name: item?.attachment_name || '',
+    attachment_url: item?.attachment_url || ''
   })
+}
+
+const handleExpenseAttachmentChange = (event) => {
+  const file = event?.target?.files?.[0] || null
+  forms.expense.attachment = file
+  forms.expense.attachment_name = file?.name || forms.expense.attachment_name || ''
 }
 
 const openProductHistoryModal = async (item) => {
@@ -1104,12 +1204,13 @@ const dateTime = (value) => formatJalaliDate(value)
 const submitModal = async () => {
   try {
     if (modal.type === 'workers') {
-      const paymentValueNormalized = forms.worker.payment_type === 'fixed'
+      const paymentValueNormalized = ['fixed', 'hourly'].includes(forms.worker.payment_type)
         ? fromThousandsInput(forms.worker.payment_value)
         : Number(forms.worker.payment_value || 0)
       const entrustedItemsPayload = forms.worker.has_entrusted_item
         ? forms.worker.entrusted_items.map((item) => ({
             title: (item?.title || '').trim(),
+            entrusted_at: item?.entrusted_at || '',
             quantity: Number(item?.quantity || 0),
             price: fromThousandsInput(item?.price || 0)
           }))
@@ -1118,9 +1219,11 @@ const submitModal = async () => {
       const workerPayload = {
         full_name: forms.worker.full_name,
         role: forms.worker.role || 'worker',
-        username: forms.worker.username,
-        password: forms.worker.password,
+        started_at: parseJalaliToIso(forms.worker.started_at_jalali) || null,
+        username: forms.worker.role === 'worker' ? '' : forms.worker.username,
+        password: forms.worker.role === 'worker' ? '' : forms.worker.password,
         phone: forms.worker.phone,
+        address: forms.worker.address || '',
         is_available: forms.worker.is_available,
         payment_type: forms.worker.payment_type,
         payment_value: Number.isFinite(Number(paymentValueNormalized)) ? Number(paymentValueNormalized) : 0,
@@ -1154,11 +1257,13 @@ const submitModal = async () => {
       await api.post('/inventory/purchase/', payload)
       t('خرید محصول ثبت شد')
     } else if (modal.type === 'expenses') {
-      const payload = {
-        title: forms.expense.title || '',
-        amount: fromThousandsInput(forms.expense.amount || 0),
-        details: forms.expense.details || ''
-      }
+      const payload = new FormData()
+      payload.append('title', forms.expense.title || '')
+      payload.append('amount', String(fromThousandsInput(forms.expense.amount || 0)))
+      payload.append('details', forms.expense.details || '')
+      const spentAt = parseJalaliToIso(forms.expense.spent_at_jalali)
+      if (spentAt) payload.append('spent_at', spentAt)
+      if (forms.expense.attachment) payload.append('attachment', forms.expense.attachment)
       if (modal.id) await api.patch(`/inventory/expenses/${modal.id}/`, payload)
       else await api.post('/inventory/expenses/', payload)
       t(modal.id ? 'هزینه ویرایش شد' : 'هزینه ثبت شد')
@@ -1468,6 +1573,10 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 }
 .full-width { grid-column: 1 / -1; }
 .helper-text { margin: 0; color: #475569; font-size: 13px; }
+.modal-helper-text { padding: 10px 12px; border-radius: 12px; background: #eff6ff; color: #1d4ed8; }
+.field-file-note { display: block; margin-top: 8px; color: #475569; font-size: 12px; }
+.table-link { color: #2563eb; text-decoration: none; }
+.table-link:hover { text-decoration: underline; }
 .error-box { margin-bottom: 10px; padding: 10px; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 10px; }
 .toast { position: fixed; left: 20px; bottom: 20px; padding: 10px 14px; border-radius: 10px; color: #fff; z-index: 120; }
 .toast.success { background: #16a34a; }

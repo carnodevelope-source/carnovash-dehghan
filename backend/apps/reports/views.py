@@ -1,6 +1,7 @@
 ﻿from datetime import datetime, time
 from decimal import Decimal
 
+from django.http import HttpResponse
 from django.db.models import Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -9,9 +10,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.payments.models import Payment
-from apps.vehicles.models import VehicleEntry, VehicleJob
+from apps.vehicles.models import BlockedPlate, VehicleEntry, VehicleJob
 from apps.workers.models import WorkerAttendance, WorkerProfile
 from apps.reports.models import WorkerPayoutTransaction
+
+
+import csv
 
 
 def _parse_dt(value, end_of_day=False):
@@ -24,6 +28,37 @@ def _parse_dt(value, end_of_day=False):
 
 def _normalize_decimal(value):
     return Decimal(str(value or 0))
+
+
+def _format_export_datetime(value):
+    if not value:
+        return ''
+    localized = timezone.localtime(value) if timezone.is_aware(value) else value
+    return localized.strftime('%Y-%m-%d %H:%M')
+
+
+def _export_row_value(row, field):
+    value = row.get(field, '')
+    if field in {'created_at', 'event_at'}:
+        return _format_export_datetime(value)
+    if field == 'reminder_due_at':
+        return _format_export_datetime(value)[:10] if value else ''
+    if value is None:
+        return ''
+    return value
+
+
+def _build_export_config(tab_key):
+    configs = {
+        'overall': {'filename': 'overall-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('status', 'وضعیت'), ('carwash_share', 'حق کارواش'), ('worker_share', 'حق نیرو'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('services', 'خدمات'), ('created_at', 'تاریخ')], 'rows_key': 'overall_report'},
+        'carwash': {'filename': 'carwash-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('carwash_share', 'حق کارواش'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'carwash_report'},
+        'worker': {'filename': 'worker-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('worker_share', 'حق نیرو'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'worker_report'},
+        'tips': {'filename': 'tips-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('products', 'کالا'), ('created_at', 'تاریخ')], 'rows_key': 'tips_report'},
+        'revenue': {'filename': 'revenue-report', 'headers': [('row', 'ردیف'), ('created_at', 'تاریخ'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل خودرو'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('payment_method', 'روش پرداخت'), ('payment_status', 'وضعیت پرداخت'), ('service_amount', 'خدمات'), ('product_amount', 'محصولات'), ('discount_amount', 'تخفیف'), ('tip_amount', 'انعام'), ('final_total', 'مبلغ نهایی'), ('received_amount', 'وصول شده'), ('outstanding_amount', 'مانده'), ('cheque_number', 'شماره چک'), ('reminder_due_at', 'سررسید')], 'rows_key': 'revenue_report'},
+        'attendance': {'filename': 'attendance-report', 'headers': [('row', 'ردیف'), ('worker_name', 'نام پرسنل'), ('event_type', 'نوع رویداد'), ('source', 'منبع ثبت'), ('event_at', 'زمان')], 'rows_key': 'attendance_report'},
+        'blacklist': {'filename': 'blacklist-report', 'headers': [('row', 'ردیف'), ('plate_number', 'پلاک'), ('plate_type', 'نوع وسیله'), ('note', 'توضیح'), ('blocked_by_name', 'ثبت کننده'), ('created_at', 'تاریخ ثبت')], 'rows_key': 'blacklist_report'},
+    }
+    return configs.get(tab_key, configs['overall'])
 
 
 def _worker_name(worker):
@@ -339,6 +374,7 @@ class ReportsDashboardView(APIView):
             'driver_name': r['driver_name'],
             'driver_phone': r['driver_phone'],
             'car_model': r['car_model'],
+            'car_color': r['car_color'],
             'plate_number': r['plate_number'],
             'plate_left': r['plate_left'],
             'plate_letter': r['plate_letter'],
@@ -358,6 +394,7 @@ class ReportsDashboardView(APIView):
             'driver_name': r['driver_name'],
             'driver_phone': r['driver_phone'],
             'car_model': r['car_model'],
+            'car_color': r['car_color'],
             'plate_number': r['plate_number'],
             'plate_left': r['plate_left'],
             'plate_letter': r['plate_letter'],
@@ -426,6 +463,37 @@ class ReportsDashboardView(APIView):
             'event_at': event.event_at,
             'source': event.source,
         } for i, event in enumerate(attendances.order_by('-event_at'), start=1)]
+
+        blocked_plates = BlockedPlate.objects.select_related('blocked_by').filter(tenant=tenant)
+        if start:
+            blocked_plates = blocked_plates.filter(created_at__gte=start)
+        if end:
+            blocked_plates = blocked_plates.filter(created_at__lte=end)
+        if query:
+            blocked_plates = blocked_plates.filter(
+                Q(plate_number__icontains=query)
+                | Q(note__icontains=query)
+                | Q(blocked_by__full_name__icontains=query)
+                | Q(blocked_by__username__icontains=query)
+            )
+        if plate_number:
+            blocked_plates = blocked_plates.filter(plate_number__icontains=plate_number)
+        if plate_type in {'car', 'motorcycle'}:
+            blocked_plates = blocked_plates.filter(plate_type=plate_type)
+
+        blacklist_rows = [{
+            'row': index,
+            'id': item.id,
+            'plate_number': item.plate_number,
+            'plate_left': item.plate_left,
+            'plate_letter': item.plate_letter,
+            'plate_mid': item.plate_mid,
+            'plate_right': item.plate_right,
+            'plate_type': item.plate_type,
+            'note': item.note,
+            'blocked_by_name': item.blocked_by.full_name or item.blocked_by.username if item.blocked_by else '-',
+            'created_at': item.created_at,
+        } for index, item in enumerate(blocked_plates.order_by('-created_at', '-id'), start=1)]
 
         selected_worker_summary = None
         selected_worker_transactions = []
@@ -498,6 +566,7 @@ class ReportsDashboardView(APIView):
                 },
                 'tips': {'tips_total': float(total_tip)},
                 'attendance': {'count': len(attendance_rows)},
+                'blacklist': {'count': len(blacklist_rows)},
                 'revenue': {'revenue_total': float(revenue_total), 'count': len(revenue_report)},
             },
             'overall_report': rows,
@@ -505,10 +574,28 @@ class ReportsDashboardView(APIView):
             'worker_report': worker_report,
             'tips_report': tips_report,
             'attendance_report': attendance_rows,
+            'blacklist_report': blacklist_rows,
             'revenue_report': revenue_report,
             'selected_worker_summary': selected_worker_summary,
             'selected_worker_transactions': selected_worker_transactions,
         })
+
+
+class ReportsExportView(APIView):
+    def get(self, request):
+        tab_key = str(request.query_params.get('tab') or 'overall').strip().lower()
+        config = _build_export_config(tab_key)
+        dashboard_response = ReportsDashboardView().get(request)
+        payload = getattr(dashboard_response, 'data', {}) or {}
+        rows = payload.get(config['rows_key'], []) or []
+
+        response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+        response['Content-Disposition'] = f'attachment; filename="{config["filename"]}.csv"'
+        writer = csv.writer(response)
+        writer.writerow([label for _field, label in config['headers']])
+        for row in rows:
+            writer.writerow([_export_row_value(row, field) for field, _label in config['headers']])
+        return response
 
 
 class ReportsWorkerPayoutView(APIView):
@@ -516,6 +603,7 @@ class ReportsWorkerPayoutView(APIView):
         tenant = getattr(request.user, 'tenant', None)
         worker_id = request.data.get('worker_id')
         mode = str(request.data.get('mode', 'full')).strip().lower()
+        payout_target = str(request.data.get('payout_target', 'wage')).strip().lower()
         note = str(request.data.get('note', '')).strip()
         try:
             worker_id = int(worker_id)
@@ -523,6 +611,8 @@ class ReportsWorkerPayoutView(APIView):
             return Response({'worker_id': ['Invalid worker.']}, status=status.HTTP_400_BAD_REQUEST)
         if mode not in {'full', 'partial'}:
             return Response({'mode': ['Invalid mode.']}, status=status.HTTP_400_BAD_REQUEST)
+        if payout_target not in {'wage', 'tip'}:
+            return Response({'payout_target': ['Invalid payout target.']}, status=status.HTTP_400_BAD_REQUEST)
 
         worker = WorkerProfile.objects.select_related('user').filter(id=worker_id, tenant=tenant).first()
         if not worker:
@@ -530,9 +620,9 @@ class ReportsWorkerPayoutView(APIView):
 
         jobs = _get_worker_jobs(tenant, worker_id)
         worker_state = _compute_worker_financials(worker, jobs)
-        payable_total = worker_state['payable_total']
+        payable_total = worker_state['tip_balance'] if payout_target == 'tip' else worker_state['payable_total']
         if payable_total <= 0:
-            return Response({'detail': 'مانده حقوقی برای پرداخت وجود ندارد.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'مانده‌ای برای پرداخت وجود ندارد.' if payout_target == 'tip' else 'مانده حقوقی برای پرداخت وجود ندارد.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if mode == 'full':
             amount = payable_total
@@ -540,15 +630,20 @@ class ReportsWorkerPayoutView(APIView):
             amount = _normalize_decimal(request.data.get('amount'))
             if amount <= 0:
                 return Response({'amount': ['مبلغ باید بیشتر از صفر باشد.']}, status=status.HTTP_400_BAD_REQUEST)
-            if amount > payable_total:
-                amount = payable_total
+            if amount >= payable_total:
+                return Response({'amount': ['مبلغ باید کمتر از مانده کل باشد.']}, status=status.HTTP_400_BAD_REQUEST)
 
         tx = WorkerPayoutTransaction.objects.create(
             tenant=tenant,
             worker=worker,
-            kind=WorkerPayoutTransaction.Kind.WAGE_PAYMENT,
+            kind=WorkerPayoutTransaction.Kind.TIP_PAYMENT if payout_target == 'tip' else WorkerPayoutTransaction.Kind.WAGE_PAYMENT,
             amount=amount,
-            note=note or ('پرداخت کامل حقوق' if mode == 'full' else 'پرداخت بخشی از حقوق'),
+            note=note or (
+                'پرداخت کامل انعام' if payout_target == 'tip' and mode == 'full'
+                else 'پرداخت بخشی از انعام' if payout_target == 'tip'
+                else 'پرداخت کامل حقوق' if mode == 'full'
+                else 'پرداخت بخشی از حقوق'
+            ),
             created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
         )
 
@@ -556,10 +651,11 @@ class ReportsWorkerPayoutView(APIView):
         if remaining < 0:
             remaining = Decimal('0')
         return Response({
-            'detail': 'پرداخت حقوق ثبت شد.',
+            'detail': 'پرداخت انعام ثبت شد.' if payout_target == 'tip' else 'پرداخت حقوق ثبت شد.',
             'transaction_id': tx.id,
             'paid_amount': float(amount),
             'remaining_payable': float(remaining),
+            'payout_target': payout_target,
         })
 
 
