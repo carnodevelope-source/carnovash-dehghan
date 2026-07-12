@@ -3,12 +3,15 @@ import math
 import uuid
 from collections import Counter
 from decimal import Decimal
+from io import BytesIO
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q, Sum, Value
 from django.db.models.functions import Coalesce
+from django.http import HttpResponse
 from django.utils import timezone
+from openpyxl import Workbook, load_workbook
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -16,7 +19,7 @@ from rest_framework.views import APIView
 
 from apps.payments.models import CashflowTransaction, Wallet
 from apps.services.models import GeneralSettings
-from .models import CustomerGroup, NotificationLog, SmsTemplate
+from .models import CustomerGroup, ImportedCustomer, NotificationLog, SmsTemplate
 from .serializers import (
     CustomerGroupSerializer,
     SimpleSmsSendSerializer,
@@ -29,7 +32,114 @@ from .services import (
     extract_log_metadata,
     group_sms_batches,
     send_provider_sms,
+    is_valid_iran_mobile,
+    normalize_phone,
 )
+
+
+CUSTOMER_IMPORT_PRICE = Decimal('50000')
+CUSTOMER_IMPORT_HEADERS = [
+    ('full_name', 'نام مشتری'),
+    ('phone', 'شماره تلفن'),
+    ('plate_number', 'پلاک'),
+    ('car_model', 'مدل خودرو'),
+    ('car_color', 'رنگ خودرو'),
+    ('notes', 'توضیحات'),
+]
+CUSTOMER_IMPORT_HEADER_ALIASES = {
+    'full_name': {'نام مشتری', 'نام', 'اسم', 'name', 'full name', 'full_name'},
+    'phone': {'شماره تلفن', 'شماره موبایل', 'موبایل', 'تلفن', 'phone', 'mobile'},
+    'plate_number': {'پلاک', 'شماره پلاک', 'plate', 'plate_number'},
+    'car_model': {'مدل خودرو', 'خودرو', 'مدل', 'car model', 'car_model'},
+    'car_color': {'رنگ خودرو', 'رنگ', 'car color', 'car_color'},
+    'notes': {'توضیحات', 'یادداشت', 'notes', 'note'},
+}
+
+
+def _cell_text(value):
+    return str(value or '').strip()
+
+
+def _normalize_header(value):
+    return _cell_text(value).replace('\u200c', ' ').replace('_', ' ').strip().lower()
+
+
+def _normalize_import_phone(value):
+    phone = normalize_phone(value)
+    if len(phone) == 10 and phone.startswith('9'):
+        return f'0{phone}'
+    return phone
+
+
+def _parse_customer_import_workbook(uploaded_file):
+    try:
+        workbook = load_workbook(uploaded_file, read_only=True, data_only=True)
+    except Exception as exc:
+        raise ValidationError({'file': f'فایل اکسل قابل خواندن نیست: {exc}'})
+
+    sheet = workbook.active
+    rows = list(sheet.iter_rows(values_only=True))
+    if not rows:
+        return [], [{'row': 1, 'message': 'فایل خالی است.'}]
+
+    raw_headers = [_normalize_header(value) for value in rows[0]]
+    index_by_key = {}
+    for key, aliases in CUSTOMER_IMPORT_HEADER_ALIASES.items():
+        normalized_aliases = {_normalize_header(alias) for alias in aliases}
+        for index, header in enumerate(raw_headers):
+            if header in normalized_aliases:
+                index_by_key[key] = index
+                break
+
+    if 'phone' not in index_by_key:
+        return [], [{'row': 1, 'message': 'ستون شماره تلفن در فایل پیدا نشد.'}]
+
+    parsed = []
+    errors = []
+    seen_phones = set()
+    for row_number, row in enumerate(rows[1:], start=2):
+        values = {}
+        for key, index in index_by_key.items():
+            values[key] = _cell_text(row[index] if index < len(row) else '')
+        if not any(values.values()):
+            continue
+
+        phone = _normalize_import_phone(values.get('phone'))
+        if not is_valid_iran_mobile(phone):
+            errors.append({'row': row_number, 'message': 'شماره تلفن معتبر نیست و باید با 09 شروع شود.'})
+            continue
+        if phone in seen_phones:
+            errors.append({'row': row_number, 'message': 'شماره تلفن در همین فایل تکراری است.'})
+            continue
+        seen_phones.add(phone)
+        parsed.append({
+            'row': row_number,
+            'full_name': values.get('full_name') or 'مشتری بدون نام',
+            'phone': phone,
+            'plate_number': values.get('plate_number', ''),
+            'car_model': values.get('car_model', ''),
+            'car_color': values.get('car_color', ''),
+            'notes': values.get('notes', ''),
+        })
+    return parsed, errors
+
+
+def _default_wallet_for_update(tenant):
+    wallet = Wallet.objects.select_for_update().filter(
+        tenant=tenant,
+        wallet_type=Wallet.WalletType.BANK,
+        is_active=True,
+    ).order_by('id').first()
+    if wallet:
+        return wallet
+    wallet = Wallet.objects.create(
+        tenant=tenant,
+        name='کیف پول اصلی',
+        wallet_type=Wallet.WalletType.BANK,
+        balance=0,
+        is_active=True,
+    )
+    return Wallet.objects.select_for_update().get(id=wallet.id)
 
 
 class SmsWalletMixin:
@@ -177,6 +287,133 @@ class CustomerClubDashboardView(APIView, SmsWalletMixin):
                 'logs': [extract_log_metadata(log) for log in logs],
             }
         )
+
+
+class CustomerImportTemplateView(APIView):
+    def get(self, request):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = 'customers'
+        sheet.append([label for _, label in CUSTOMER_IMPORT_HEADERS])
+        sheet.append([
+            'علی رضایی',
+            '09123456789',
+            '12 ب 345 67',
+            'پژو 206',
+            'سفید',
+            'مشتری وفادار',
+        ])
+        sheet.append([
+            'سارا احمدی',
+            '09120000000',
+            '',
+            'تیبا',
+            'مشکی',
+            '',
+        ])
+        for index, width in enumerate([22, 18, 18, 18, 14, 32], start=1):
+            sheet.column_dimensions[sheet.cell(row=1, column=index).column_letter].width = width
+
+        stream = BytesIO()
+        workbook.save(stream)
+        stream.seek(0)
+        response = HttpResponse(
+            stream.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = 'attachment; filename="customer-import-template.xlsx"'
+        return response
+
+
+class CustomerImportPreviewView(APIView):
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response({'file': ['فایل اکسل را انتخاب کنید.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        rows, errors = _parse_customer_import_workbook(uploaded_file)
+        return Response({
+            'preview': rows[:5],
+            'valid_count': len(rows),
+            'error_count': len(errors),
+            'errors': errors[:20],
+            'price': CUSTOMER_IMPORT_PRICE,
+        })
+
+
+class CustomerImportConfirmView(APIView):
+    def post(self, request):
+        tenant = getattr(request.user, 'tenant', None)
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return Response({'file': ['فایل اکسل را انتخاب کنید.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        rows, errors = _parse_customer_import_workbook(uploaded_file)
+        if errors:
+            return Response(
+                {
+                    'detail': 'فایل هنوز خطای قابل اصلاح دارد.',
+                    'errors': errors[:20],
+                    'valid_count': len(rows),
+                    'error_count': len(errors),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not rows:
+            return Response({'detail': 'هیچ مشتری معتبری در فایل پیدا نشد.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            wallet = _default_wallet_for_update(tenant)
+            wallet_balance = Decimal(str(wallet.balance or 0))
+            if wallet_balance < CUSTOMER_IMPORT_PRICE:
+                return Response(
+                    {
+                        'detail': 'موجودی کیف پول برای وارد کردن مشتریان کافی نیست.',
+                        'required_amount': CUSTOMER_IMPORT_PRICE,
+                        'wallet_balance': wallet_balance,
+                    },
+                    status=status.HTTP_402_PAYMENT_REQUIRED,
+                )
+
+            wallet.balance = wallet_balance - CUSTOMER_IMPORT_PRICE
+            wallet.save(update_fields=['balance', 'updated_at'])
+            CashflowTransaction.objects.create(
+                tenant=tenant,
+                wallet=wallet,
+                direction=CashflowTransaction.Direction.OUT,
+                amount=CUSTOMER_IMPORT_PRICE,
+                description='وارد کردن مشتریان باشگاه مشتریان از اکسل',
+                reference_type='customer_import_excel',
+                created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+            )
+
+            created_count = 0
+            updated_count = 0
+            for item in rows:
+                _, created = ImportedCustomer.objects.update_or_create(
+                    tenant=tenant,
+                    phone=item['phone'],
+                    defaults={
+                        'full_name': item['full_name'],
+                        'plate_number': item.get('plate_number', ''),
+                        'car_model': item.get('car_model', ''),
+                        'car_color': item.get('car_color', ''),
+                        'notes': item.get('notes', ''),
+                        'source': 'excel',
+                        'imported_by': request.user if getattr(request.user, 'is_authenticated', False) else None,
+                    },
+                )
+                if created:
+                    created_count += 1
+                else:
+                    updated_count += 1
+
+        return Response({
+            'created_count': created_count,
+            'updated_count': updated_count,
+            'imported_count': created_count + updated_count,
+            'charged_amount': CUSTOMER_IMPORT_PRICE,
+        }, status=status.HTTP_201_CREATED)
 
 
 class CustomerGroupListCreateView(generics.ListCreateAPIView):

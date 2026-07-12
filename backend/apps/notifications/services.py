@@ -552,6 +552,28 @@ def serialize_decimal(value):
     return float(Decimal(str(value)))
 
 
+def _attach_customer_plate(record, *, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right='', plate_type=None):
+    plate = str(plate_number or '').strip()
+    if not plate or plate == '1111':
+        return
+    if plate not in {entry['plate_number'] for entry in record['plates']}:
+        record['plates'].append({
+            'plate_number': plate,
+            'plate_left': str(plate_left or '').strip(),
+            'plate_letter': str(plate_letter or '').strip(),
+            'plate_mid': str(plate_mid or '').strip(),
+            'plate_right': str(plate_right or '').strip(),
+            'plate_type': str(plate_type or VehicleEntry.PlateType.CAR).strip() or VehicleEntry.PlateType.CAR,
+        })
+    if record['plates'] and not record['primary_plate']:
+        record['primary_plate'] = record['plates'][0]['plate_number']
+        record['primary_plate_left'] = record['plates'][0]['plate_left']
+        record['primary_plate_letter'] = record['plates'][0]['plate_letter']
+        record['primary_plate_mid'] = record['plates'][0]['plate_mid']
+        record['primary_plate_right'] = record['plates'][0]['plate_right']
+        record['primary_plate_type'] = record['plates'][0]['plate_type']
+
+
 def ensure_default_sms_templates(tenant, user=None):
     from .models import SmsTemplate
 
@@ -577,6 +599,8 @@ def ensure_default_sms_templates(tenant, user=None):
 
 
 def build_customer_summaries(tenant):
+    from .models import ImportedCustomer
+
     rows = (
         VehicleEntry.objects.select_related('customer', 'job')
         .filter(tenant=tenant)
@@ -647,6 +671,46 @@ def build_customer_summaries(tenant):
             record['primary_plate_mid'] = record['plates'][0]['plate_mid']
             record['primary_plate_right'] = record['plates'][0]['plate_right']
             record['primary_plate_type'] = record['plates'][0]['plate_type']
+
+    for item in ImportedCustomer.objects.filter(tenant=tenant).order_by('-updated_at', '-id'):
+        phone = normalize_phone(item.phone)
+        key = next(
+            (
+                existing_key
+                for existing_key, existing_record in customer_map.items()
+                if phone and existing_record.get('phone') == phone
+            ),
+            customer_key_for(phone=phone, name=item.full_name),
+        )
+        event_date = item.updated_at or item.created_at
+        record = customer_map.get(key)
+        if record is None:
+            record = {
+                'key': key,
+                'customer_id': None,
+                'name': (item.full_name or 'مشتری بدون نام').strip() or 'مشتری بدون نام',
+                'phone': phone,
+                'carwash_name': getattr(tenant, 'name', '') or 'کارواش',
+                'orders_count': 0,
+                'total_spent': 0.0,
+                'score': 0.0,
+                'last_order_at': event_date,
+                'first_order_at': event_date,
+                'plates': [],
+                'primary_plate': '',
+                'primary_plate_left': '',
+                'primary_plate_letter': '',
+                'primary_plate_mid': '',
+                'primary_plate_right': '',
+                'primary_plate_type': VehicleEntry.PlateType.CAR,
+                'source': 'imported',
+            }
+            customer_map[key] = record
+        elif item.full_name and (not record.get('name') or record.get('name') == 'مشتری بدون نام'):
+            record['name'] = item.full_name
+        if event_date and (not record['last_order_at'] or event_date > record['last_order_at']):
+            record['last_order_at'] = event_date
+        _attach_customer_plate(record, plate_number=item.plate_number)
 
     result = list(customer_map.values())
     for item in result:

@@ -62,7 +62,15 @@
                   <td>{{ item.is_available ? 'فعال' : 'غیرفعال' }}</td>
                   <td>
                     <button class="table-btn" @click="openWorkerModal(item)">ویرایش</button>
-                    <button class="table-btn danger" type="button" disabled title="حذف پرسنل غیرفعال است">حذف</button>
+                    <button
+                      class="table-btn"
+                      :class="item.is_available ? 'danger' : 'success'"
+                      type="button"
+                      @click="toggleWorkerAvailability(item)"
+                      :title="item.is_available ? 'غیرفعال کردن پرسنل' : 'فعال کردن پرسنل'"
+                    >
+                      {{ item.is_available ? 'غیرفعال‌کردن' : 'فعال‌کردن' }}
+                    </button>
                   </td>
                 </tr>
               </tbody>
@@ -366,12 +374,27 @@
               </select>
             </label>
             <label>
-              <span>{{ forms.worker.payment_type === 'percent' ? 'درصد دریافتی' : forms.worker.payment_type === 'hourly' ? 'مبلغ ساعتی (هزار تومان)' : 'مبلغ دریافتی (هزار تومان)' }}</span>
-              <input type="number" :min="0" :max="forms.worker.payment_type === 'percent' ? 100 : null" v-model.number="forms.worker.payment_value" required />
+              <span>{{ forms.worker.payment_type === 'percent' ? 'درصد دریافتی' : forms.worker.payment_type === 'hourly' ? 'مبلغ ساعتی (تومان)' : 'مبلغ دریافتی (تومان)' }}</span>
+              <input
+                v-if="forms.worker.payment_type === 'percent'"
+                type="number"
+                min="0"
+                max="100"
+                v-model.number="forms.worker.payment_value"
+                required
+              />
+              <input
+                v-else
+                :value="moneyInputValue(forms.worker.payment_value)"
+                type="text"
+                inputmode="numeric"
+                @input="forms.worker.payment_value = fromThousandsInput($event.target.value)"
+                required
+              />
             </label>
             <label>
-              <span>حق بیمه (هزار تومان)</span>
-              <input type="number" min="0" v-model.number="forms.worker.insurance_amount" />
+              <span>حق بیمه (تومان)</span>
+              <input :value="moneyInputValue(forms.worker.insurance_amount)" type="text" inputmode="numeric" @input="forms.worker.insurance_amount = fromThousandsInput($event.target.value)" />
             </label>
             <label><span>درصد انعام</span><input type="number" min="0" max="100" v-model.number="forms.worker.tip_share_percent" required /></label>
             <label class="row-check"><input type="checkbox" v-model="forms.worker.is_available" /><span>فعال</span></label>
@@ -409,8 +432,8 @@
                     <input type="number" min="0" step="0.01" v-model.number="entrustedItem.quantity" />
                   </label>
                   <label>
-                    <span>قیمت (هزار تومان)</span>
-                    <input type="number" min="0" v-model.number="entrustedItem.price" />
+                    <span>قیمت (تومان)</span>
+                    <input :value="moneyInputValue(entrustedItem.price)" type="text" inputmode="numeric" @input="entrustedItem.price = fromThousandsInput($event.target.value)" />
                   </label>
                   <button
                     type="button"
@@ -427,8 +450,8 @@
           <template v-else-if="modal.type === 'products'">
             <label><span>نام</span><input v-model="forms.product.name" required /></label>
             <label class="full"><span>شرح</span><textarea v-model="forms.product.description" rows="3" /></label>
-            <label><span>قیمت فروش (هزار تومان)</span><input type="number" min="0" v-model.number="forms.product.sale_price" required /></label>
-            <label><span>قیمت خرید (هزار تومان)</span><input type="number" min="0" v-model.number="forms.product.cost_price" required /></label>
+            <label><span>قیمت فروش (تومان)</span><input :value="moneyInputValue(forms.product.sale_price)" type="text" inputmode="numeric" @input="forms.product.sale_price = fromThousandsInput($event.target.value)" required /></label>
+            <label><span>قیمت خرید (تومان)</span><input :value="moneyInputValue(forms.product.cost_price)" type="text" inputmode="numeric" @input="forms.product.cost_price = fromThousandsInput($event.target.value)" required /></label>
             <label><span>واحد</span><input v-model="forms.product.unit" /></label>
             <label><span>حداقل موجودی</span><input type="number" min="0" v-model.number="forms.product.min_stock" /></label>
             <label class="row-check"><input type="checkbox" v-model="forms.product.is_active" /><span>فعال</span></label>
@@ -443,14 +466,14 @@
               </select>
             </label>
             <label><span>تعداد خرید</span><input type="number" min="0.01" step="0.01" v-model.number="forms.purchase.quantity" required /></label>
-            <label><span>قیمت خرید واحد (هزار تومان)</span><input type="number" min="0" v-model.number="forms.purchase.unit_cost" /></label>
-            <label><span>قیمت فروش واحد (هزار تومان)</span><input type="number" min="0" v-model.number="forms.purchase.sale_price" /></label>
+            <label><span>قیمت خرید واحد (تومان)</span><input :value="moneyInputValue(forms.purchase.unit_cost)" type="text" inputmode="numeric" @input="forms.purchase.unit_cost = fromThousandsInput($event.target.value)" /></label>
+            <label><span>قیمت فروش واحد (تومان)</span><input :value="moneyInputValue(forms.purchase.sale_price)" type="text" inputmode="numeric" @input="forms.purchase.sale_price = fromThousandsInput($event.target.value)" /></label>
             <label><span>توضیح</span><input v-model="forms.purchase.note" placeholder="اختیاری" /></label>
           </template>
 
           <template v-else-if="modal.type === 'expenses'">
             <label><span>شرح هزینه</span><input v-model.trim="forms.expense.title" required placeholder="مثلا تعمیر کولر" /></label>
-            <label><span>مبلغ (هزار تومان)</span><input type="number" min="0" v-model.number="forms.expense.amount" required /></label>
+            <label><span>مبلغ (تومان)</span><input :value="moneyInputValue(forms.expense.amount)" type="text" inputmode="numeric" @input="forms.expense.amount = fromThousandsInput($event.target.value)" required /></label>
             <label class="full"><span>تاریخ</span><BaseDatePicker v-model="forms.expense.spent_at_jalali" placeholder="1405/01/01" /></label>
             <label class="full">
               <span>پیوست</span>
@@ -469,7 +492,7 @@
               <div class="service-tier-panel-head">
                 <div>
                   <strong>تیپ‌های خودرو</strong>
-                  <p class="helper-text">برای هر تیپ، مبلغ نرخ نامه، مبلغ فروش و زمان انجام خدمت را به هزارتومان و دقیقه ثبت کنید.</p>
+                  <p class="helper-text">برای هر تیپ، مبلغ نرخ نامه، مبلغ فروش و زمان انجام خدمت را به تومان و دقیقه ثبت کنید.</p>
                 </div>
               </div>
               <div class="service-tier-grid">
@@ -480,11 +503,11 @@
                   </header>
                   <label>
                     <span>مبلغ نرخ نامه</span>
-                    <input type="number" min="0" v-model.number="forms.service.pricing_tiers[tier.key].list_price" required />
+                    <input :value="moneyInputValue(forms.service.pricing_tiers[tier.key].list_price)" type="text" inputmode="numeric" @input="forms.service.pricing_tiers[tier.key].list_price = fromThousandsInput($event.target.value)" required />
                   </label>
                   <label>
                     <span>مبلغ فروش</span>
-                    <input type="number" min="0" v-model.number="forms.service.pricing_tiers[tier.key].sale_price" required />
+                    <input :value="moneyInputValue(forms.service.pricing_tiers[tier.key].sale_price)" type="text" inputmode="numeric" @input="forms.service.pricing_tiers[tier.key].sale_price = fromThousandsInput($event.target.value)" required />
                   </label>
                   <label>
                     <span>زمان (دقیقه)</span>
@@ -512,11 +535,11 @@
                   </header>
                   <label>
                     <span>مبلغ نرخ نامه</span>
-                    <input type="number" min="0" v-model.number="forms.service.motorcycle_pricing_tiers[tier.key].list_price" required />
+                    <input :value="moneyInputValue(forms.service.motorcycle_pricing_tiers[tier.key].list_price)" type="text" inputmode="numeric" @input="forms.service.motorcycle_pricing_tiers[tier.key].list_price = fromThousandsInput($event.target.value)" required />
                   </label>
                   <label>
                     <span>مبلغ فروش</span>
-                    <input type="number" min="0" v-model.number="forms.service.motorcycle_pricing_tiers[tier.key].sale_price" required />
+                    <input :value="moneyInputValue(forms.service.motorcycle_pricing_tiers[tier.key].sale_price)" type="text" inputmode="numeric" @input="forms.service.motorcycle_pricing_tiers[tier.key].sale_price = fromThousandsInput($event.target.value)" required />
                   </label>
                   <label>
                     <span>زمان (دقیقه)</span>
@@ -646,7 +669,7 @@ import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import { formatJalaliDate } from '../../utils/date'
-import { formatThousandsToman, fromThousandsTomanInput } from '../../utils/money'
+import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const authStore = useAuthStore()
@@ -744,7 +767,8 @@ const t = (msg, type = 'success') => {
 }
 
 const money = (v) => formatThousandsToman(v)
-const toThousandsDisplay = (value) => Math.round(Number(value || 0) / 1000)
+const moneyInputValue = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
+const toThousandsDisplay = (value) => Math.round(Number(value || 0))
 const fromThousandsInput = (value) => fromThousandsTomanInput(value)
 const createEntrustedItem = () => ({ title: '', entrusted_at: '', quantity: 1, price: 0 })
 
@@ -1297,7 +1321,30 @@ const submitModal = async () => {
   }
 }
 
-const deleteWorker = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/workers/${item.id}/`); t('حذف شد'); await loadAll() }
+const toggleWorkerAvailability = async (item) => {
+  if (!item?.id) return
+  const nextAvailability = !item.is_available
+  if (!confirm(`پرسنل «${item.full_name}» ${nextAvailability ? 'فعال' : 'غیرفعال'} شود؟`)) return
+  await api.patch(`/workers/${item.id}/`, {
+    full_name: item.full_name,
+    role: item.role_key || item.role,
+    username: item.role_key === 'worker' ? '' : (item.username || ''),
+    phone: item.phone || '',
+    address: item.address || '',
+    is_available: nextAvailability,
+    payment_type: item.payment_type || 'percent',
+    payment_value: Number(item.payment_value || 0),
+    insurance_amount: Number(item.insurance_amount || 0),
+    tip_share_percent: Number(item.tip_share_percent || 0),
+    has_entrusted_item: Boolean(item.has_entrusted_item),
+    entrusted_items: Array.isArray(item.entrusted_items) ? item.entrusted_items : [],
+    entrusted_item_description: item.entrusted_item_description || '',
+    entrusted_item_quantity: Number(item.entrusted_item_quantity || 0),
+    entrusted_item_price: Number(item.entrusted_item_price || 0)
+  })
+  t(nextAvailability ? 'پرسنل فعال شد' : 'پرسنل غیرفعال شد')
+  await loadAll()
+}
 const deleteProduct = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/products/${item.id}/`); t('حذف شد'); await loadAll() }
 const deleteExpense = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/inventory/expenses/${item.id}/`); t('حذف شد'); await loadAll() }
 const deleteService = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/services/${item.id}/`); t('حذف شد'); await loadAll() }
@@ -1333,6 +1380,7 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .btn-with-icon { display: inline-flex; align-items: center; gap: 8px; }
 .table-btn { border: 0; background: #e2e8f0; padding: 6px 10px; border-radius: 8px; cursor: pointer; margin-left: 6px; }
 .table-btn.danger { background: #fee2e2; color: #991b1b; }
+.table-btn.success { background: #dcfce7; color: #166534; }
 .table-meta-note { color: #64748b; font-size: 12px; font-weight: 700; }
 .source-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 84px; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
 .source-manual { background: #dbeafe; color: #1d4ed8; }

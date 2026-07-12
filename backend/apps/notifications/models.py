@@ -123,3 +123,37 @@ class CustomerGroup(TimestampedModel):
         indexes = [
             models.Index(fields=['tenant', 'is_active', 'created_at']),
         ]
+
+
+class ImportedCustomer(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='imported_customers',
+    )
+    full_name = models.CharField(max_length=120)
+    phone = models.CharField(max_length=20)
+    car_model = models.CharField(max_length=120, blank=True)
+    car_color = models.CharField(max_length=60, blank=True)
+    plate_number = models.CharField(max_length=40, blank=True)
+    notes = models.TextField(blank=True)
+    source = models.CharField(max_length=40, default='excel')
+    imported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='imported_customers_created',
+    )
+
+    class Meta:
+        ordering = ['-updated_at', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant', 'phone'],
+                name='uniq_imported_customer_phone_per_tenant',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['tenant', 'phone']),
+        ]

@@ -337,13 +337,13 @@
             </div>
 
             <label>
-              <span>{{ actionModal.type === 'deposit' ? 'مبلغ واریز (هزار تومان)' : 'مبلغ (هزار تومان)' }}</span>
+              <span>{{ actionModal.type === 'deposit' ? 'مبلغ واریز (تومان)' : 'مبلغ (تومان)' }}</span>
               <input
                 v-if="actionModal.type === 'withdraw'"
                 v-model="actionModal.amountText"
                 type="text"
                 inputmode="numeric"
-                placeholder="مثلاً 500"
+                placeholder="مثلاً 500,000"
               />
               <div v-else class="gateway-amounts">
                 <button
@@ -518,12 +518,12 @@
           </div>
 
           <label v-if="optionModal.paymentPlan === 'installment'" class="upfront-input-box">
-            <span>مبلغ نقدی اولیه (هزار تومان)</span>
+            <span>مبلغ نقدی اولیه (تومان)</span>
             <input
               v-model="optionModal.upfrontAmountText"
               type="text"
               inputmode="numeric"
-              placeholder="مثلا 800"
+              placeholder="مثلا 800,000"
             />
             <small>باقی‌مانده به صورت خودکار در ۱۲ قسط مساوی محاسبه می‌شود.</small>
           </label>
@@ -648,7 +648,7 @@ const smsBalanceHint = computed(() => {
   return 'این اعتبار برای پیامک‌های تکی و گروهی همین شعبه استفاده می‌شود.'
 })
 const suggestedSmsTopUpLabel = computed(() => {
-  if (Number(state.summary.sms_balance || 0) <= 0) return 'شارژ پیشنهادی: ۱۰۰ هزار تومان'
+  if (Number(state.summary.sms_balance || 0) <= 0) return 'شارژ پیشنهادی: ۱۰۰,۰۰۰ تومان'
   if (smsLow.value) return 'پیشنهاد: یک شارژ سبک انجام بده'
   return 'وضعیت شارژ: مناسب'
 })

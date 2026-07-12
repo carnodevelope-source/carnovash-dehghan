@@ -263,7 +263,7 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    tenant_id = serializers.IntegerField(required=True)
+    tenant_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate_first_name(self, value):
         value = str(value or '').strip()
@@ -288,13 +288,16 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
         return value
 
     def validate_tenant_id(self, value):
+        if value in (None, 0, '0', ''):
+            return None
         tenant = CarWash.objects.filter(pk=value, is_active=True).first()
         if not tenant:
             raise serializers.ValidationError('کارواش انتخاب‌شده معتبر نیست.')
         return tenant.id
 
     def create(self, validated_data):
-        tenant = CarWash.objects.get(pk=validated_data['tenant_id'])
+        tenant_id = validated_data.get('tenant_id')
+        tenant = CarWash.objects.filter(pk=tenant_id).first() if tenant_id else None
         first_name = validated_data.get('first_name') or 'پشتیبان'
         last_name = validated_data.get('last_name') or 'مرکزی'
         full_name = f'{first_name} {last_name}'.strip()[:150]
@@ -344,7 +347,7 @@ class HqSupportUserUpdateSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    tenant_id = serializers.IntegerField(required=False)
+    tenant_id = serializers.IntegerField(required=False, allow_null=True)
     is_active = serializers.BooleanField(required=False)
 
     def validate_username(self, value):
@@ -360,6 +363,8 @@ class HqSupportUserUpdateSerializer(serializers.Serializer):
         return value
 
     def validate_tenant_id(self, value):
+        if value in (None, 0, '0', ''):
+            return None
         tenant = CarWash.objects.filter(pk=value, is_active=True).first()
         if not tenant:
             raise serializers.ValidationError('کارواش انتخاب‌شده معتبر نیست.')

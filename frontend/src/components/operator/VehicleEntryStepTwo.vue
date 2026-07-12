@@ -226,7 +226,7 @@
               این پلاک بلاک شده است. برای ثبت خودرو و ساخت کارت، پرداخت باید همین حالا تایید شود.
             </p>
             <div class="summary-row">
-              <span>تخفیف دستی (هزار تومان):</span>
+              <span>تخفیف دستی (تومان):</span>
               <input :value="toThousandsInput(manualDiscountTotal)" type="text" inputmode="numeric" @input="manualDiscountTotal = fromThousandsInput($event.target.value)" />
               </div>
             <div class="summary-row">

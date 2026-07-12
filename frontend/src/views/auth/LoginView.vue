@@ -767,7 +767,7 @@ const submitRegister = async () => {
 
 @media (max-width: 640px) {
   .login-page {
-    background: url('/e5eb861941aac79bcfd5d1fdabf1d569.jpg') center center/cover no-repeat;
+    background: url('/Mobile-bg.jpg') center center/cover no-repeat;
   }
 
   .login-video {

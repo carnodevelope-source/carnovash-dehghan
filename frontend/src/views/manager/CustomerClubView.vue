@@ -9,6 +9,7 @@
   >
     <template #header-actions>
       <button type="button" class="club-ghost-btn btn-with-icon" @click="exportCustomers"><IconlyIcon name="document" size="sm" />خروجی اکسل</button>
+      <button type="button" class="club-ghost-btn btn-with-icon" @click="openCustomerImportModal"><IconlyIcon name="paperPlus" size="sm" />وارد کردن مشتریان</button>
       <button type="button" class="club-primary-btn btn-with-icon" @click="openGroupBuilder"><IconlyIcon name="plus" size="sm" />ساخت گروه جدید</button>
     </template>
 
@@ -84,7 +85,7 @@
 
           <label class="filter-field">
             <span>حداقل جمع خرید</span>
-            <input v-model.number="filters.minSpent" type="number" min="0" placeholder="هزار تومان" />
+            <input :value="moneyInputValue(filters.minSpent)" type="text" inputmode="numeric" placeholder="تومان" @input="filters.minSpent = parseMoneyInput($event.target.value)" />
           </label>
 
           <label class="filter-field">
@@ -316,6 +317,108 @@
       </div>
     </div>
 
+    <div v-if="customerImport.open" class="overlay" @click.self="closeCustomerImportModal">
+      <section class="modal-card customer-import-modal">
+        <header class="modal-head">
+          <div>
+            <p class="modal-kicker">وارد کردن مشتریان</p>
+            <h3>{{ customerImport.confirming ? 'تایید هزینه واردات' : 'بارگذاری فایل اکسل مشتریان' }}</h3>
+          </div>
+          <button type="button" class="icon-close" @click="closeCustomerImportModal">×</button>
+        </header>
+
+        <div v-if="!customerImport.confirming" class="customer-import-layout">
+          <section class="import-guide-panel">
+            <h4>ساختار فایل</h4>
+            <p>ابتدا فایل نمونه را دانلود کنید و اطلاعات مشتریان را با همین ستون‌ها وارد کنید. ستون شماره تلفن الزامی است و باید با 09 شروع شود.</p>
+            <div class="import-columns">
+              <span>نام مشتری</span>
+              <span>شماره تلفن</span>
+              <span>پلاک</span>
+              <span>مدل خودرو</span>
+              <span>رنگ خودرو</span>
+              <span>توضیحات</span>
+            </div>
+            <button type="button" class="club-secondary-btn btn-with-icon" :disabled="customerImport.downloadingTemplate" @click="downloadCustomerImportTemplate">
+              <IconlyIcon name="document" size="sm" />
+              {{ customerImport.downloadingTemplate ? 'در حال دریافت...' : 'دانلود تمپلیت اکسل' }}
+            </button>
+          </section>
+
+          <section class="import-upload-panel">
+            <label class="import-dropzone">
+              <input ref="customerImportFileRef" type="file" accept=".xlsx" @change="handleCustomerImportFile" />
+              <strong>{{ customerImport.fileName || 'فایل اکسل را انتخاب کنید' }}</strong>
+              <span>بعد از انتخاب فایل، ۵ ردیف اول برای بررسی نمایش داده می‌شود.</span>
+            </label>
+            <button type="button" class="club-primary-btn" :disabled="!customerImport.file || customerImport.previewing" @click="previewCustomerImport">
+              {{ customerImport.previewing ? 'در حال بررسی...' : 'نمایش پیش‌نمایش' }}
+            </button>
+          </section>
+        </div>
+
+        <div v-if="!customerImport.confirming && customerImport.preview.length" class="import-preview-panel">
+          <div class="side-card-head">
+            <h4>پیش‌نمایش ۵ ردیف اول</h4>
+            <span>{{ toFa(customerImport.validCount) }} ردیف معتبر</span>
+          </div>
+          <div class="customer-table-wrap import-preview-table-wrap">
+            <table class="customer-table import-preview-table">
+              <thead>
+                <tr>
+                  <th>نام</th>
+                  <th>شماره تلفن</th>
+                  <th>پلاک</th>
+                  <th>مدل خودرو</th>
+                  <th>رنگ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in customerImport.preview" :key="`${row.row}-${row.phone}`">
+                  <td>{{ row.full_name }}</td>
+                  <td class="mono-cell">{{ row.phone }}</td>
+                  <td>{{ row.plate_number || '-' }}</td>
+                  <td>{{ row.car_model || '-' }}</td>
+                  <td>{{ row.car_color || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="customerImport.errors.length" class="import-errors">
+            <strong>{{ toFa(customerImport.errorCount) }} خطا در فایل پیدا شد</strong>
+            <p v-for="error in customerImport.errors" :key="`${error.row}-${error.message}`">ردیف {{ toFa(error.row) }}: {{ error.message }}</p>
+          </div>
+        </div>
+
+        <div v-if="customerImport.confirming" class="import-payment-panel">
+          <strong>{{ money(customerImport.price) }}</strong>
+          <p>این فیچر {{ money(customerImport.price) }} هزینه دارد و در صورت تایید از کیف پول اصلی شما کسر می‌شود. بعد از کسر هزینه، {{ toFa(customerImport.validCount) }} مشتری در باشگاه مشتریان اضافه یا به‌روزرسانی می‌شود.</p>
+        </div>
+
+        <footer class="modal-foot">
+          <button type="button" class="club-ghost-btn" @click="closeCustomerImportModal">انصراف</button>
+          <button
+            v-if="customerImport.preview.length && !customerImport.confirming"
+            type="button"
+            class="club-primary-btn"
+            :disabled="customerImport.errorCount > 0 || customerImport.validCount <= 0"
+            @click="customerImport.confirming = true"
+          >
+            تایید پیش‌نمایش
+          </button>
+          <button
+            v-if="customerImport.confirming"
+            type="button"
+            class="club-primary-btn"
+            :disabled="customerImport.submitting"
+            @click="confirmCustomerImport"
+          >
+            {{ customerImport.submitting ? 'در حال ثبت...' : 'تایید و کسر از کیف پول' }}
+          </button>
+        </footer>
+      </section>
+    </div>
+
     <div v-if="groupBuilder.open" class="overlay" @click.self="closeGroupBuilder">
       <section class="modal-card group-builder-modal">
         <header class="modal-head">
@@ -350,7 +453,7 @@
               </label>
               <label class="filter-field">
                 <span>حداقل خرید</span>
-                <input v-model.number="groupBuilder.rules.minSpent" type="number" min="0" placeholder="مثلا 1000000" />
+                <input :value="moneyInputValue(groupBuilder.rules.minSpent)" type="text" inputmode="numeric" placeholder="مثلا 1,000,000" @input="groupBuilder.rules.minSpent = parseMoneyInput($event.target.value)" />
               </label>
               <label class="filter-field">
                 <span>حداقل امتیاز</span>
@@ -725,7 +828,7 @@ import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
-import { formatThousandsToman } from '../../utils/money'
+import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
 import actionViewIcon from '../../assets/iconly/show.svg'
@@ -748,6 +851,22 @@ const customers = ref([])
 const smsCreditBalance = ref(0)
 const smsPricePerSegment = ref(500)
 const highlightedGroupId = ref('')
+const customerImportFileRef = ref(null)
+
+const customerImport = reactive({
+  open: false,
+  file: null,
+  fileName: '',
+  preview: [],
+  errors: [],
+  validCount: 0,
+  errorCount: 0,
+  price: 50000,
+  confirming: false,
+  previewing: false,
+  submitting: false,
+  downloadingTemplate: false
+})
 
 const filters = reactive({
   groupId: '',
@@ -926,6 +1045,8 @@ const smsStatusCount = computed(() => smsLogs.value.reduce((acc, item) => {
 }, { success: 0, failed: 0, pending: 0 }))
 
 const money = (value) => formatThousandsToman(value)
+const moneyInputValue = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
+const parseMoneyInput = (value) => fromThousandsTomanInput(value)
 const date = (value) => formatJalaliDate(value)
 const logMessageText = (log) => {
   const message = String(log?.message || '').trim()
@@ -940,6 +1061,110 @@ const initials = (value) => {
   const parts = String(value || '').trim().split(' ').filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`
   return String(value || '--').slice(0, 2)
+}
+
+const resetCustomerImport = () => {
+  customerImport.file = null
+  customerImport.fileName = ''
+  customerImport.preview = []
+  customerImport.errors = []
+  customerImport.validCount = 0
+  customerImport.errorCount = 0
+  customerImport.price = 50000
+  customerImport.confirming = false
+  customerImport.previewing = false
+  customerImport.submitting = false
+  customerImport.downloadingTemplate = false
+  if (customerImportFileRef.value) customerImportFileRef.value.value = ''
+}
+
+const openCustomerImportModal = () => {
+  resetCustomerImport()
+  customerImport.open = true
+}
+
+const closeCustomerImportModal = () => {
+  customerImport.open = false
+  resetCustomerImport()
+}
+
+const downloadCustomerImportTemplate = async () => {
+  customerImport.downloadingTemplate = true
+  try {
+    const { data } = await api.get('/notifications/customer-club/import/template/', {
+      responseType: 'blob'
+    })
+    const url = URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'customer-import-template.xlsx'
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    notifyError(resolveApiErrorMessage(error, 'دریافت تمپلیت اکسل ناموفق بود.'), { title: 'وارد کردن مشتریان' })
+  } finally {
+    customerImport.downloadingTemplate = false
+  }
+}
+
+const handleCustomerImportFile = (event) => {
+  const file = event.target.files?.[0] || null
+  customerImport.file = file
+  customerImport.fileName = file?.name || ''
+  customerImport.preview = []
+  customerImport.errors = []
+  customerImport.validCount = 0
+  customerImport.errorCount = 0
+  customerImport.confirming = false
+}
+
+const customerImportFormData = () => {
+  const form = new FormData()
+  form.append('file', customerImport.file)
+  return form
+}
+
+const previewCustomerImport = async () => {
+  if (!customerImport.file) {
+    notifyWarning('فایل اکسل مشتریان را انتخاب کنید.', { title: 'وارد کردن مشتریان' })
+    return
+  }
+  customerImport.previewing = true
+  customerImport.confirming = false
+  try {
+    const { data } = await api.post('/notifications/customer-club/import/preview/', customerImportFormData(), {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    customerImport.preview = Array.isArray(data?.preview) ? data.preview : []
+    customerImport.errors = Array.isArray(data?.errors) ? data.errors : []
+    customerImport.validCount = Number(data?.valid_count || 0)
+    customerImport.errorCount = Number(data?.error_count || 0)
+    customerImport.price = Number(data?.price || 50000)
+    if (!customerImport.preview.length && !customerImport.errorCount) {
+      notifyWarning('هیچ ردیف معتبری در فایل پیدا نشد.', { title: 'وارد کردن مشتریان' })
+    }
+  } catch (error) {
+    notifyError(resolveApiErrorMessage(error, 'بررسی فایل اکسل ناموفق بود.'), { title: 'وارد کردن مشتریان' })
+  } finally {
+    customerImport.previewing = false
+  }
+}
+
+const confirmCustomerImport = async () => {
+  if (!customerImport.file) return
+  customerImport.submitting = true
+  try {
+    const { data } = await api.post('/notifications/customer-club/import/confirm/', customerImportFormData(), {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    notifySuccess(`${toFa(data?.imported_count || 0)} مشتری وارد باشگاه مشتریان شد.`, { title: 'وارد کردن مشتریان' })
+    closeCustomerImportModal()
+    await loadCustomerClubData({ showLoading: false })
+  } catch (error) {
+    notifyError(resolveApiErrorMessage(error, 'ثبت نهایی مشتریان ناموفق بود.'), { title: 'وارد کردن مشتریان' })
+  } finally {
+    customerImport.submitting = false
+  }
 }
 
 const normalizePhone = (value) => String(value || '')
@@ -2164,6 +2389,112 @@ onMounted(async () => {
   width: min(1160px, 100%);
 }
 
+.customer-import-modal {
+  width: min(1040px, 100%);
+}
+
+.customer-import-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.import-guide-panel,
+.import-upload-panel,
+.import-preview-panel,
+.import-payment-panel {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(248, 250, 252, 0.88);
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.import-guide-panel h4,
+.import-preview-panel h4 {
+  margin: 0;
+}
+
+.import-guide-panel p,
+.import-payment-panel p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.9;
+}
+
+.import-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-columns span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.import-dropzone {
+  min-height: 166px;
+  border: 1px dashed rgba(0, 88, 190, 0.38);
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 18px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.import-dropzone input {
+  display: none;
+}
+
+.import-dropzone strong {
+  color: #0f172a;
+}
+
+.import-dropzone span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.import-preview-panel,
+.import-payment-panel {
+  margin-top: 16px;
+}
+
+.import-preview-table-wrap {
+  max-height: 280px;
+}
+
+.import-errors {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  background: rgba(254, 242, 242, 0.95);
+  color: #991b1b;
+}
+
+.import-errors p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.import-payment-panel {
+  justify-items: start;
+}
+
+.import-payment-panel strong {
+  font-size: 28px;
+  color: #0058be;
+}
+
 .modal-kicker {
   margin: 0 0 8px;
   font-weight: 800;
@@ -2511,6 +2842,7 @@ onMounted(async () => {
   .club-hero,
   .club-body.advanced,
   .group-builder-layout,
+  .customer-import-layout,
   .sms-layout,
   .template-editor-layout,
   .profile-panel-grid {

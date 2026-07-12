@@ -228,7 +228,7 @@
             <option v-for="item in insuranceMonthOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
           </select>
         </label>
-        <label v-if="payoutModal.mode === 'partial'"><span>مبلغ (هزار تومان)</span><input v-model.number="payoutModal.amount" type="number" min="1" /></label>
+        <label v-if="payoutModal.mode === 'partial'"><span>مبلغ (تومان)</span><input :value="moneyInputValue(payoutModal.amount)" type="text" inputmode="numeric" @input="payoutModal.amount = parseMoneyInput($event.target.value)" /></label>
         <p v-if="payoutModal.mode === 'partial'" class="helper-note" :class="{ error: payoutValidationMessage }">
           {{ payoutValidationMessage || `مانده قابل پرداخت: ${money(payoutModalMaxAmount)}. مبلغ باید کمتر از مانده باشد.` }}
         </p>
@@ -248,7 +248,7 @@
         <button class="close-btn" @click="closeAdjustmentModal">✕</button>
       </header>
       <div class="modal-body">
-        <label><span>مبلغ</span><input v-model.number="adjustmentModal.amount" type="number" min="1" /></label>
+        <label><span>مبلغ (تومان)</span><input :value="moneyInputValue(adjustmentModal.amount)" type="text" inputmode="numeric" @input="adjustmentModal.amount = parseMoneyInput($event.target.value)" /></label>
         <label><span>توضیح</span><input v-model.trim="adjustmentModal.note" type="text" placeholder="ثبت دلیل پاداش یا جریمه" /></label>
         <button class="primary-btn" :disabled="adjustmentModal.submitting" @click="submitAdjustment">{{ adjustmentModal.submitting ? 'در حال ثبت...' : 'ثبت' }}</button>
       </div>
@@ -265,7 +265,7 @@ import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
 import { formatJalaliDate } from '../../utils/date'
-import { formatThousandsToman, fromThousandsTomanInput, toThousandsToman } from '../../utils/money'
+import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const activeTab = ref('overall')
@@ -312,6 +312,8 @@ const tabs = [
   { key: 'attendance', label: 'ورود و خروج', icon: 'calendar' },
   { key: 'blacklist', label: 'لیست سیاه', icon: 'danger' }
 ]
+const moneyInputValue = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
+const parseMoneyInput = (value) => fromThousandsTomanInput(normalizeDigits(value))
 
 const insuranceMonthOptions = [
   { value: '01', label: 'فروردین' },
@@ -781,13 +783,13 @@ const openPayoutModal = (target = 'wage') => {
   payoutModal.mode = 'full'
   payoutModal.note = ''
   payoutModal.insuranceMonth = String(selectedWorkerSummary.value?.insurance_month || '').split('/')[1] || '01'
-  payoutModal.amount = Math.max(0, Math.round(toThousandsToman(
+  payoutModal.amount = Math.max(0, Math.round(
     target === 'tip'
       ? selectedWorkerSummary.value?.tip_balance || 0
       : target === 'insurance'
         ? selectedInsuranceMonthBalance.value || 0
         : selectedWorkerSummary.value?.payable_total || 0
-  )))
+  ))
 }
 const closePayoutModal = () => {
   payoutModal.open = false
@@ -890,7 +892,7 @@ watch(() => [filters.q, filters.rangeKey, filters.startJalali, filters.endJalali
 
 watch(() => [payoutModal.target, payoutModal.mode, payoutModal.insuranceMonth], () => {
   if (payoutModal.target !== 'insurance' || payoutModal.mode !== 'full') return
-  payoutModal.amount = Math.max(0, Math.round(toThousandsToman(selectedInsuranceMonthBalance.value || 0)))
+  payoutModal.amount = Math.max(0, Math.round(selectedInsuranceMonthBalance.value || 0))
 })
 
 onMounted(async () => {

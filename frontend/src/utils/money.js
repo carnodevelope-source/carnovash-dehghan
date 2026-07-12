@@ -1,4 +1,8 @@
-export const toThousandsToman = (value) => Number(value || 0) / 1000
+const normalizeNumericInput = (value) => String(value ?? '')
+  .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+  .replace(/[^\d.-]/g, '')
+
+export const toThousandsToman = (value) => Number(value || 0)
 
 const formatFaNumber = (numeric, options = {}) => {
   const {
@@ -12,16 +16,10 @@ const formatFaNumber = (numeric, options = {}) => {
 }
 
 export const formatThousandsTomanValue = (value, options = {}) => {
-  const numeric = toThousandsToman(value)
+  const numeric = Number(value || 0)
   return formatFaNumber(numeric, options)
 }
 
-export const formatThousandsToman = (value, options = {}) => {
-  const numeric = Number(value || 0)
-  if (Math.abs(numeric) >= 1000000) {
-    return `${formatFaNumber(numeric / 1000000, options)} میلیون تومان`
-  }
-  return `${formatThousandsTomanValue(value, options)} هزار تومان`
-}
+export const formatThousandsToman = (value, options = {}) => `${formatThousandsTomanValue(value, options)} تومان`
 
-export const fromThousandsTomanInput = (value) => Math.round(Number(value || 0) * 1000)
+export const fromThousandsTomanInput = (value) => Math.round(Number(normalizeNumericInput(value) || 0))

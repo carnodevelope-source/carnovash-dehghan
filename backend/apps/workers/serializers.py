@@ -335,13 +335,14 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             password = secrets.token_urlsafe(10)
             generated_password = True
         self.created_credentials = None
+        is_available = validated_data.get('is_available', True)
         user = user_model.objects.create(
             username=username,
             full_name=full_name,
             phone=phone,
             tenant=tenant,
             role=role,
-            is_active=True,
+            is_active=is_available,
         )
         user.set_password(password)
         user.save()
@@ -393,6 +394,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         user_model = get_user_model()
         next_phone = validated_data.get('phone', instance.user.phone)
         next_username = str(validated_data.get('username', instance.user.username) or '').strip()
+        is_available = validated_data.get('is_available', instance.is_available)
         if not next_username:
             next_username = instance.user.username or _generate_worker_username(user_model, phone=next_phone)
         if user_model.objects.exclude(id=instance.user_id).filter(phone=next_phone).exists():
@@ -403,13 +405,14 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         instance.user.username = next_username
         instance.user.phone = next_phone
         instance.user.role = validated_data.get('role', instance.user.role or 'worker')
+        instance.user.is_active = is_available
         password = str(validated_data.get('password') or '').strip()
-        update_fields = ['full_name', 'username', 'phone', 'role']
+        update_fields = ['full_name', 'username', 'phone', 'role', 'is_active']
         if password:
             instance.user.set_password(password)
             update_fields.append('password')
         instance.user.save(update_fields=update_fields)
-        instance.is_available = validated_data.get('is_available', instance.is_available)
+        instance.is_available = is_available
         instance.started_at = validated_data.get('started_at', instance.started_at)
         instance.address = str(validated_data.get('address', instance.address) or '').strip()
         instance.has_entrusted_item = bool(validated_data.get('has_entrusted_item', instance.has_entrusted_item))

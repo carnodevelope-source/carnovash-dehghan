@@ -271,8 +271,8 @@
               </article>
             </div>
             <label class="tip-input-row modern-input-row">
-              <span>انعام (هزار تومان)</span>
-              <input v-model.number="releaseForm.tipAmount" type="number" min="0" step="1" />
+              <span>انعام (تومان)</span>
+              <input :value="moneyInputValue(releaseForm.tipAmount)" type="text" inputmode="numeric" @input="releaseForm.tipAmount = parseMoneyInput($event.target.value)" />
             </label>
             <div class="worker-selection-panel">
               <div class="worker-selection-head">
@@ -357,8 +357,8 @@
               </label>
               <div v-if="releaseForm.paymentMethod === 'manual'" class="detail-field detail-field-wide split-payment-grid">
                 <label class="tip-input-row">
-                  <span>مبلغ نقدی (هزار تومان)</span>
-                  <input v-model.number="releaseForm.manualCashAmount" type="number" min="0" step="1" />
+                  <span>مبلغ نقدی (تومان)</span>
+                  <input :value="moneyInputValue(releaseForm.manualCashAmount)" type="text" inputmode="numeric" @input="releaseForm.manualCashAmount = parseMoneyInput($event.target.value)" />
                 </label>
                 <label class="tip-input-row">
                   <span>روش بخش دوم</span>
@@ -369,8 +369,8 @@
                   </select>
                 </label>
                 <label class="tip-input-row">
-                  <span>مبلغ بخش دوم (هزار تومان)</span>
-                  <input v-model.number="releaseForm.manualSecondaryAmount" type="number" min="0" step="1" />
+                  <span>مبلغ بخش دوم (تومان)</span>
+                  <input :value="moneyInputValue(releaseForm.manualSecondaryAmount)" type="text" inputmode="numeric" @input="releaseForm.manualSecondaryAmount = parseMoneyInput($event.target.value)" />
                 </label>
                 <div class="split-payment-summary">
                   <strong>جمع پرداخت ترکیبی</strong>
@@ -399,12 +399,12 @@
                   <div v-for="(adjustment, index) in releaseForm.bonusPenaltyAdjustments" :key="`adjustment-${adjustment.worker_id || index}`" class="bonus-penalty-item">
                     <strong>{{ adjustment.worker_name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</strong>
                     <label class="tip-input-row">
-                      <span>پاداش (هزار تومان)</span>
-                      <input v-model.number="adjustment.bonus" type="number" min="0" step="1" />
+                      <span>پاداش (تومان)</span>
+                      <input :value="moneyInputValue(adjustment.bonus)" type="text" inputmode="numeric" @input="adjustment.bonus = parseMoneyInput($event.target.value)" />
                     </label>
                     <label class="tip-input-row">
-                      <span>جریمه (هزار تومان)</span>
-                      <input v-model.number="adjustment.penalty" type="number" min="0" step="1" />
+                      <span>جریمه (تومان)</span>
+                      <input :value="moneyInputValue(adjustment.penalty)" type="text" inputmode="numeric" @input="adjustment.penalty = parseMoneyInput($event.target.value)" />
                     </label>
                   </div>
                 </div>
@@ -432,7 +432,7 @@
         <div class="modal-body cheque-modal-body">
           <div class="cheque-modal-summary">
             <small>مبلغ چک</small>
-            <strong>{{ formatMoney(Number(releaseForm.chequeAmount || 0) * 1000 || releaseSummary.finalTotal) }}</strong>
+            <strong>{{ formatMoney(Number(releaseForm.chequeAmount || 0) || releaseSummary.finalTotal) }}</strong>
             <p>جمع قابل ثبت برای این سفارش</p>
             <span>{{ chequeDetailsSummary }}</span>
           </div>
@@ -458,8 +458,8 @@
               <input v-model.trim="releaseForm.chequeShaba" type="text" />
             </label>
             <label class="cheque-field">
-              <span>مبلغ (هزار تومان)</span>
-              <input v-model.number="releaseForm.chequeAmount" type="number" min="1" step="1" />
+              <span>مبلغ (تومان)</span>
+              <input :value="moneyInputValue(releaseForm.chequeAmount)" type="text" inputmode="numeric" @input="releaseForm.chequeAmount = parseMoneyInput($event.target.value)" />
             </label>
           </div>
           <div class="cheque-modal-actions">
@@ -714,7 +714,7 @@ import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
 import { useVehicleStore } from '../../store/vehicle.store'
 import api from '../../services/api'
-import { formatThousandsToman } from '../../utils/money'
+import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifyWarning } from '../../utils/notify'
 import { buildPlateNumber, isAnonymousPlate, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
@@ -828,6 +828,8 @@ const formatStatus = (value) => ({
   cancelled: 'لغو شده'
 }[value] || '-')
 const formatMoney = (value) => formatThousandsToman(value)
+const moneyInputValue = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
+const parseMoneyInput = (value) => fromThousandsTomanInput(normalizeDigits(value))
 const formatPercent = (value) => `${Number(value || 0).toLocaleString('fa-IR')}٪`
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -1074,7 +1076,7 @@ const openChequeDetailsModal = () => {
     && releaseForm.value.manualSecondaryMethod === 'cheque'
     && Number(releaseForm.value.manualSecondaryAmount || 0) > 0
     ? Number(releaseForm.value.manualSecondaryAmount || 0)
-    : Math.round(Number(releaseSummary.value.finalTotal || 0) / 1000)
+    : Math.round(Number(releaseSummary.value.finalTotal || 0))
   if (Number(releaseForm.value.chequeAmount || 0) <= 0) {
     releaseForm.value.chequeAmount = Math.max(1, preferredChequeAmount)
   }
@@ -1347,7 +1349,7 @@ const getReleaseWorkerShareAmountInput = (index) => {
   const selectedIndex = getSelectedWorkerIndexes(releaseForm.value.assignedWorkers).indexOf(index)
   const worker = selectedIndex >= 0 ? releaseSummary.value.workerShares?.[selectedIndex] : null
   if (!worker) return 0
-  return Math.round(Number(worker.baseAmount || 0) / 1000)
+  return Math.round(Number(worker.baseAmount || 0))
 }
 const setReleaseWorkerShareAmount = (index, rawValue) => {
   const workers = Array.isArray(releaseForm.value.assignedWorkers) ? [...releaseForm.value.assignedWorkers] : []
@@ -1362,7 +1364,7 @@ const setReleaseWorkerShareAmount = (index, rawValue) => {
     return
   }
 
-  const inputAmount = Math.round(Math.max(0, Number(rawValue || 0)) * 1000)
+  const inputAmount = Math.round(Math.max(0, Number(rawValue || 0)))
   const assignedAmount = Math.max(0, Math.min(totalAmount, inputAmount))
   const otherIndexes = selectedIndexes.filter((idx) => idx !== index)
   const remaining = Math.max(0, totalAmount - assignedAmount)
@@ -1459,7 +1461,7 @@ const openReleaseModal = async (car) => {
       availableProducts,
       productLinesByProductId,
       productSearch: '',
-      tipAmount: Math.max(0, Number(data?.job?.tip_amount || 0) / 1000),
+      tipAmount: Math.max(0, Number(data?.job?.tip_amount || 0)),
       assignedWorkers: normalizeReleaseAssignedWorkers(preferredAssignedWorkers),
       workerShareAmount: Number(data?.job?.worker_share_amount || 0),
       customerScore: Math.max(0, Number(data?.vehicle?.customer_score || releaseCandidate.value?.customerScore || 0)),
@@ -1625,8 +1627,8 @@ const invoiceIssuedAt = computed(() => new Intl.DateTimeFormat('fa-IR', {
 }).format(new Date()))
 const releasePaymentBreakdown = computed(() => {
   if (releaseForm.value.paymentMethod !== 'manual') return []
-  const cashAmount = Math.max(0, Number(releaseForm.value.manualCashAmount || 0) * 1000)
-  const secondaryAmount = Math.max(0, Number(releaseForm.value.manualSecondaryAmount || 0) * 1000)
+  const cashAmount = Math.max(0, Number(releaseForm.value.manualCashAmount || 0))
+  const secondaryAmount = Math.max(0, Number(releaseForm.value.manualSecondaryAmount || 0))
   const secondaryMethod = String(releaseForm.value.manualSecondaryMethod || 'transfer').trim()
   return [
     cashAmount > 0 ? { method: 'cash', amount: cashAmount } : null,
@@ -1722,7 +1724,7 @@ const releaseSummary = computed(() => {
     const qty = getReleaseProductQty(product.id)
     return sum + (qty * Number(product.sale_price || 0))
   }, 0)
-  const tipAmount = Math.max(0, Number(releaseForm.value.tipAmount || 0) * 1000)
+  const tipAmount = Math.max(0, Number(releaseForm.value.tipAmount || 0))
   const customerScore = Math.max(0, Math.min(5, Number(releaseForm.value.customerScore || 0)))
   const discountPercentPerHalfStar = Math.max(0, Number(releaseForm.value.discountPercentPerHalfStar || 0))
   const customerDiscountPercent = Math.max(0, Math.min(100, Number((discountPercentPerHalfStar * customerScore * 2).toFixed(2))))
@@ -1831,14 +1833,14 @@ const chequeDetailsSummary = computed(() => {
   if (releaseForm.value.chequeSerialNumber) parts.push(`سریال ${releaseForm.value.chequeSerialNumber}`)
   if (releaseForm.value.chequeBank) parts.push(releaseForm.value.chequeBank)
   if (releaseForm.value.creditDueDate) parts.push(`وصول ${releaseForm.value.creditDueDate}`)
-  if (Number(releaseForm.value.chequeAmount || 0) > 0) parts.push(`${Number(releaseForm.value.chequeAmount || 0).toLocaleString('fa-IR')} هزار`)
+  if (Number(releaseForm.value.chequeAmount || 0) > 0) parts.push(`${Number(releaseForm.value.chequeAmount || 0).toLocaleString('fa-IR')} تومان`)
   return parts.length ? parts.join(' | ') : 'جزئیات ثبت نشده'
 })
 watch(() => releaseForm.value.paymentMethod, (value) => {
   if (value !== 'manual') return
   const finalTotal = Math.max(0, Number(releaseSummary.value.finalTotal || 0))
   if (Number(releaseForm.value.manualCashAmount || 0) <= 0 && Number(releaseForm.value.manualSecondaryAmount || 0) <= 0) {
-    releaseForm.value.manualCashAmount = Math.round(finalTotal / 1000)
+    releaseForm.value.manualCashAmount = Math.round(finalTotal)
     releaseForm.value.manualSecondaryAmount = 0
   }
 })
@@ -1959,7 +1961,7 @@ const confirmReleaseVehicle = async () => {
         id: Number(worker.id || 0),
         worker_share_percent: Math.max(0, Math.min(100, Number(worker.worker_share_percent ?? 0)))
       })).filter((worker) => worker.id > 0),
-      tip_amount: Math.max(0, Number(releaseForm.value.tipAmount || 0) * 1000),
+      tip_amount: Math.max(0, Number(releaseForm.value.tipAmount || 0)),
       payment_method: releaseForm.value.paymentMethod,
       payment_breakdown: releasePaymentBreakdown.value.map((item) => ({
         method: item.method,
@@ -1970,13 +1972,13 @@ const confirmReleaseVehicle = async () => {
       cheque_sayadi_number: usesChequeDetails ? releaseForm.value.chequeSayadiNumber : undefined,
       cheque_bank: usesChequeDetails ? releaseForm.value.chequeBank : undefined,
       cheque_shaba: usesChequeDetails ? releaseForm.value.chequeShaba : undefined,
-      cheque_amount: usesChequeDetails ? Number(releaseForm.value.chequeAmount || 0) * 1000 : undefined,
+      cheque_amount: usesChequeDetails ? Number(releaseForm.value.chequeAmount || 0) : undefined,
       credit_due_date: (['credit', 'cheque'].includes(releaseForm.value.paymentMethod) || usesChequeDetails) ? parseJalaliToIso(releaseForm.value.creditDueDate) || undefined : undefined,
       bonus_penalty_adjustments: (releaseForm.value.bonusPenaltyAdjustments || [])
         .map((item) => ({
           worker_id: Number(item.worker_id || 0),
-          bonus: Math.max(0, Number(item.bonus || 0) * 1000),
-          penalty: Math.max(0, Number(item.penalty || 0) * 1000)
+          bonus: Math.max(0, Number(item.bonus || 0)),
+          penalty: Math.max(0, Number(item.penalty || 0))
         }))
         .filter((item) => item.worker_id > 0 && (item.bonus > 0 || item.penalty > 0)),
       bonus_penalty_note: String(releaseForm.value.bonusPenaltyNote || '').trim() || undefined

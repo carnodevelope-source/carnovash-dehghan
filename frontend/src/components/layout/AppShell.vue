@@ -728,9 +728,8 @@ onBeforeUnmount(() => {
   gap: 10px;
   margin-bottom: 14px;
   padding: 14px 16px;
-  border: 1px solid #fdba74;
   border-radius: 16px;
-  background: linear-gradient(180deg, #fff7ed, #ffedd5);
+  background: #f0c6c6;
   color: #9a3412;
 }
 

@@ -21,18 +21,6 @@ PRODUCTION_CARWASHES = [
         },
         "features": list(CarWashFeaturePurchase.FeatureKey.values),
     },
-    {
-        "name": "کارواش دو",
-        "slug": "carwash-2",
-        "address": "تهران",
-        "manager": {
-            "username": "manager2",
-            "password": "manager2@123",
-            "full_name": "Manager Two",
-            "phone": "09120001002",
-        },
-        "features": list(CarWashFeaturePurchase.FeatureKey.values),
-    },
 ]
 
 
