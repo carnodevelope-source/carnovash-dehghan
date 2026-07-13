@@ -113,14 +113,17 @@
           </RouterLink>
         </nav>
 
-        <div class="premium-actions">
-          <button v-if="!canAccessAttendance" type="button" class="menu-item menu-button" @click="goToAttendance">
-            <span class="menu-item-icon-wrap"><IconlyIcon name="calendar" size="sm" /></span>
-            <span class="menu-item-label">ورود و خروج</span>
-          </button>
-          <button type="button" class="menu-item menu-button" @click="showPremiumFeatureMessage">
-            <span class="menu-item-icon-wrap"><IconlyIcon name="graph" size="sm" /></span>
-            <span class="menu-item-label">حسابداری</span>
+        <div v-if="lockedFeatureItems.length" class="premium-actions">
+          <p class="premium-actions-label">آپشن‌های غیرفعال</p>
+          <button
+            v-for="item in lockedFeatureItems"
+            :key="item.key"
+            type="button"
+            class="menu-item menu-button locked-menu-item"
+            @click="handleLockedFeatureClick(item)"
+          >
+            <span class="menu-item-icon-wrap locked-menu-icon-wrap"><IconlyIcon :name="item.iconName" size="sm" /></span>
+            <span class="menu-item-label">{{ item.label }}</span>
           </button>
         </div>
       </aside>
@@ -159,7 +162,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
 import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
-import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess } from '../../utils/attendanceAccess'
+import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
 import { notifyWarning } from '../../utils/notify'
 import IconlyIcon from '../base/IconlyIcon.vue'
 
@@ -187,11 +190,28 @@ const topbarHeight = ref(64)
 const mobileLoginArtSrc = `${import.meta.env.BASE_URL}e5eb861941aac79bcfd5d1fdabf1d569.jpg`
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
+const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))
+const canAccessAdvancedSmsClub = computed(() => hasFeatureAccess(authStore.user, 'sms_club'))
+const canAccessAccounting = computed(() => hasFeatureAccess(authStore.user, 'accounting'))
 const navItems = computed(() => (
   (navigationByRole[authStore.role] || [])
     .flatMap((group) => group.items || [])
     .filter((item) => item.route !== ATTENDANCE_ROUTE || canAccessAttendance.value)
 ))
+const lockedFeatureItems = computed(() => {
+  if (!['manager', 'admin'].includes(authStore.role)) return []
+  const items = []
+  if (needsAttendanceUpgrade.value) {
+    items.push({ key: 'attendance', label: 'ورود و خروج', iconName: 'calendar' })
+  }
+  if (!canAccessAdvancedSmsClub.value) {
+    items.push({ key: 'sms_club', label: 'پیامک پیشرفته', iconName: 'message' })
+  }
+  if (!canAccessAccounting.value) {
+    items.push({ key: 'accounting', label: 'حسابداری', iconName: 'graph' })
+  }
+  return items
+})
 const mobileShellStyle = computed(() => ({
   '--mobile-topbar-offset': `${topbarHeight.value}px`
 }))
@@ -258,6 +278,14 @@ const goToAttendance = () => {
     return
   }
   showAttendanceAccessMessage()
+}
+
+const handleLockedFeatureClick = (item) => {
+  if (item?.key === 'attendance') {
+    showAttendanceAccessMessage()
+    return
+  }
+  showPremiumFeatureMessage()
 }
 
 const toggleMobileMenu = () => {
@@ -705,6 +733,14 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 
+.premium-actions-label {
+  margin: 8px 14px 4px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
 .menu-button {
   width: 100%;
   border: 0;
@@ -712,6 +748,24 @@ onBeforeUnmount(() => {
   text-align: right;
   font: inherit;
   cursor: pointer;
+}
+
+.locked-menu-item {
+  color: #7c8a9e;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.92;
+}
+
+.locked-menu-item:hover {
+  background: rgba(255, 255, 255, 0.55);
+  color: #5b6778;
+}
+
+.locked-menu-icon-wrap {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: #dbe3ec;
+  --iconly-filter: brightness(0) saturate(100%) invert(56%) sepia(10%) saturate(481%) hue-rotate(176deg) brightness(91%) contrast(87%);
 }
 
 .content {

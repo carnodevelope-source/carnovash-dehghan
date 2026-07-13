@@ -27,7 +27,7 @@
         <div class="club-hero-actions">
           <div class="mode-switch">
             <button type="button" :class="{ active: activePlan === 'simple' }" @click="activePlan = 'simple'">ساده</button>
-            <button type="button" :class="{ active: activePlan === 'advanced' }" @click="activePlan = 'advanced'">پیشرفته</button>
+            <button type="button" :class="{ active: activePlan === 'advanced' }" @click="openAdvancedPlan">پیشرفته</button>
           </div>
 
           <button
@@ -832,6 +832,7 @@ import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
+import { hasFeatureAccess } from '../../utils/attendanceAccess'
 import actionViewIcon from '../../assets/iconly/show.svg'
 import actionGroupIcon from '../../assets/iconly/category.svg'
 import actionSmsIcon from '../../assets/iconly/message.svg'
@@ -943,6 +944,7 @@ const averageScore = computed(() => {
   return Number((total / customers.value.length).toFixed(1))
 })
 const activeCarwashCountLabel = computed(() => `داده در کارواش فعلی`)
+const canAccessAdvancedSmsClub = computed(() => hasFeatureAccess(authStore.user, 'sms_club'))
 const smsCreditStateLabel = computed(() => {
   if (smsCreditBalance.value <= 0) return 'بدون اعتبار'
   if (smsCreditBalance.value < 500000) return 'اعتبار رو به اتمام'
@@ -1258,6 +1260,15 @@ const customerMembershipGroups = (customer) => customGroups.value.filter((group)
 const highlightGroup = (groupId) => {
   groupingMode.value = 'custom'
   highlightedGroupId.value = groupId
+}
+
+const openAdvancedPlan = () => {
+  if (!canAccessAdvancedSmsClub.value) {
+    notifyWarning('آپشن پیامک پیشرفته فقط برای بخش پیشرفته باشگاه مشتریان است.', { title: 'آپشن فعال نیست' })
+    activePlan.value = 'simple'
+    return
+  }
+  activePlan.value = 'advanced'
 }
 
 const resetGroupBuilder = () => {

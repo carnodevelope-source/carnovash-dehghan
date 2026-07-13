@@ -588,6 +588,12 @@ const props = defineProps({
 const router = useRouter()
 const authStore = useAuthStore()
 
+const reloadAfterOptionChange = () => {
+  window.setTimeout(() => {
+    window.location.reload()
+  }, 120)
+}
+
 const state = reactive({
   loading: false,
   error: '',
@@ -1020,6 +1026,7 @@ const submitOptionPurchase = async () => {
     closeOptionModal()
     await Promise.all([loadWalletDashboard(), loadWalletOptions()])
     await authStore.fetchMe()
+    reloadAfterOptionChange()
   } catch (error) {
     state.error = resolveApiErrorMessage(error, 'خرید آپشن ناموفق بود.')
   } finally {
@@ -1043,6 +1050,7 @@ const submitNextInstallmentPayment = async (option) => {
     }
     await Promise.all([loadWalletDashboard(), loadWalletOptions()])
     await authStore.fetchMe()
+    reloadAfterOptionChange()
   } catch (error) {
     state.error = resolveApiErrorMessage(error, 'پرداخت قسط بعدی ناموفق بود.')
   } finally {

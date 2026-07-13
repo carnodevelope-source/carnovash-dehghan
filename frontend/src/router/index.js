@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth.store'
 import { defaultRouteByRole } from '../config/navigation'
-import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess } from '../utils/attendanceAccess'
+import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess, hasFeatureAccess } from '../utils/attendanceAccess'
 import { notifyWarning } from '../utils/notify'
 
 const routes = [
@@ -29,11 +29,7 @@ const router = createRouter({
 })
 
 const licenseSafeRoutes = new Set(['manager-wallet', 'support', 'login', 'hq-panel'])
-const paidFeatureRoutes = {
-  '/manager/customer-club': 'sms_club',
-  [ATTENDANCE_ROUTE]: 'attendance',
-  '/manager/reports': 'accounting'
-}
+const paidFeatureRoutes = {}
 
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
@@ -81,7 +77,7 @@ router.beforeEach(async (to) => {
   }
 
   const requiredFeature = paidFeatureRoutes[to.path]
-  if (requiredFeature && authStore.user?.menu_access?.[requiredFeature] !== true) {
+  if (requiredFeature && !hasFeatureAccess(authStore.user, requiredFeature)) {
     notifyWarning('برای استفاده از این بخش باید آپشن مربوطه را از کیف پول خریداری کنید.', { title: 'آپشن فعال نیست' })
     return '/manager/wallet'
   }

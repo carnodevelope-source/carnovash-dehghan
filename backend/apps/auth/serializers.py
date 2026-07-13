@@ -1,6 +1,7 @@
 ﻿from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
 
+from .feature_access import feature_access_map_for_tenant
 from .models import CarWash, CarWashFeaturePurchase, PendingTenantRegistration, SupportTicket, SupportTicketAttachment, SupportTicketMessage
 
 
@@ -64,8 +65,7 @@ class UserListSerializer(serializers.ModelSerializer):
         ]
 
     def get_menu_access(self, obj):
-        feature_keys = set(obj.tenant.active_feature_keys()) if getattr(obj, 'tenant_id', None) else set()
-        return feature_access_map(feature_keys)
+        return feature_access_map_for_tenant(getattr(obj, 'tenant', None))
 
     def get_purchased_menu_access(self, obj):
         if not getattr(obj, 'tenant_id', None):
@@ -223,8 +223,7 @@ class CarWashListSerializer(serializers.ModelSerializer):
         return obj.active_feature_keys()
 
     def get_menu_access(self, obj):
-        feature_keys = set(obj.active_feature_keys())
-        return feature_access_map(feature_keys)
+        return feature_access_map_for_tenant(obj)
 
 
 class CarWashCreateSerializer(serializers.Serializer):

@@ -36,6 +36,7 @@ ai/io/output/**
 ai/weigths/**/*.pt
 ai/weigths/**/*.pth
 
+/templates/
 # IDE
 .vscode/
 .idea/

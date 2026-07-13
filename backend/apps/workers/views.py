@@ -6,6 +6,12 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.auth.feature_access import (
+    ATTENDANCE_FREE_WORKERS_LIMIT,
+    free_attendance_worker_ids,
+    tenant_worker_count,
+    worker_has_attendance_access,
+)
 from apps.auth.sms import send_user_credentials_sms
 
 from .models import WorkerAttendance, WorkerProfile
@@ -143,8 +149,7 @@ def _queue_sort_key(worker):
 def _create_attendance_event(worker, event_type, source='manager', note='', request=None):
     last_event = worker.attendance_events.order_by('-event_at', '-id').first()
     if last_event and last_event.event_type == event_type:
-        detail = 'این وضعیت قبلاً ثبت شده است.'
-        raise ValueError(detail)
+        raise ValueError('این وضعیت قبلاً ثبت شده است.')
     return WorkerAttendance.objects.create(
         worker=worker,
         tenant=worker.tenant,
@@ -154,6 +159,30 @@ def _create_attendance_event(worker, event_type, source='manager', note='', requ
         note=note,
         ip_address=_client_ip(request) if request else None,
         device_info=_device_info(request) if request else '',
+    )
+
+
+def _attendance_limit_message():
+    return f'ورود و خروج تا {ATTENDANCE_FREE_WORKERS_LIMIT} نیرو رایگان است. برای نیروهای بیشتر باید آپشن ورود و خروج را از کیف پول خریداری کنید.'
+
+
+def _attendance_access_context(tenant):
+    allowed_ids = free_attendance_worker_ids(tenant)
+    has_purchase = tenant.has_feature('attendance') if tenant else False
+    return {
+        'has_purchase': has_purchase,
+        'worker_count': tenant_worker_count(tenant),
+        'allowed_ids': allowed_ids,
+    }
+
+
+def _attendance_worker_denied_response():
+    return Response(
+        {
+            'detail': _attendance_limit_message(),
+            'code': 'attendance_worker_limit_reached',
+        },
+        status=status.HTTP_403_FORBIDDEN,
     )
 
 
@@ -263,10 +292,12 @@ class AttendanceDashboardView(APIView):
             return Response({'detail': 'دسترسی مجاز نیست.'}, status=status.HTTP_403_FORBIDDEN)
 
         tenant = _resolve_request_tenant(request)
+        attendance_access = _attendance_access_context(tenant)
+
         start, end, now = _today_bounds()
         workers = list(
             WorkerProfile.objects.select_related('user')
-            .filter(tenant=tenant)
+            .filter(tenant=tenant, is_deleted=False, user__is_deleted=False)
             .order_by('user__full_name', 'user__username')
         )
         events = list(
@@ -279,7 +310,17 @@ class AttendanceDashboardView(APIView):
         for event in events:
             worker_events.setdefault(event.worker_id, []).append(event)
 
-        worker_cards = [_serialize_worker_state(worker, worker_events.get(worker.id, []), now) for worker in workers]
+        worker_cards = []
+        for worker in workers:
+            card = _serialize_worker_state(worker, worker_events.get(worker.id, []), now)
+            card['attendance_enabled'] = worker_has_attendance_access(
+                worker,
+                purchased=attendance_access['has_purchase'],
+                allowed_ids=attendance_access['allowed_ids'],
+            )
+            card['attendance_locked_reason'] = '' if card['attendance_enabled'] else _attendance_limit_message()
+            worker_cards.append(card)
+
         present_count = len([item for item in worker_cards if item['current_status'] == WorkerAttendance.EventType.IN])
         total_minutes = sum(item['today_worked_minutes'] for item in worker_cards)
 
@@ -309,6 +350,9 @@ class AttendanceDashboardView(APIView):
         return Response({
             'summary': {
                 'workers_count': len(worker_cards),
+                'attendance_free_workers_limit': ATTENDANCE_FREE_WORKERS_LIMIT,
+                'attendance_worker_count': attendance_access['worker_count'],
+                'attendance_feature_purchased': attendance_access['has_purchase'],
                 'present_count': present_count,
                 'absent_count': max(len(worker_cards) - present_count, 0),
                 'today_events_count': len(events),
@@ -344,6 +388,8 @@ class AttendanceManagerEventCreateView(APIView):
         worker = WorkerProfile.objects.select_related('user').filter(id=worker_id, tenant=tenant).first()
         if not worker:
             return Response({'worker_id': ['پرسنل پیدا نشد.']}, status=status.HTTP_404_NOT_FOUND)
+        if not worker_has_attendance_access(worker):
+            return _attendance_worker_denied_response()
 
         try:
             event = _create_attendance_event(worker, event_type, source='manager', note=note, request=request)
@@ -367,6 +413,8 @@ class AttendanceTokenRefreshView(APIView):
         worker = WorkerProfile.objects.filter(id=pk, tenant=tenant).first()
         if not worker:
             return Response({'detail': 'پرسنل پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        if not worker_has_attendance_access(worker):
+            return _attendance_worker_denied_response()
 
         worker.attendance_token = None
         worker.save(update_fields=['attendance_token', 'updated_at'])
@@ -390,12 +438,16 @@ class AttendancePublicView(APIView):
         worker = self.get_worker(token)
         if not worker:
             return Response({'detail': 'لینک حضور و غیاب معتبر نیست.'}, status=status.HTTP_404_NOT_FOUND)
+        if not worker_has_attendance_access(worker):
+            return _attendance_worker_denied_response()
 
         start, end, now = _today_bounds()
         events = list(
             WorkerAttendance.objects.filter(worker=worker, event_at__gte=start, event_at__lte=end).order_by('event_at', 'id')
         )
         state = _serialize_worker_state(worker, events, now)
+        state['attendance_enabled'] = True
+        state['attendance_locked_reason'] = ''
         last_event = WorkerAttendance.objects.filter(worker=worker).order_by('-event_at', '-id').first()
         return Response({
             'worker': state,
@@ -409,6 +461,8 @@ class AttendancePublicView(APIView):
         worker = self.get_worker(token)
         if not worker:
             return Response({'detail': 'لینک حضور و غیاب معتبر نیست.'}, status=status.HTTP_404_NOT_FOUND)
+        if not worker_has_attendance_access(worker):
+            return _attendance_worker_denied_response()
 
         event_type = str(request.data.get('event_type', '')).strip().lower()
         note = str(request.data.get('note', '')).strip()

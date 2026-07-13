@@ -168,6 +168,8 @@
               <strong>{{ toFa(filteredWorkers.length) }} نفر</strong>
             </header>
 
+            <div v-if="attendanceUpgradeNotice" class="upgrade-banner">{{ attendanceUpgradeNotice }}</div>
+
             <div class="workers-grid">
               <article v-for="worker in filteredWorkers" :key="worker.id" class="worker-card" :class="worker.current_status">
                 <div class="worker-head">
@@ -175,6 +177,7 @@
                   <div class="worker-copy">
                     <strong>{{ worker.full_name }}</strong>
                     <span>{{ worker.phone || 'بدون شماره' }}</span>
+                    <small v-if="worker.attendance_enabled === false" class="worker-upgrade-note">{{ worker.attendance_locked_reason }}</small>
                   </div>
                   <div class="status-pill" :class="worker.current_status">
                     {{ worker.current_status === 'in' ? 'حاضر' : 'خارج' }}
@@ -201,7 +204,7 @@
                 </div>
 
                 <div class="qr-row">
-                  <img class="qr-frame" :src="qrSrc(worker)" :alt="`QR ${worker.full_name}`" loading="lazy" />
+                  <img class="qr-frame" :class="{ disabled: worker.attendance_enabled === false }" :src="qrSrc(worker)" :alt="`QR ${worker.full_name}`" loading="lazy" />
                   <div class="qr-copy">
                     <span>لینک ورود و خروج</span>
                     <code>{{ fullAttendanceLink(worker) }}</code>
@@ -210,15 +213,15 @@
                 </div>
 
                 <div class="worker-actions">
-                  <button class="primary-btn" :disabled="submittingWorkerId === worker.id || worker.current_status === 'in'" @click="submitManagerEvent(worker, 'in')">
+                  <button class="primary-btn" :disabled="submittingWorkerId === worker.id || worker.current_status === 'in' || worker.attendance_enabled === false" @click="submitManagerEvent(worker, 'in')">
                     <IconlyIcon name="calendar" size="sm" />ثبت ورود
                   </button>
-                  <button class="secondary-btn" :disabled="submittingWorkerId === worker.id || worker.current_status !== 'in'" @click="submitManagerEvent(worker, 'out')">
+                  <button class="secondary-btn" :disabled="submittingWorkerId === worker.id || worker.current_status !== 'in' || worker.attendance_enabled === false" @click="submitManagerEvent(worker, 'out')">
                     <IconlyIcon name="logout" size="sm" />ثبت خروج
                   </button>
-                  <button class="ghost-inline-btn" @click="copyLink(worker)"><IconlyIcon name="document" size="sm" />کپی لینک</button>
-                  <button class="ghost-inline-btn" @click="openLink(worker)"><IconlyIcon name="show" size="sm" />باز کردن</button>
-                  <button class="danger-inline-btn" @click="refreshToken(worker)"><IconlyIcon name="editSquare" size="sm" />بازسازی لینک</button>
+                  <button class="ghost-inline-btn" :disabled="worker.attendance_enabled === false" @click="copyLink(worker)"><IconlyIcon name="document" size="sm" />کپی لینک</button>
+                  <button class="ghost-inline-btn" :disabled="worker.attendance_enabled === false" @click="openLink(worker)"><IconlyIcon name="show" size="sm" />باز کردن</button>
+                  <button class="danger-inline-btn" :disabled="worker.attendance_enabled === false" @click="refreshToken(worker)"><IconlyIcon name="editSquare" size="sm" />بازسازی لینک</button>
                 </div>
               </article>
             </div>
@@ -355,6 +358,13 @@ const weeklyMax = computed(() => {
 })
 const reportCheckins = computed(() => reportRows.value.filter((item) => item.event_type === 'in').length)
 const reportCheckouts = computed(() => reportRows.value.filter((item) => item.event_type === 'out').length)
+const attendanceUpgradeNotice = computed(() => {
+  const workerCount = Number(summary.value.attendance_worker_count || 0)
+  const freeLimit = Number(summary.value.attendance_free_workers_limit || 5)
+  if (Number(summary.value.attendance_feature_purchased || 0) === 1) return ''
+  if (workerCount <= freeLimit) return ''
+  return `ورود و خروج تا ${freeLimit.toLocaleString('fa-IR')} نیرو رایگان است. برای نیروهای بیشتر باید آپشن ورود و خروج را از کیف پول خریداری کنید.`
+})
 
 const fullAttendanceLink = (worker) => `${window.location.origin}${worker.attendance_path || `/attendance/${worker.attendance_token}`}`
 const qrSrc = (worker) => `https://api.qrserver.com/v1/create-qr-code/?size=132x132&data=${encodeURIComponent(fullAttendanceLink(worker))}`
@@ -472,6 +482,10 @@ const resetReportFilters = () => {
 }
 
 const submitManagerEvent = async (worker, eventType) => {
+  if (worker?.attendance_enabled === false) {
+    errorMessage.value = worker.attendance_locked_reason || attendanceUpgradeNotice.value
+    return
+  }
   submittingWorkerId.value = worker.id
   try {
     await api.post('/workers/attendance/events/', {
@@ -487,6 +501,10 @@ const submitManagerEvent = async (worker, eventType) => {
 }
 
 const copyLink = async (worker) => {
+  if (worker?.attendance_enabled === false) {
+    errorMessage.value = worker.attendance_locked_reason || attendanceUpgradeNotice.value
+    return
+  }
   try {
     await navigator.clipboard.writeText(fullAttendanceLink(worker))
   } catch (_error) {
@@ -495,10 +513,18 @@ const copyLink = async (worker) => {
 }
 
 const openLink = (worker) => {
+  if (worker?.attendance_enabled === false) {
+    errorMessage.value = worker.attendance_locked_reason || attendanceUpgradeNotice.value
+    return
+  }
   window.open(fullAttendanceLink(worker), '_blank', 'noopener')
 }
 
 const refreshToken = async (worker) => {
+  if (worker?.attendance_enabled === false) {
+    errorMessage.value = worker.attendance_locked_reason || attendanceUpgradeNotice.value
+    return
+  }
   try {
     await api.post(`/workers/${worker.id}/attendance-token/refresh/`)
     await loadDashboard()
@@ -564,6 +590,7 @@ watch(activeTab, async (value) => {
 .section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
 .section-kicker{display:block;color:#0284c7;font-size:12px;font-weight:800}
 .section-head h3{margin:8px 0 0;font-size:22px;color:#0f172a}
+.upgrade-banner{margin-bottom:14px;padding:12px 14px;border:1px solid #fde68a;border-radius:18px;background:#fffbeb;color:#92400e;font-size:13px;line-height:1.9}
 .workers-grid{display:grid;gap:14px}
 .worker-card{padding:16px;border-radius:24px;border:1px solid #dbeafe;background:linear-gradient(180deg,#ffffff,#f8fbff)}
 .worker-card.in{box-shadow:0 16px 36px rgba(16,185,129,.08)}
@@ -572,6 +599,7 @@ watch(activeTab, async (value) => {
 .avatar{display:grid;place-items:center;width:54px;height:54px;border-radius:18px;background:linear-gradient(135deg,#dbeafe,#a5f3fc);font-weight:800;color:#0f172a}
 .worker-copy strong{display:block;font-size:17px}
 .worker-copy span{display:block;margin-top:4px;color:#64748b;font-size:12px}
+.worker-upgrade-note{display:block;margin-top:6px;color:#b45309;font-size:11px;line-height:1.8}
 .status-pill{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;font-size:12px;font-weight:800}
 .status-pill.in{background:#ecfdf5;color:#047857}
 .status-pill.out{background:#f1f5f9;color:#334155}
@@ -581,6 +609,7 @@ watch(activeTab, async (value) => {
 .meta-chip strong{display:block;margin-top:8px;font-size:15px}
 .qr-row{display:grid;grid-template-columns:132px 1fr;gap:14px;margin-top:16px;padding:14px;border-radius:20px;background:linear-gradient(135deg,#eff6ff,#f8fafc)}
 .qr-frame{width:132px;height:132px;border-radius:18px;background:#fff;padding:8px;border:1px solid #dbeafe;object-fit:cover}
+.qr-frame.disabled{opacity:.35;filter:grayscale(1)}
 .qr-copy{display:grid;align-content:center;gap:8px;min-width:0}
 .qr-copy span{font-size:12px;color:#0284c7;font-weight:800}
 .qr-copy code{display:block;padding:10px 12px;border-radius:14px;background:#fff;border:1px solid #dbeafe;color:#0f172a;font-size:11px;word-break:break-all}
@@ -595,7 +624,7 @@ watch(activeTab, async (value) => {
 .primary-btn :deep(.iconly-shell),
 .secondary-btn :deep(.iconly-shell) { --iconly-filter: brightness(0) saturate(100%) invert(100%); }
 .danger-inline-btn :deep(.iconly-shell) { --iconly-filter: brightness(0) saturate(100%) invert(20%) sepia(78%) saturate(2280%) hue-rotate(345deg) brightness(97%) contrast(92%); }
-.primary-btn:disabled,.secondary-btn:disabled{opacity:.55;cursor:not-allowed}
+.primary-btn:disabled,.secondary-btn:disabled,.ghost-inline-btn:disabled,.danger-inline-btn:disabled{opacity:.55;cursor:not-allowed}
 .kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .kpi-card{padding:14px;border-radius:20px;border:1px solid #dbeafe;background:linear-gradient(180deg,#ffffff,#eff6ff)}
 .kpi-card span{display:block;color:#64748b;font-size:12px}

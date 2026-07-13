@@ -5,7 +5,7 @@ from django.utils import timezone
 from unittest.mock import patch
 from rest_framework.test import APIClient, APITestCase
 
-from apps.auth.models import CarWash
+from apps.auth.models import CarWash, CarWashFeaturePurchase
 from apps.workers.models import WorkerAttendance, WorkerProfile
 from apps.workers.serializers import ensure_attendance_token
 
@@ -62,6 +62,78 @@ class AttendanceApiTests(APITestCase):
         self.assertEqual(third.status_code, 200)
         self.assertEqual(third.data['worker']['today_events_count'], 2)
         self.assertEqual(third.data['worker']['current_status'], 'out')
+
+    def test_attendance_allows_free_tier_up_to_five_workers(self):
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.get(reverse('worker-attendance-dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['summary']['attendance_free_workers_limit'], 5)
+        self.assertEqual(response.data['workers'][0]['attendance_enabled'], True)
+
+    def test_attendance_blocks_sixth_worker_without_purchase(self):
+        user_model = get_user_model()
+        workers = [self.worker]
+        for index in range(2, 7):
+            worker_user = user_model.objects.create_user(
+                username=f'worker{index}',
+                password='pass12345',
+                phone=f'091200001{index:02d}',
+                role='worker',
+                tenant=self.tenant,
+                full_name=f'Worker {index}',
+            )
+            workers.append(WorkerProfile.objects.create(user=worker_user, tenant=self.tenant))
+
+        blocked_worker = workers[-1]
+        self.client.force_authenticate(self.manager)
+
+        dashboard = self.client.get(reverse('worker-attendance-dashboard'))
+        create_event = self.client.post(
+            reverse('worker-attendance-event-create'),
+            {'worker_id': blocked_worker.id, 'event_type': 'in'},
+            format='json',
+        )
+        public = self.client.get(reverse('worker-attendance-public', args=[ensure_attendance_token(blocked_worker)]))
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(create_event.status_code, 403)
+        self.assertEqual(public.status_code, 403)
+        self.assertEqual(create_event.data['code'], 'attendance_worker_limit_reached')
+        blocked_card = next(item for item in dashboard.data['workers'] if item['id'] == blocked_worker.id)
+        self.assertEqual(blocked_card['attendance_enabled'], False)
+
+    def test_attendance_purchase_removes_worker_limit(self):
+        user_model = get_user_model()
+        workers = [self.worker]
+        for index in range(2, 7):
+            worker_user = user_model.objects.create_user(
+                username=f'paid_worker{index}',
+                password='pass12345',
+                phone=f'091211001{index:02d}',
+                role='worker',
+                tenant=self.tenant,
+                full_name=f'Paid Worker {index}',
+            )
+            workers.append(WorkerProfile.objects.create(user=worker_user, tenant=self.tenant))
+        blocked_worker = workers[-1]
+        CarWashFeaturePurchase.objects.create(
+            tenant=self.tenant,
+            feature_key=CarWashFeaturePurchase.FeatureKey.ATTENDANCE,
+            is_active=True,
+        )
+        self.client.force_authenticate(self.manager)
+
+        dashboard = self.client.get(reverse('worker-attendance-dashboard'))
+        create_event = self.client.post(
+            reverse('worker-attendance-event-create'),
+            {'worker_id': blocked_worker.id, 'event_type': 'in'},
+            format='json',
+        )
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(create_event.status_code, 201)
 
     def test_worker_list_uses_attendance_queue_and_assignment_tail(self):
         user_model = get_user_model()

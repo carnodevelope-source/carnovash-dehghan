@@ -21,6 +21,7 @@ from apps.notifications.services import normalize_phone, send_provider_sms
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
 from apps.vehicles.models import VehicleEntry
 from apps.workers.models import WorkerAttendance, WorkerProfile
+from .feature_access import ATTENDANCE_FREE_WORKERS_LIMIT, feature_access_map_for_tenant, tenant_worker_count
 from .models import CarWash, CarWashFeaturePurchase, PendingTenantRegistration, SupportTicket, SupportTicketAttachment, SupportTicketMessage, User
 from .sms import (
     send_registration_credentials_sms as send_system_registration_credentials_sms,
@@ -113,6 +114,9 @@ def _send_ticket_assigned_sms(ticket):
 
 def _auth_payload(user):
     feature_keys = set(user.tenant.active_feature_keys()) if getattr(user, 'tenant_id', None) else set()
+    tenant = getattr(user, 'tenant', None)
+    attendance_worker_count = tenant_worker_count(tenant) if getattr(user, 'tenant_id', None) else 0
+    attendance_feature_purchased = 'attendance' in feature_keys
     license_status = {}
     if getattr(user, 'tenant_id', None) and not _is_hq_user(user):
         from apps.payments.views import license_status_for_tenant
@@ -129,7 +133,15 @@ def _auth_payload(user):
         'tenant_id': user.tenant_id,
         'tenant_name': user.tenant.name if user.tenant_id else '',
         'purchased_menu_access': sorted(feature_keys),
-        'menu_access': feature_access_map(feature_keys),
+        'menu_access': feature_access_map_for_tenant(tenant) if getattr(user, 'tenant_id', None) else feature_access_map(feature_keys),
+        'attendance_free_workers_limit': ATTENDANCE_FREE_WORKERS_LIMIT,
+        'attendance_worker_count': attendance_worker_count,
+        'attendance_feature_purchased': attendance_feature_purchased,
+        'attendance_upgrade_required': bool(
+            getattr(user, 'tenant_id', None)
+            and not attendance_feature_purchased
+            and attendance_worker_count > ATTENDANCE_FREE_WORKERS_LIMIT
+        ),
         'license_status': license_status,
         'is_hq': _is_hq_user(user),
         'is_hq_admin': _is_hq_admin(user),

@@ -2140,6 +2140,13 @@ const saveVehicle = async (payload, status) => {
   return vehicleStore.createVehicle(body)
 }
 
+const refreshVehicleBoard = async () => {
+  await vehicleStore.fetchVehicles()
+  if (selectedVehicle.value?.id) {
+    await vehicleStore.fetchVehicleDetail(selectedVehicle.value.id)
+  }
+}
+
 const handleStepOneRefer = async (payload) => {
   try {
     const plateStatus = await fetchPlateBlockedStatus(payload)
@@ -2159,6 +2166,7 @@ const handleStepOneRefer = async (payload) => {
 const handleStepTwoAssign = async (payload) => {
   try {
     await saveVehicle(payload, 'ready_to_settle')
+    await refreshVehicleBoard()
     closeVehicleModal()
   } catch (error) {
     console.error('assign step two error:', error?.response?.data || error)
