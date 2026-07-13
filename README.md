@@ -581,6 +581,8 @@ docker compose --env-file .env.docker up -d --build
 docker compose --env-file .env.docker ps
 ```
 
+این اجرا به‌صورت پیش‌فرض `db`, `backend`, `plate-ai`, `frontend` را با هم بالا می‌آورد.
+
 دسترسی:
 
 - فرانت: `http://localhost`

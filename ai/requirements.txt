@@ -2,12 +2,12 @@ fire
 lmdb
 natsort
 nltk
-numpy
-opencv_python
-Pillow
+numpy==2.5.1
+opencv-python-headless
+Pillow==12.3.0
 six
-torch
-torchvision
+torch==2.13.0
+torchvision==0.28.0
 ultralytics
 arabic-reshaper
 python-bidi
