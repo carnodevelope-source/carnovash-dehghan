@@ -51,6 +51,7 @@ That script:
 
 Production is expected to run the same AI service through Docker Compose.
 No nginx or frontend changes are needed for AI itself.
+In the current Compose setup, `plate-ai` is part of the default stack and starts with the site.
 
 Required env values:
 

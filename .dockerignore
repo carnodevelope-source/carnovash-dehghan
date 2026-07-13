@@ -1,0 +1,16 @@
+*
+!ai/
+!ai/**
+!backend/
+!backend/packages/
+!backend/packages/**
+
+ai/__pycache__/
+ai/**/__pycache__/
+ai/io/input/
+ai/io/output/
+ai/websit/
+ai/*.bat
+ai/*.md
+ai/*.mp4
+ai/plate-ai-smoke*.log

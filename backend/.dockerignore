@@ -5,3 +5,4 @@ __pycache__/
 *.log
 tests/
 backend-smoke*.log
+packages/

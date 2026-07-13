@@ -25,6 +25,7 @@ venv/
 backend/staticfiles/
 backend/media/
 backend/db.sqlite3
+backend/packages/
 backend/*-smoke*.log
 frontend/*-smoke*.log
 ai/tst/Persian-License-Plate-Recognition/*-smoke*.log

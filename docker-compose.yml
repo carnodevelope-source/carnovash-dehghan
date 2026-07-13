@@ -67,10 +67,9 @@ services:
     restart: unless-stopped
 
   plate-ai:
-    profiles: ["ai"]
     build:
-      context: ./ai
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ai/Dockerfile
     environment:
       PYTHONUNBUFFERED: "1"
       TZ: ${TZ:-Asia/Tehran}
