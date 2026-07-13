@@ -261,7 +261,7 @@
                 <article class="discount-preview-card">
                   <small>پیش‌نمایش سریع</small>
                   <strong>{{ fullStarDiscountLabel }}</strong>
-                  <p>اگر مقدار هر نیم‌ستاره {{ generalSettings.discount_percent_per_half_star || 0 }}٪ باشد، هر یک ستاره کامل دو برابر همین عدد تخفیف می‌دهد.</p>
+                  <p>اگر مقدار هر نیم‌ستاره {{ generalSettings.discount_percent_per_half_star || 0 }}٪ باشد، هر یک ستاره کامل {{ fullStarDiscountLabel }} تخفیف می‌دهد.</p>
                 </article>
               </div>
             </section>

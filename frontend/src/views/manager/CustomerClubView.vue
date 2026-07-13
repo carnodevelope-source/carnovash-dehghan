@@ -852,6 +852,7 @@ const smsCreditBalance = ref(0)
 const smsPricePerSegment = ref(500)
 const highlightedGroupId = ref('')
 const customerImportFileRef = ref(null)
+const CUSTOMER_IMPORT_PRICE = 500000
 
 const customerImport = reactive({
   open: false,
@@ -861,7 +862,7 @@ const customerImport = reactive({
   errors: [],
   validCount: 0,
   errorCount: 0,
-  price: 50000,
+  price: CUSTOMER_IMPORT_PRICE,
   confirming: false,
   previewing: false,
   submitting: false,
@@ -940,7 +941,7 @@ const averageScore = computed(() => {
   const total = customers.value.reduce((sum, item) => sum + Number(item.score || 0), 0)
   return Number((total / customers.value.length).toFixed(1))
 })
-const activeCarwashCountLabel = computed(() => `${toFa(availableCarwashes.value.length)} کارواش در داده فعلی`)
+const activeCarwashCountLabel = computed(() => `داده در کارواش فعلی`)
 const smsCreditStateLabel = computed(() => {
   if (smsCreditBalance.value <= 0) return 'بدون اعتبار'
   if (smsCreditBalance.value < 500000) return 'اعتبار رو به اتمام'
@@ -1070,7 +1071,7 @@ const resetCustomerImport = () => {
   customerImport.errors = []
   customerImport.validCount = 0
   customerImport.errorCount = 0
-  customerImport.price = 50000
+  customerImport.price = CUSTOMER_IMPORT_PRICE
   customerImport.confirming = false
   customerImport.previewing = false
   customerImport.submitting = false
@@ -1139,7 +1140,7 @@ const previewCustomerImport = async () => {
     customerImport.errors = Array.isArray(data?.errors) ? data.errors : []
     customerImport.validCount = Number(data?.valid_count || 0)
     customerImport.errorCount = Number(data?.error_count || 0)
-    customerImport.price = Number(data?.price || 50000)
+    customerImport.price = CUSTOMER_IMPORT_PRICE
     if (!customerImport.preview.length && !customerImport.errorCount) {
       notifyWarning('هیچ ردیف معتبری در فایل پیدا نشد.', { title: 'وارد کردن مشتریان' })
     }

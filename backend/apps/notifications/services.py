@@ -251,8 +251,8 @@ def build_vehicle_released_sms(settings_obj, vehicle, *, released_at=None, custo
         '[تاریخ ترخیص]': format_jalali_date(released_at),
         '[امتیاز مشتری]': to_persian_digits(str(round(float(customer_score or 0), 1)).replace('.0', '')),
         '[درصد تخفیف سفارش بعد]': f"{to_persian_digits(str(round(float(next_discount_percent or 0), 2)).replace('.0', ''))}٪",
-        '[مبلغ نهایی]': format_toman(final_total),
         '[جمع تخفیف]': format_toman(discount_total),
+        '[مبلغ نهایی]': format_toman(final_total),
     }
     template = str(
         getattr(settings_obj, 'sms_vehicle_released_template', '')
