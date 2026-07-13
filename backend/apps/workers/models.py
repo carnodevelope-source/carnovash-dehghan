@@ -51,6 +51,15 @@ class WorkerProfile(TimestampedModel):
     started_at = models.DateField(null=True, blank=True)
     address = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='worker_profiles_deleted',
+    )
     has_entrusted_item = models.BooleanField(default=False)
     entrusted_items = models.JSONField(default=list, blank=True)
     entrusted_item_description = models.TextField(blank=True)

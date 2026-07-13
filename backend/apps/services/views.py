@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db.models.deletion import ProtectedError
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.response import Response
 
@@ -11,6 +11,7 @@ from .models import (
     GeneralSettings,
     Service,
     ServiceChangeLog,
+    normalize_vehicle_released_sms_template,
 )
 from .serializers import GeneralSettingsSerializer, ServiceChangeLogSerializer, ServiceSerializer
 
@@ -69,7 +70,11 @@ class ServiceListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)
-        queryset = Service.objects.select_related('category').filter(tenant=tenant, is_active=True)
+        queryset = Service.objects.select_related('category').filter(
+            tenant=tenant,
+            is_active=True,
+            is_deleted=False,
+        )
         plate_type = str(self.request.query_params.get('plate_type', '') or '').strip().lower()
         if plate_type == 'motorcycle':
             queryset = queryset.filter(motorcycle_enabled=True)
@@ -86,7 +91,10 @@ class ServiceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)
-        return Service.objects.select_related('category').filter(tenant=tenant).order_by('display_order', 'name')
+        return Service.objects.select_related('category').filter(
+            tenant=tenant,
+            is_deleted=False,
+        ).order_by('display_order', 'name')
 
     def perform_update(self, serializer):
         instance = self.get_object()
@@ -102,28 +110,19 @@ class ServiceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         previous_snapshot = _service_snapshot(instance)
-        try:
-            self.perform_destroy(instance)
-            ServiceChangeLog.objects.filter(service=instance).delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except ProtectedError:
-            if instance.is_active:
-                instance.is_active = False
-                instance.save(update_fields=['is_active', 'updated_at'])
-                _log_service_change(
-                    instance,
-                    ServiceChangeLog.ActionType.DEACTIVATED,
-                    user=request.user if request.user.is_authenticated else None,
-                    previous_snapshot=previous_snapshot,
-                )
-            return Response(
-                {
-                    'detail': 'این خدمت در سفارش‌های قبلی استفاده شده است و برای حفظ سوابق حذف نشد؛ فقط غیرفعال شد.',
-                    'soft_deleted': True,
-                    'is_active': False,
-                },
-                status=status.HTTP_200_OK,
+        if not instance.is_deleted:
+            instance.is_active = False
+            instance.is_deleted = True
+            instance.deleted_at = timezone.now()
+            instance.deleted_by = request.user if request.user.is_authenticated else None
+            instance.save(update_fields=['is_active', 'is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
+            _log_service_change(
+                instance,
+                ServiceChangeLog.ActionType.DEACTIVATED,
+                user=request.user if request.user.is_authenticated else None,
+                previous_snapshot=previous_snapshot,
             )
+        return Response({'soft_deleted': True, 'is_active': False}, status=status.HTTP_200_OK)
 
 
 class ServiceHistoryView(generics.RetrieveAPIView):
@@ -131,7 +130,10 @@ class ServiceHistoryView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)
-        return Service.objects.select_related('category').filter(tenant=tenant).order_by('display_order', 'name')
+        return Service.objects.select_related('category').filter(
+            tenant=tenant,
+            is_deleted=False,
+        ).order_by('display_order', 'name')
 
     def retrieve(self, request, *args, **kwargs):
         service = self.get_object()
@@ -187,8 +189,11 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
         if not str(settings_obj.sms_vehicle_assigned_invoice_template or '').strip():
             settings_obj.sms_vehicle_assigned_invoice_template = DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE
             changed_fields.append('sms_vehicle_assigned_invoice_template')
-        if not str(settings_obj.sms_vehicle_released_template or '').strip():
-            settings_obj.sms_vehicle_released_template = DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE
+        normalized_released_template = normalize_vehicle_released_sms_template(
+            settings_obj.sms_vehicle_released_template
+        )
+        if settings_obj.sms_vehicle_released_template != normalized_released_template:
+            settings_obj.sms_vehicle_released_template = normalized_released_template
             changed_fields.append('sms_vehicle_released_template')
         if changed_fields:
             changed_fields.append('updated_at')

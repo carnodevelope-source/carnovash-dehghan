@@ -93,6 +93,15 @@ class ExpenseEntry(TimestampedModel):
     attachment_original_name = models.CharField(max_length=255, blank=True)
     source_type = models.CharField(max_length=20, choices=SourceType.choices, default=SourceType.MANUAL)
     spent_at = models.DateTimeField(default=timezone.now)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='expense_entries_deleted',
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

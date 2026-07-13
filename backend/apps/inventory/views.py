@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -17,7 +18,10 @@ class InventoryItemListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)
-        return InventoryItem.objects.select_related('product').filter(tenant=tenant).order_by('product__name')
+        return InventoryItem.objects.select_related('product').filter(
+            tenant=tenant,
+            product__is_deleted=False,
+        ).order_by('product__name')
 
     def perform_create(self, serializer):
         serializer.save(tenant=getattr(self.request.user, 'tenant', None))
@@ -28,7 +32,10 @@ class InventoryItemRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIVi
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)
-        return InventoryItem.objects.select_related('product').filter(tenant=tenant).order_by('product__name')
+        return InventoryItem.objects.select_related('product').filter(
+            tenant=tenant,
+            product__is_deleted=False,
+        ).order_by('product__name')
 
 
 class InventoryPurchaseView(APIView):
@@ -52,7 +59,7 @@ class InventoryPurchaseView(APIView):
         if sale_price < 0:
             return Response({'sale_price': ['Sale price cannot be negative.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        product = Product.objects.filter(pk=product_id, tenant=tenant).first()
+        product = Product.objects.filter(pk=product_id, tenant=tenant, is_deleted=False).first()
         if not product:
             return Response({'product_id': ['Product not found.']}, status=status.HTTP_404_NOT_FOUND)
 
@@ -98,7 +105,7 @@ class InventoryPurchaseView(APIView):
 class ProductPurchaseHistoryView(APIView):
     def get(self, request, product_id):
         tenant = getattr(request.user, 'tenant', None)
-        product = Product.objects.filter(pk=product_id, tenant=tenant).first()
+        product = Product.objects.filter(pk=product_id, tenant=tenant, is_deleted=False).first()
         if not product:
             return Response({'detail': 'محصول یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -143,7 +150,7 @@ class ExpenseEntryListCreateView(APIView):
                 'can_edit': True,
                 'can_delete': True,
             }
-            for item in ExpenseEntry.objects.filter(tenant=tenant).select_related('created_by').order_by('-spent_at', '-id')
+            for item in ExpenseEntry.objects.filter(tenant=tenant, is_deleted=False).select_related('created_by').order_by('-spent_at', '-id')
         ]
 
         purchase_entries = []
@@ -204,9 +211,22 @@ class ExpenseEntryRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIVie
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)
-        return ExpenseEntry.objects.filter(tenant=tenant, source_type=ExpenseEntry.SourceType.MANUAL).order_by('-spent_at', '-id')
+        return ExpenseEntry.objects.filter(
+            tenant=tenant,
+            source_type=ExpenseEntry.SourceType.MANUAL,
+            is_deleted=False,
+        ).order_by('-spent_at', '-id')
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not instance.is_deleted:
+            instance.is_deleted = True
+            instance.deleted_at = timezone.now()
+            instance.deleted_by = request.user if getattr(request.user, 'is_authenticated', False) else None
+            instance.save(update_fields=['is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
+        return Response({'soft_deleted': True}, status=status.HTTP_200_OK)

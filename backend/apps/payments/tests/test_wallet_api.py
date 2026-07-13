@@ -137,7 +137,7 @@ class WalletApiTests(APITestCase):
         sms_wallet.refresh_from_db()
         self.assertEqual(int(sms_wallet.balance), 200000)
 
-    def test_unavailable_feature_option_purchase_is_rejected(self):
+    def test_accounting_feature_option_purchase_is_available(self):
         self.wallet.balance = 10000000
         self.wallet.save(update_fields=['balance'])
 
@@ -151,15 +151,16 @@ class WalletApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 201)
         self.wallet.refresh_from_db()
-        self.assertFalse(
+        self.assertTrue(
             CarWashFeaturePurchase.objects.filter(
                 tenant=self.tenant,
                 feature_key=CarWashFeaturePurchase.FeatureKey.ACCOUNTING,
+                is_active=True,
             ).exists()
         )
-        self.assertEqual(int(self.wallet.balance), 10000000)
+        self.assertEqual(int(self.wallet.balance), 4000000)
 
     def test_installment_feature_option_purchase_debits_upfront_and_tracks_installments(self):
         self.wallet.balance = 10000000
@@ -171,7 +172,7 @@ class WalletApiTests(APITestCase):
                 'wallet_id': self.wallet.id,
                 'feature_key': 'cloud_storage',
                 'payment_plan': 'installment',
-                'upfront_amount': 800000,
+                'upfront_amount': 1000000,
             },
             format='json',
         )
@@ -184,10 +185,10 @@ class WalletApiTests(APITestCase):
         )
         self.assertTrue(purchase.is_active)
         self.assertEqual(purchase.payment_plan, CarWashFeaturePurchase.PaymentPlan.INSTALLMENT)
-        self.assertEqual(int(purchase.paid_amount), 800000)
-        self.assertEqual(purchase.installment_months, 12)
-        self.assertGreater(purchase.remaining_amount, 0)
-        self.assertGreater(purchase.monthly_installment_amount, 0)
+        self.assertEqual(int(purchase.paid_amount), 1000000)
+        self.assertEqual(purchase.installment_months, 4)
+        self.assertEqual(int(purchase.remaining_amount), 2000000)
+        self.assertEqual(int(purchase.monthly_installment_amount), 500000)
         self.assertIsNotNone(purchase.next_installment_due_at)
         self.assertEqual(int(self.wallet.balance), 10000000 - int(purchase.paid_amount))
 
@@ -262,20 +263,29 @@ class WalletApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         option = next(item for item in response.data['options'] if item['feature_key'] == purchase.feature_key)
         self.assertEqual(option['status_label'], 'فعال شده')
-        self.assertEqual(option['payment_plan_label'], 'اقساط ۱۲ ماهه')
+        self.assertEqual(option['payment_plan_label'], 'پرداخت قسطی')
         self.assertEqual(int(option['paid_amount']), 600000)
         self.assertEqual(int(option['remaining_amount']), 1800000)
         self.assertEqual(int(option['next_installment_amount']), 150000)
         self.assertTrue(option['auto_charge_enabled'])
         self.assertGreater(option['progress_percent'], 0)
 
-    def test_wallet_options_payload_marks_accounting_as_unavailable(self):
+    def test_wallet_options_payload_marks_accounting_as_available(self):
         response = self.client.get(reverse('wallet-options'))
 
         self.assertEqual(response.status_code, 200)
         option = next(item for item in response.data['options'] if item['feature_key'] == CarWashFeaturePurchase.FeatureKey.ACCOUNTING)
-        self.assertFalse(option['is_available'])
-        self.assertEqual(option['status_label'], 'در دسترس نمی‌باشد')
+        self.assertTrue(option['is_available'])
+        self.assertEqual(int(option['cash_amount']), 6000000)
+        self.assertEqual(int(option['installment_upfront_amount']), 1000000)
+        self.assertEqual(option['installment_months'], 10)
+
+    def test_excel_import_is_not_a_purchasable_wallet_option(self):
+        response = self.client.get(reverse('wallet-options'))
+
+        self.assertEqual(response.status_code, 200)
+        feature_keys = {item['feature_key'] for item in response.data['options']}
+        self.assertNotIn(CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT, feature_keys)
 
     def test_collect_due_feature_installments_command_debits_due_installments(self):
         self.wallet.balance = 300000

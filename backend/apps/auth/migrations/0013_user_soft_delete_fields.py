@@ -1,0 +1,28 @@
+from django.conf import settings
+from django.db import migrations, models
+import django.db.models.deletion
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('cw_auth', '0012_supportticket_is_registration_request_and_pendingtenantregistration'),
+    ]
+
+    operations = [
+        migrations.AddField(
+            model_name='user',
+            name='deleted_at',
+            field=models.DateTimeField(blank=True, null=True),
+        ),
+        migrations.AddField(
+            model_name='user',
+            name='deleted_by',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='deleted_users', to=settings.AUTH_USER_MODEL),
+        ),
+        migrations.AddField(
+            model_name='user',
+            name='is_deleted',
+            field=models.BooleanField(default=False),
+        ),
+    ]

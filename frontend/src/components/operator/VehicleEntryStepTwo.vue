@@ -233,6 +233,14 @@
               <span>مبلغ کل خدمات:</span>
               <strong>{{ formatMoney(servicesTotal) }}</strong>
             </div>
+            <div class="summary-row">
+              <span>تخفیف مجموعه</span>
+              <strong>{{ formatMoney(facilityDiscountTotal) }}</strong>
+            </div>
+            <div class="summary-row">
+              <span>امتیاز مشتری: {{ toFaNumber(customerLoyaltyDiscountPercent) }}٪ تخفیف</span>
+              <strong>{{ formatMoney(loyaltyDiscountAmount) }}</strong>
+            </div>
             <div v-if="manualServiceIncreaseTotal > 0" class="summary-row service-adjust-summary increase-row">
               <span>جمع افزایش دستی</span>
               <strong>{{ formatMoney(manualServiceIncreaseTotal) }}</strong>
@@ -247,6 +255,10 @@
                 <template v-if="manualDiscountPercent > 0">({{ toFaNumber(manualDiscountPercent) }}٪)</template>
               </span>
               <strong>{{ formatMoney(effectiveManualDiscountTotal) }}</strong>
+            </div>
+            <div class="summary-row discount-row">
+              <span>جمع تخفیف</span>
+              <strong>{{ formatMoney(totalDiscountAmount) }}</strong>
             </div>
             <div class="summary-row net-row">
               <span>مبلغ بعد از تخفیف</span>
@@ -421,6 +433,7 @@ const selectedServices = computed(() => {
       return {
         ...item,
         manual_adjustment: adjustment,
+        list_price: Number(item.list_price ?? item.resolved_list_price ?? item.base_price ?? 0),
         adjusted_price: Math.max(0, Number(item.base_price || 0) + adjustment)
       }
     })
@@ -441,12 +454,23 @@ const manualServiceDecreaseTotal = computed(() => selectedServices.value.reduce(
   const adjustment = Number(item.manual_adjustment || 0)
   return sum + (adjustment < 0 ? Math.abs(adjustment) : 0)
 }, 0))
+const serviceListSubtotal = computed(() => selectedServices.value.reduce((sum, item) => {
+  return sum + Number(item.list_price || item.base_price || 0)
+}, 0))
 const servicesTotal = computed(() => selectedServices.value.reduce((sum, item) => sum + Number((item.adjusted_price ?? item.base_price) || 0), 0))
+const facilityDiscountTotal = computed(() => Math.max(0, Number((serviceListSubtotal.value - servicesTotal.value).toFixed(2))))
+const customerLoyaltyDiscountPercent = computed(() => Math.max(0, Number(
+  props.vehicleInfo?.customer_loyalty_discount_percent
+  ?? props.vehicleInfo?.customerLoyaltyDiscountPercent
+  ?? 0
+)))
+const loyaltyDiscountAmount = computed(() => Number(((servicesTotal.value * customerLoyaltyDiscountPercent.value) / 100).toFixed(2)))
 const effectiveManualDiscountTotal = computed(() => Math.min(
-  servicesTotal.value,
+  Math.max(0, servicesTotal.value - loyaltyDiscountAmount.value),
   Math.max(0, Number(manualDiscountTotal.value || 0))
 ))
-const discountedServicesTotal = computed(() => Math.max(0, servicesTotal.value - effectiveManualDiscountTotal.value))
+const totalDiscountAmount = computed(() => Number((facilityDiscountTotal.value + loyaltyDiscountAmount.value + effectiveManualDiscountTotal.value).toFixed(2)))
+const discountedServicesTotal = computed(() => Math.max(0, servicesTotal.value - loyaltyDiscountAmount.value - effectiveManualDiscountTotal.value))
 const manualDiscountPercent = computed(() => (
   servicesTotal.value > 0
     ? Number(((effectiveManualDiscountTotal.value / servicesTotal.value) * 100).toFixed(1))
@@ -778,6 +802,7 @@ const loadInitialData = async () => {
       .map((item) => ({
         ...item,
         base_price: Number((item.resolved_sale_price ?? item.base_price) || 0),
+        list_price: Number((item.resolved_list_price ?? item.base_price) || 0),
         estimated_duration_minutes: Number((item.resolved_duration_minutes ?? item.estimated_duration_minutes) || 0),
       }))
       .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))

@@ -27,30 +27,63 @@ from apps.auth.models import CarWashFeaturePurchase
 
 
 FEATURE_OPTION_CATALOG = {
+    CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE: {
+        'title': 'نرم‌افزار کارنوواش',
+        'subtitle': 'فعال‌سازی اصلی نرم‌افزار',
+        'description': 'دسترسی کامل به نرم‌افزار فقط بعد از خرید این مورد فعال می‌شود. بعد از پایان سال اول، اشتراک سالانه فعال می‌شود.',
+        'base_price': Decimal('7000000'),
+        'upfront_amount': Decimal('1000000'),
+        'installment_months': 12,
+        'monthly_installment_amount': Decimal('500000'),
+        'annual_renewal_amount': Decimal('1500000'),
+        'annual_renewal_installment_months': 3,
+        'annual_renewal_monthly_amount': Decimal('500000'),
+        'accent': '#0f172a',
+        'is_required': True,
+    },
     CarWashFeaturePurchase.FeatureKey.ATTENDANCE: {
         'title': 'ورود و خروج',
         'subtitle': 'صف حضور و غیاب هوشمند پرسنل',
         'description': 'ثبت ورود و خروج، لینک اختصاصی پرسنل، صف نوبت‌دهی و گزارش کارکرد روزانه.',
-        'base_price': Decimal('2400000'),
+        'base_price': Decimal('3000000'),
+        'upfront_amount': Decimal('1000000'),
+        'installment_months': 4,
+        'monthly_installment_amount': Decimal('500000'),
         'accent': '#0f766e',
+    },
+    CarWashFeaturePurchase.FeatureKey.SMS_CLUB: {
+        'title': 'پنل پیامک پیشرفته',
+        'subtitle': 'باشگاه مشتریان و پیامک حرفه‌ای',
+        'description': 'پنل پیشرفته باشگاه مشتریان، قالب‌ها و امکانات پیامکی توسعه‌یافته.',
+        'base_price': Decimal('3000000'),
+        'upfront_amount': Decimal('1000000'),
+        'installment_months': 4,
+        'monthly_installment_amount': Decimal('500000'),
+        'accent': '#db2777',
     },
     CarWashFeaturePurchase.FeatureKey.ACCOUNTING: {
         'title': 'حسابداری',
         'subtitle': 'کنترل دقیق درآمد، هزینه و سهم‌ها',
         'description': 'گزارش مالی، سهم کارواش و نیرو، جریان نقدی، تخفیف‌ها و پایش دریافت‌ها.',
-        'base_price': Decimal('3600000'),
+        'base_price': Decimal('6000000'),
+        'upfront_amount': Decimal('1000000'),
+        'installment_months': 10,
+        'monthly_installment_amount': Decimal('500000'),
         'accent': '#315f9f',
-        'is_available': False,
-        'unavailable_message': 'این آپشن هنوز ارائه نمی‌شود و فعلا در دسترس نیست.',
     },
     CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE: {
         'title': 'فضای ابری',
         'subtitle': 'نگهداری امن اطلاعات و فایل‌ها',
-        'description': 'فضای اختصاصی برای فایل‌ها، رسیدها، سوابق مشتری و داده‌های عملیاتی کارواش.',
+        'description': 'در حالت عادی داده‌ها ۳ ماه نگهداری می‌شوند؛ با خرید فضای ابری، داده‌ها دائمی نگهداری می‌شوند.',
         'base_price': Decimal('3000000'),
+        'upfront_amount': Decimal('1000000'),
+        'installment_months': 4,
+        'monthly_installment_amount': Decimal('500000'),
         'accent': '#7c3aed',
     },
 }
+
+LICENSE_GRACE_DAYS = 7
 
 
 def _money(value):
@@ -61,7 +94,7 @@ def _feature_payment_plan_label(payment_plan):
     return {
         CarWashFeaturePurchase.PaymentPlan.MANUAL: 'ثبت مدیریتی',
         CarWashFeaturePurchase.PaymentPlan.CASH: 'نقدی',
-        CarWashFeaturePurchase.PaymentPlan.INSTALLMENT: 'اقساط ۱۲ ماهه',
+        CarWashFeaturePurchase.PaymentPlan.INSTALLMENT: 'پرداخت قسطی',
     }.get(payment_plan or '', 'ثبت نشده')
 
 
@@ -70,20 +103,73 @@ def _feature_option_price(feature_key):
     return _money(config['base_price'])
 
 
+def _feature_installment_terms(feature_key):
+    config = FEATURE_OPTION_CATALOG[feature_key]
+    total_amount = _feature_option_price(feature_key)
+    upfront_amount = _money(config.get('upfront_amount', total_amount))
+    if config.get('cash_only'):
+        return total_amount, total_amount, Decimal('0'), 0, Decimal('0')
+    installment_months = int(config.get('installment_months') or 0)
+    monthly_installment = _money(config.get('monthly_installment_amount') or 0)
+    remaining_amount = _money(total_amount - upfront_amount)
+    if installment_months > 0 and monthly_installment <= 0:
+        monthly_installment = _money(remaining_amount / Decimal(str(installment_months)))
+    return total_amount, upfront_amount, remaining_amount, installment_months, monthly_installment
+
+
+def license_status_for_tenant(tenant, now=None):
+    if tenant is None:
+        return {'is_locked': False, 'reason': '', 'notice': '', 'core_purchase_required': False}
+    now = now or timezone.now()
+    purchase = CarWashFeaturePurchase.objects.filter(
+        tenant=tenant,
+        feature_key=CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
+        is_active=True,
+    ).order_by('-id').first()
+    if not purchase:
+        return {
+            'is_locked': True,
+            'reason': 'core_purchase_required',
+            'notice': 'برای استفاده از نرم‌افزار باید ابتدا خود نرم‌افزار کارنوواش خریداری شود.',
+            'core_purchase_required': True,
+            'grace_days': LICENSE_GRACE_DAYS,
+        }
+    next_due_at = purchase.next_installment_due_at
+    if next_due_at and next_due_at <= now:
+        overdue_days = max(0, (now.date() - timezone.localtime(next_due_at).date()).days)
+        return {
+            'is_locked': overdue_days > LICENSE_GRACE_DAYS,
+            'reason': 'installment_overdue',
+            'notice': f'سررسید پرداخت نرم‌افزار گذشته است. پس از {LICENSE_GRACE_DAYS} روز عدم پرداخت، دسترسی قفل می‌شود.',
+            'core_purchase_required': False,
+            'overdue_days': overdue_days,
+            'grace_days': LICENSE_GRACE_DAYS,
+            'next_due_at': next_due_at,
+            'amount_due': purchase.monthly_installment_amount,
+        }
+    return {
+        'is_locked': False,
+        'reason': '',
+        'notice': '',
+        'core_purchase_required': False,
+        'next_due_at': next_due_at,
+        'amount_due': purchase.monthly_installment_amount if next_due_at else Decimal('0'),
+        'grace_days': LICENSE_GRACE_DAYS,
+    }
+
+
 def _feature_option_payload(tenant, feature_key, purchase=None):
     config = FEATURE_OPTION_CATALOG[feature_key]
     is_available = config.get('is_available', True)
     base_total_amount = _feature_option_price(feature_key)
     purchased_total_amount = _money(purchase.total_amount) if purchase else Decimal('0')
     total_amount = purchased_total_amount if purchased_total_amount > 0 else base_total_amount
-    default_upfront_amount = _money(total_amount * Decimal('0.25'))
-    default_remaining_amount = _money(total_amount - default_upfront_amount)
-    default_monthly_installment = _money(default_remaining_amount / Decimal('12'))
+    _base_total, default_upfront_amount, default_remaining_amount, default_installment_months, default_monthly_installment = _feature_installment_terms(feature_key)
     is_active = bool(purchase and purchase.is_active)
     payment_plan = purchase.payment_plan if purchase else ''
     paid_amount = _money(purchase.paid_amount if purchase else Decimal('0'))
     live_remaining_amount = _money(purchase.remaining_amount if purchase else Decimal('0'))
-    installment_months = purchase.installment_months if purchase and purchase.installment_months else 12
+    installment_months = purchase.installment_months if purchase and purchase.installment_months else default_installment_months
     upfront_amount = (
         paid_amount
         if purchase and payment_plan == CarWashFeaturePurchase.PaymentPlan.INSTALLMENT
@@ -123,6 +209,12 @@ def _feature_option_payload(tenant, feature_key, purchase=None):
         'unavailable_message': config.get('unavailable_message', ''),
         'payment_plan': payment_plan,
         'payment_plan_label': _feature_payment_plan_label(payment_plan),
+        'is_required': bool(config.get('is_required')),
+        'cash_only': bool(config.get('cash_only')),
+        'annual_renewal_amount': _money(config.get('annual_renewal_amount') or 0),
+        'annual_renewal_installment_months': int(config.get('annual_renewal_installment_months') or 0),
+        'annual_renewal_monthly_amount': _money(config.get('annual_renewal_monthly_amount') or 0),
+        'grace_days': LICENSE_GRACE_DAYS,
         'total_amount': total_amount,
         'cash_amount': total_amount,
         'installment_upfront_amount': upfront_amount,
@@ -375,6 +467,7 @@ class WalletDashboardView(WalletBaseMixin, APIView):
                     'payments_total': tx_totals['payments_total'],
                     'withdrawals_total': tx_totals['payments_total'],
                 },
+                'license_status': license_status_for_tenant(tenant),
                 'wallets': WalletSerializer(wallets, many=True).data,
                 'transactions': CashflowTransactionSerializer(transactions, many=True).data,
             }
@@ -400,6 +493,7 @@ class WalletOptionsView(WalletBaseMixin, APIView):
                     'name': tenant.name,
                     'slug': tenant.slug,
                 },
+                'license_status': license_status_for_tenant(tenant),
                 'wallet': WalletSerializer(wallet).data,
                 'options': [
                     _feature_option_payload(tenant, feature_key, purchases.get(feature_key))
@@ -469,19 +563,21 @@ class WalletOptionsView(WalletBaseMixin, APIView):
         if wallet.wallet_type == Wallet.WalletType.SMS:
             return Response({'wallet_id': ['خرید آپشن از کیف پول پیامک مجاز نیست.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        total_amount = _feature_option_price(feature_key)
+        total_amount, configured_upfront_amount, configured_remaining_amount, configured_installment_months, configured_monthly_installment = _feature_installment_terms(feature_key)
         if payment_plan == CarWashFeaturePurchase.PaymentPlan.INSTALLMENT:
+            if FEATURE_OPTION_CATALOG[feature_key].get('cash_only'):
+                return Response({'payment_plan': ['این مورد فقط به صورت نقدی قابل پرداخت است.']}, status=status.HTTP_400_BAD_REQUEST)
             try:
-                debit_amount = _money(request.data.get('upfront_amount'))
+                debit_amount = _money(request.data.get('upfront_amount') or configured_upfront_amount)
             except Exception:
                 return Response({'upfront_amount': ['مبلغ نقدی معتبر نیست.']}, status=status.HTTP_400_BAD_REQUEST)
-            if debit_amount <= 0:
-                return Response({'upfront_amount': ['مبلغ نقدی باید بزرگ‌تر از صفر باشد.']}, status=status.HTTP_400_BAD_REQUEST)
-            if debit_amount >= total_amount:
-                return Response({'upfront_amount': ['برای پرداخت قسطی، مبلغ نقدی باید کمتر از کل مبلغ باشد.']}, status=status.HTTP_400_BAD_REQUEST)
-            installment_months = 12
+            if debit_amount != configured_upfront_amount:
+                return Response({'upfront_amount': ['مبلغ نقدی باید مطابق پلن تعریف‌شده باشد.']}, status=status.HTTP_400_BAD_REQUEST)
+            if configured_installment_months <= 0:
+                return Response({'payment_plan': ['برای این مورد پلن قسطی تعریف نشده است.']}, status=status.HTTP_400_BAD_REQUEST)
+            installment_months = configured_installment_months
             remaining_amount = _money(total_amount - debit_amount)
-            monthly_installment = _money(remaining_amount / Decimal(str(installment_months)))
+            monthly_installment = configured_monthly_installment or _money(remaining_amount / Decimal(str(installment_months)))
             next_due_at = timezone.now() + timedelta(days=30)
         else:
             debit_amount = total_amount

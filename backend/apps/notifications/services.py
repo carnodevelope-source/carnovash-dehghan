@@ -17,6 +17,7 @@ from apps.services.models import (
     DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE,
     DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE,
     GeneralSettings,
+    normalize_vehicle_released_sms_template,
 )
 from apps.vehicles.models import VehicleEntry
 
@@ -239,9 +240,24 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
     return '\n\n'.join(part for part in parts if str(part).strip()), context
 
 
-def build_vehicle_released_sms(settings_obj, vehicle, *, released_at=None, customer_score=0, next_discount_percent=0, final_total=0, discount_total=0):
+def build_vehicle_released_sms(
+    settings_obj,
+    vehicle,
+    *,
+    released_at=None,
+    customer_score=0,
+    next_discount_percent=0,
+    final_total=0,
+    discount_total=0,
+    visit_count=0,
+    tip_amount=0,
+    facility_discount_total=0,
+    loyalty_discount_total=0,
+    manual_discount_total=0,
+):
     released_at = released_at or getattr(vehicle, 'released_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
     plate_label = str(getattr(vehicle, 'plate_number', '') or '').strip() or 'بدون پلاک'
+    next_discount_label = f"{to_persian_digits(str(round(float(next_discount_percent or 0), 2)).replace('.0', ''))}٪"
     context = {
         '[نام مشتری]': customer_display_name(getattr(vehicle, 'driver_name', '')) or 'مشتری',
         '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', '')),
@@ -250,14 +266,20 @@ def build_vehicle_released_sms(settings_obj, vehicle, *, released_at=None, custo
         '[ساعت ترخیص]': format_local_time(released_at),
         '[تاریخ ترخیص]': format_jalali_date(released_at),
         '[امتیاز مشتری]': to_persian_digits(str(round(float(customer_score or 0), 1)).replace('.0', '')),
-        '[درصد تخفیف سفارش بعد]': f"{to_persian_digits(str(round(float(next_discount_percent or 0), 2)).replace('.0', ''))}٪",
+        '[درصد تخفیف سفارش بعد]': next_discount_label,
+        '[درصد تخفیف امتیاز مشتری]': next_discount_label,
+        '[تعداد مراجعات]': to_persian_digits(str(int(visit_count or 0))),
+        '[انعام]': format_toman(tip_amount),
         '[جمع تخفیف]': format_toman(discount_total),
+        '[تخفیف مجموعه]': format_toman(facility_discount_total),
+        '[تخفیف امتیاز مشتری]': format_toman(loyalty_discount_total),
+        '[تخفیف دستی]': format_toman(manual_discount_total),
         '[مبلغ نهایی]': format_toman(final_total),
     }
-    template = str(
+    template = normalize_vehicle_released_sms_template(
         getattr(settings_obj, 'sms_vehicle_released_template', '')
         or DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE
-    ).strip()
+    )
     return render_template_tokens(template, context), context
 
 
@@ -460,6 +482,11 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
             next_discount_percent=extra_context.get('next_discount_percent', 0),
             final_total=extra_context.get('final_total', 0),
             discount_total=extra_context.get('discount_total', 0),
+            visit_count=extra_context.get('visit_count', 0),
+            tip_amount=extra_context.get('tip_amount', 0),
+            facility_discount_total=extra_context.get('facility_discount_total', 0),
+            loyalty_discount_total=extra_context.get('loyalty_discount_total', 0),
+            manual_discount_total=extra_context.get('manual_discount_total', 0),
         )
         reference_type = 'vehicle_released_sms'
         description = 'ارسال پیامک ترخیص خودرو'

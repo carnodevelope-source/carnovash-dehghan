@@ -68,6 +68,15 @@ class User(AbstractUser):
     support_total_responses = models.PositiveIntegerField(default=0)
     support_resolved_tickets_count = models.PositiveIntegerField(default=0)
     support_last_scored_at = models.DateTimeField(null=True, blank=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deleted_users',
+    )
 
     REQUIRED_FIELDS = ['email', 'phone']
 
@@ -77,7 +86,10 @@ class User(AbstractUser):
 
 class CarWashFeaturePurchase(models.Model):
     class FeatureKey(models.TextChoices):
+        CORE_SOFTWARE = 'core_software', 'Core Software'
+        EXCEL_IMPORT = 'excel_import', 'Excel Import'
         ATTENDANCE = 'attendance', 'Attendance'
+        SMS_CLUB = 'sms_club', 'SMS Club'
         ACCOUNTING = 'accounting', 'Accounting'
         CLOUD_STORAGE = 'cloud_storage', 'Cloud Storage'
 

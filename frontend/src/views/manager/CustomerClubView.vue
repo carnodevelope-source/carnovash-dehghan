@@ -350,6 +350,7 @@
               <input ref="customerImportFileRef" type="file" accept=".xlsx" @change="handleCustomerImportFile" />
               <strong>{{ customerImport.fileName || 'فایل اکسل را انتخاب کنید' }}</strong>
               <span>بعد از انتخاب فایل، ۵ ردیف اول برای بررسی نمایش داده می‌شود.</span>
+              <span>هزینه فقط هنگام تایید نهایی از کیف پول اصلی کسر می‌شود.</span>
             </label>
             <button type="button" class="club-primary-btn" :disabled="!customerImport.file || customerImport.previewing" @click="previewCustomerImport">
               {{ customerImport.previewing ? 'در حال بررسی...' : 'نمایش پیش‌نمایش' }}
@@ -392,7 +393,7 @@
 
         <div v-if="customerImport.confirming" class="import-payment-panel">
           <strong>{{ money(customerImport.price) }}</strong>
-          <p>این فیچر {{ money(customerImport.price) }} هزینه دارد و در صورت تایید از کیف پول اصلی شما کسر می‌شود. بعد از کسر هزینه، {{ toFa(customerImport.validCount) }} مشتری در باشگاه مشتریان اضافه یا به‌روزرسانی می‌شود.</p>
+          <p>هزینه هر تبدیل اکسل {{ money(customerImport.price) }} است و فقط هنگام تایید نهایی از کیف پول اصلی کسر می‌شود. بعد از کسر هزینه، {{ toFa(customerImport.validCount) }} مشتری در باشگاه مشتریان اضافه یا به‌روزرسانی می‌شود.</p>
         </div>
 
         <footer class="modal-foot">
@@ -1140,7 +1141,7 @@ const previewCustomerImport = async () => {
     customerImport.errors = Array.isArray(data?.errors) ? data.errors : []
     customerImport.validCount = Number(data?.valid_count || 0)
     customerImport.errorCount = Number(data?.error_count || 0)
-    customerImport.price = CUSTOMER_IMPORT_PRICE
+    customerImport.price = Number(data?.price || CUSTOMER_IMPORT_PRICE)
     if (!customerImport.preview.length && !customerImport.errorCount) {
       notifyWarning('هیچ ردیف معتبری در فایل پیدا نشد.', { title: 'وارد کردن مشتریان' })
     }

@@ -59,7 +59,7 @@
           </div>
         </div>
 
-        <section class="tariff-type-row" aria-label="تیپ نرخنامه">
+        <section v-if="!form.isPieceWash" class="tariff-type-row" aria-label="تیپ نرخنامه">
           <span>تیپ نرخنامه</span>
           <div class="tariff-bubbles">
             <button
@@ -216,6 +216,9 @@ const form = reactive({
   color: '',
   driver: '',
   mobile: '',
+  customerScore: 0,
+  customerLoyaltyVisitCount: 0,
+  customerLoyaltyDiscountPercent: 0,
   note: '',
   tariffType: 'type_1',
   plateType: 'car',
@@ -261,6 +264,7 @@ const isMobileViewport = ref(window.matchMedia('(max-width: 640px)').matches)
 const mobileViewportQuery = window.matchMedia('(max-width: 640px)')
 let liveRecognitionTimer = null
 let liveRecognitionCooldown = 0
+let isHydratingForm = false
 const aiSessionId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(window.navigator.userAgent || '')
 const canUseLiveCamera = Boolean(window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname))
@@ -318,6 +322,9 @@ const hydrateForm = (data = {}) => {
   form.color = String(data.color || data.car_color || '')
   form.driver = String(data.driver || data.driver_name || '')
   form.mobile = normalizeDigits(String(data.mobile || data.driver_phone || ''))
+  form.customerScore = Math.max(0, Number(data.customerScore ?? data.customer_score ?? 0))
+  form.customerLoyaltyVisitCount = Math.max(0, Number(data.customerLoyaltyVisitCount ?? data.customer_loyalty_visit_count ?? 0))
+  form.customerLoyaltyDiscountPercent = Math.max(0, Number(data.customerLoyaltyDiscountPercent ?? data.customer_loyalty_discount_percent ?? 0))
   form.note = String(data.note || data.notes || '')
   form.tariffType = String(data.tariffType || data.tariff_type || 'type_1').trim() || 'type_1'
   form.plateType = plateType
@@ -591,9 +598,7 @@ const tryResolveLetterFromHistory = async () => {
   if (matches.length !== 1) return false
   const match = matches[0]
   form.plateLetter = match.letter
-  form.driver = String(match.result.value.data.driver_name || '').trim()
-  form.mobile = normalizeDigits(String(match.result.value.data.driver_phone || ''))
-  form.plateType = String(match.result.value.data.plate_type || form.plateType || 'car').trim() || 'car'
+  applyPlateLookupData(match.result.value.data)
   syncLetterSuggestions(match.letter)
   return true
 }
@@ -662,6 +667,7 @@ const plate = computed(() => {
 
 const isPhoneValid = computed(() => isValidIranMobile(form.mobile))
 const canSubmit = computed(() => {
+  if (form.isPieceWash) return isPhoneValid.value
   return isPhoneValid.value && availableTariffTypeOptions.value.some((option) => option.value === form.tariffType)
 })
 
@@ -676,6 +682,9 @@ const payload = () => ({
   color: form.isPieceWash ? '-' : (form.isAnonymous ? '1111' : form.color.trim()),
   driver: form.driver.trim(),
   mobile: form.mobile.trim(),
+  customerScore: form.customerScore,
+  customerLoyaltyVisitCount: form.customerLoyaltyVisitCount,
+  customerLoyaltyDiscountPercent: form.customerLoyaltyDiscountPercent,
   note: form.isPieceWash ? '' : form.note.trim(),
   tariffType: form.tariffType,
   plateType: form.plateType,
@@ -726,7 +735,11 @@ const detectedModelColor = computed(() => {
 const letterSuggestionOptions = computed(() => letterSuggestions.value)
 
 watch(() => props.vehicleInfo, (value) => {
+  isHydratingForm = true
   hydrateForm(value || {})
+  requestAnimationFrame(() => {
+    isHydratingForm = false
+  })
 }, { immediate: true, deep: true })
 
 watch(() => form.isAnonymous, (value) => {
@@ -780,28 +793,44 @@ watch(() => form.plateType, (value) => {
 
 let lookupTimer = null
 let lookupToken = 0
+const applyPlateLookupData = (data = {}) => {
+  form.model = String(data.car_model || data.model || '').trim()
+  form.color = String(data.car_color || data.color || '').trim()
+  form.driver = String(data.driver_name || data.driver || '').trim()
+  form.mobile = normalizeDigits(String(data.driver_phone || data.mobile || ''))
+  form.customerScore = Math.max(0, Number(data.customer_score ?? data.customerScore ?? 0))
+  form.customerLoyaltyVisitCount = Math.max(0, Number(data.customer_loyalty_visit_count ?? data.customerLoyaltyVisitCount ?? 0))
+  form.customerLoyaltyDiscountPercent = Math.max(0, Number(data.customer_loyalty_discount_percent ?? data.customerLoyaltyDiscountPercent ?? 0))
+  form.plateType = String(data.plate_type || form.plateType || 'car').trim() || 'car'
+  if (data.tariff_type || data.tariffType) {
+    const tariffType = String(data.tariff_type || data.tariffType || 'type_1').trim() || 'type_1'
+    form.tariffType = availableTariffTypeOptions.value.some((option) => option.value === tariffType) ? tariffType : 'type_1'
+  }
+}
+
 watch(
-  () => [form.plateLeft, form.plateLetter, form.plateMid, form.plateRight, form.isAnonymous],
+  () => [form.plateLeft, form.plateLetter, form.plateMid, form.plateRight, form.plateType, form.isAnonymous, form.isPieceWash],
   async () => {
     if (lookupTimer) clearTimeout(lookupTimer)
-    if (form.isAnonymous || isMotorcyclePlate()) return
+    if (isHydratingForm || form.isAnonymous || form.isPieceWash) return
     const hasFullPlate = hasCompleteManualPlate()
     if (!hasFullPlate) return
     lookupTimer = setTimeout(async () => {
       const token = ++lookupToken
+      const lookupPlateNumber = plate.value
       try {
         const { data } = await api.get('/vehicles/plate-lookup/', {
           params: {
+            plate_number: lookupPlateNumber,
             plate_left: form.plateLeft.trim(),
             plate_letter: form.plateLetter.trim(),
             plate_mid: form.plateMid.trim(),
-            plate_right: form.plateRight.trim()
+            plate_right: form.plateRight.trim(),
+            plate_type: form.plateType
           }
         })
         if (token !== lookupToken || !data?.found) return
-        form.driver = String(data.driver_name || '').trim()
-        form.mobile = normalizeDigits(String(data.driver_phone || ''))
-        form.plateType = String(data.plate_type || form.plateType || 'car').trim() || 'car'
+        applyPlateLookupData(data)
       } catch (_error) {
       }
     }, 220)
@@ -825,6 +854,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   mobileViewportQuery.removeEventListener('change', syncMobileViewport)
+  if (lookupTimer) clearTimeout(lookupTimer)
   stopCamera()
 })
 </script>

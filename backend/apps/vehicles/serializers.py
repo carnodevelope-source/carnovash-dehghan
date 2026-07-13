@@ -8,14 +8,16 @@ from decimal import Decimal
 from .models import VehicleEntry
 from .models import BlockedPlate
 from .models import CustomerProfile
+from .models import PlateLoyaltyProfile
 from .models import VehicleJob, VehicleJobService
 from .models import VehicleStatusLog
 from .models import VehicleJobProduct
-from apps.services.models import Service
+from apps.services.models import GeneralSettings, Service
 from apps.workers.models import WorkerProfile
 from apps.products.models import Product
 from apps.inventory.models import InventoryItem, StockMovement
 from apps.notifications.services import send_vehicle_event_sms
+from .loyalty import apply_loyalty_visit, compute_loyalty_discount, get_or_create_plate_loyalty, loyalty_snapshot
 
 
 VALID_IRAN_MOBILE_PATTERN = r'^0\d{10}$'
@@ -35,6 +37,7 @@ class VehicleJobServiceLineSerializer(serializers.ModelSerializer):
             'service_name',
             'custom_service_name',
             'quantity',
+            'list_unit_price',
             'unit_price',
             'line_total',
             'discount_amount',
@@ -136,9 +139,14 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
             'worker_payment_type',
             'worker_payment_percent',
             'worker_payment_fixed',
+            'service_list_subtotal',
             'services_total',
             'products_total',
             'discount_total',
+            'facility_discount_total',
+            'loyalty_discount_total',
+            'manual_discount_total',
+            'total_discount',
             'tax_total',
             'final_total',
             'worker_share_amount',
@@ -169,16 +177,30 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     worker_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_score = serializers.SerializerMethodField()
     customer_score_year = serializers.SerializerMethodField()
+    customer_loyalty_visit_count = serializers.SerializerMethodField()
+    customer_loyalty_discount_percent = serializers.SerializerMethodField()
     is_plate_blocked = serializers.SerializerMethodField()
     blocked_plate_payment_confirmed = serializers.BooleanField(write_only=True, required=False, default=False)
     job = VehicleJobDetailSerializer(read_only=True)
     status_logs = VehicleStatusLogSerializer(many=True, read_only=True)
 
     def get_customer_score(self, obj):
-        return float(self._plate_yearly_score(obj) or 0)
+        return loyalty_snapshot(self._plate_loyalty(obj)).get('score', 0)
 
     def get_customer_score_year(self, obj):
         return timezone.localtime().year
+
+    def get_customer_loyalty_visit_count(self, obj):
+        return loyalty_snapshot(self._plate_loyalty(obj)).get('visit_count', 0)
+
+    def get_customer_loyalty_discount_percent(self, obj):
+        loyalty = loyalty_snapshot(self._plate_loyalty(obj))
+        discount_percent, _discount_amount = compute_loyalty_discount(
+            base_amount=0,
+            score=loyalty.get('score', 0),
+            percent_per_half_star=self._discount_percent_per_half_star(getattr(obj, 'tenant', None)),
+        )
+        return float(discount_percent or 0)
 
     def get_is_plate_blocked(self, obj):
         return self._is_plate_blocked(
@@ -260,8 +282,67 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     def _resolve_service_defaults(self, service_obj, *, tariff_type, plate_type, fallback_price):
         if service_obj:
             pricing = service_obj.resolve_pricing(tariff_type=tariff_type, plate_type=plate_type)
-            return Decimal(str(pricing.get('sale_price', fallback_price) or 0))
-        return Decimal(str(fallback_price or 0))
+            return (
+                Decimal(str(pricing.get('list_price', fallback_price) or 0)),
+                Decimal(str(pricing.get('sale_price', fallback_price) or 0)),
+            )
+        normalized = Decimal(str(fallback_price or 0))
+        return normalized, normalized
+
+    def _discount_percent_per_half_star(self, tenant):
+        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        return Decimal(str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0))
+
+    def _plate_loyalty(self, instance):
+        return get_or_create_plate_loyalty(
+            tenant=getattr(instance, 'tenant', None),
+            plate_number=getattr(instance, 'plate_number', ''),
+            plate_left=getattr(instance, 'plate_left', ''),
+            plate_letter=getattr(instance, 'plate_letter', ''),
+            plate_mid=getattr(instance, 'plate_mid', ''),
+            plate_right=getattr(instance, 'plate_right', ''),
+        )
+
+    def _compute_job_financials(
+        self,
+        *,
+        service_lines,
+        products_total,
+        manual_discount_total,
+        tip_amount,
+        loyalty_score,
+        discount_percent_per_half_star,
+    ):
+        service_list_subtotal = Decimal('0')
+        services_total = Decimal('0')
+        facility_discount_total = Decimal('0')
+        for line in service_lines:
+            quantity = Decimal(str(line.get('quantity', 1) or 1))
+            list_unit_price = Decimal(str(line.get('list_unit_price', 0) or 0))
+            unit_price = Decimal(str(line.get('unit_price', 0) or 0))
+            line_total = Decimal(str(line.get('line_total', 0) or 0))
+            service_list_subtotal += list_unit_price * quantity
+            services_total += line_total
+            facility_discount_total += max(Decimal('0'), (list_unit_price - unit_price) * quantity)
+
+        loyalty_discount_percent, loyalty_discount_total = compute_loyalty_discount(
+            base_amount=services_total,
+            score=loyalty_score,
+            percent_per_half_star=discount_percent_per_half_star,
+        )
+        total_discount = facility_discount_total + loyalty_discount_total + manual_discount_total
+        final_total = max(Decimal('0'), services_total - loyalty_discount_total - manual_discount_total) + products_total + tip_amount
+        return {
+            'service_list_subtotal': service_list_subtotal,
+            'services_total': services_total,
+            'facility_discount_total': facility_discount_total,
+            'loyalty_discount_percent': loyalty_discount_percent,
+            'loyalty_discount_total': loyalty_discount_total,
+            'manual_discount_total': manual_discount_total,
+            'total_discount': total_discount,
+            'discount_total': total_discount,
+            'final_total': final_total,
+        }
 
     @transaction.atomic
     def create(self, validated_data):
@@ -319,6 +400,21 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if requested_status == VehicleEntry.Status.RELEASED and not validated_data.get('released_at'):
             validated_data['released_at'] = timezone.now()
         vehicle_entry = VehicleEntry.objects.create(customer=customer, tenant=tenant, **validated_data)
+        discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
+        loyalty_profile = None
+        if not vehicle_entry.is_piece_wash:
+            loyalty_profile = get_or_create_plate_loyalty(
+                tenant=tenant,
+                plate_number=vehicle_entry.plate_number,
+                plate_left=vehicle_entry.plate_left,
+                plate_letter=vehicle_entry.plate_letter,
+                plate_mid=vehicle_entry.plate_mid,
+                plate_right=vehicle_entry.plate_right,
+            )
+            loyalty_profile = apply_loyalty_visit(
+                loyalty_profile,
+                discount_percent_per_half_star=discount_percent_per_half_star,
+            )
 
         payment_type = share_payload.get('type', VehicleJob.WorkerPaymentType.PERCENT)
         share_value = share_payload.get('value', 0) or 0
@@ -330,14 +426,13 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if resolved_payment_type:
             payment_type = resolved_payment_type
             share_value = resolved_share_value or 0
-        services_total = Decimal('0')
         normalized_services = []
         for item in services_payload:
             service_obj = None
             service_id = item.get('id') or item.get('service_id')
             if service_id:
                 service_obj = Service.objects.filter(id=service_id, tenant=tenant, is_active=True).first()
-            unit_price = self._resolve_service_defaults(
+            list_unit_price, unit_price = self._resolve_service_defaults(
                 service_obj,
                 tariff_type=validated_data.get('tariff_type'),
                 plate_type=plate_type,
@@ -345,8 +440,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             )
             discount_amount = max(Decimal('0'), Decimal(str(item.get('discount_amount', 0) or 0)))
             line_total = max(Decimal('0'), unit_price - discount_amount)
-            services_total += line_total
-            normalized_services.append((item, service_obj, unit_price, discount_amount, line_total))
+            normalized_services.append((item, service_obj, list_unit_price, unit_price, discount_amount, line_total))
         products_total = Decimal('0')
         product_lines_data = []
         for item in products_payload:
@@ -379,6 +473,23 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 }
             )
 
+        financials = self._compute_job_financials(
+            service_lines=[
+                {
+                    'quantity': 1,
+                    'list_unit_price': list_unit_price,
+                    'unit_price': unit_price,
+                    'line_total': line_total,
+                }
+                for _item, _service_obj, list_unit_price, unit_price, _discount_amount, line_total in normalized_services
+            ],
+            products_total=products_total,
+            manual_discount_total=manual_discount_total,
+            tip_amount=max(Decimal('0'), tip_amount),
+            loyalty_score=getattr(loyalty_profile, 'score', Decimal('0')),
+            discount_percent_per_half_star=discount_percent_per_half_star,
+        )
+        services_total = financials['services_total']
         share_base_total = services_total + products_total
         if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
             worker_share_amount = min(share_base_total, Decimal(str(share_value or 0)))
@@ -386,7 +497,6 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             percent = min(Decimal('100'), max(Decimal('0'), Decimal(str(share_value or 0))))
             worker_share_amount = (share_base_total * percent) / Decimal('100')
         carwash_share_amount = share_base_total - worker_share_amount
-        final_total = max(Decimal('0'), share_base_total - manual_discount_total) + max(Decimal('0'), tip_amount)
 
         vehicle_job = VehicleJob.objects.create(
             vehicle=vehicle_entry,
@@ -398,17 +508,22 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             else VehicleJob.WorkerPaymentType.PERCENT,
             worker_payment_percent=share_value if payment_type == VehicleJob.WorkerPaymentType.PERCENT else 0,
             worker_payment_fixed=share_value if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY} else 0,
+            service_list_subtotal=financials['service_list_subtotal'],
             services_total=services_total,
             products_total=products_total,
+            discount_total=financials['discount_total'],
+            facility_discount_total=financials['facility_discount_total'],
+            loyalty_discount_total=financials['loyalty_discount_total'],
             manual_discount_total=manual_discount_total,
+            total_discount=financials['total_discount'],
             tip_amount=max(Decimal('0'), tip_amount),
-            final_total=final_total,
+            final_total=financials['final_total'],
             worker_share_amount=worker_share_amount,
             carwash_share_amount=carwash_share_amount,
         )
         self._mark_workers_assigned(tenant, staff_members_payload, assigned_worker)
 
-        for item, service_obj, unit_price, discount_amount, line_total in normalized_services:
+        for item, service_obj, list_unit_price, unit_price, discount_amount, line_total in normalized_services:
             title = (item.get('title') or '').strip() or 'خدمت بدون نام'
             if not service_obj:
                 service_obj, _ = Service.objects.get_or_create(
@@ -422,6 +537,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 service=service_obj,
                 custom_service_name=title,
                 quantity=1,
+                list_unit_price=list_unit_price,
                 unit_price=unit_price,
                 line_total=line_total,
                 discount_amount=discount_amount,
@@ -557,10 +673,14 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 'worker_payment_type': VehicleJob.WorkerPaymentType.PERCENT,
                 'worker_payment_percent': Decimal('0'),
                 'worker_payment_fixed': Decimal('0'),
+                'service_list_subtotal': Decimal('0'),
                 'services_total': Decimal('0'),
                 'products_total': Decimal('0'),
                 'discount_total': Decimal('0'),
+                'facility_discount_total': Decimal('0'),
+                'loyalty_discount_total': Decimal('0'),
                 'manual_discount_total': Decimal('0'),
+                'total_discount': Decimal('0'),
                 'tax_total': Decimal('0'),
                 'final_total': Decimal('0'),
                 'worker_share_amount': Decimal('0'),
@@ -588,7 +708,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 service_id = item.get('id') or item.get('service_id')
                 if service_id:
                     service_obj = Service.objects.filter(id=service_id, tenant=tenant, is_active=True).first()
-                unit_price = self._resolve_service_defaults(
+                list_unit_price, unit_price = self._resolve_service_defaults(
                     service_obj,
                     tariff_type=validated_data.get('tariff_type', getattr(instance, 'tariff_type', VehicleEntry.TariffType.TYPE_1)),
                     plate_type=plate_type,
@@ -608,6 +728,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                     service=service_obj,
                     custom_service_name=title,
                     quantity=1,
+                    list_unit_price=list_unit_price,
                     unit_price=unit_price,
                     line_total=line_total,
                     discount_amount=discount_amount,
@@ -615,9 +736,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                     note='به‌روزرسانی از استپ ۲ پذیرش',
                 )
 
-        services_total = (
-            vehicle_job.service_lines.aggregate(total=Sum('line_total')).get('total') or Decimal('0')
-        )
+        service_lines = list(vehicle_job.service_lines.all())
+        services_total = vehicle_job.service_lines.aggregate(total=Sum('line_total')).get('total') or Decimal('0')
         products_total = vehicle_job.products_total or Decimal('0')
 
         resolved_payment_type, resolved_share_value = self._resolve_worker_payment_defaults(
@@ -665,8 +785,26 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             if tip_provided
             else Decimal(str(vehicle_job.tip_amount or 0))
         )
+        loyalty_profile = None if instance.is_piece_wash else self._plate_loyalty(instance)
+        discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
+        financials = self._compute_job_financials(
+            service_lines=[
+                {
+                    'quantity': line.quantity,
+                    'list_unit_price': line.list_unit_price,
+                    'unit_price': line.unit_price,
+                    'line_total': line.line_total,
+                }
+                for line in service_lines
+            ],
+            products_total=products_total,
+            manual_discount_total=manual_discount_total,
+            tip_amount=tip_amount,
+            loyalty_score=getattr(loyalty_profile, 'score', Decimal('0')),
+            discount_percent_per_half_star=discount_percent_per_half_star,
+        )
         carwash_share_amount = share_base_total - worker_share_amount
-        final_total = max(Decimal('0'), share_base_total - manual_discount_total) + tip_amount
+        final_total = financials['final_total']
 
         if instance.status == VehicleEntry.Status.READY_TO_SETTLE and not vehicle_job.completed_at:
             vehicle_job.completed_at = timezone.now()
@@ -680,8 +818,14 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         vehicle_job.worker_payment_type = payment_type
         vehicle_job.worker_payment_percent = payment_percent
         vehicle_job.worker_payment_fixed = payment_fixed
+        vehicle_job.service_list_subtotal = financials['service_list_subtotal']
         vehicle_job.services_total = services_total
+        vehicle_job.products_total = products_total
+        vehicle_job.discount_total = financials['discount_total']
+        vehicle_job.facility_discount_total = financials['facility_discount_total']
+        vehicle_job.loyalty_discount_total = financials['loyalty_discount_total']
         vehicle_job.manual_discount_total = manual_discount_total
+        vehicle_job.total_discount = financials['total_discount']
         vehicle_job.tip_amount = tip_amount
         vehicle_job.final_total = final_total
         vehicle_job.worker_share_amount = worker_share_amount
@@ -693,8 +837,14 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 'worker_payment_type',
                 'worker_payment_percent',
                 'worker_payment_fixed',
+                'service_list_subtotal',
                 'services_total',
+                'products_total',
+                'discount_total',
+                'facility_discount_total',
+                'loyalty_discount_total',
                 'manual_discount_total',
+                'total_discount',
                 'tip_amount',
                 'final_total',
                 'worker_share_amount',
@@ -931,19 +1081,6 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         normalized = ''.join(ch for ch in normalized if ch.isdigit() or ch == '+')
         return normalized
 
-    def _plate_yearly_score(self, instance):
-        plate_number = str(getattr(instance, 'plate_number', '') or '').strip()
-        tenant = getattr(instance, 'tenant', None)
-        if not plate_number or not tenant:
-            return Decimal('0')
-        current_year = timezone.localtime().year
-        visits = VehicleEntry.objects.filter(
-            tenant=tenant,
-            plate_number=plate_number,
-            check_in_at__year=current_year,
-        ).count()
-        return min(Decimal('5.0'), Decimal(str(visits)) * Decimal('0.5'))
-
     def _normalized_plate(self, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
         left = str(plate_left or '').strip()
         letter = str(plate_letter or '').strip()
@@ -1000,6 +1137,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'worker_name',
             'customer_score',
             'customer_score_year',
+            'customer_loyalty_visit_count',
+            'customer_loyalty_discount_percent',
             'is_plate_blocked',
             'job',
             'status_logs',

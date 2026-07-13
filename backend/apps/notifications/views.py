@@ -37,7 +37,7 @@ from .services import (
 )
 
 
-CUSTOMER_IMPORT_PRICE = Decimal('50000')
+CUSTOMER_IMPORT_PRICE = Decimal('500000')
 CUSTOMER_IMPORT_HEADERS = [
     ('full_name', 'نام مشتری'),
     ('phone', 'شماره تلفن'),

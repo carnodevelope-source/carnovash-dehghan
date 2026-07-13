@@ -113,6 +113,10 @@ def _send_ticket_assigned_sms(ticket):
 
 def _auth_payload(user):
     feature_keys = set(user.tenant.active_feature_keys()) if getattr(user, 'tenant_id', None) else set()
+    license_status = {}
+    if getattr(user, 'tenant_id', None) and not _is_hq_user(user):
+        from apps.payments.views import license_status_for_tenant
+        license_status = license_status_for_tenant(user.tenant)
     return {
         'id': user.id,
         'username': user.username,
@@ -126,6 +130,7 @@ def _auth_payload(user):
         'tenant_name': user.tenant.name if user.tenant_id else '',
         'purchased_menu_access': sorted(feature_keys),
         'menu_access': feature_access_map(feature_keys),
+        'license_status': license_status,
         'is_hq': _is_hq_user(user),
         'is_hq_admin': _is_hq_admin(user),
     }
@@ -1095,8 +1100,12 @@ class HqSupportUserDetailView(HqBaseView):
             return Response({'detail': 'پشتیبان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
         SupportTicket.objects.filter(assigned_to=user).update(assigned_to=None)
-        user.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        user.is_active = False
+        user.is_deleted = True
+        user.deleted_at = timezone.now()
+        user.deleted_by = request.user if getattr(request.user, 'is_authenticated', False) else None
+        user.save(update_fields=['is_active', 'is_deleted', 'deleted_at', 'deleted_by'])
+        return Response({'soft_deleted': True}, status=status.HTTP_200_OK)
 
 
 class HqTicketListView(HqBaseView):

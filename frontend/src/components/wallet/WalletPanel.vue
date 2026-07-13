@@ -2,6 +2,11 @@
   <section class="wallet-page" dir="rtl">
     <div v-if="state.error" class="wallet-alert wallet-alert-error">{{ state.error }}</div>
     <div v-if="state.successMessage" class="wallet-alert wallet-alert-success">{{ state.successMessage }}</div>
+    <section v-if="state.licenseStatus?.notice" class="license-lock-banner" :class="{ locked: state.licenseStatus.is_locked }">
+      <strong>{{ state.licenseStatus.is_locked ? 'نرم‌افزار قفل است' : 'یادآوری پرداخت نرم‌افزار' }}</strong>
+      <p>{{ state.licenseStatus.notice }}</p>
+      <span v-if="state.licenseStatus.amount_due">مبلغ سررسید: {{ moneyWithUnit(state.licenseStatus.amount_due) }}</span>
+    </section>
 
     <section class="wallet-hero-shell">
       <aside class="wallet-shortcuts">
@@ -129,6 +134,15 @@
             </span>
           </div>
           <p>{{ option.description }}</p>
+          <div v-if="Number(option.annual_renewal_amount || 0) > 0" class="option-unavailable-box option-renewal-box">
+            <strong>اشتراک سالانه بعد از سال اول</strong>
+            <small>
+              {{ moneyWithUnit(option.annual_renewal_amount) }}
+              <template v-if="option.annual_renewal_installment_months">
+                ، قابل پرداخت در {{ Number(option.annual_renewal_installment_months).toLocaleString('fa-IR') }} قسط {{ moneyWithUnit(option.annual_renewal_monthly_amount) }}
+              </template>
+            </small>
+          </div>
           <div v-if="option.is_available === false" class="option-unavailable-box">
             <strong>در دسترس نمی‌باشد</strong>
             <small>{{ option.unavailable_message || 'این آپشن هنوز ارائه نمی‌شود.' }}</small>
@@ -168,7 +182,7 @@
               <strong>{{ moneyWithUnit(option.cash_amount) }}</strong>
             </div>
             <div class="option-installment-row">
-              <span>اقساط ۱۲ ماهه</span>
+              <span>{{ option.cash_only ? 'فقط نقدی' : `اقساط ${Number(option.installment_months || 0).toLocaleString('fa-IR')} ماهه` }}</span>
               <strong>{{ moneyWithUnit(option.monthly_installment_amount) }}</strong>
               <small>پیش‌پرداخت: {{ moneyWithUnit(option.installment_upfront_amount) }}</small>
             </div>
@@ -506,6 +520,7 @@
               <small>کل مبلغ همین حالا از کیف پول کم می‌شود.</small>
             </button>
             <button
+              v-if="!selectedOption?.cash_only"
               type="button"
               class="payment-plan-card"
               :class="{ active: optionModal.paymentPlan === 'installment' }"
@@ -513,7 +528,7 @@
             >
               <strong>قسطی</strong>
               <span>{{ moneyWithUnit(selectedOption?.installment_upfront_amount) }}</span>
-              <small>باقی‌مانده ۱۲ ماهه، ماهی {{ moneyWithUnit(selectedOption?.monthly_installment_amount) }}</small>
+              <small>باقی‌مانده {{ Number(selectedOption?.installment_months || 0).toLocaleString('fa-IR') }} ماهه، ماهی {{ moneyWithUnit(selectedOption?.monthly_installment_amount) }}</small>
             </button>
           </div>
 
@@ -525,7 +540,7 @@
               inputmode="numeric"
               placeholder="مثلا 800,000"
             />
-            <small>باقی‌مانده به صورت خودکار در ۱۲ قسط مساوی محاسبه می‌شود.</small>
+            <small>مبلغ پیش‌پرداخت طبق پلن همین محصول ثابت است و اقساط در سررسیدهای جداگانه ثبت می‌شوند.</small>
           </label>
 
           <div v-if="optionModal.paymentPlan === 'installment'" class="installment-live-preview">
@@ -539,7 +554,7 @@
             </div>
           </div>
           <div v-if="optionModal.paymentPlan === 'installment'" class="wallet-note">
-            برداشت اقساط ماهانه به صورت خودکار از کیف پول اصلی همین کارواش انجام می‌شود و سررسیدهای عقب‌افتاده نیز در اولین اجرای API یا job زمان‌بندی‌شده تسویه می‌شوند.
+            برداشت اقساط در سررسیدها از کیف پول اصلی انجام می‌شود. اگر تا ۷ روز بعد از سررسید پرداخت نشود، دسترسی نرم‌افزار قفل می‌شود.
           </div>
 
           <div class="wallet-balance-preview" :class="{ danger: optionBalanceAfter < 0 }">
@@ -564,12 +579,14 @@ import api from '../../services/api'
 import BaseSpinner from '../base/BaseSpinner.vue'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import { useAuthStore } from '../../store/auth.store'
 
 const props = defineProps({
   searchQuery: { type: String, default: '' }
 })
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const state = reactive({
   loading: false,
@@ -587,6 +604,7 @@ const state = reactive({
   transactions: [],
   options: [],
   optionsTenant: null,
+  licenseStatus: {},
   optionsLoading: false
 })
 
@@ -706,15 +724,16 @@ const selectedOptionDebitAmount = computed(() => {
     : Number(option.cash_amount || option.total_amount || 0)
 })
 const optionRemainingAmount = computed(() => Math.max(0, Number(selectedOption.value?.total_amount || 0) - selectedOptionDebitAmount.value))
-const optionMonthlyAmount = computed(() => optionModal.paymentPlan === 'installment' ? Math.round(optionRemainingAmount.value / 12) : 0)
+const optionMonthlyAmount = computed(() => optionModal.paymentPlan === 'installment' ? Number(selectedOption.value?.monthly_installment_amount || 0) : 0)
 const optionBalanceAfter = computed(() => Number(selectedOptionWallet.value?.balance || 0) - selectedOptionDebitAmount.value)
 const optionPurchaseError = computed(() => {
   if (!optionModal.open) return ''
   if (!selectedOption.value) return 'آپشن انتخاب‌شده معتبر نیست.'
   if (selectedOption.value.is_active) return 'این آپشن قبلا فعال شده است.'
+  if (selectedOption.value.cash_only && optionModal.paymentPlan === 'installment') return 'این مورد فقط نقدی قابل پرداخت است.'
   if (!selectedOptionWallet.value) return 'برای خرید، یک کیف پول عادی انتخاب کنید.'
   if (optionModal.paymentPlan === 'installment' && selectedOptionDebitAmount.value <= 0) return 'مبلغ نقدی اولیه را وارد کنید.'
-  if (optionModal.paymentPlan === 'installment' && selectedOptionDebitAmount.value >= Number(selectedOption.value.total_amount || 0)) return 'برای پرداخت قسطی، مبلغ نقدی باید کمتر از کل مبلغ باشد.'
+  if (optionModal.paymentPlan === 'installment' && selectedOptionDebitAmount.value !== Number(selectedOption.value.installment_upfront_amount || 0)) return 'مبلغ نقدی اولیه باید مطابق پلن محصول باشد.'
   if (optionBalanceAfter.value < 0) return 'موجودی کیف پول برای این شیوه پرداخت کافی نیست.'
   return ''
 })
@@ -818,6 +837,7 @@ const loadWalletDashboard = async () => {
     }
     state.wallets = Array.isArray(data?.wallets) ? data.wallets : []
     state.transactions = Array.isArray(data?.transactions) ? data.transactions : []
+    state.licenseStatus = data?.license_status || state.licenseStatus || {}
     if ((!actionModal.walletId || !selectableWallets.value.some((wallet) => Number(wallet.id) === Number(actionModal.walletId))) && selectableWallets.value.length) {
       actionModal.walletId = Number(selectableWallets.value[0].id)
     }
@@ -834,6 +854,7 @@ const loadWalletOptions = async () => {
     const { data } = await api.get('/payments/wallet/options/')
     state.options = Array.isArray(data?.options) ? data.options : []
     state.optionsTenant = data?.tenant || null
+    state.licenseStatus = data?.license_status || state.licenseStatus || {}
     if (!optionModal.walletId && optionWallets.value.length) {
       optionModal.walletId = Number(optionWallets.value[0].id)
     }
@@ -998,6 +1019,7 @@ const submitOptionPurchase = async () => {
     }
     closeOptionModal()
     await Promise.all([loadWalletDashboard(), loadWalletOptions()])
+    await authStore.fetchMe()
   } catch (error) {
     state.error = resolveApiErrorMessage(error, 'خرید آپشن ناموفق بود.')
   } finally {
@@ -1020,6 +1042,7 @@ const submitNextInstallmentPayment = async (option) => {
       if (index >= 0) state.wallets[index] = data.wallet
     }
     await Promise.all([loadWalletDashboard(), loadWalletOptions()])
+    await authStore.fetchMe()
   } catch (error) {
     state.error = resolveApiErrorMessage(error, 'پرداخت قسط بعدی ناموفق بود.')
   } finally {
@@ -1071,6 +1094,11 @@ onMounted(async () => {
 .wallet-alert{border-radius:18px;padding:14px 16px;font-weight:700;border:1px solid transparent;box-shadow:0 16px 34px rgba(15,23,42,.05)}
 .wallet-alert-error{background:#fff1f2;color:#9f1239;border-color:#fecdd3}
 .wallet-alert-success{background:#ecfdf5;color:#166534;border-color:#bbf7d0}
+.license-lock-banner{display:grid;gap:6px;padding:16px 18px;border-radius:22px;border:1px solid #fed7aa;background:linear-gradient(135deg,#fff7ed,#fffdf7);color:#9a3412;box-shadow:0 16px 34px rgba(154,52,18,.08)}
+.license-lock-banner.locked{border-color:#fecaca;background:linear-gradient(135deg,#fff1f2,#fff7ed);color:#991b1b}
+.license-lock-banner strong{font-size:16px;color:inherit}
+.license-lock-banner p{margin:0;line-height:1.8;color:inherit}
+.license-lock-banner span{font-size:12px;font-weight:900;color:inherit}
 .wallet-hero-shell{display:grid;grid-template-columns:370px minmax(0,1fr);gap:22px;align-items:stretch}
 .wallet-shortcuts{background:linear-gradient(180deg,#ffffff 0%,#f8fbfe 60%,#f3f7fb 100%);border:1px solid var(--wallet-border);border-radius:30px;padding:22px;box-shadow:0 18px 42px rgba(15,23,42,.05);position:relative;overflow:hidden}
 .wallet-shortcuts::before{content:'';position:absolute;inset:-90px auto auto -80px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(99,132,171,.10),rgba(99,132,171,0) 70%)}

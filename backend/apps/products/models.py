@@ -55,6 +55,15 @@ class Product(TimestampedModel):
     cost_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     min_stock = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='products_deleted',
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

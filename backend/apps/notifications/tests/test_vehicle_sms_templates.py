@@ -80,3 +80,38 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('مشتری عزیز', message)
         self.assertIn('۴.۵', message)
         self.assertIn('۴۵٪', message)
+        self.assertIn('تعداد دفعات مراجعه: ۰', message)
+        self.assertIn('انعام: ۰ تومان', message)
+
+    def test_released_sms_keeps_visit_count_and_tip_in_legacy_templates(self):
+        tenant = SimpleNamespace(name='کارواش یک')
+        vehicle = SimpleNamespace(
+            tenant=tenant,
+            driver_name='علی رضایی',
+            plate_number='22 ب 345 67',
+            released_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        settings_obj = SimpleNamespace(
+            sms_vehicle_released_template=(
+                '[خطاب مشتری]\n'
+                'درصد تخفیف سفارش بعد: [درصد تخفیف سفارش بعد]\n'
+                'مبلغ نهایی: [مبلغ نهایی]\n'
+                'جمع تخفیف: [جمع تخفیف]\n'
+                '[نام کارواش]'
+            )
+        )
+
+        message, _context = build_vehicle_released_sms(
+            settings_obj,
+            vehicle,
+            next_discount_percent=10,
+            final_total=265000,
+            discount_total=135000,
+            visit_count=5,
+            tip_amount=50000,
+        )
+
+        self.assertIn('تعداد دفعات مراجعه: ۵', message)
+        self.assertIn('انعام: ۵۰،۰۰۰ تومان', message)
+        self.assertIn('مبلغ نهایی: ۲۶۵،۰۰۰ تومان', message)

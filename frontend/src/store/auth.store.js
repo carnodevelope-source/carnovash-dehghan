@@ -9,6 +9,8 @@ export const useAuthStore = defineStore('auth', {
     isHq: (state) => state.user?.is_hq === true || ['hq_admin', 'hq_support'].includes(state.user?.platform_role),
     isHqAdmin: (state) => state.user?.is_hq_admin === true || state.user?.platform_role === 'hq_admin',
     isAccountant: (state) => state.user?.role === 'accountant',
+    licenseStatus: (state) => state.user?.license_status || {},
+    isLicenseLocked: (state) => state.user?.license_status?.is_locked === true,
     canAccessManagerSettings: (state) => ['manager', 'admin'].includes(state.user?.role),
     canAccessWallet: (state) => ['accountant', 'manager', 'admin'].includes(state.user?.role),
     canAccessReports: (state) => ['manager', 'admin'].includes(state.user?.role),

@@ -188,9 +188,10 @@
                 <tr>
                   <th>ردیف</th>
                   <th>نام</th>
-                  <th>شرح</th>
-                  <th>فروش تیپ ۱ خودرو</th>
-                  <th>زمان تیپ ۱</th>
+                  <th>فروش تیپ ۱</th>
+                  <th>فروش تیپ ۲</th>
+                  <th>فروش تیپ ۳</th>
+                  <th>فروش تیپ ۴</th>
                   <th>موتور سیکلت</th>
                   <th>تاریخ بروزرسانی</th>
                   <th>فعال</th>
@@ -201,9 +202,10 @@
                 <tr v-for="(item, index) in filteredServices" :key="item.id" class="clickable-row" @click="openServiceHistoryModal(item)">
                   <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
                   <td>{{ item.name }}</td>
-                  <td>{{ item.description || '-' }}</td>
                   <td>{{ money(item.pricing_tiers?.type_1?.sale_price ?? item.base_price) }}</td>
-                  <td>{{ item.pricing_tiers?.type_1?.duration_minutes ?? item.estimated_duration_minutes }} دقیقه</td>
+                  <td>{{ money(item.pricing_tiers?.type_2?.sale_price ?? item.base_price) }}</td>
+                  <td>{{ money(item.pricing_tiers?.type_3?.sale_price ?? item.base_price) }}</td>
+                  <td>{{ money(item.pricing_tiers?.type_4?.sale_price ?? item.base_price) }}</td>
                   <td>{{ item.motorcycle_enabled ? 'دارد' : 'ندارد' }}</td>
                   <td>{{ formatDate(item.updated_at) }}</td>
                   <td>{{ item.is_active ? 'بله' : 'خیر' }}</td>
@@ -310,22 +312,52 @@
                 </div>
               </div>
               <div class="sms-template-grid">
-                <label class="general-setting-label full-width">
-                  <span>پیام تخصیص خودرو</span>
-                  <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="6" />
-                </label>
-                <label class="general-setting-label full-width">
-                  <span>بخش پیش‌فاکتور پیام تخصیص</span>
-                  <textarea v-model.trim="generalSettings.sms_vehicle_assigned_invoice_template" rows="8" />
-                </label>
-                <label class="general-setting-label full-width">
-                  <span>پیام بعد از ترخیص</span>
-                  <textarea v-model.trim="generalSettings.sms_vehicle_released_template" rows="7" />
-                </label>
+                <article class="sms-template-card">
+                  <label class="general-setting-label sms-template-editor">
+                    <span>پیام تخصیص خودرو</span>
+                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="6" />
+                  </label>
+                  <div class="sms-preview-panel">
+                    <div class="sms-preview-head">
+                      <small>نمونه خروجی</small>
+                      <span>با داده فرضی مشتری</span>
+                    </div>
+                    <pre class="sms-preview-box">{{ smsAssignedPreview }}</pre>
+                  </div>
+                </article>
+                <article class="sms-template-card">
+                  <label class="general-setting-label sms-template-editor">
+                    <span>بخش پیش‌فاکتور پیام تخصیص</span>
+                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_invoice_template" rows="8" />
+                  </label>
+                  <div class="sms-preview-panel">
+                    <div class="sms-preview-head">
+                      <small>نمونه خروجی</small>
+                      <span>پیش‌فاکتور زنده</span>
+                    </div>
+                    <pre class="sms-preview-box">{{ smsAssignedInvoicePreview }}</pre>
+                  </div>
+                </article>
+                <article class="sms-template-card">
+                  <label class="general-setting-label sms-template-editor">
+                    <span>پیام بعد از ترخیص</span>
+                    <textarea v-model.trim="generalSettings.sms_vehicle_released_template" rows="7" />
+                  </label>
+                  <div class="sms-preview-panel">
+                    <div class="sms-preview-head">
+                      <small>نمونه خروجی</small>
+                      <span>فاکتور ترخیص</span>
+                    </div>
+                    <pre class="sms-preview-box">{{ smsReleasedPreview }}</pre>
+                  </div>
+                </article>
               </div>
-              <p class="helper-text">
-                متغیرهای قابل استفاده: `[خطاب مشتری]`، `[نام مشتری]`، `[نام کارواش]`، `[پلاک]`، `[ساعت تخصیص]`، `[تاریخ تخصیص]`، `[خلاصه خدمات]`، `[جمع کل]`، `[ساعت ترخیص]`، `[تاریخ ترخیص]`، `[امتیاز مشتری]`، `[درصد تخفیف سفارش بعد]`، `[مبلغ نهایی]`، `[جمع تخفیف]`
-              </p>
+              <div class="sms-token-panel">
+                <strong>متغیرهای قابل استفاده</strong>
+                <div class="sms-token-list">
+                  <code v-for="token in smsTemplateTokens" :key="token">{{ token }}</code>
+                </div>
+              </div>
             </section>
             <div class="modal-actions">
               <button class="primary-btn" :disabled="generalSettingsSaving" @click="saveGeneralSettings">
@@ -903,6 +935,73 @@ const filteredExpenses = computed(() => expenses.value.filter((i) => (`${i.title
 const filteredServices = computed(() => services.value.filter((i) => (`${i.name} ${i.description || ''}`).includes(search.value)))
 const fullStarDiscountLabel = computed(() => `${Number((Number(generalSettings.discount_percent_per_half_star || 0) * 2).toFixed(2)).toLocaleString('fa-IR')}٪`)
 const expensesTotal = computed(() => filteredExpenses.value.reduce((sum, item) => sum + Number(item.amount || 0), 0))
+const smsTemplateTokens = [
+  '[خطاب مشتری]',
+  '[نام مشتری]',
+  '[نام کارواش]',
+  '[پلاک]',
+  '[ساعت تخصیص]',
+  '[تاریخ تخصیص]',
+  '[خلاصه خدمات]',
+  '[جمع کل]',
+  '[ساعت ترخیص]',
+  '[تاریخ ترخیص]',
+  '[امتیاز مشتری]',
+  '[درصد تخفیف سفارش بعد]',
+  '[درصد تخفیف امتیاز مشتری]',
+  '[تعداد مراجعات]',
+  '[انعام]',
+  '[تخفیف مجموعه]',
+  '[تخفیف امتیاز مشتری]',
+  '[تخفیف دستی]',
+  '[مبلغ نهایی]',
+  '[جمع تخفیف]'
+]
+const ensureReleasedSmsTemplateDetails = (template) => {
+  const text = String(template || '').trim()
+  if (!text) return text
+  const lines = text.split('\n')
+  const insertions = []
+  if (!text.includes('[تعداد مراجعات]')) insertions.push('تعداد دفعات مراجعه: [تعداد مراجعات]')
+  if (!text.includes('[انعام]')) insertions.push('انعام: [انعام]')
+  if (!insertions.length) return text
+  const anchorIndex = lines.findIndex((line) => line.includes('[درصد تخفیف سفارش بعد]'))
+  const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : Math.max(1, lines.length - 3)
+  lines.splice(insertAt, 0, ...insertions)
+  return lines.join('\n')
+}
+const smsPreviewContext = computed(() => ({
+  '[خطاب مشتری]': 'آقای رضایی عزیز',
+  '[نام مشتری]': 'علی رضایی',
+  '[نام کارواش]': authStore.user?.tenant_name || authStore.user?.tenant?.name || 'سونامی',
+  '[پلاک]': '22 ب 345 67',
+  '[ساعت تخصیص]': '10:30',
+  '[تاریخ تخصیص]': '1405/04/22',
+  '[خلاصه خدمات]': 'شست‌وشوی کامل ---- 350،000 تومان',
+  '[جمع کل]': '350،000 تومان',
+  '[ساعت ترخیص]': '12:15',
+  '[تاریخ ترخیص]': '1405/04/22',
+  '[امتیاز مشتری]': '2.5',
+  '[درصد تخفیف سفارش بعد]': '10٪',
+  '[درصد تخفیف امتیاز مشتری]': '10٪',
+  '[تعداد مراجعات]': '5',
+  '[انعام]': '50،000 تومان',
+  '[تخفیف مجموعه]': '80،000 تومان',
+  '[تخفیف امتیاز مشتری]': '35،000 تومان',
+  '[تخفیف دستی]': '20،000 تومان',
+  '[جمع تخفیف]': '135،000 تومان',
+  '[مبلغ نهایی]': '265،000 تومان'
+}))
+const renderSmsPreview = (template) => {
+  let message = String(template || '').trim()
+  Object.entries(smsPreviewContext.value).forEach(([token, value]) => {
+    message = message.replaceAll(token, value)
+  })
+  return message
+}
+const smsAssignedPreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_assigned_template))
+const smsAssignedInvoicePreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_assigned_invoice_template))
+const smsReleasedPreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_released_template))
 
 watch(() => forms.purchase.product_id, (newProductId) => {
   const selected = products.value.find((item) => Number(item.id) === Number(newProductId))
@@ -964,7 +1063,7 @@ const loadAll = async () => {
       generalSettings.sms_provider_source = gs.data?.sms_provider_source || 'env'
       generalSettings.sms_vehicle_assigned_template = gs.data?.sms_vehicle_assigned_template || ''
       generalSettings.sms_vehicle_assigned_invoice_template = gs.data?.sms_vehicle_assigned_invoice_template || ''
-      generalSettings.sms_vehicle_released_template = gs.data?.sms_vehicle_released_template || ''
+      generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(gs.data?.sms_vehicle_released_template || '')
     } catch {
       generalSettings.discount_percent_per_half_star = 0
       generalSettings.preferred_bank_name = ''
@@ -1017,7 +1116,7 @@ const saveGeneralSettings = async () => {
       receipt_footer_note: generalSettings.receipt_footer_note || '',
       sms_vehicle_assigned_template: generalSettings.sms_vehicle_assigned_template || '',
       sms_vehicle_assigned_invoice_template: generalSettings.sms_vehicle_assigned_invoice_template || '',
-      sms_vehicle_released_template: generalSettings.sms_vehicle_released_template || ''
+      sms_vehicle_released_template: ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template || '')
     }
     const response = await api.patch('/services/general-settings/', payload)
     generalSettings.discount_percent_per_half_star = Number(response.data?.discount_percent_per_half_star || 0)
@@ -1042,7 +1141,7 @@ const saveGeneralSettings = async () => {
     generalSettings.sms_provider_source = response.data?.sms_provider_source || 'env'
     generalSettings.sms_vehicle_assigned_template = response.data?.sms_vehicle_assigned_template || ''
     generalSettings.sms_vehicle_assigned_invoice_template = response.data?.sms_vehicle_assigned_invoice_template || ''
-    generalSettings.sms_vehicle_released_template = response.data?.sms_vehicle_released_template || ''
+    generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(response.data?.sms_vehicle_released_template || '')
     t('تنظیمات عمومی ذخیره شد')
   } catch (e) {
     t(apiErrorText(e), 'error')
@@ -1397,6 +1496,94 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .modal-form label { display: grid; gap: 5px; }
 .modal-form input, .modal-form select { height: 42px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 10px; background: #fff; }
 .modal-form textarea { border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px; background: #fff; font: inherit; resize: vertical; }
+.sms-settings-card { gap: 18px; }
+.sms-template-grid { display: grid; gap: 14px; }
+.sms-template-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, .92fr);
+  gap: 14px;
+  align-items: stretch;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid #dbe7f5;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, .08), transparent 28%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, .06);
+}
+.sms-template-editor { align-content: start; min-width: 0; }
+.sms-template-editor textarea {
+  min-height: 150px;
+  background: #ffffff;
+  color: #0f172a;
+  line-height: 1.85;
+}
+.sms-preview-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border-radius: 18px;
+  border: 1px solid #99f6e4;
+  background:
+    linear-gradient(135deg, rgba(15, 118, 110, .96), rgba(14, 116, 144, .94)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, .28), transparent 32%);
+  color: #ecfeff;
+}
+.sms-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.sms-preview-head small {
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+.sms-preview-head span {
+  color: rgba(236, 254, 255, .76);
+  font-size: 11px;
+  font-weight: 700;
+}
+.sms-preview-box {
+  margin: 0;
+  min-height: 132px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, .24);
+  background: rgba(7, 27, 35, .42);
+  color: #ffffff;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.95;
+  font-family: inherit;
+  font-size: 13px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+.sms-token-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px dashed #b7c9e5;
+  background: linear-gradient(180deg, #ffffff, #f3f8ff);
+}
+.sms-token-panel strong { color: #0f172a; font-size: 13px; }
+.sms-token-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.sms-token-list code {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  border: 1px solid #bae6fd;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
 .row-check { display: flex !important; align-items: center; gap: 8px; }
 .full { grid-column: 1 / -1; }
 .entrusted-card {
@@ -1652,6 +1839,8 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .motorcycle-tier-grid { grid-template-columns: 1fr; }
   .entrusted-list-head { align-items: stretch; }
   .expense-summary-strip { grid-template-columns: 1fr; }
+  .sms-template-card { grid-template-columns: 1fr; }
+  .sms-preview-panel { min-height: 220px; }
   .discount-editor-grid,
   .settings-hero-stats,
   .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }

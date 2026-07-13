@@ -61,6 +61,7 @@
                   <span class="star-bg">★★★★★</span>
                   <span class="star-fill" :style="{ width: `${customerScorePercent(car.customerScore)}%` }">★★★★★</span>
                 </span>
+                <strong>{{ Number(car.customerLoyaltyDiscountPercent || 0).toLocaleString('fa-IR') }}٪ تخفیف</strong>
               </p>
             </div>
 
@@ -489,7 +490,8 @@
                 :class="{ active: invoiceLayout.preset === option.key }"
                 @click="invoiceLayout.preset = option.key"
               >
-                {{ option.label }}
+                <strong>{{ option.label }}</strong>
+                <span>{{ option.hint }}</span>
               </button>
             </div>
             <div v-if="invoiceIsThermal" class="invoice-thermal-size-grid">
@@ -502,17 +504,17 @@
                 <input v-model.number="invoiceLayout.thermalHeightMm" type="number" min="80" max="600" step="1" />
               </label>
             </div>
-          </div>
-          <div class="invoice-modal-actions">
-            <button type="button" class="secondary-btn" :disabled="invoiceGenerating" @click="refreshInvoicePreview">
-              {{ invoiceGenerating ? 'در حال ساخت...' : 'بروزرسانی فاکتور' }}
-            </button>
-            <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="downloadInvoicePdf">
-              دانلود PDF
-            </button>
-            <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="printInvoicePdf">
-              چاپ
-            </button>
+            <div class="invoice-modal-actions">
+              <button type="button" class="secondary-btn" :disabled="invoiceGenerating" @click="refreshInvoicePreview">
+                {{ invoiceGenerating ? 'در حال ساخت...' : 'بروزرسانی فاکتور' }}
+              </button>
+              <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="downloadInvoicePdf">
+                دانلود PDF
+              </button>
+              <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="printInvoicePdf">
+                چاپ
+              </button>
+            </div>
           </div>
           <div v-if="invoiceGenerating" class="invoice-preview-loading">
             <BaseSpinner size="56px" color="#1d4ed8" ball-color="#60a5fa" label="در حال ساخت فایل PDF فاکتور..." />
@@ -541,6 +543,8 @@
               <p><span>تلفن</span><strong>{{ invoiceCustomerPhone }}</strong></p>
               <p><span>خودرو</span><strong>{{ invoiceVehicleTitle }}</strong></p>
               <p><span>پلاک</span><strong>{{ invoicePlateLabel }}</strong></p>
+              <p><span>مراجعات</span><strong>{{ Number(releaseForm.customerLoyaltyVisitCount || 0).toLocaleString('fa-IR') }}</strong></p>
+              <p><span>امتیاز</span><strong>{{ formatCustomerScore(releaseForm.customerScore) }} | {{ Number(releaseForm.customerLoyaltyDiscountPercent || 0).toLocaleString('fa-IR') }}٪ تخفیف</strong></p>
               <p><span>پرداخت</span><strong>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</strong></p>
             </section>
 
@@ -568,7 +572,10 @@
             <section class="thermal-sheet-block thermal-total-block">
               <p><span>جمع خدمات</span><strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong></p>
               <p><span>محصولات</span><strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong></p>
-              <p><span>تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
+              <p v-if="releaseSummary.facilityDiscountAmount > 0"><span>تخفیف مجموعه</span><strong>{{ formatMoney(releaseSummary.facilityDiscountAmount) }}</strong></p>
+              <p v-if="releaseSummary.customerDiscountAmount > 0"><span>تخفیف امتیاز مشتری</span><strong>{{ formatMoney(releaseSummary.customerDiscountAmount) }}</strong></p>
+              <p v-if="releaseSummary.manualDiscountAmount > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(releaseSummary.manualDiscountAmount) }}</strong></p>
+              <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
               <p class="thermal-grand-total"><span>مبلغ نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </section>
@@ -601,6 +608,8 @@
               <p><span>نام</span><strong>{{ invoiceCustomerName }}</strong></p>
               <p><span>شماره تماس</span><strong>{{ invoiceCustomerPhone }}</strong></p>
               <p><span>امتیاز مشتری</span><strong>{{ formatCustomerScore(releaseForm.customerScore) }} | {{ releaseCustomerScoreStars }}</strong></p>
+              <p><span>درصد تخفیف امتیاز</span><strong>{{ Number(releaseForm.customerLoyaltyDiscountPercent || 0).toLocaleString('fa-IR') }}٪</strong></p>
+              <p><span>تعداد مراجعات</span><strong>{{ Number(releaseForm.customerLoyaltyVisitCount || 0).toLocaleString('fa-IR') }}</strong></p>
             </article>
             <article>
               <small>مشخصات خودرو</small>
@@ -683,6 +692,7 @@
               <p><span>جمع قبل از تخفیف</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
               <p><span>جمع خدمات</span><strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong></p>
               <p><span>جمع محصولات</span><strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong></p>
+              <p v-if="releaseSummary.facilityDiscountAmount > 0"><span>تخفیف مجموعه</span><strong>{{ formatMoney(releaseSummary.facilityDiscountAmount) }}</strong></p>
               <p v-if="releaseSummary.customerDiscountAmount > 0"><span>تخفیف امتیاز مشتری</span><strong>{{ formatMoney(releaseSummary.customerDiscountAmount) }}</strong></p>
               <p v-if="releaseSummary.manualDiscountAmount > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(releaseSummary.manualDiscountAmount) }}</strong></p>
               <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
@@ -923,6 +933,9 @@ const mapVehicleToDraft = (source = {}) => ({
   color: source.car_color,
   driver: source.driver_name,
   mobile: source.driver_phone,
+  customerScore: Number(source.customer_score || source.customerScore || 0),
+  customerLoyaltyVisitCount: Number(source.customer_loyalty_visit_count || source.customerLoyaltyVisitCount || 0),
+  customerLoyaltyDiscountPercent: Number(source.customer_loyalty_discount_percent || source.customerLoyaltyDiscountPercent || 0),
   note: source.notes,
   tariffType: source.tariff_type || source.tariffType || 'type_1',
   isPieceWash: Boolean(source.is_piece_wash),
@@ -1465,7 +1478,11 @@ const openReleaseModal = async (car) => {
       assignedWorkers: normalizeReleaseAssignedWorkers(preferredAssignedWorkers),
       workerShareAmount: Number(data?.job?.worker_share_amount || 0),
       customerScore: Math.max(0, Number(data?.vehicle?.customer_score || releaseCandidate.value?.customerScore || 0)),
+      customerLoyaltyVisitCount: Math.max(0, Number(data?.vehicle?.customer_loyalty_visit_count || 0)),
+      customerLoyaltyDiscountPercent: Math.max(0, Number(data?.vehicle?.customer_loyalty_discount_percent || 0)),
       discountPercentPerHalfStar,
+      facilityDiscountTotal: Math.max(0, Number(data?.job?.facility_discount_total || 0)),
+      loyaltyDiscountTotal: Math.max(0, Number(data?.job?.loyalty_discount_total || 0)),
       manualDiscountTotal: Math.max(0, Number(data?.job?.manual_discount_total || 0)),
       paymentMethod: defaultReleasePaymentMethod.value,
       manualCashAmount: 0,
@@ -1513,28 +1530,28 @@ const sanitizeMillimeter = (value, fallback, min, max) => {
   return Math.min(max, Math.max(min, numeric))
 }
 const invoicePresetOptions = [
-  { key: 'a4', label: 'A4' },
-  { key: 'a5', label: 'A5' },
-  { key: 'thermal', label: 'فیش پرینتر' }
+  { key: 'a4', label: 'A4', hint: 'فاکتور کامل' },
+  { key: 'a5', label: 'A5', hint: 'جمع‌وجور' },
+  { key: 'thermal', label: 'فیش', hint: 'پرینتر حرارتی' }
 ]
 const invoiceIsThermal = computed(() => invoiceLayout.value.preset === 'thermal')
 const invoiceThermalWidthMm = computed(() => sanitizeMillimeter(invoiceLayout.value.thermalWidthMm, 80, 48, 120))
 const invoiceThermalHeightMm = computed(() => sanitizeMillimeter(invoiceLayout.value.thermalHeightMm, 220, 80, 600))
 const invoicePageMetrics = computed(() => {
   if (invoiceLayout.value.preset === 'a5') {
-    return { width: 148, minHeight: 210, padding: 4.5, gap: 6, margin: [5, 5, 5, 5], format: 'a5' }
+    return { width: 138, minHeight: 200, padding: 4.5, gap: 6, margin: [5, 5, 5, 5], format: 'a5' }
   }
   if (invoiceLayout.value.preset === 'thermal') {
     return {
-      width: invoiceThermalWidthMm.value,
-      minHeight: invoiceThermalHeightMm.value,
+      width: Math.max(42, invoiceThermalWidthMm.value - 6),
+      minHeight: Math.max(74, invoiceThermalHeightMm.value - 6),
       padding: 3.2,
       gap: 4,
       margin: [3, 3, 3, 3],
       format: [invoiceThermalWidthMm.value, invoiceThermalHeightMm.value]
     }
   }
-  return { width: 210, minHeight: 297, padding: 5, gap: 7, margin: [6, 6, 6, 6], format: 'a4' }
+  return { width: 198, minHeight: 285, padding: 5, gap: 7, margin: [6, 6, 6, 6], format: 'a4' }
 })
 const invoiceSheetStyle = computed(() => ({
   width: `${invoicePageMetrics.value.width}mm`,
@@ -1727,11 +1744,26 @@ const releaseSummary = computed(() => {
   const tipAmount = Math.max(0, Number(releaseForm.value.tipAmount || 0))
   const customerScore = Math.max(0, Math.min(5, Number(releaseForm.value.customerScore || 0)))
   const discountPercentPerHalfStar = Math.max(0, Number(releaseForm.value.discountPercentPerHalfStar || 0))
-  const customerDiscountPercent = Math.max(0, Math.min(100, Number((discountPercentPerHalfStar * customerScore * 2).toFixed(2))))
-  const discountBase = Math.max(0, servicesTotal + productsTotal)
-  const customerDiscountAmount = Number((discountBase * customerDiscountPercent / 100).toFixed(2))
+  const facilityDiscountAmount = Math.max(0, Number(releaseForm.value.facilityDiscountTotal || 0))
+  const customerDiscountPercent = Math.max(
+    0,
+    Number(
+      releaseForm.value.customerLoyaltyDiscountPercent
+      ?? Number((discountPercentPerHalfStar * customerScore * 2).toFixed(2))
+      ?? 0
+    )
+  )
+  const customerDiscountAmount = Number(
+    (
+      releaseForm.value.loyaltyDiscountTotal
+      || ((servicesTotal * customerDiscountPercent) / 100)
+    ).toFixed(2)
+  )
   const manualDiscountAmount = Math.max(0, Number(releaseForm.value.manualDiscountTotal || 0))
-  const discountAmount = Math.min(discountBase, Number((customerDiscountAmount + manualDiscountAmount).toFixed(2)))
+  const discountAmount = Math.min(
+    Math.max(0, servicesTotal + productsTotal + facilityDiscountAmount),
+    Number((facilityDiscountAmount + customerDiscountAmount + manualDiscountAmount).toFixed(2))
+  )
   const shareBaseTotal = Math.max(0, servicesTotal)
   const workerShareBase = Math.min(shareBaseTotal, Number(releaseForm.value.workerShareAmount || 0))
   const finalTotalWithProducts = Math.max(0, servicesTotal + productsTotal - discountAmount + tipAmount)
@@ -1810,6 +1842,7 @@ const releaseSummary = computed(() => {
     productsTotal,
     customerScore,
     customerDiscountPercent,
+    facilityDiscountAmount,
     customerDiscountAmount,
     manualDiscountAmount,
     discountAmount,
@@ -2010,7 +2043,10 @@ const handleStepOneContinue = async (payload) => {
       detectedPlateMid: payload.detectedPlateMid,
       detectedPlateRight: payload.detectedPlateRight,
       detectedPlateType: payload.detectedPlateType,
-      tariffType: payload.tariffType
+      tariffType: payload.tariffType,
+      customerScore: Number(savedVehicle?.customer_score ?? payload.customerScore ?? 0),
+      customerLoyaltyVisitCount: Number(savedVehicle?.customer_loyalty_visit_count ?? payload.customerLoyaltyVisitCount ?? 0),
+      customerLoyaltyDiscountPercent: Number(savedVehicle?.customer_loyalty_discount_percent ?? payload.customerLoyaltyDiscountPercent ?? 0)
     }
     modalStep.value = 2
   } catch (error) {
@@ -2153,6 +2189,7 @@ const cars = computed(() => vehicles.value.map((item) => ({
   driverName: item.driver_name,
   driverPhone: item.driver_phone,
   customerScore: Number(item.customer_score || 0),
+  customerLoyaltyDiscountPercent: Number(item.customer_loyalty_discount_percent || 0),
   finalTotal: item.job?.final_total || item.job?.services_total || 0,
   carwashShare: item.job?.carwash_share_amount || 0,
   workerName: assignedWorkersLabel(item.job),
@@ -2470,24 +2507,32 @@ onBeforeUnmount(() => {
 .invoice-modal-panel{width:min(1120px,100%);max-width:100%;height:calc(100vh - 40px);display:flex;flex-direction:column;overflow:hidden}
 .invoice-modal-head{align-items:flex-start}
 .invoice-modal-subtitle{margin:6px 0 0;color:#64748b;font-size:12px}
-.invoice-modal-body{display:grid;grid-template-rows:auto minmax(0,1fr);gap:14px;padding:16px;min-height:0;min-width:0;flex:1;background:linear-gradient(180deg,#f8fbff,#edf5ff)}
-.invoice-format-toolbar{display:grid;gap:12px;padding:14px;border-radius:18px;background:rgba(255,255,255,.88);border:1px solid #dbe7f5}
-.invoice-format-presets{display:flex;gap:8px;flex-wrap:wrap}
-.invoice-format-chip{border:none;border-radius:14px;padding:10px 14px;background:#eef4ff;color:#334155;font-weight:800;cursor:pointer}
-.invoice-format-chip.active{background:linear-gradient(135deg,#c4b5fd,#e9d5ff);color:#4c1d95}
+.invoice-modal-body{display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px;padding:12px;min-height:0;min-width:0;flex:1;background:linear-gradient(180deg,#f8fbff,#edf5ff)}
+.invoice-format-toolbar{display:grid;grid-template-columns:minmax(260px,1fr) auto auto;align-items:center;gap:10px;padding:10px;border-radius:18px;background:rgba(255,255,255,.9);border:1px solid #dbe7f5;box-shadow:0 10px 26px rgba(15,23,42,.06)}
+.invoice-format-presets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.invoice-format-chip{border:1px solid #dbe7f5;border-radius:14px;padding:8px 12px;background:linear-gradient(180deg,#fff,#eef6ff);color:#334155;font-weight:800;cursor:pointer;display:grid;gap:2px;text-align:right;min-width:0;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
+.invoice-format-chip:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(15,23,42,.1)}
+.invoice-format-chip strong{font-size:14px;line-height:1.25;overflow-wrap:anywhere}
+.invoice-format-chip span{font-size:10px;color:#64748b;line-height:1.45;overflow-wrap:anywhere}
+.invoice-format-chip.active{background:linear-gradient(135deg,#0f172a,#0f4c81 58%,#0ea5e9);border-color:#0f4c81;color:#fff;box-shadow:0 14px 28px rgba(14,116,144,.22)}
+.invoice-format-chip.active span{color:rgba(255,255,255,.78)}
 .invoice-thermal-size-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .invoice-thermal-size-grid label{display:grid;gap:6px}
 .invoice-thermal-size-grid span{font-size:12px;color:#64748b}
-.invoice-modal-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.invoice-thermal-size-grid input{width:100%;min-width:0;border:1px solid #dbe7f5;border-radius:12px;padding:7px 9px;background:#fff;color:#0f172a;font-weight:800;box-sizing:border-box}
+.invoice-modal-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:nowrap;align-items:center}
+.invoice-modal-actions .secondary-btn{border-radius:12px;min-height:36px;padding:0 11px;background:linear-gradient(180deg,#fff,#f1f7ff);border:1px solid #d7e5f8;box-shadow:0 6px 14px rgba(15,23,42,.05);white-space:nowrap}
 .invoice-preview-loading,.invoice-preview-empty{min-height:380px;border:1px dashed #bfd7ff;border-radius:18px;background:#fff;display:flex;align-items:center;justify-content:center;color:#64748b;padding:20px}
 .invoice-preview-frame-wrap{min-height:0;min-width:0;border-radius:18px;overflow:auto;border:1px solid #dbe7f5;background:#fff;box-shadow:0 16px 36px rgba(15,23,42,.08);height:100%}
 .invoice-preview-frame{display:block;width:100%;height:100%;min-height:0;min-width:0;border:0;background:#fff}
 .invoice-print-stage{position:fixed;left:-99999px;top:0;pointer-events:none}
 .invoice-template{background:#fff;padding:0;box-sizing:border-box;overflow:hidden}
-.invoice-sheet{direction:rtl;background:#fff;color:#0f172a;font-family:Tahoma,Arial,sans-serif;display:grid;box-sizing:border-box;overflow:hidden}
+.invoice-template *,.invoice-template *::before,.invoice-template *::after{box-sizing:border-box}
+.invoice-sheet{direction:rtl;background:#fff;color:#0f172a;font-family:Tahoma,Arial,sans-serif;display:grid;box-sizing:border-box;overflow:hidden;max-width:100%;contain:layout paint}
 .invoice-sheet-a5{font-size:.9em}
 .invoice-sheet-thermal{font-size:.82em}
-.invoice-sheet-head{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);justify-content:space-between;gap:8px;padding:10px 12px;border-radius:10px;background:linear-gradient(135deg,#0f172a,#0f4c81 58%,#0ea5e9);color:#fff;min-width:0}
+.invoice-sheet-head{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);justify-content:space-between;gap:8px;padding:10px 12px;border-radius:10px;background:linear-gradient(135deg,#0f172a,#0f4c81 58%,#0ea5e9);color:#fff;min-width:0;max-width:100%}
+.invoice-sheet-head > *{min-width:0}
 .invoice-sheet-head small{display:block;font-size:8px;color:rgba(255,255,255,.72);letter-spacing:0}
 .invoice-sheet-head strong{display:block;font-size:15px;line-height:1.35;margin-top:2px;overflow-wrap:anywhere}
 .invoice-sheet-head span{display:block;margin-top:3px;color:rgba(255,255,255,.78);font-size:8px;overflow-wrap:anywhere}
@@ -2503,7 +2548,7 @@ onBeforeUnmount(() => {
 .invoice-identity-grid p{margin:0;display:grid;grid-template-columns:minmax(0,.62fr) minmax(0,1fr);gap:6px;align-items:start;color:#334155;font-size:8px;line-height:1.5;min-width:0}
 .invoice-identity-grid p span{color:#64748b;min-width:0}
 .invoice-identity-grid p strong{color:#0f172a;font-size:8px;font-weight:800;min-width:0;overflow-wrap:anywhere;word-break:break-word}
-.invoice-sheet-section{display:grid;gap:6px}
+.invoice-sheet-section{display:grid;gap:6px;min-width:0;max-width:100%}
 .invoice-section-head strong{font-size:10px;color:#0f172a}
 .invoice-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;border:1px solid #dbe7f5;border-radius:8px;overflow:hidden}
 .invoice-table th,.invoice-table td{padding:4px 6px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:9px;line-height:1.6;overflow-wrap:anywhere;word-break:break-word;min-width:0}
@@ -2518,12 +2563,12 @@ onBeforeUnmount(() => {
 .invoice-table tr:last-child td{border-bottom:0}
 .invoice-payment-section{border:1px solid #dbe7f5;border-radius:10px;padding:7px 9px;background:#f8fbff}
 .invoice-payment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px}
-.invoice-payment-grid p{margin:0;display:flex;justify-content:space-between;gap:8px;color:#334155;font-size:8px;line-height:1.6;min-width:0}
+.invoice-payment-grid p{margin:0;display:grid;grid-template-columns:minmax(0,.65fr) minmax(0,1fr);gap:8px;color:#334155;font-size:8px;line-height:1.6;min-width:0}
 .invoice-payment-grid p span,.invoice-payment-grid p strong{min-width:0;overflow-wrap:anywhere;word-break:break-word}
 .invoice-payment-grid p strong{color:#0f172a}
 .invoice-total-section{border:1px solid #dbe7f5;border-radius:10px;padding:8px 10px;background:linear-gradient(180deg,#ffffff,#f8fbff)}
 .invoice-totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px}
-.invoice-totals p{margin:0;display:flex;justify-content:space-between;gap:8px;color:#334155;font-size:9px;min-width:0}
+.invoice-totals p{margin:0;display:grid;grid-template-columns:minmax(0,.75fr) minmax(0,1fr);gap:8px;color:#334155;font-size:9px;min-width:0}
 .invoice-totals strong,.invoice-totals span{min-width:0;overflow-wrap:anywhere}
 .invoice-grand-total{grid-column:1 / -1;padding-top:5px;border-top:1px dashed #bfd7ff;font-size:11px;font-weight:800;color:#0f172a}
 .invoice-sheet-footer{padding-top:6px;border-top:1px dashed #cbd5e1;display:grid;gap:3px}
@@ -2532,17 +2577,17 @@ onBeforeUnmount(() => {
 .thermal-sheet-head strong{font-size:15px}
 .thermal-sheet-head span,.thermal-sheet-head small{color:#475569;font-size:11px}
 .thermal-sheet-block{display:grid;gap:8px;padding:8px 0;border-bottom:1px dashed #e2e8f0}
-.thermal-sheet-block p{margin:0;display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#334155}
+.thermal-sheet-block p{margin:0;display:grid;grid-template-columns:minmax(0,.75fr) minmax(0,1fr);gap:8px;font-size:11px;color:#334155}
 .thermal-sheet-block p strong,.thermal-sheet-block p span{min-width:0;overflow-wrap:anywhere}
 .thermal-lines-head{display:flex;justify-content:space-between;gap:8px}
 .thermal-lines-head strong{font-size:12px}
 .thermal-lines-head span{font-size:10px;color:#64748b}
-.thermal-line-row{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #eef2f7}
+.thermal-line-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #eef2f7;min-width:0}
 .thermal-line-row:last-child{border-bottom:0}
-.thermal-line-row div{display:grid;gap:2px}
-.thermal-line-row strong{font-size:11px}
+.thermal-line-row div{display:grid;gap:2px;min-width:0}
+.thermal-line-row strong{font-size:11px;overflow-wrap:anywhere;word-break:break-word}
 .thermal-line-row small{color:#64748b;font-size:10px}
-.thermal-line-row span{font-size:11px;font-weight:800;color:#0f172a}
+.thermal-line-row span{font-size:11px;font-weight:800;color:#0f172a;overflow-wrap:anywhere}
 .thermal-line-row-product strong{color:#4c1d95}
 .thermal-total-block{gap:6px}
 .thermal-grand-total{padding-top:6px;border-top:1px dashed #cbd5e1;font-size:12px;font-weight:800;color:#0f172a}
@@ -2660,7 +2705,8 @@ onBeforeUnmount(() => {
   .step-two-modal-panel,
   .release-panel,
   .invoice-modal-panel { height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
-  .invoice-format-presets,
+  .invoice-format-toolbar { grid-template-columns: 1fr; align-items: stretch; }
+  .invoice-format-presets { grid-template-columns: 1fr; }
   .invoice-modal-actions { flex-direction: column; }
   .invoice-thermal-size-grid,
   .invoice-identity-grid,
@@ -2833,7 +2879,8 @@ onBeforeUnmount(() => {
   }
   .invoice-preview-loading,.invoice-preview-empty{min-height:220px}
   .invoice-modal-panel{height:calc(100vh - 16px)}
-  .invoice-modal-actions{flex-direction:column}
+  .invoice-modal-actions{flex-direction:column;align-items:stretch}
+  .invoice-modal-actions .secondary-btn{width:100%}
 }
 @media (max-width: 480px) {
   .filters {

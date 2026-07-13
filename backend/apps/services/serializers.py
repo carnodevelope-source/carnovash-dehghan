@@ -10,6 +10,7 @@ from .models import (
     Service,
     ServiceChangeLog,
     default_service_tiers,
+    normalize_vehicle_released_sms_template,
 )
 
 
@@ -197,6 +198,10 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
         ]:
             if key in attrs:
                 attrs[key] = str(attrs.get(key) or '').strip()
+        if 'sms_vehicle_released_template' in attrs:
+            attrs['sms_vehicle_released_template'] = normalize_vehicle_released_sms_template(
+                attrs.get('sms_vehicle_released_template')
+            )
         return attrs
 
     def get_sms_provider_api_key_configured(self, _obj):

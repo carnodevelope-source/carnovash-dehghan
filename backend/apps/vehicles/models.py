@@ -30,6 +30,40 @@ class CustomerProfile(TimestampedModel):
         return f'{self.phone} - {self.full_name or "Customer"}'
 
 
+class PlateLoyaltyProfile(TimestampedModel):
+    tenant = models.ForeignKey(
+        'cw_auth.CarWash',
+        on_delete=models.CASCADE,
+        related_name='plate_loyalty_profiles',
+        null=True,
+        blank=True,
+    )
+    plate_number = models.CharField(max_length=20, db_index=True)
+    plate_left = models.CharField(max_length=2, blank=True)
+    plate_letter = models.CharField(max_length=5, blank=True)
+    plate_mid = models.CharField(max_length=3, blank=True)
+    plate_right = models.CharField(max_length=2, blank=True)
+    score = models.DecimalField(max_digits=3, decimal_places=1, default=0)
+    visit_count = models.PositiveIntegerField(default=0)
+    cycle_visit_count = models.PositiveIntegerField(default=0)
+    last_cycle_started_at = models.DateTimeField(null=True, blank=True)
+    first_order_at = models.DateTimeField(null=True, blank=True)
+    next_discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant', 'plate_number'],
+                name='uniq_plate_loyalty_per_tenant',
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.plate_number
+
+
 class VehicleEntry(TimestampedModel):
     class TariffType(models.TextChoices):
         TYPE_1 = 'type_1', 'Type 1'
@@ -234,10 +268,15 @@ class VehicleJob(TimestampedModel):
     worker_payment_fixed = models.DecimalField(
         max_digits=12, decimal_places=2, default=0
     )
+    service_list_subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     services_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     products_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    facility_discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    loyalty_discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     manual_discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    facility_discount_locked = models.BooleanField(default=True)
     tax_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     final_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     worker_share_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -276,6 +315,7 @@ class VehicleJobService(models.Model):
     )
     custom_service_name = models.CharField(max_length=120, blank=True)
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    list_unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     unit_price = models.DecimalField(max_digits=12, decimal_places=2)
     line_total = models.DecimalField(max_digits=12, decimal_places=2)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)

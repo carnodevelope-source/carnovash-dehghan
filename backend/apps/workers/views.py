@@ -176,7 +176,7 @@ class WorkerProfileListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         tenant = _resolve_request_tenant(self.request)
-        return WorkerProfile.objects.select_related('user').filter(tenant=tenant).order_by(
+        return WorkerProfile.objects.select_related('user').filter(tenant=tenant, is_deleted=False, user__is_deleted=False).order_by(
             'user__full_name',
             'user__username',
         )
@@ -220,7 +220,7 @@ class WorkerProfileListCreateView(generics.ListCreateAPIView):
 class WorkerProfileRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         tenant = _resolve_request_tenant(self.request)
-        return WorkerProfile.objects.select_related('user').filter(tenant=tenant).order_by(
+        return WorkerProfile.objects.select_related('user').filter(tenant=tenant, is_deleted=False, user__is_deleted=False).order_by(
             F('last_assigned_at').asc(nulls_first=True),
             'user__full_name',
             'user__username',
@@ -242,9 +242,17 @@ class WorkerProfileRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIVi
 
     def perform_destroy(self, instance):
         user = instance.user
-        instance.delete()
+        instance.is_available = False
+        instance.is_deleted = True
+        instance.deleted_at = timezone.now()
+        instance.deleted_by = self.request.user if getattr(self.request.user, 'is_authenticated', False) else None
+        instance.save(update_fields=['is_available', 'is_deleted', 'deleted_at', 'deleted_by', 'updated_at'])
         if user:
-            user.delete()
+            user.is_active = False
+            user.is_deleted = True
+            user.deleted_at = timezone.now()
+            user.deleted_by = self.request.user if getattr(self.request.user, 'is_authenticated', False) else None
+            user.save(update_fields=['is_active', 'is_deleted', 'deleted_at', 'deleted_by'])
 
 
 class AttendanceDashboardView(APIView):

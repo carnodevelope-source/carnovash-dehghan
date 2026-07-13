@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from .models import BlockedPlate, VehicleEntry, VehicleStatusLog
+from .loyalty import compute_loyalty_discount, get_or_create_plate_loyalty, loyalty_snapshot
 from .serializers import VehicleEntrySerializer
 from apps.inventory.models import InventoryItem
 from apps.inventory.models import StockMovement
@@ -256,6 +257,14 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
                 )
             elif new_status == VehicleEntry.Status.RELEASED:
                 job = getattr(instance, 'job', None)
+                loyalty = loyalty_snapshot(get_or_create_plate_loyalty(
+                    tenant=instance.tenant,
+                    plate_number=instance.plate_number,
+                    plate_left=instance.plate_left,
+                    plate_letter=instance.plate_letter,
+                    plate_mid=instance.plate_mid,
+                    plate_right=instance.plate_right,
+                ))
                 send_vehicle_event_sms(
                     'vehicle_released',
                     instance.tenant,
@@ -263,16 +272,18 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
                     created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
                     extra_context={
                         'released_at': instance.released_at or timezone.now(),
-                        'customer_score': float(getattr(getattr(instance, 'customer', None), 'yearly_score', 0) or 0),
-                        'next_discount_percent': 0,
+                        'customer_score': loyalty.get('score', 0),
+                        'next_discount_percent': loyalty.get('discount_percent', 0),
+                        'visit_count': loyalty.get('visit_count', 0),
                         'final_total': float(
                             (getattr(job, 'final_total', 0) or 0)
                             or (getattr(job, 'services_total', 0) or 0)
                         ),
-                        'discount_total': float(
-                            (getattr(job, 'discount_total', 0) or 0)
-                            + (getattr(job, 'manual_discount_total', 0) or 0)
-                        ),
+                        'discount_total': float(getattr(job, 'total_discount', 0) or getattr(job, 'discount_total', 0) or 0),
+                        'facility_discount_total': float(getattr(job, 'facility_discount_total', 0) or 0),
+                        'loyalty_discount_total': float(getattr(job, 'loyalty_discount_total', 0) or 0),
+                        'manual_discount_total': float(getattr(job, 'manual_discount_total', 0) or 0),
+                        'tip_amount': float(getattr(job, 'tip_amount', 0) or 0),
                     },
                 )
 
@@ -325,6 +336,20 @@ class VehiclePlateLookupView(APIView):
         ).order_by('-check_in_at').first()
         if not latest_vehicle:
             return Response({'found': False, 'plate_number': plate_number}, status=status.HTTP_200_OK)
+        loyalty = loyalty_snapshot(get_or_create_plate_loyalty(
+            tenant=tenant,
+            plate_number=latest_vehicle.plate_number,
+            plate_left=latest_vehicle.plate_left,
+            plate_letter=latest_vehicle.plate_letter,
+            plate_mid=latest_vehicle.plate_mid,
+            plate_right=latest_vehicle.plate_right,
+        ))
+        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        discount_percent, _discount_amount = compute_loyalty_discount(
+            base_amount=0,
+            score=loyalty.get('score', 0),
+            percent_per_half_star=getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0,
+        )
         return Response(
             {
                 'found': True,
@@ -338,6 +363,10 @@ class VehiclePlateLookupView(APIView):
                 'driver_phone': latest_vehicle.driver_phone or '',
                 'car_model': latest_vehicle.car_model or '',
                 'car_color': latest_vehicle.car_color or '',
+                'tariff_type': latest_vehicle.tariff_type or 'type_1',
+                'customer_score': loyalty.get('score', 0),
+                'customer_loyalty_visit_count': loyalty.get('visit_count', 0),
+                'customer_loyalty_discount_percent': float(discount_percent or 0),
             },
             status=status.HTTP_200_OK,
         )
@@ -473,28 +502,22 @@ class VehicleReleaseCheckoutView(APIView):
         )
 
     def _compute_discount(self, base_amount, customer_score, percent_per_half_star):
-        score = Decimal(str(customer_score or 0))
-        if score < 0:
-            score = Decimal('0')
-        if score > 5:
-            score = Decimal('5')
-        half_stars = score * Decimal('2')
-        discount_percent = self._clamp_percent(percent_per_half_star * half_stars)
-        discount_amount = self._money((Decimal(str(base_amount or 0)) * discount_percent) / Decimal('100'))
-        return discount_percent, discount_amount
+        discount_percent, discount_amount = compute_loyalty_discount(
+            base_amount=base_amount,
+            score=customer_score,
+            percent_per_half_star=percent_per_half_star,
+        )
+        return self._clamp_percent(discount_percent), self._money(discount_amount)
 
-    def _plate_yearly_score(self, vehicle):
-        plate_number = str(getattr(vehicle, 'plate_number', '') or '').strip()
-        tenant = getattr(vehicle, 'tenant', None)
-        if not plate_number or not tenant:
-            return Decimal('0')
-        current_year = timezone.localtime().year
-        visits = VehicleEntry.objects.filter(
-            tenant=tenant,
-            plate_number=plate_number,
-            check_in_at__year=current_year,
-        ).count()
-        return min(Decimal('5.0'), Decimal(str(visits)) * Decimal('0.5'))
+    def _loyalty_profile(self, vehicle):
+        return get_or_create_plate_loyalty(
+            tenant=getattr(vehicle, 'tenant', None),
+            plate_number=getattr(vehicle, 'plate_number', ''),
+            plate_left=getattr(vehicle, 'plate_left', ''),
+            plate_letter=getattr(vehicle, 'plate_letter', ''),
+            plate_mid=getattr(vehicle, 'plate_mid', ''),
+            plate_right=getattr(vehicle, 'plate_right', ''),
+        )
 
     def _resolve_assigned_workers(self, job):
         snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
@@ -825,17 +848,18 @@ class VehicleReleaseCheckoutView(APIView):
         )
         products_total = vehicle.job.products_total or Decimal('0')
         tip_amount = vehicle.job.tip_amount or Decimal('0')
-        discount_base = services_total + products_total
+        loyalty = loyalty_snapshot(self._loyalty_profile(vehicle))
         manual_discount_total = vehicle.job.manual_discount_total or Decimal('0')
-        customer_score = self._plate_yearly_score(vehicle)
+        customer_score = Decimal(str(loyalty.get('score', 0) or 0))
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
-        customer_discount_percent, discount_total = self._compute_discount(
-            base_amount=discount_base,
+        customer_discount_percent, loyalty_discount_total = self._compute_discount(
+            base_amount=services_total,
             customer_score=customer_score,
             percent_per_half_star=discount_percent_per_half_star,
         )
-        discount_total = discount_total + manual_discount_total
-        final_total = discount_base - discount_total + tip_amount
+        facility_discount_total = vehicle.job.facility_discount_total or Decimal('0')
+        discount_total = facility_discount_total + loyalty_discount_total + manual_discount_total
+        final_total = max(Decimal('0'), services_total - loyalty_discount_total - manual_discount_total) + products_total + tip_amount
         assigned_workers = self._resolve_assigned_workers(vehicle.job)
         worker_share_distribution, distributed_worker_share_total = self._normalize_worker_share_distribution(
             assigned_workers=assigned_workers,
@@ -867,6 +891,8 @@ class VehicleReleaseCheckoutView(APIView):
                     'payment_status': vehicle.payment_status,
                     'tariff_type': vehicle.tariff_type,
                     'customer_score': float(customer_score),
+                    'customer_loyalty_visit_count': loyalty.get('visit_count', 0),
+                    'customer_loyalty_discount_percent': loyalty.get('discount_percent', 0),
                 },
                 'job': {
                     'id': vehicle.job.id,
@@ -878,8 +904,11 @@ class VehicleReleaseCheckoutView(APIView):
                     'products_total': products_total,
                     'discount_percent_per_half_star': float(discount_percent_per_half_star),
                     'customer_discount_percent': float(customer_discount_percent),
+                    'facility_discount_total': facility_discount_total,
+                    'loyalty_discount_total': loyalty_discount_total,
                     'discount_total': discount_total,
                     'manual_discount_total': manual_discount_total,
+                    'total_discount': discount_total,
                     'tip_amount': tip_amount,
                     'final_total': final_total,
                     'worker_share_amount': vehicle.job.worker_share_amount,
@@ -1070,13 +1099,16 @@ class VehicleReleaseCheckoutView(APIView):
                 continue
             quantity = Decimal(str(item.get('quantity', 1) or 1))
             default_price = 0
+            default_list_price = 0
             if service_obj:
                 pricing = service_obj.resolve_pricing(
                     tariff_type=getattr(vehicle, 'tariff_type', 'type_1'),
                     plate_type=getattr(vehicle, 'plate_type', 'car'),
                 )
+                default_list_price = pricing['list_price']
                 default_price = pricing['sale_price']
             unit_price = Decimal(str(item.get('unit_price', item.get('price', default_price)) or 0))
+            list_unit_price = Decimal(str(item.get('list_unit_price', default_list_price or unit_price) or 0))
             is_completed = bool(item.get('is_completed', True))
             if quantity <= 0 or unit_price < 0:
                 continue
@@ -1085,6 +1117,7 @@ class VehicleReleaseCheckoutView(APIView):
                 service=service_obj,
                 custom_service_name=service_name,
                 quantity=quantity,
+                list_unit_price=list_unit_price,
                 unit_price=unit_price,
                 line_total=unit_price * quantity,
                 discount_amount=0,
@@ -1153,17 +1186,25 @@ class VehicleReleaseCheckoutView(APIView):
             vehicle.job.service_lines.filter(is_completed=True).aggregate(total=Sum('line_total')).get('total')
             or Decimal('0')
         )
-        discount_base = completed_service_totals + product_totals
+        completed_lines = list(vehicle.job.service_lines.filter(is_completed=True))
         manual_discount_total = vehicle.job.manual_discount_total or Decimal('0')
-        customer_score = self._plate_yearly_score(vehicle)
+        loyalty = loyalty_snapshot(self._loyalty_profile(vehicle))
+        customer_score = Decimal(str(loyalty.get('score', 0) or 0))
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
-        _customer_discount_percent, discount_total = self._compute_discount(
-            base_amount=discount_base,
+        customer_discount_percent, loyalty_discount_total = self._compute_discount(
+            base_amount=completed_service_totals,
             customer_score=customer_score,
             percent_per_half_star=discount_percent_per_half_star,
         )
-        discount_total = discount_total + manual_discount_total
-        final_total = discount_base - discount_total + tip_amount
+        facility_discount_total = sum(
+            (
+                max(Decimal('0'), (Decimal(str(line.list_unit_price or 0)) - Decimal(str(line.unit_price or 0))) * Decimal(str(line.quantity or 0)))
+                for line in completed_lines
+            ),
+            Decimal('0'),
+        )
+        discount_total = facility_discount_total + loyalty_discount_total + manual_discount_total
+        final_total = max(Decimal('0'), completed_service_totals - loyalty_discount_total - manual_discount_total) + product_totals + tip_amount
 
         share_base_total = completed_service_totals
         worker_share_base = vehicle.job.worker_share_amount or Decimal('0')
@@ -1243,7 +1284,17 @@ class VehicleReleaseCheckoutView(APIView):
         vehicle.job.tip_amount = tip_amount
         vehicle.job.workers_tip_share_amount = workers_tip_share_amount
         vehicle.job.discount_total = discount_total
+        vehicle.job.facility_discount_total = facility_discount_total
+        vehicle.job.loyalty_discount_total = loyalty_discount_total
         vehicle.job.tax_total = 0
+        vehicle.job.service_list_subtotal = sum(
+            (
+                Decimal(str(line.list_unit_price or 0)) * Decimal(str(line.quantity or 0))
+                for line in completed_lines
+            ),
+            Decimal('0'),
+        )
+        vehicle.job.total_discount = discount_total
         vehicle.job.final_total = final_total
         vehicle.job.worker_share_amount = worker_share_base_total
         vehicle.job.carwash_share_amount = carwash_share
@@ -1256,7 +1307,11 @@ class VehicleReleaseCheckoutView(APIView):
                 'tip_amount',
                 'workers_tip_share_amount',
                 'discount_total',
+                'facility_discount_total',
+                'loyalty_discount_total',
                 'tax_total',
+                'service_list_subtotal',
+                'total_discount',
                 'final_total',
                 'worker_share_amount',
                 'carwash_share_amount',
@@ -1405,9 +1460,14 @@ class VehicleReleaseCheckoutView(APIView):
             extra_context={
                 'released_at': vehicle.released_at or timezone.now(),
                 'customer_score': float(customer_score or 0),
-                'next_discount_percent': float(_customer_discount_percent or 0),
+                'next_discount_percent': float(loyalty.get('discount_percent', 0) or 0),
+                'visit_count': int(loyalty.get('visit_count', 0) or 0),
                 'final_total': float(final_total or 0),
                 'discount_total': float(discount_total or 0),
+                'facility_discount_total': float(facility_discount_total or 0),
+                'loyalty_discount_total': float(loyalty_discount_total or 0),
+                'manual_discount_total': float(manual_discount_total or 0),
+                'tip_amount': float(tip_amount or 0),
             },
         )
         return Response(serializer.data, status=status.HTTP_200_OK)

@@ -72,7 +72,10 @@
             <p><span>سهم ثابت</span><strong>{{ formatMoney(vehicle.job?.worker_payment_fixed) }}</strong></p>
             <p><span>سهم پرسنل</span><strong>{{ formatMoney(workerTotalWithTip(vehicle.job)) }}</strong></p>
             <p><span>سهم کارواش</span><strong>{{ formatMoney(vehicle.job?.carwash_share_amount) }}</strong></p>
-            <p><span>تخفیف</span><strong>{{ formatMoney(vehicle.job?.discount_total) }}</strong></p>
+            <p><span>تخفیف مجموعه</span><strong>{{ formatMoney(vehicle.job?.facility_discount_total) }}</strong></p>
+            <p><span>تخفیف امتیاز مشتری</span><strong>{{ formatMoney(vehicle.job?.loyalty_discount_total) }}</strong></p>
+            <p><span>تخفیف دستی</span><strong>{{ formatMoney(vehicle.job?.manual_discount_total) }}</strong></p>
+            <p><span>جمع تخفیف</span><strong>{{ formatMoney(vehicle.job?.total_discount || vehicle.job?.discount_total) }}</strong></p>
             <p><span>مالیات</span><strong>{{ formatMoney(vehicle.job?.tax_total) }}</strong></p>
           </div>
         </section>

@@ -29,10 +29,35 @@ DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
     'خودروی شما در ساعت [ساعت ترخیص] روز [تاریخ ترخیص] از کارواش [نام کارواش] ترخیص شد.\n'
     'امتیاز شما: [امتیاز مشتری] از ۵\n'
     'درصد تخفیف سفارش بعد: [درصد تخفیف سفارش بعد]\n'
+    'تعداد دفعات مراجعه: [تعداد مراجعات]\n'
+    'انعام: [انعام]\n'
     'جمع تخفیف: [جمع تخفیف]\n'
     'مبلغ نهایی: [مبلغ نهایی]\n'
     '[نام کارواش]'
 )
+
+
+def normalize_vehicle_released_sms_template(template):
+    text = str(template or '').strip()
+    if not text:
+        return DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE
+
+    lines = text.splitlines()
+    insertions = []
+    if '[تعداد مراجعات]' not in text:
+        insertions.append('تعداد دفعات مراجعه: [تعداد مراجعات]')
+    if '[انعام]' not in text:
+        insertions.append('انعام: [انعام]')
+    if not insertions:
+        return text
+
+    anchor_index = next(
+        (index for index, line in enumerate(lines) if '[درصد تخفیف سفارش بعد]' in line),
+        -1,
+    )
+    insert_at = anchor_index + 1 if anchor_index >= 0 else max(1, len(lines) - 3)
+    lines[insert_at:insert_at] = insertions
+    return '\n'.join(lines)
 
 
 CAR_SERVICE_TIER_KEYS = ('type_1', 'type_2', 'type_3', 'type_4')
@@ -112,6 +137,15 @@ class Service(TimestampedModel):
     motorcycle_pricing_tiers = models.JSONField(default=dict, blank=True)
     allow_price_override = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='services_deleted',
+    )
     display_order = models.PositiveIntegerField(default=0)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

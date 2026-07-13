@@ -9,7 +9,7 @@ const routes = [
   { path: '/attendance/:token', name: 'worker-attendance-public', component: () => import('../views/attendance/WorkerAttendancePunchView.vue'), meta: { public: true } },
   { path: '/hq', name: 'hq-panel', component: () => import('../views/hq/HqPanelView.vue'), meta: { hqOnly: true } },
   { path: '/', name: 'operator-dashboard', component: () => import('../views/operator/DashboardView.vue'), meta: { roles: ['admin', 'owner', 'manager', 'operator', 'worker'] } },
-  { path: '/manager/wallet', name: 'manager-wallet', component: () => import('../views/manager/WalletView.vue'), meta: { roles: ['accountant', 'admin', 'manager'] } },
+  { path: '/manager/wallet', name: 'manager-wallet', component: () => import('../views/manager/WalletView.vue'), meta: { roles: ['accountant', 'admin', 'owner', 'manager', 'operator', 'worker'] } },
   { path: '/manager/customer-club', name: 'manager-customer-club', component: () => import('../views/manager/CustomerClubView.vue'), meta: { roles: ['admin', 'manager'] } },
   { path: '/manager/attendance', name: 'manager-attendance', component: () => import('../views/manager/AttendanceView.vue'), meta: { roles: ['manager', 'admin'] } },
   { path: '/manager/reports', name: 'manager-reports', component: () => import('../views/manager/ReportsView.vue'), meta: { roles: ['manager', 'admin'] } },
@@ -27,6 +27,13 @@ const router = createRouter({
   history: createWebHistory(),
   routes
 })
+
+const licenseSafeRoutes = new Set(['manager-wallet', 'support', 'login', 'hq-panel'])
+const paidFeatureRoutes = {
+  '/manager/customer-club': 'sms_club',
+  [ATTENDANCE_ROUTE]: 'attendance',
+  '/manager/reports': 'accounting'
+}
 
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
@@ -59,6 +66,10 @@ router.beforeEach(async (to) => {
   if (to.meta?.roles?.length) {
     if (!authStore.user) return '/login'
     if (authStore.isHq) return '/hq'
+    if (authStore.isLicenseLocked && !licenseSafeRoutes.has(to.name)) {
+      notifyWarning(authStore.licenseStatus?.notice || 'برای ادامه استفاده باید پرداخت نرم‌افزار را تکمیل کنید.', { title: 'دسترسی قفل شده' })
+      return '/manager/wallet'
+    }
     if (!to.meta.roles.includes(authStore.role)) {
       return defaultRouteByRole[authStore.role] || '/'
     }
@@ -67,6 +78,12 @@ router.beforeEach(async (to) => {
   if (to.path === ATTENDANCE_ROUTE && !hasAttendanceAccess(authStore.user)) {
     notifyWarning(getAttendanceUpgradeMessage(), { title: 'دسترسی محدود' })
     return defaultRouteByRole[authStore.role] || '/'
+  }
+
+  const requiredFeature = paidFeatureRoutes[to.path]
+  if (requiredFeature && authStore.user?.menu_access?.[requiredFeature] !== true) {
+    notifyWarning('برای استفاده از این بخش باید آپشن مربوطه را از کیف پول خریداری کنید.', { title: 'آپشن فعال نیست' })
+    return '/manager/wallet'
   }
 
   if (to.path === '/' && authStore.isHq) return '/hq'
