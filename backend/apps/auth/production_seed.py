@@ -15,7 +15,7 @@ PRODUCTION_CARWASHES = [
         "address": "تهران",
         "manager": {
             "username": "manager1",
-            "password": "manager1@!23",
+            "password": "manager1@123",
             "full_name": "Manager One",
             "phone": "09120001001",
         },
@@ -25,8 +25,8 @@ PRODUCTION_CARWASHES = [
 
 
 HQ_ADMIN = {
-    "username": "miladdhs",
-    "password": "m11223344M!@",
+    "username": "milad_dhs",
+    "password": "m11051386M!@",
     "full_name": "Milad Dehestani",
     "phone": "09120001090",
     "role": "admin",
@@ -271,7 +271,5 @@ def seed_production_data():
             tenant=tenant,
         )
         _sync_feature_flags(tenant, item.get("features", []))
-        _seed_services(tenant, manager)
-        _seed_products(tenant, manager)
 
     _upsert_user(HQ_ADMIN, tenant=None)

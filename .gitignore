@@ -1,13 +1,17 @@
 # OS
 .DS_Store
-Thumbs.
+Thumbs.db
+Desktop.ini
 
 # Node
-frontend/node_modules
-frontend/dist
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+
 # Python
 __pycache__/
 *.py[cod]
@@ -17,9 +21,12 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+env/
 .env
-.env.docker
-.env.production
+.env.*
+!.env.example
+!.env.docker.example
+!.env.production.example
 
 # Django
 backend/staticfiles/
@@ -35,11 +42,23 @@ ai/io/output/**
 !ai/io/output/.gitkeep
 ai/weigths/**/*.pt
 ai/weigths/**/*.pth
+ai/**/*.download
+ai/**/*.corrupt
+ai/**/*.corrupt.*
+docker-data/
 
 /templates/
 # IDE
 .vscode/
 .idea/
+
+# Logs/temp/backups
+*.log
+*.tmp
+*.bak
+*.backup
+tmp/
+temp/
 
 # Local assets and docs that should not be tracked
 frontend/public/Untitled Project.mp4

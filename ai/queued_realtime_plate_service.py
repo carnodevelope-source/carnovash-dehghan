@@ -1,4 +1,5 @@
 import argparse
+import os
 import queue
 import threading
 import time
@@ -57,8 +58,11 @@ def build_runtime_args():
     args.input_channel = 1
     args.output_channel = 512
     args.hidden_size = 256
-    args.device = "cuda"
-    args.half = True
+    requested_device = os.getenv("PLATE_AI_DEVICE", "auto").strip().lower()
+    if requested_device == "auto":
+        requested_device = "cuda" if torch.cuda.is_available() else "cpu"
+    args.device = requested_device
+    args.half = requested_device == "cuda"
     return args
 
 
@@ -79,8 +83,10 @@ class QueuedRealtimePlateService:
         batch_wait_ms: int = 12,
         max_queue_size: int = 256,
     ):
-        configure_torch_runtime("cuda", 1)
         self.args = build_runtime_args()
+        configure_torch_runtime(self.args.device, 1)
+        self.detector_device = self.args.device
+        self.use_half = self.args.device == "cuda"
         self.detector = YOLO(detector_weights)
         self.recognizer = DTRB(recognizer_weights, self.args)
         self.detector_imgsz = detector_imgsz
@@ -211,11 +217,11 @@ class QueuedRealtimePlateService:
         results = self.detector.predict(
             detector_inputs,
             conf=self.threshold,
-            device="cuda",
+            device=self.detector_device,
             imgsz=self.detector_imgsz,
             max_det=self.max_detections,
             verbose=False,
-            half=True,
+            half=self.use_half,
             stream=False,
         )
 

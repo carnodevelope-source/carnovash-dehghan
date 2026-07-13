@@ -13,14 +13,14 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-change-me}
       TZ: ${TZ:-Asia/Tehran}
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ./docker-data/mysql:/var/lib/mysql
       - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 30s
+      retries: 30
+      start_period: 90s
     restart: unless-stopped
 
   backend:
@@ -56,8 +56,8 @@ services:
     expose:
       - "8000"
     volumes:
-      - django_static:/app/staticfiles
-      - django_media:/app/media
+      - ./docker-data/staticfiles:/app/staticfiles
+      - ./docker-data/media:/app/media
     healthcheck:
       test: ["CMD-SHELL", "python -c \"from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health/', timeout=5).read()\""]
       interval: 20s
@@ -73,6 +73,7 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       TZ: ${TZ:-Asia/Tehran}
+      PLATE_AI_DEVICE: ${PLATE_AI_DEVICE:-auto}
       PLATE_AI_PORT: ${PLATE_AI_PORT:-8765}
       PLATE_AI_IMGSZ: ${PLATE_AI_IMGSZ:-640}
       PLATE_AI_THRESHOLD: ${PLATE_AI_THRESHOLD:-0.45}
@@ -102,7 +103,7 @@ services:
     expose:
       - "${PLATE_AI_PORT:-8765}"
     volumes:
-      - plate_ai_output:/app/io/output
+      - ./docker-data/plate-ai-output:/app/io/output
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os; from urllib.request import urlopen; port = os.environ.get('PLATE_AI_PORT', '8765'); urlopen(f'http://127.0.0.1:{port}/health', timeout=5).read()\""]
       interval: 30s
@@ -122,8 +123,8 @@ services:
     ports:
       - "${FRONTEND_PORT:-80}:80"
     volumes:
-      - django_static:/var/www/static:ro
-      - django_media:/var/www/media:ro
+      - ./docker-data/staticfiles:/var/www/static:ro
+      - ./docker-data/media:/var/www/media:ro
     healthcheck:
       test: ["CMD-SHELL", "test -s /usr/share/nginx/html/index.html"]
       interval: 30s
@@ -131,9 +132,3 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
-
-volumes:
-  mysql_data:
-  django_static:
-  django_media:
-  plate_ai_output:
