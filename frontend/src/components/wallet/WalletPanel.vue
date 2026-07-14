@@ -638,8 +638,8 @@ const optionModal = reactive({
 const selectedWalletId = ref(0)
 const selectedDepositAmount = ref(1000000)
 const payingInstallmentFeatureKey = ref('')
-const companyCardNumber = '6037991719847703'
-const companyCardHolder = 'میلاد دهستانی'
+const companyCardNumber = '6274121774209571'
+const companyCardHolder = 'امید کریمی'
 const depositMethods = [
   { key: 'gateway', title: 'درگاه پرداخت', caption: 'به‌زودی فعال می‌شود', disabled: true },
   { key: 'up', title: 'اپلیکیشن آپ', caption: 'به‌زودی فعال می‌شود', disabled: true },
