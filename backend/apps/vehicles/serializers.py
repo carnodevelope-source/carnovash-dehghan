@@ -166,6 +166,17 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     plate_letter = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     plate_mid = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     plate_right = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    ai_raw_text = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    ai_persian_text = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    ai_converted_plate = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    ai_converted_plate_left = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=True)
+    ai_converted_plate_letter = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=True)
+    ai_converted_plate_mid = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=True)
+    ai_converted_plate_right = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=True)
+    ai_converted_plate_type = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=True)
+    ai_image_base64 = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    ai_session_id = serializers.CharField(write_only=True, required=False, allow_blank=True, trim_whitespace=True)
+    ai_latency_ms = serializers.FloatField(write_only=True, required=False, allow_null=True)
     tariff_type = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     services = serializers.ListField(write_only=True, required=False, default=list)
     products = serializers.ListField(write_only=True, required=False, default=list)
@@ -183,6 +194,23 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     blocked_plate_payment_confirmed = serializers.BooleanField(write_only=True, required=False, default=False)
     job = VehicleJobDetailSerializer(read_only=True)
     status_logs = VehicleStatusLogSerializer(many=True, read_only=True)
+    _AI_AUDIT_FIELDS = [
+        'ai_raw_text',
+        'ai_persian_text',
+        'ai_converted_plate',
+        'ai_converted_plate_left',
+        'ai_converted_plate_letter',
+        'ai_converted_plate_mid',
+        'ai_converted_plate_right',
+        'ai_converted_plate_type',
+        'ai_image_base64',
+        'ai_session_id',
+        'ai_latency_ms',
+    ]
+
+    def _discard_ai_audit_fields(self, validated_data):
+        for field in self._AI_AUDIT_FIELDS:
+            validated_data.pop(field, None)
 
     def get_customer_score(self, obj):
         return loyalty_snapshot(self._plate_loyalty(obj)).get('score', 0)
@@ -358,6 +386,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context.get('request')
         tenant = getattr(getattr(request, 'user', None), 'tenant', None)
+        self._discard_ai_audit_fields(validated_data)
         services_payload = validated_data.pop('services', [])
         products_payload = validated_data.pop('products', [])
         staff_members_payload = validated_data.pop('staff_members', [])
@@ -599,6 +628,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         request = self.context.get('request')
         tenant = getattr(getattr(request, 'user', None), 'tenant', None)
+        self._discard_ai_audit_fields(validated_data)
         previous_status = instance.status
         initial = getattr(self, 'initial_data', {}) or {}
         services_provided = 'services' in initial
@@ -1137,6 +1167,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'plate_right',
             'plate_type',
             'tariff_type',
+            'intake_source',
+            'ai_confidence',
             'car_model',
             'car_color',
             'driver_name',
@@ -1157,6 +1189,17 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'tip_amount',
             'manual_discount_total',
             'blocked_plate_payment_confirmed',
+            'ai_raw_text',
+            'ai_persian_text',
+            'ai_converted_plate',
+            'ai_converted_plate_left',
+            'ai_converted_plate_letter',
+            'ai_converted_plate_mid',
+            'ai_converted_plate_right',
+            'ai_converted_plate_type',
+            'ai_image_base64',
+            'ai_session_id',
+            'ai_latency_ms',
             'share',
             'worker_id',
             'worker_name',

@@ -27,7 +27,7 @@ env/
 !.env.example
 !.env.docker.example
 !.env.production.example
-
+/codex-seo/
 # Django
 backend/staticfiles/
 backend/media/

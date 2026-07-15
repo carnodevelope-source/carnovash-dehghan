@@ -1,0 +1,139 @@
+import base64
+import json
+import logging
+import re
+from pathlib import Path
+from uuid import uuid4
+
+from django.conf import settings
+from django.utils import timezone
+
+
+logger = logging.getLogger(__name__)
+
+
+def _value(source, key, default=''):
+    if hasattr(source, 'get'):
+        return source.get(key, default)
+    return default
+
+
+def _clean_text(value):
+    return str(value or '').strip()
+
+
+def _safe_filename_part(value):
+    cleaned = re.sub(r'[^A-Za-z0-9_-]+', '-', str(value or '').strip())
+    return cleaned.strip('-')[:80] or 'plate'
+
+
+def _decode_data_url(value):
+    raw = _clean_text(value)
+    if not raw:
+        return b'', 'jpg'
+
+    header = ''
+    payload = raw
+    if raw.startswith('data:') and ',' in raw:
+        header, payload = raw.split(',', 1)
+
+    extension = 'jpg'
+    if 'png' in header:
+        extension = 'png'
+    elif 'webp' in header:
+        extension = 'webp'
+    elif 'jpeg' in header or 'jpg' in header:
+        extension = 'jpg'
+
+    return base64.b64decode(payload), extension
+
+
+def _save_ai_image(*, vehicle, request_data):
+    image_base64 = _value(request_data, 'ai_image_base64') or _value(request_data, 'image_base64')
+    image_bytes, extension = _decode_data_url(image_base64)
+    if not image_bytes:
+        return ''
+
+    now = timezone.localtime()
+    relative_dir = Path('ai_plate_audit') / now.strftime('%Y') / now.strftime('%m') / now.strftime('%d')
+    media_root = Path(settings.MEDIA_ROOT)
+    target_dir = media_root / relative_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    plate_part = _safe_filename_part(getattr(vehicle, 'plate_number', '') or getattr(vehicle, 'id', ''))
+    filename = f'vehicle-{vehicle.id}-{plate_part}-{uuid4().hex[:10]}.{extension}'
+    relative_path = relative_dir / filename
+    absolute_path = media_root / relative_path
+    absolute_path.write_bytes(image_bytes)
+    return relative_path.as_posix()
+
+
+def _converted_plate_from_request(request_data):
+    converted = _clean_text(_value(request_data, 'ai_converted_plate'))
+    if converted:
+        return converted
+
+    left = _clean_text(_value(request_data, 'ai_converted_plate_left'))
+    letter = _clean_text(_value(request_data, 'ai_converted_plate_letter'))
+    mid = _clean_text(_value(request_data, 'ai_converted_plate_mid'))
+    right = _clean_text(_value(request_data, 'ai_converted_plate_right'))
+    plate_type = _clean_text(_value(request_data, 'ai_converted_plate_type') or _value(request_data, 'plate_type'))
+    if plate_type == 'motorcycle':
+        return ' '.join(part for part in [mid, letter] if part)
+    return ' '.join(part for part in [left, letter, mid, right] if part)
+
+
+def _final_plate_from_vehicle(vehicle):
+    plate_type = _clean_text(getattr(vehicle, 'plate_type', ''))
+    if plate_type == 'motorcycle':
+        return ' '.join(part for part in [
+            _clean_text(getattr(vehicle, 'plate_mid', '')),
+            _clean_text(getattr(vehicle, 'plate_letter', '')),
+        ] if part) or _clean_text(getattr(vehicle, 'plate_number', ''))
+    return ' '.join(part for part in [
+        _clean_text(getattr(vehicle, 'plate_left', '')),
+        _clean_text(getattr(vehicle, 'plate_letter', '')),
+        _clean_text(getattr(vehicle, 'plate_mid', '')),
+        _clean_text(getattr(vehicle, 'plate_right', '')),
+    ] if part) or _clean_text(getattr(vehicle, 'plate_number', ''))
+
+
+def log_ai_plate_audit_event(*, vehicle, request, operation):
+    request_data = getattr(request, 'data', {}) or {}
+    raw_text = _clean_text(_value(request_data, 'ai_raw_text'))
+    persian_text = _clean_text(_value(request_data, 'ai_persian_text'))
+    converted_plate = _converted_plate_from_request(request_data)
+    has_image = bool(_value(request_data, 'ai_image_base64') or _value(request_data, 'image_base64'))
+
+    if not any([raw_text, persian_text, converted_plate, has_image]):
+        return
+
+    try:
+        image_path = _save_ai_image(vehicle=vehicle, request_data=request_data)
+        user = getattr(request, 'user', None)
+        tenant = getattr(user, 'tenant', None)
+        now = timezone.localtime()
+        record = {
+            'created_at': now.isoformat(),
+            'operation': operation,
+            'tenant_id': getattr(tenant, 'id', None),
+            'vehicle_id': getattr(vehicle, 'id', None),
+            'operator_id': getattr(user, 'id', None) if getattr(user, 'is_authenticated', False) else None,
+            'ai_session_id': _clean_text(_value(request_data, 'ai_session_id')),
+            'ai_raw_text': raw_text,
+            'ai_persian_text': persian_text,
+            'ai_converted_plate': converted_plate,
+            'final_plate': _final_plate_from_vehicle(vehicle),
+            'plate_type': _clean_text(getattr(vehicle, 'plate_type', '')),
+            'ai_confidence': _value(request_data, 'ai_confidence', None),
+            'ai_latency_ms': _value(request_data, 'ai_latency_ms', None),
+            'image_path': image_path,
+        }
+
+        log_dir = Path(settings.MEDIA_ROOT) / 'ai_plate_audit'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / 'plate_recognition_audit.jsonl'
+        with log_path.open('a', encoding='utf-8') as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + '\n')
+    except Exception:
+        logger.exception('Failed to write AI plate audit log for vehicle %s', getattr(vehicle, 'id', None))

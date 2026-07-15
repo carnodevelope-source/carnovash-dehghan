@@ -25,6 +25,7 @@ from apps.products.models import Product
 from apps.services.models import GeneralSettings, Service
 from apps.workers.models import WorkerProfile
 from apps.reports.models import WorkerPayoutTransaction
+from .ai_audit import log_ai_plate_audit_event
 
 
 class VehicleEntryListCreateView(generics.ListCreateAPIView):
@@ -45,7 +46,8 @@ class VehicleEntryListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         user = self.request.user if getattr(self.request.user, 'is_authenticated', False) else None
-        serializer.save(entered_by=user, updated_by=user)
+        vehicle = serializer.save(entered_by=user, updated_by=user)
+        log_ai_plate_audit_event(vehicle=vehicle, request=self.request, operation='create')
 
 
 def _normalized_plate_value(plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
@@ -142,51 +144,47 @@ def _normalized_ai_letter(value=''):
     return _PLATE_LETTER_WORD_MAP.get(first_char, '')
 
 
+def _ai_plate_parts(visual_right='', letter='', mid='', visual_left=''):
+    right = str(visual_right or '').strip()
+    left = str(visual_left or '').strip()
+    middle = str(mid or '').strip()
+    normalized_letter = str(letter or '').strip()
+    return {
+        'plate_left': left,
+        'plate_letter': normalized_letter,
+        'plate_mid': middle,
+        'plate_right': right,
+        'plate_number': f'{left} {normalized_letter} {middle} {right}',
+    }
+
+
 def _plate_parts_from_ai(raw_text='', persian_text=''):
     raw = str(raw_text or '').strip().lower()
     compact_raw = ''.join(ch for ch in raw if ch.isalnum())
     raw_match = re.search(r'(\d{2})([a-z])(\d{3})(\d{2})', compact_raw)
     if raw_match:
-        left, letter_token, mid, right = raw_match.groups()
+        visual_right, letter_token, mid, visual_left = raw_match.groups()
         letter = _normalized_ai_letter(letter_token)
         if letter:
-            return {
-                'plate_left': left,
-                'plate_letter': letter,
-                'plate_mid': mid,
-                'plate_right': right,
-                'plate_number': f'{left} {letter} {mid} {right}',
-            }
+            return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
 
     normalized = str(persian_text or '').translate(_PERSIAN_DIGITS)
     normalized = normalized.replace('ك', 'ک').replace('ي', 'ی')
     tokenized = re.sub(r'[^0-9A-Za-zآ-ی]+', ' ', normalized).split()
     for index in range(max(0, len(tokenized) - 3)):
-        left = ''.join(ch for ch in tokenized[index] if ch.isdigit())[:2]
+        visual_right = ''.join(ch for ch in tokenized[index] if ch.isdigit())[:2]
         letter = _normalized_ai_letter(tokenized[index + 1])
         mid = ''.join(ch for ch in tokenized[index + 2] if ch.isdigit())[:3]
-        right = ''.join(ch for ch in tokenized[index + 3] if ch.isdigit())[:2]
-        if len(left) == 2 and letter and len(mid) == 3 and len(right) == 2:
-            return {
-                'plate_left': left,
-                'plate_letter': letter,
-                'plate_mid': mid,
-                'plate_right': right,
-                'plate_number': f'{left} {letter} {mid} {right}',
-            }
+        visual_left = ''.join(ch for ch in tokenized[index + 3] if ch.isdigit())[:2]
+        if len(visual_right) == 2 and letter and len(mid) == 3 and len(visual_left) == 2:
+            return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
 
     inline_match = re.search(r'(\d{2})\s*([^0-9\s]{1,4})\s*(\d{3})\s*(\d{2})', normalized)
     if inline_match:
-        left, letter_token, mid, right = inline_match.groups()
+        visual_right, letter_token, mid, visual_left = inline_match.groups()
         letter = _normalized_ai_letter(letter_token)
         if letter:
-            return {
-                'plate_left': left,
-                'plate_letter': letter,
-                'plate_mid': mid,
-                'plate_right': right,
-                'plate_number': f'{left} {letter} {mid} {right}',
-            }
+            return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
     return {}
 
 
@@ -204,7 +202,8 @@ class VehicleEntryDetailView(generics.RetrieveUpdateAPIView):
 
     def perform_update(self, serializer):
         user = self.request.user if getattr(self.request.user, 'is_authenticated', False) else None
-        serializer.save(updated_by=user)
+        vehicle = serializer.save(updated_by=user)
+        log_ai_plate_audit_event(vehicle=vehicle, request=self.request, operation='update')
 
 
 class VehicleEntryStatusUpdateView(generics.UpdateAPIView):

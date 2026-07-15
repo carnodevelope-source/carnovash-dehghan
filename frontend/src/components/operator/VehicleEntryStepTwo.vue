@@ -363,6 +363,18 @@ const normalizedVehicle = computed(() => {
     isPieceWash: Boolean(data.isPieceWash || data.is_piece_wash),
     pieceDetails: String(data.pieceDetails || data.piece_details || '').trim(),
     pieceWashPrice: Number(data.pieceWashPrice || 0),
+    aiSessionId: String(data.aiSessionId || '').trim(),
+    aiRawText: String(data.aiRawText || '').trim(),
+    aiPersianText: String(data.aiPersianText || '').trim(),
+    aiConvertedPlate: String(data.aiConvertedPlate || '').trim(),
+    aiConvertedPlateLeft: String(data.aiConvertedPlateLeft || '').trim(),
+    aiConvertedPlateLetter: String(data.aiConvertedPlateLetter || '').trim(),
+    aiConvertedPlateMid: String(data.aiConvertedPlateMid || '').trim(),
+    aiConvertedPlateRight: String(data.aiConvertedPlateRight || '').trim(),
+    aiConvertedPlateType: String(data.aiConvertedPlateType || plateType).trim() || plateType,
+    aiImageBase64: String(data.aiImageBase64 || '').trim(),
+    aiConfidence: data.aiConfidence ?? null,
+    aiLatencyMs: data.aiLatencyMs ?? null,
     serviceIds: Array.isArray(data.serviceIds) ? data.serviceIds.map((id) => Number(id)) : [],
     staffMembers: Array.isArray(data.staffMembers || data.staff_members)
       ? (data.staffMembers || data.staff_members)
@@ -707,7 +719,19 @@ const buildPayload = () => {
       mobile: vehicle.mobile,
       note: vehicle.note,
       isPieceWash: vehicle.isPieceWash,
-      pieceDetails: pieceDetails.value.trim()
+      pieceDetails: pieceDetails.value.trim(),
+      aiSessionId: vehicle.aiSessionId,
+      aiRawText: vehicle.aiRawText,
+      aiPersianText: vehicle.aiPersianText,
+      aiConvertedPlate: vehicle.aiConvertedPlate,
+      aiConvertedPlateLeft: vehicle.aiConvertedPlateLeft,
+      aiConvertedPlateLetter: vehicle.aiConvertedPlateLetter,
+      aiConvertedPlateMid: vehicle.aiConvertedPlateMid,
+      aiConvertedPlateRight: vehicle.aiConvertedPlateRight,
+      aiConvertedPlateType: vehicle.aiConvertedPlateType,
+      aiImageBase64: vehicle.aiImageBase64,
+      aiConfidence: vehicle.aiConfidence,
+      aiLatencyMs: vehicle.aiLatencyMs
     },
     services: isPieceWash.value
       ? [{

@@ -265,6 +265,20 @@ const detectedPlateSnapshot = ref({
   plateNumber: '',
   plateType: 'car'
 })
+const aiRecognitionSnapshot = ref({
+  sessionId: '',
+  rawText: '',
+  persianText: '',
+  convertedPlate: '',
+  convertedPlateLeft: '',
+  convertedPlateLetter: '',
+  convertedPlateMid: '',
+  convertedPlateRight: '',
+  convertedPlateType: 'car',
+  imageBase64: '',
+  confidence: null,
+  latencyMs: null
+})
 
 const cameraVideoRef = ref(null)
 const cameraCanvasRef = ref(null)
@@ -371,6 +385,20 @@ const hydrateForm = (data = {}) => {
     right: String(data.detectedPlateRight || '').trim(),
     plateNumber: String(data.detectedPlate || '').trim(),
     plateType: String(data.detectedPlateType || form.plateType || 'car').trim() || 'car'
+  }
+  aiRecognitionSnapshot.value = {
+    sessionId: String(data.aiSessionId || '').trim(),
+    rawText: String(data.aiRawText || '').trim(),
+    persianText: String(data.aiPersianText || '').trim(),
+    convertedPlate: String(data.aiConvertedPlate || '').trim(),
+    convertedPlateLeft: String(data.aiConvertedPlateLeft || '').trim(),
+    convertedPlateLetter: String(data.aiConvertedPlateLetter || '').trim(),
+    convertedPlateMid: String(data.aiConvertedPlateMid || '').trim(),
+    convertedPlateRight: String(data.aiConvertedPlateRight || '').trim(),
+    convertedPlateType: String(data.aiConvertedPlateType || form.plateType || 'car').trim() || 'car',
+    imageBase64: String(data.aiImageBase64 || '').trim(),
+    confidence: data.aiConfidence ?? null,
+    latencyMs: data.aiLatencyMs ?? null
   }
   syncLetterSuggestions(form.plateType === 'car' ? form.plateLetter : '')
 }
@@ -618,6 +646,20 @@ const recognizePlateImage = async (imageDataUrl) => {
     }, { meta: { trackLoading: false } })
     cameraState.lastConfidence = Number(data?.confidence || 0)
     cameraState.lastLatency = Number(data?.latency_ms || 0)
+    aiRecognitionSnapshot.value = {
+      sessionId: aiSessionId,
+      rawText: String(data?.text || '').trim(),
+      persianText: String(data?.persian_text || '').trim(),
+      convertedPlate: String(data?.plate_number || '').trim(),
+      convertedPlateLeft: String(data?.plate_left || '').trim(),
+      convertedPlateLetter: String(data?.plate_letter || '').trim(),
+      convertedPlateMid: String(data?.plate_mid || '').trim(),
+      convertedPlateRight: String(data?.plate_right || '').trim(),
+      convertedPlateType: String(data?.plate_type || form.plateType || 'car').trim() || 'car',
+      imageBase64: imageDataUrl,
+      confidence: data?.confidence ?? null,
+      latencyMs: data?.latency_ms ?? null
+    }
     if (data?.mode === 'stub') {
       setCameraMessage(data?.detail || 'مدل واقعی تشخیص پلاک هنوز روی سرویس AI نصب نشده است.', true)
       return
@@ -695,7 +737,19 @@ const payload = () => ({
   detectedPlateLetter: detectedPlateParts.value.letter,
   detectedPlateMid: detectedPlateParts.value.mid,
   detectedPlateRight: detectedPlateParts.value.right,
-  detectedPlateType: detectedPlateType.value
+  detectedPlateType: detectedPlateType.value,
+  aiSessionId: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.sessionId,
+  aiRawText: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.rawText,
+  aiPersianText: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.persianText,
+  aiConvertedPlate: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.convertedPlate,
+  aiConvertedPlateLeft: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.convertedPlateLeft,
+  aiConvertedPlateLetter: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.convertedPlateLetter,
+  aiConvertedPlateMid: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.convertedPlateMid,
+  aiConvertedPlateRight: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.convertedPlateRight,
+  aiConvertedPlateType: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.convertedPlateType,
+  aiImageBase64: form.isAnonymous || form.isPieceWash ? '' : aiRecognitionSnapshot.value.imageBase64,
+  aiConfidence: form.isAnonymous || form.isPieceWash ? null : aiRecognitionSnapshot.value.confidence,
+  aiLatencyMs: form.isAnonymous || form.isPieceWash ? null : aiRecognitionSnapshot.value.latencyMs
 })
 
 const onContinue = () => {
