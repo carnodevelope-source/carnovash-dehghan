@@ -73,7 +73,11 @@
               :key="ticket.id"
               class="ticket-row"
               :class="{ selected: detailState.ticket?.id === ticket.id }"
+              role="button"
+              tabindex="0"
               @click="openTicketDetail(ticket.id)"
+              @keydown.enter.prevent="openTicketDetail(ticket.id)"
+              @keydown.space.prevent="openTicketDetail(ticket.id)"
             >
               <div class="ticket-row-top">
                 <strong>{{ ticket.subject }}</strong>
@@ -1755,6 +1759,298 @@ onMounted(async () => {
     max-height: calc(100vh - 20px);
     grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
+  }
+}
+
+/* Operational support UX refresh */
+.support-page {
+  --ops-primary: #1e3a5f;
+  --ops-blue: #2563eb;
+  --ops-green: #16a34a;
+  --ops-surface: #ffffff;
+  --ops-soft: #f8fafc;
+  --ops-border: #d8e2ee;
+  --ops-text: #0f172a;
+  --ops-muted: #64748b;
+}
+
+.support-sla-banner {
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f8fafc, #eef6ff);
+  border-color: #cbdff5;
+  color: #1e3a5f;
+  box-shadow: 0 14px 30px rgba(15, 58, 95, 0.06);
+}
+
+.stats-grid {
+  gap: 10px;
+}
+
+.stat-card {
+  min-height: 132px;
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+}
+
+.stat-card:focus-visible,
+.ticket-row:focus-visible,
+.chip-btn:focus-visible,
+.primary-btn:focus-visible,
+.secondary-btn:focus-visible,
+.ghost-btn:focus-visible,
+.mini-btn:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 3px;
+}
+
+.workspace-grid {
+  grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.surface-card,
+.modal-panel {
+  border-radius: 22px;
+  border-color: rgba(203, 213, 225, 0.9);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.055);
+}
+
+.inbox-card,
+.conversation-card {
+  padding: 18px;
+}
+
+.panel-head {
+  align-items: flex-start;
+}
+
+.chip-row {
+  gap: 8px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-btn {
+  min-height: 40px;
+  flex: 0 0 auto;
+  touch-action: manipulation;
+}
+
+.ticket-list,
+.message-thread {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.ticket-row {
+  min-height: 132px;
+  border-radius: 16px;
+  padding: 15px;
+  touch-action: manipulation;
+}
+
+.ticket-row.selected {
+  border-color: rgba(37, 99, 235, 0.42);
+}
+
+.ticket-row-top strong,
+.conversation-title h3 {
+  line-height: 1.55;
+}
+
+.ticket-row-meta {
+  row-gap: 6px;
+}
+
+.conversation-card {
+  max-height: calc(100dvh - 148px);
+  position: sticky;
+  top: 18px;
+}
+
+.conversation-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.metric-strip {
+  gap: 10px;
+}
+
+.metric-card {
+  border-radius: 16px;
+  padding: 13px 14px;
+}
+
+.message-thread {
+  min-height: 280px;
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.86);
+}
+
+.message-bubble {
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.reply-shell {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(10px);
+}
+
+.reply-form textarea,
+.feedback-shell textarea,
+.modal-form input,
+.modal-form textarea,
+.modal-form select {
+  min-height: 48px;
+  border-radius: 14px;
+}
+
+.primary-btn,
+.secondary-btn,
+.ghost-btn,
+.mini-btn {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.modal-overlay {
+  align-items: center;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-panel {
+  border-radius: 24px;
+}
+
+.modal-head {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+@media (max-width: 1180px) {
+  .conversation-card {
+    position: static;
+    max-height: none;
+  }
+
+  .message-thread {
+    max-height: 56dvh;
+  }
+}
+
+@media (max-width: 760px) {
+  .support-page {
+    gap: 12px;
+  }
+
+  .support-sla-banner {
+    padding: 12px 14px;
+    font-size: 13px;
+  }
+
+  .stats-grid {
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding: 2px 2px 8px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .stats-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .stat-card {
+    min-width: 148px;
+    min-height: 118px;
+    scroll-snap-align: start;
+  }
+
+  .workspace-grid {
+    gap: 12px;
+  }
+
+  .inbox-card,
+  .conversation-card {
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .ticket-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .ticket-row {
+    min-height: 128px;
+    padding: 14px;
+  }
+
+  .conversation-card {
+    max-height: none;
+  }
+
+  .conversation-head {
+    display: grid;
+    gap: 10px;
+  }
+
+  .message-thread {
+    max-height: none;
+    min-height: 220px;
+    padding: 12px;
+    border-radius: 18px;
+  }
+
+  .message-bubble {
+    width: 100%;
+    padding: 13px 14px;
+  }
+
+  .reply-shell {
+    margin-inline: -2px;
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .reply-form textarea {
+    min-height: 112px;
+    font-size: 16px;
+  }
+
+  .modal-overlay {
+    padding: 0;
+    place-items: end center;
+  }
+
+  .modal-panel {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 24px 24px 0 0;
+  }
+
+  .modal-layout {
+    padding: 14px;
+  }
+
+  .modal-form input,
+  .modal-form textarea,
+  .modal-form select {
+    font-size: 16px;
   }
 }
 </style>

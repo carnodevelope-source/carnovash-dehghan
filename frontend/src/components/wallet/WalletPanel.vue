@@ -291,7 +291,7 @@
             </span>
           </div>
 
-          <div class="wallet-modal-section">
+          <div v-if="actionModal.type === 'withdraw'" class="wallet-modal-section">
             <div class="wallet-modal-section-head">
               <strong>{{ actionModal.type === 'withdraw' ? 'کیف پول مبدا' : 'کیف پول مقصد شارژ' }}</strong>
               <span>{{ actionModal.type === 'withdraw' ? 'از هر کیف پول دارای موجودی می‌توانید برداشت یا انتقال ثبت کنید' : 'کیف پولی که شارژ به آن اضافه می‌شود' }}</span>
@@ -688,10 +688,14 @@ const withdrawButtonCaption = computed(() => {
   return `قابل برداشت: ${moneyWithUnit(balance)}`
 })
 const depositShortcutCaption = computed(() => {
-  if (!hasDepositWallet.value) return 'کیف پولی برای شارژ وجود ندارد'
-  const wallet = selectedWallet.value || state.wallets[0]
-  return `${wallet.name}: ${moneyWithUnit(wallet.balance)}`
+  if (!primaryDepositWallet.value) return 'کیف پولی برای شارژ وجود ندارد'
+  return `کیف پول اصلی: ${moneyWithUnit(state.summary.regular_balance)}`
 })
+const primaryDepositWallet = computed(() => (
+  state.wallets.find((wallet) => wallet.wallet_type !== 'sms')
+  || state.wallets[0]
+  || null
+))
 const selectableWallets = computed(() => (
   actionModal.type === 'withdraw'
     ? state.wallets
@@ -835,8 +839,11 @@ const loadWalletDashboard = async () => {
     state.wallets = Array.isArray(data?.wallets) ? data.wallets : []
     state.transactions = Array.isArray(data?.transactions) ? data.transactions : []
     state.licenseStatus = data?.license_status || state.licenseStatus || {}
-    if ((!actionModal.walletId || !selectableWallets.value.some((wallet) => Number(wallet.id) === Number(actionModal.walletId))) && selectableWallets.value.length) {
-      actionModal.walletId = Number(selectableWallets.value[0].id)
+    const defaultActionWallet = actionModal.type === 'deposit'
+      ? primaryDepositWallet.value
+      : selectableWallets.value[0]
+    if ((!actionModal.walletId || !selectableWallets.value.some((wallet) => Number(wallet.id) === Number(actionModal.walletId))) && defaultActionWallet) {
+      actionModal.walletId = Number(defaultActionWallet.id)
     }
   } catch (error) {
     state.error = resolveApiErrorMessage(error, 'بارگذاری کیف پول ناموفق بود.')
@@ -885,7 +892,7 @@ const openActionModal = (type) => {
   const preferredWallet = selectedWallet.value
   const wallets = type === 'withdraw'
     ? state.wallets.filter((wallet) => Number(wallet.balance || 0) > 0)
-    : state.wallets
+    : (primaryDepositWallet.value ? [primaryDepositWallet.value] : [])
   const fallbackWallet = (
     preferredWallet
     && wallets.some((wallet) => Number(wallet.id) === Number(preferredWallet.id))
