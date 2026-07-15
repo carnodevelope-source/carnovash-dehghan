@@ -187,7 +187,7 @@ const walletWarning = ref({ active: false, label: '', smsZero: false })
 const isMobileMenuOpen = ref(false)
 const topbarRef = ref(null)
 const topbarHeight = ref(64)
-const mobileLoginArtSrc = `${import.meta.env.BASE_URL}e5eb861941aac79bcfd5d1fdabf1d569.jpg`
+const mobileLoginArtSrc = `${import.meta.env.BASE_URL}Mobile-bg-640.webp`
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))

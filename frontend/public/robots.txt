@@ -1,0 +1,41 @@
+User-agent: *
+Allow: /about/
+Allow: /login
+Allow: /assets/
+Allow: /font/
+Allow: /iconly/
+Allow: /llms.txt
+Disallow: /
+Disallow: /hq
+Disallow: /manager/
+Disallow: /support
+Disallow: /attendance/
+Disallow: /Google%20Search.html
+Disallow: /Google%20Search_files/
+
+User-agent: GPTBot
+Allow: /about/
+Allow: /login
+Disallow: /
+
+User-agent: OAI-SearchBot
+Allow: /about/
+Allow: /login
+Disallow: /
+
+User-agent: ChatGPT-User
+Allow: /about/
+Allow: /login
+Disallow: /
+
+User-agent: ClaudeBot
+Allow: /about/
+Allow: /login
+Disallow: /
+
+User-agent: PerplexityBot
+Allow: /about/
+Allow: /login
+Disallow: /
+
+Sitemap: https://carnowash.ir/sitemap.xml

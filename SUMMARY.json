@@ -1,0 +1,90 @@
+{
+  "cache_type": "audit-scores",
+  "analyzed_at": "2026-07-15T17:20:00Z",
+  "domain": "carnowash.ir",
+  "homepage_url": "https://carnowash.ir/login",
+  "business_type": "private operational SaaS SPA",
+  "overall_score": 87,
+  "public_acquisition_score": 66,
+  "category_scores": {
+    "technical": 86,
+    "content": 68,
+    "on_page": 82,
+    "schema": 86,
+    "sitemap": 90,
+    "performance": 82,
+    "geo": 64,
+    "images": 82,
+    "backlinks": null,
+    "security": 72,
+    "accessibility": 70
+  },
+  "implemented_fixes": [
+    "Removed deployable Google Search snapshot and assets",
+    "Added robots.txt, sitemap.xml, and llms.txt",
+    "Added index.html title, description, canonical, social tags, and JSON-LD graph",
+    "Added route-aware SEO metadata for login and attendance token route",
+    "Added noindex headers for private SPA route groups",
+    "Added nginx cache and security headers",
+    "Changed root redirect from 302 to 301",
+    "Fixed CarnoWash brand typo and login H1 semantics",
+    "Added crawlable public about page and linked it from sitemap, robots, and llms",
+    "Generated optimized AVIF/WebP login background and poster assets",
+    "Replaced the 4.1 MB login background video with a 681 KB optimized MP4",
+    "Fixed missing mobile sidebar image reference",
+    "Restricted unknown public URLs from SPA 200 fallback",
+    "Validated production build"
+  ],
+  "priority_issues": [
+    {
+      "severity": "critical",
+      "issue": "Live deployment still appears stale and must be redeployed to expose local SEO fixes"
+    },
+    {
+      "severity": "medium",
+      "issue": "Live Core Web Vitals must be revalidated after deployment",
+      "evidence": {
+        "optimized_video_bytes": 681039,
+        "mobile_background_avif_bytes": 48748,
+        "mobile_background_webp_bytes": 101378,
+        "poster_webp_bytes": 105670,
+        "stale_live_heuristic_lcp_seconds": 3.37
+      }
+    },
+    {
+      "severity": "medium",
+      "issue": "Backlink score unavailable because external data sources are not configured"
+    },
+    {
+      "severity": "medium",
+      "issue": "CSP and deeper accessibility/mobile target sizing remain to be tested"
+    }
+  ],
+  "validation": {
+    "build": "passed",
+    "local_dist": {
+      "title": "CarnoWash | سامانه مدیریت کارواش",
+      "canonical": "https://carnowash.ir/login",
+      "schema_types": ["Organization", "WebSite", "WebPage", "WebApplication"],
+      "robots_txt": true,
+      "sitemap_xml": true,
+      "llms_txt": true,
+      "about_page": true,
+      "about_word_count": 292,
+      "google_snapshot_removed": true
+    },
+    "live_scripts": {
+      "technical_score": 76,
+      "schema_score": 49,
+      "geo_score": 20,
+      "performance_score": 65,
+      "note": "Live scores reflect stale deployment at audit time, not the local post-fix build."
+    }
+  },
+  "limitations": [
+    "No PageSpeed API key or CrUX field data was available; performance uses deterministic heuristics.",
+    "Backlink data sources were not configured.",
+    "The live server had not yet deployed the local SEO fixes during this audit.",
+    "No public marketing/content strategy was auto-created because that would change the product surface."
+  ]
+}

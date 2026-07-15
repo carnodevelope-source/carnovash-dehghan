@@ -1,7 +1,7 @@
 <template>
   <div class="login-page" dir="rtl">
-    <video class="login-video" autoplay muted loop playsinline>
-      <source src="/Untitled Project.mp4" type="video/mp4" />
+    <video class="login-video" autoplay muted loop playsinline preload="metadata" poster="/login-poster.webp">
+      <source src="/login-hero.mp4" type="video/mp4" />
     </video>
     <div class="login-video-veil"></div>
 
@@ -9,7 +9,7 @@
       <div class="brand">
         <span class="brand-badge">CW</span>
         <div class="brand-copy">
-          <span class="brand-title">CarnoWah</span>
+          <span class="brand-title">CarnoWash</span>
           <span class="brand-subtitle">ورود مدیران، اپراتورها و ثبت کارواش جدید</span>
         </div>
       </div>
@@ -19,7 +19,7 @@
       <section class="login-card">
         <div class="login-head">
           <p class="panel-kicker">ورود به سامانه</p>
-          <h2>حساب کاربری خود را باز کنید</h2>
+          <h1>ورود به سامانه مدیریت کارواش CarnoWash</h1>
           <span>با نام کاربری یا شماره موبایل مدیر/کاربر وارد شوید.</span>
         </div>
 
@@ -156,7 +156,7 @@
       </section>
     </div>
 
-    <footer class="footer">Powered by CarWash Platform © 2026</footer>
+    <footer class="footer">Powered by CarnoWash Platform © 2026</footer>
   </div>
 </template>
 
@@ -300,28 +300,6 @@ const submitRegister = async () => {
 </script>
 
 <style scoped>
-@font-face {
-  font-family: 'Vazirmatn';
-  src: url('/font/webfonts/Vazirmatn-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Vazirmatn';
-  src: url('/font/webfonts/Vazirmatn-SemiBold.woff2') format('woff2');
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Vazirmatn';
-  src: url('/font/webfonts/Vazirmatn-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 .login-page {
   min-height: 100vh;
   display: flex;
@@ -441,7 +419,7 @@ const submitRegister = async () => {
   margin-bottom: 22px;
 }
 
-.login-head h2,
+.login-head h1,
 .register-modal-head h3 {
   margin: 0;
   font-size: 28px;
@@ -767,7 +745,14 @@ const submitRegister = async () => {
 
 @media (max-width: 640px) {
   .login-page {
-    background: url('/Mobile-bg.jpg') center center/cover no-repeat;
+    background-image: image-set(
+      url('/Mobile-bg-640.avif') type('image/avif'),
+      url('/Mobile-bg-640.webp') type('image/webp'),
+      url('/Mobile-bg.jpg') type('image/jpeg')
+    );
+    background-position: center center;
+    background-size: cover;
+    background-repeat: no-repeat;
   }
 
   .login-video {
@@ -801,7 +786,7 @@ const submitRegister = async () => {
   .brand-title,
   .brand-subtitle,
   .panel-kicker,
-  .login-head h2,
+  .login-head h1,
   .login-head span,
   .field span,
   .field-toggle,
@@ -810,7 +795,7 @@ const submitRegister = async () => {
     color: #f8fbff;
   }
 
-  .login-head h2 {
+  .login-head h1 {
     text-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
   }
 
@@ -840,7 +825,7 @@ const submitRegister = async () => {
     border-radius: 24px;
   }
 
-  .login-head h2,
+  .login-head h1,
   .register-modal-head h3 {
     font-size: 24px;
   }

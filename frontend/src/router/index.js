@@ -3,10 +3,37 @@ import { useAuthStore } from '../store/auth.store'
 import { defaultRouteByRole } from '../config/navigation'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess, hasFeatureAccess } from '../utils/attendanceAccess'
 import { notifyWarning } from '../utils/notify'
+import { applyRouteSeo } from '../utils/seo'
 
 const routes = [
-  { path: '/login', name: 'login', component: () => import('../views/auth/LoginView.vue'), meta: { public: true } },
-  { path: '/attendance/:token', name: 'worker-attendance-public', component: () => import('../views/attendance/WorkerAttendancePunchView.vue'), meta: { public: true } },
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('../views/auth/LoginView.vue'),
+    meta: {
+      public: true,
+      seo: {
+        title: 'CarnoWash | ورود به سامانه مدیریت کارواش',
+        description: 'ورود امن به سامانه CarnoWash برای مدیریت پذیرش خودرو، خدمات، گزارش‌ها، کیف پول و باشگاه مشتریان.',
+        robots: 'index, follow',
+        canonicalPath: '/login'
+      }
+    }
+  },
+  {
+    path: '/attendance/:token',
+    name: 'worker-attendance-public',
+    component: () => import('../views/attendance/WorkerAttendancePunchView.vue'),
+    meta: {
+      public: true,
+      seo: {
+        title: 'ثبت حضور کارکنان | CarnoWash',
+        description: 'صفحه اختصاصی ثبت حضور کارکنان در سامانه CarnoWash.',
+        robots: 'noindex, nofollow',
+        canonicalPath: '/login'
+      }
+    }
+  },
   { path: '/hq', name: 'hq-panel', component: () => import('../views/hq/HqPanelView.vue'), meta: { hqOnly: true } },
   { path: '/', name: 'operator-dashboard', component: () => import('../views/operator/DashboardView.vue'), meta: { roles: ['admin', 'owner', 'manager', 'operator', 'worker'] } },
   { path: '/manager/wallet', name: 'manager-wallet', component: () => import('../views/manager/WalletView.vue'), meta: { roles: ['accountant', 'admin', 'owner', 'manager', 'operator', 'worker'] } },
@@ -85,6 +112,10 @@ router.beforeEach(async (to) => {
   if (to.path === '/' && authStore.isHq) return '/hq'
 
   return true
+})
+
+router.afterEach((to) => {
+  applyRouteSeo(to)
 })
 
 export default router

@@ -1,0 +1,61 @@
+{
+  "cache_type": "post_deployment_seo_validation",
+  "analyzed_at": "2026-07-15T19:10:00Z",
+  "domain": "carnowash.ir",
+  "production_score": 42,
+  "local_posture_score": 87,
+  "business_type": "private B2B operational SaaS SPA for carwash management",
+  "production_status": "stale_or_public_nginx_not_using_checked_in_config",
+  "verified_production_issues": [
+    "robots.txt returns SPA HTML instead of robots text",
+    "sitemap.xml returns SPA HTML instead of XML",
+    "llms.txt returns SPA HTML instead of text",
+    "about page returns SPA shell instead of local static page",
+    "login page lacks local metadata, canonical, OG/Twitter tags, and JSON-LD",
+    "private routes return 200 without X-Robots-Tag noindex",
+    "unknown paths return 200 SPA shell",
+    "Google Search snapshot is still live",
+    "missing assets return SPA HTML instead of 404",
+    "www host does not redirect to non-www",
+    "root redirect is 302 instead of 301",
+    "security headers are missing",
+    "cache headers are missing"
+  ],
+  "safe_fixes_implemented": [
+    "Added HTTPS edge 410 guards for Google Search snapshot paths",
+    "Added HTTPS edge X-Robots-Tag noindex for private route groups",
+    "Added explicit frontend nginx static serving for /about/",
+    "Strengthened frontend Docker healthcheck for SEO static files and optimized login video"
+  ],
+  "local_only_issues": [
+    "Current local SEO build has not reached production",
+    "Production server appears to be a host nginx vhost rather than the checked-in container edge config",
+    "Public growth content architecture is planned but not implemented as live pages"
+  ],
+  "requires_gsc": [
+    "Index coverage for old Google snapshot URLs",
+    "Index coverage for private routes and soft-404 duplicates",
+    "URL Inspection results for /login and /about/",
+    "Sitemap submission status",
+    "CrUX field Core Web Vitals"
+  ],
+  "requires_server_or_dns": [
+    "Canonical www to non-www redirect",
+    "Actual live nginx/vhost update",
+    "Static files before SPA fallback",
+    "404 for missing assets",
+    "410 for removed Google snapshot",
+    "Security and cache headers at public edge"
+  ],
+  "next_verification_targets": {
+    "robots_txt": "200 text/plain with Sitemap directive",
+    "sitemap_xml": "200 XML with /about/ and /login",
+    "llms_txt": "200 text/plain",
+    "about": "static HTML with canonical and JSON-LD",
+    "private_routes": "X-Robots-Tag noindex",
+    "unknown_paths": "404",
+    "google_snapshot": "410",
+    "www": "301 to non-www"
+  }
+}
+
