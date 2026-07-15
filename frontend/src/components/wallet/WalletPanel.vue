@@ -134,15 +134,6 @@
             </span>
           </div>
           <p>{{ option.description }}</p>
-          <div v-if="Number(option.annual_renewal_amount || 0) > 0" class="option-unavailable-box option-renewal-box">
-            <strong>اشتراک سالانه بعد از سال اول</strong>
-            <small>
-              {{ moneyWithUnit(option.annual_renewal_amount) }}
-              <template v-if="option.annual_renewal_installment_months">
-                ، قابل پرداخت در {{ Number(option.annual_renewal_installment_months).toLocaleString('fa-IR') }} قسط {{ moneyWithUnit(option.annual_renewal_monthly_amount) }}
-              </template>
-            </small>
-          </div>
           <div v-if="option.is_available === false" class="option-unavailable-box">
             <strong>در دسترس نمی‌باشد</strong>
             <small>{{ option.unavailable_message || 'این آپشن هنوز ارائه نمی‌شود.' }}</small>

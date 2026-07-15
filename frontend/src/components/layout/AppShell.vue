@@ -191,7 +191,6 @@ const mobileLoginArtSrc = `${import.meta.env.BASE_URL}e5eb861941aac79bcfd5d1fdab
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))
-const canAccessAdvancedSmsClub = computed(() => hasFeatureAccess(authStore.user, 'sms_club'))
 const canAccessAccounting = computed(() => hasFeatureAccess(authStore.user, 'accounting'))
 const navItems = computed(() => (
   (navigationByRole[authStore.role] || [])
@@ -203,9 +202,6 @@ const lockedFeatureItems = computed(() => {
   const items = []
   if (needsAttendanceUpgrade.value) {
     items.push({ key: 'attendance', label: 'ورود و خروج', iconName: 'calendar' })
-  }
-  if (!canAccessAdvancedSmsClub.value) {
-    items.push({ key: 'sms_club', label: 'پیامک پیشرفته', iconName: 'message' })
   }
   if (!canAccessAccounting.value) {
     items.push({ key: 'accounting', label: 'حسابداری', iconName: 'graph' })
