@@ -39,9 +39,9 @@
 - پنل HQ: `https://carnowash.ir/hq`
 - لاگین: `https://carnowash.ir/login`
 
-### نکته درباره پنل ادمین Django
+### پنل ادمین Django
 
-`django.contrib.admin` در تنظیمات فعال است، اما route مربوط به `/admin/` در [backend/config/urls.py](/mnt/newvolume/PRG/carvash/backend/config/urls.py:1) تعریف نشده است. در نتیجه در وضعیت فعلی پنل admin عمومی در دسترس نیست.
+`django.contrib.admin` فعال است و پنل ادمین از مسیر `/admin/` در دسترس قرار می‌گیرد. در Docker، nginx داخلی frontend این مسیر را به backend proxy می‌کند و فایل‌های static ادمین از مسیر `/static/` سرو می‌شوند.
 
 ### آدرس‌های داخلی Docker
 
