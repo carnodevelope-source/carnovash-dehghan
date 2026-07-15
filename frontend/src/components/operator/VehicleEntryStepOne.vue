@@ -125,12 +125,15 @@
             </div>
             <div v-else class="manual-plate-badge manual-plate-car" dir="ltr">
               <div class="manual-plate-main manual-plate-white-wrap">
-                <input v-model="form.plateRight" class="plate-input right" maxlength="2" inputmode="numeric" placeholder="--" @focus="selectFieldText" @input="onlyDigits('plateRight')" />
-                <input v-model="form.plateLetter" class="plate-input letter" maxlength="1" placeholder="-" @focus="selectFieldText" @input="onlyLetter" />
-                <input v-model="form.plateMid" class="plate-input mid" maxlength="3" inputmode="numeric" placeholder="---" @focus="selectFieldText" @input="onlyDigits('plateMid')" />
+                <input ref="plateRightInputRef" v-model="form.plateRight" class="plate-input right" maxlength="2" inputmode="numeric" placeholder="--" @focus="selectFieldText" @input="handlePlatePartInput('plateRight')" />
+                <select ref="plateLetterInputRef" v-model="form.plateLetter" class="plate-input letter plate-letter-select" @change="handlePlatePartInput('plateLetter')">
+                  <option value="">حرف</option>
+                  <option v-for="letter in plateLetterOptions" :key="letter" :value="letter">{{ letter }}</option>
+                </select>
+                <input ref="plateMidInputRef" v-model="form.plateMid" class="plate-input mid" maxlength="3" inputmode="numeric" placeholder="---" @focus="selectFieldText" @input="handlePlatePartInput('plateMid')" />
               </div>
               <div class="manual-plate-blue">
-                <input v-model="form.plateLeft" class="plate-input blue-input" maxlength="2" inputmode="numeric" placeholder="--" @focus="selectFieldText" @input="onlyDigits('plateLeft')" />
+                <input ref="plateLeftInputRef" v-model="form.plateLeft" class="plate-input blue-input" maxlength="2" inputmode="numeric" placeholder="--" @focus="selectFieldText" @input="handlePlatePartInput('plateLeft')" />
               </div>
             </div>
           </div>
@@ -266,6 +269,10 @@ const detectedPlateSnapshot = ref({
 const cameraVideoRef = ref(null)
 const cameraCanvasRef = ref(null)
 const cameraFileInputRef = ref(null)
+const plateRightInputRef = ref(null)
+const plateLetterInputRef = ref(null)
+const plateMidInputRef = ref(null)
+const plateLeftInputRef = ref(null)
 const cameraStream = ref(null)
 const cameraState = reactive({
   active: false,
@@ -287,11 +294,20 @@ const OCR_LETTER_CONFUSIONS = {
   ب: ['ب', 'س', 'ص'],
   س: ['س', 'ب', 'ص'],
   ص: ['ص', 'س', 'ب'],
+  ث: ['ث', 'ه', 'ح', 'ص', 'س'],
+  ه: ['ه', 'ث', 'ح'],
+  ح: ['ح', 'ه', 'ث'],
   ق: ['ق', 'ی'],
   ی: ['ی', 'ق'],
   ر: ['ر', 'ط'],
-  ط: ['ط', 'ر']
+  ط: ['ط', 'ر'],
+  ت: ['ت', 'ث', 'ط'],
+  ج: ['ج', 'چ', 'ح'],
+  چ: ['چ', 'ج', 'ح'],
+  ع: ['ع', 'غ'],
+  غ: ['غ', 'ع']
 }
+const plateLetterOptions = ['الف', 'ب', 'پ', 'ت', 'ث', 'ج', 'چ', 'ح', 'خ', 'د', 'ذ', 'ر', 'ز', 'ژ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ک', 'گ', 'ل', 'م', 'ن', 'و', 'ه', 'ی']
 const showAiPanel = computed(() => !isMobileViewport.value || !isAiPanelCollapsed.value)
 const availableTariffTypeOptions = computed(() => (
   form.plateType === 'motorcycle' ? motorcycleTariffTypeOptions : carTariffTypeOptions
@@ -374,6 +390,26 @@ const onlyLetter = () => {
   syncLetterSuggestions(form.plateLetter)
 }
 
+const focusNextPlatePart = (key) => {
+  if (isMotorcyclePlate()) return
+  const target = {
+    plateRight: form.plateRight.length >= 2 ? plateLetterInputRef.value : null,
+    plateLetter: form.plateLetter ? plateMidInputRef.value : null,
+    plateMid: form.plateMid.length >= 3 ? plateLeftInputRef.value : null
+  }[key]
+  if (!target || typeof target.focus !== 'function') return
+  requestAnimationFrame(() => target.focus())
+}
+
+const handlePlatePartInput = (key) => {
+  if (key === 'plateLetter') {
+    onlyLetter()
+  } else {
+    onlyDigits(key)
+  }
+  focusNextPlatePart(key)
+}
+
 const buildLetterSuggestions = (letter) => {
   if (isMotorcyclePlate()) return []
   const normalized = normalizePlateLetter(letter)
@@ -449,13 +485,13 @@ const startCamera = async () => {
 
 const dataUrlFromCanvas = (source, sourceWidth, sourceHeight) => {
   const canvas = cameraCanvasRef.value || document.createElement('canvas')
-  const maxWidth = 1600
+  const maxWidth = 1280
   const scale = Math.min(1, maxWidth / Math.max(1, sourceWidth))
   canvas.width = Math.max(1, Math.round(sourceWidth * scale))
   canvas.height = Math.max(1, Math.round(sourceHeight * scale))
   const context = canvas.getContext('2d')
   context.drawImage(source, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.94)
+  return canvas.toDataURL('image/jpeg', 0.86)
 }
 
 const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
@@ -484,13 +520,12 @@ const processCameraFile = async (event) => {
   const image = new Image()
   const objectUrl = URL.createObjectURL(file)
   try {
-    const originalImageDataUrl = await readFileAsDataUrl(file)
     await new Promise((resolve, reject) => {
       image.onload = resolve
       image.onerror = reject
       image.src = objectUrl
     })
-    const imageDataUrl = image.naturalWidth >= 900 ? originalImageDataUrl : dataUrlFromCanvas(image, image.naturalWidth, image.naturalHeight)
+    const imageDataUrl = dataUrlFromCanvas(image, image.naturalWidth, image.naturalHeight)
     await recognizePlateImage(imageDataUrl)
   } catch (_error) {
     setCameraMessage('تصویر انتخاب‌شده قابل خواندن نیست.', true)
@@ -1328,9 +1363,9 @@ onBeforeUnmount(() => {
 }
 
 .manual-plate-car .plate-input.letter {
-  width: 72px;
-  min-width: 40px;
-  padding-top: 2px;
+  width: 88px;
+  min-width: 68px;
+  padding: 0 18px 0 8px;
 }
 
 .blue-input {
@@ -1354,6 +1389,15 @@ onBeforeUnmount(() => {
 
 .plate-input.letter {
   font-size: 24px;
+}
+
+.plate-letter-select {
+  appearance: auto;
+  -webkit-appearance: menulist;
+  direction: rtl;
+  cursor: pointer;
+  color: #0f172a;
+  background-color: rgba(255, 255, 255, 0.2) !important;
 }
 
 .manual-plate-motorcycle .plate-input.mid {
@@ -1611,8 +1655,9 @@ onBeforeUnmount(() => {
     width: 56px;
   }
   .manual-plate-car .plate-input.letter {
-    width: 24px;
-    min-width: 18px;
+    width: 54px;
+    min-width: 48px;
+    padding: 0 12px 0 2px;
   }
   .manual-plate-blue {
     min-width: 24px;
@@ -1719,7 +1764,7 @@ onBeforeUnmount(() => {
     border-radius: 6px;
   }
   .plate-input.letter {
-    font-size: 10px;
+    font-size: 11px;
   }
   .manual-plate-car .plate-input.right,
   .manual-plate-car .plate-input.left {
@@ -1729,7 +1774,9 @@ onBeforeUnmount(() => {
     width: 48px;
   }
   .manual-plate-car .plate-input.letter {
-    width: 20px;
+    width: 50px;
+    min-width: 46px;
+    padding: 0 10px 0 2px;
   }
   .manual-plate-motorcycle .plate-input.mid {
     max-width: 92px;

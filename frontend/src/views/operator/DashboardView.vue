@@ -187,14 +187,19 @@
                 </article>
               </div>
 
-              <div v-if="tempReleaseWorkerRows.length" class="worker-editor-grid">
+              <label v-if="tempReleaseWorkerRows.length" class="worker-editor-search">
+                <span>جستجوی پرسنل</span>
+                <input v-model="releaseWorkerSearch" type="text" placeholder="نام نیرو را بنویسید..." />
+              </label>
+
+              <div v-if="filteredTempReleaseWorkerRows.length" class="worker-editor-grid">
                 <article
-                  v-for="(worker, index) in tempReleaseWorkerRows"
-                  :key="`release-worker-editor-${worker.id || index}`"
+                  v-for="worker in filteredTempReleaseWorkerRows"
+                  :key="`release-worker-editor-${worker.id || worker.sourceIndex}`"
                   class="worker-editor-card"
                   :class="{ selected: worker.isSelected }"
                 >
-                  <button type="button" class="worker-editor-toggle" @click="toggleTempReleaseWorker(index)">
+                  <button type="button" class="worker-editor-toggle" @click="toggleTempReleaseWorker(worker.sourceIndex)">
                     <span>{{ worker.isSelected ? '✓' : '+' }}</span>
                     <strong>{{ worker.name }}</strong>
                     <small>{{ worker.isSelected ? 'در تسویه فعال است' : 'افزودن به تسویه' }}</small>
@@ -208,13 +213,13 @@
                       min="0"
                       max="100"
                       :disabled="!worker.isSelected"
-                      @input="setTempReleaseWorkerShare(index, $event.target.value)"
+                      @input="setTempReleaseWorkerShare(worker.sourceIndex, $event.target.value)"
                     />
                     <small>{{ formatMoney(tempReleaseWorkerShareAmount(worker)) }}</small>
                   </label>
                 </article>
               </div>
-              <p v-else class="empty">نیرویی برای انتخاب پیدا نشد.</p>
+              <p v-else class="empty">{{ tempReleaseWorkerRows.length ? 'نیرویی با این جستجو پیدا نشد.' : 'نیرویی برای انتخاب پیدا نشد.' }}</p>
 
               <footer class="service-picker-foot worker-editor-foot">
                 <button type="button" class="secondary-foot-btn" @click="closeReleaseWorkerEditor">انصراف</button>
@@ -342,8 +347,8 @@
             <div class="worker-selection-panel">
               <div class="worker-selection-head">
                 <div>
-                  <h4>انتخاب نیروها</h4>
-                  <p>هر نیرو را جداگانه فعال کنید. فقط نیروهای فعال در سهم این تسویه محاسبه می‌شوند.</p>
+                  <h4>پرسنل</h4>
+                  <p>پرسنل این تسویه را مثل خدمات ویرایش کنید؛ نیروها و درصد سهم از همین بخش نهایی می‌شوند.</p>
                 </div>
                 <div class="worker-selection-actions">
                   <button
@@ -355,7 +360,7 @@
                     انتخاب همه
                   </button>
                   <button type="button" class="secondary-btn small-btn" @click="openReleaseWorkerEditor">
-                    ویرایش پرسنل
+                    ویرایش
                   </button>
                 </div>
               </div>
@@ -373,7 +378,7 @@
                   <small>{{ worker.isSelected !== false ? 'فعال در این تسویه' : 'غیرفعال در این تسویه' }}</small>
                 </button>
               </div>
-              <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است.</p>
+              <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است. از گزینه ویرایش، پرسنل را اضافه کنید.</p>
             </div>
             <div class="summary-share">
               <p
@@ -602,7 +607,7 @@
         <div class="invoice-sheet" :class="invoiceSheetClass" :style="invoiceSheetStyle">
           <template v-if="invoiceIsThermal">
             <header class="thermal-sheet-head">
-              <strong>کارنوواش</strong>
+              <strong>{{ invoiceCarwashName }}</strong>
               <span>رسید ترخیص خودرو</span>
             </header>
 
@@ -663,12 +668,12 @@
           <template v-else>
           <header class="invoice-sheet-head">
             <div>
-              <small>CarnoWash</small>
+              <small>{{ invoiceCarwashName }}</small>
               <strong>فاکتور نهایی سفارش</strong>
               <span>شماره فاکتور: {{ invoiceNumber }}</span>
             </div>
             <div class="invoice-sheet-meta">
-              <strong>کارنوواش | CarnoWash</strong>
+              <strong>{{ invoiceCarwashName }}</strong>
               <span>تاریخ صدور: {{ invoiceIssuedAt }}</span>
               <span>روش پرداخت: {{ paymentMethodLabel(releaseForm.paymentMethod) }}</span>
             </div>
@@ -777,7 +782,7 @@
           <footer class="invoice-sheet-footer">
             <p v-if="invoiceCustomerNote">توضیحات سفارش: {{ invoiceCustomerNote }}</p>
             <p v-if="releaseForm.receiptFooterNote">{{ releaseForm.receiptFooterNote }}</p>
-            <p>کارنوواش | CarnoWash</p>
+            <p>{{ invoiceCarwashName }}</p>
           </footer>
           </template>
         </div>
@@ -795,6 +800,7 @@ import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import AppShell from '../../components/layout/AppShell.vue'
 import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
+import { useAuthStore } from '../../store/auth.store'
 import { useVehicleStore } from '../../store/vehicle.store'
 import api from '../../services/api'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
@@ -823,6 +829,7 @@ const invoiceTemplateRef = ref(null)
 const invoicePreviewFrameRef = ref(null)
 const tempReleaseServiceIds = ref([])
 const tempReleaseWorkerRows = ref([])
+const releaseWorkerSearch = ref('')
 const invoiceRenderTimer = ref(null)
 const invoiceLayout = ref({
   preset: 'a4',
@@ -865,6 +872,7 @@ const releaseForm = ref({
   selectedServiceToAdd: 0
 })
 const vehicleStore = useVehicleStore()
+const authStore = useAuthStore()
 const { vehicles, selectedVehicle } = storeToRefs(vehicleStore)
 const hasOperatorModalOpen = computed(() => (
   showVehicleModal.value
@@ -1503,6 +1511,12 @@ const tempReleaseWorkerPercentTotal = computed(() => (
     .filter((worker) => worker.isSelected)
     .reduce((sum, worker) => sum + Math.max(0, Math.min(100, Number(worker.worker_share_percent || 0))), 0)
 ))
+const filteredTempReleaseWorkerRows = computed(() => {
+  const query = String(releaseWorkerSearch.value || '').trim()
+  return tempReleaseWorkerRows.value
+    .map((worker, index) => ({ ...worker, sourceIndex: index }))
+    .filter((worker) => !query || String(worker.name || '').includes(query))
+})
 const buildReleaseWorkerEditorRows = () => {
   const selectedMap = new Map(
     (releaseForm.value.assignedWorkers || [])
@@ -1538,12 +1552,14 @@ const buildReleaseWorkerEditorRows = () => {
     : applyEqualDistributionToSelectedWorkers(rows)
 }
 const openReleaseWorkerEditor = () => {
+  releaseWorkerSearch.value = ''
   buildReleaseWorkerEditorRows()
   showReleaseWorkerEditor.value = true
 }
 const closeReleaseWorkerEditor = () => {
   showReleaseWorkerEditor.value = false
   tempReleaseWorkerRows.value = []
+  releaseWorkerSearch.value = ''
 }
 const toggleTempReleaseWorker = (index) => {
   const rows = [...tempReleaseWorkerRows.value]
@@ -1792,6 +1808,9 @@ const invoiceFileLabel = computed(() => (
   invoiceLayout.value.preset === 'thermal'
     ? `receipt-${releaseCandidate.value?.id || 'carwash'}`
     : `invoice-${releaseCandidate.value?.id || 'carwash'}`
+))
+const invoiceCarwashName = computed(() => (
+  String(authStore.user?.tenant_name || '').trim() || 'کارواش'
 ))
 const invoicePreviewUrl = computed(() => (
   invoicePdfUrl.value
@@ -2336,7 +2355,7 @@ const buildCreateOrUpdatePayload = (payload, status) => {
 }
 
 const fetchPlateBlockedStatus = async (payload) => {
-  if (payload?.isAnonymous || payload?.vehicle?.isAnonymous) return { is_blocked: false }
+  if (payload?.isAnonymous || payload?.vehicle?.isAnonymous || payload?.isPieceWash || payload?.vehicle?.isPieceWash) return { is_blocked: false }
   const plateType = String(payload?.plateType || payload?.vehicle?.plateType || payload?.vehicle?.plate_type || 'car').trim() || 'car'
   const plateRaw = (payload?.plate || payload?.vehicle?.plate || '').trim()
   const resolvedParts = resolvePlateParts({
@@ -2354,7 +2373,7 @@ const fetchPlateBlockedStatus = async (payload) => {
     plate_mid: String(resolvedParts.mid || '').trim(),
     plate_right: plateType === 'motorcycle' ? '' : String(resolvedParts.right || '').trim()
   }
-  const { data } = await api.get('/vehicles/plate-status/', { params })
+  const { data } = await api.get('/vehicles/plate-status/', { params, meta: { trackLoading: false } })
   return data || { is_blocked: false }
 }
 
@@ -2362,12 +2381,14 @@ const saveVehicle = async (payload, status) => {
   const body = buildCreateOrUpdatePayload(payload, status)
   const editingId = payload?.vehicle?.id || vehicleDraft.value?.id || null
   if (editingId) {
-    const { data } = await api.patch(`/vehicles/${editingId}/`, body)
+    const { data } = await api.patch(`/vehicles/${editingId}/`, body, { meta: { trackLoading: false } })
     const idx = vehicleStore.vehicles.findIndex((item) => item.id === editingId)
     if (idx >= 0) vehicleStore.vehicles[idx] = data
     return data
   }
-  return vehicleStore.createVehicle(body)
+  const { data } = await api.post('/vehicles/', body, { meta: { trackLoading: false } })
+  vehicleStore.vehicles.unshift(data)
+  return data
 }
 
 const refreshVehicleBoard = async () => {
@@ -2707,6 +2728,10 @@ onBeforeUnmount(() => {
 .worker-editor-summary article{border:1px solid #d9e8ff;border-radius:18px;padding:14px 16px;background:#fff;display:grid;gap:6px}
 .worker-editor-summary span{font-size:12px;color:#64748b}
 .worker-editor-summary strong{font-size:17px;color:#0f172a}
+.worker-editor-search{display:grid;gap:7px;border:1px solid #d9e8ff;border-radius:18px;background:#fff;padding:12px 14px}
+.worker-editor-search span{font-size:12px;color:#64748b;font-weight:900}
+.worker-editor-search input{height:42px;border:1px solid #dbe7f5;border-radius:14px;background:#f8fbff;color:#0f172a;padding:0 12px;font:inherit;font-size:13px;font-weight:800}
+.worker-editor-search input:focus{outline:none;border-color:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.16);background:#fff}
 .worker-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-height:430px;overflow:auto;padding-inline-end:4px}
 .worker-editor-card{border:1px solid #dbe7f5;border-radius:22px;padding:12px;background:#fff;display:grid;gap:12px;box-shadow:0 18px 38px -34px rgba(15,23,42,.45)}
 .worker-editor-card.selected{border-color:#38bdf8;background:linear-gradient(180deg,#f0f9ff,#ffffff)}
