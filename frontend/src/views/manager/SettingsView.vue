@@ -267,6 +267,36 @@
                 </article>
               </div>
             </section>
+            <section class="general-settings-card tax-settings-card">
+              <div class="general-settings-head">
+                <div>
+                  <strong>مالیات سفارش</strong>
+                  <p class="helper-text">اگر فعال باشد، درصد مالیات به جمع سفارش و فاکتور اضافه می‌شود.</p>
+                </div>
+                <label class="settings-toggle">
+                  <input v-model="generalSettings.tax_enabled" type="checkbox" />
+                  <span>{{ generalSettings.tax_enabled ? 'فعال' : 'غیرفعال' }}</span>
+                </label>
+              </div>
+              <div class="discount-editor-grid">
+                <label class="general-setting-label">
+                  <span>درصد مالیات</span>
+                  <input
+                    v-model.number="generalSettings.tax_percent"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    :disabled="!generalSettings.tax_enabled"
+                  />
+                </label>
+                <article class="discount-preview-card">
+                  <small>وضعیت فعلی</small>
+                  <strong>{{ generalSettings.tax_enabled ? `${Number(generalSettings.tax_percent || 0).toLocaleString('fa-IR')}٪` : 'بدون مالیات' }}</strong>
+                  <p>مالیات بعد از تخفیف‌ها و قبل از انعام روی مبلغ سفارش محاسبه می‌شود.</p>
+                </article>
+              </div>
+            </section>
             <section class="general-settings-card payment-settings-card">
               <div class="general-settings-head">
                 <div>
@@ -314,28 +344,15 @@
               <div class="sms-template-grid">
                 <article class="sms-template-card">
                   <label class="general-setting-label sms-template-editor">
-                    <span>پیام تخصیص خودرو</span>
-                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="6" />
+                    <span>پیام تخصیص و پیش‌فاکتور</span>
+                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="10" />
                   </label>
                   <div class="sms-preview-panel">
                     <div class="sms-preview-head">
                       <small>نمونه خروجی</small>
-                      <span>با داده فرضی مشتری</span>
+                      <span>یک پیام واحد</span>
                     </div>
                     <pre class="sms-preview-box">{{ smsAssignedPreview }}</pre>
-                  </div>
-                </article>
-                <article class="sms-template-card">
-                  <label class="general-setting-label sms-template-editor">
-                    <span>بخش پیش‌فاکتور پیام تخصیص</span>
-                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_invoice_template" rows="8" />
-                  </label>
-                  <div class="sms-preview-panel">
-                    <div class="sms-preview-head">
-                      <small>نمونه خروجی</small>
-                      <span>پیش‌فاکتور زنده</span>
-                    </div>
-                    <pre class="sms-preview-box">{{ smsAssignedInvoicePreview }}</pre>
                   </div>
                 </article>
                 <article class="sms-template-card">
@@ -394,7 +411,7 @@
                 <input v-model="forms.worker.password" type="text" :required="!modal.id" />
               </label>
             </template>
-            <p v-else class="full helper-text modal-helper-text">برای نیرو، نام کاربری و رمز به‌صورت خودکار ساخته می‌شود.</p>
+            <p v-else class="full helper-text modal-helper-text">نیرو نام کاربری و رمز عبور ندارد و فقط برای تخصیص کار و حضور و غیاب ثبت می‌شود.</p>
             <label><span>شماره موبایل</span><input v-model="forms.worker.phone" required /></label>
             <label class="full"><span>آدرس</span><textarea v-model.trim="forms.worker.address" rows="3" placeholder="آدرس نیرو را وارد کنید" /></label>
             <label>
@@ -724,6 +741,8 @@ const services = ref([])
 const inventoryItems = ref([])
 const generalSettings = reactive({
   discount_percent_per_half_star: 0,
+  tax_enabled: false,
+  tax_percent: 0,
   preferred_bank_name: '',
   bank_account_holder: '',
   bank_card_number: '',
@@ -938,6 +957,7 @@ const expensesTotal = computed(() => filteredExpenses.value.reduce((sum, item) =
 const smsTemplateTokens = [
   '[خطاب مشتری]',
   '[نام مشتری]',
+  '[جنسیت مشتری]',
   '[نام کارواش]',
   '[پلاک]',
   '[ساعت تخصیص]',
@@ -972,7 +992,8 @@ const ensureReleasedSmsTemplateDetails = (template) => {
 }
 const smsPreviewContext = computed(() => ({
   '[خطاب مشتری]': 'آقای رضایی عزیز',
-  '[نام مشتری]': 'علی رضایی',
+  '[نام مشتری]': 'آقا علی رضایی',
+  '[جنسیت مشتری]': 'آقا',
   '[نام کارواش]': authStore.user?.tenant_name || authStore.user?.tenant?.name || 'سونامی',
   '[پلاک]': '22 ب 345 67',
   '[ساعت تخصیص]': '10:30',
@@ -1000,7 +1021,6 @@ const renderSmsPreview = (template) => {
   return message
 }
 const smsAssignedPreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_assigned_template))
-const smsAssignedInvoicePreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_assigned_invoice_template))
 const smsReleasedPreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_released_template))
 
 watch(() => forms.purchase.product_id, (newProductId) => {
@@ -1042,6 +1062,8 @@ const loadAll = async () => {
     try {
       const gs = await api.get('/services/general-settings/')
       generalSettings.discount_percent_per_half_star = Number(gs.data?.discount_percent_per_half_star || 0)
+      generalSettings.tax_enabled = Boolean(gs.data?.tax_enabled)
+      generalSettings.tax_percent = Number(gs.data?.tax_percent || 0)
       generalSettings.preferred_bank_name = gs.data?.preferred_bank_name || ''
       generalSettings.bank_account_holder = gs.data?.bank_account_holder || ''
       generalSettings.bank_card_number = gs.data?.bank_card_number || ''
@@ -1066,6 +1088,8 @@ const loadAll = async () => {
       generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(gs.data?.sms_vehicle_released_template || '')
     } catch {
       generalSettings.discount_percent_per_half_star = 0
+      generalSettings.tax_enabled = false
+      generalSettings.tax_percent = 0
       generalSettings.preferred_bank_name = ''
       generalSettings.bank_account_holder = ''
       generalSettings.bank_card_number = ''
@@ -1099,6 +1123,8 @@ const saveGeneralSettings = async () => {
   try {
     const payload = {
       discount_percent_per_half_star: Number(generalSettings.discount_percent_per_half_star || 0),
+      tax_enabled: Boolean(generalSettings.tax_enabled),
+      tax_percent: Number(generalSettings.tax_percent || 0),
       preferred_bank_name: generalSettings.preferred_bank_name || '',
       bank_account_holder: generalSettings.bank_account_holder || '',
       bank_card_number: generalSettings.bank_card_number || '',
@@ -1120,6 +1146,8 @@ const saveGeneralSettings = async () => {
     }
     const response = await api.patch('/services/general-settings/', payload)
     generalSettings.discount_percent_per_half_star = Number(response.data?.discount_percent_per_half_star || 0)
+    generalSettings.tax_enabled = Boolean(response.data?.tax_enabled)
+    generalSettings.tax_percent = Number(response.data?.tax_percent || 0)
     generalSettings.preferred_bank_name = response.data?.preferred_bank_name || ''
     generalSettings.bank_account_holder = response.data?.bank_account_holder || ''
     generalSettings.bank_card_number = response.data?.bank_card_number || ''
@@ -1739,6 +1767,20 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   gap: 12px;
 }
 .general-settings-head strong { color: #0f172a; font-size: 16px; }
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid #cfe0f7;
+  border-radius: 999px;
+  background: #fff;
+  color: #315f9f;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.settings-toggle input { width: 17px; height: 17px; }
 .general-setting-label { display: grid; gap: 6px; }
 .general-setting-label input,
 .general-setting-label textarea,

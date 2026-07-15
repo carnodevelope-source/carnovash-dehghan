@@ -144,8 +144,25 @@ def customer_display_name(name):
     return normalized
 
 
-def customer_greeting(name):
+def customer_title(gender=''):
+    normalized = str(gender or '').strip().lower()
+    if normalized == 'male':
+        return 'آقا'
+    if normalized == 'female':
+        return 'خانم'
+    return ''
+
+
+def customer_display_name_with_title(name, gender=''):
     normalized = customer_display_name(name)
+    title = customer_title(gender)
+    if normalized and title:
+        return f'{title} {normalized}'
+    return normalized
+
+
+def customer_greeting(name, gender=''):
+    normalized = customer_display_name_with_title(name, gender)
     return f'{normalized} عزیز' if normalized else 'مشتری عزیز'
 
 
@@ -215,9 +232,11 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
     assigned_at = assigned_at or getattr(vehicle, 'ready_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
     job = getattr(vehicle, 'job', None)
     plate_label = str(getattr(vehicle, 'plate_number', '') or '').strip() or 'بدون پلاک'
+    driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
     context = {
-        '[نام مشتری]': customer_display_name(getattr(vehicle, 'driver_name', '')) or 'مشتری',
-        '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', '')),
+        '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
+        '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', ''), driver_gender),
+        '[جنسیت مشتری]': customer_title(driver_gender),
         '[نام کارواش]': getattr(getattr(vehicle, 'tenant', None), 'name', '') or 'کارواش',
         '[پلاک]': plate_label,
         '[ساعت تخصیص]': format_local_time(assigned_at),
@@ -229,15 +248,7 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
         getattr(settings_obj, 'sms_vehicle_assigned_template', '')
         or DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
     ).strip()
-    invoice_template = str(
-        getattr(settings_obj, 'sms_vehicle_assigned_invoice_template', '')
-        or DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE
-    ).strip()
-    parts = [
-        render_template_tokens(intro_template, context),
-        render_template_tokens(invoice_template, context),
-    ]
-    return '\n\n'.join(part for part in parts if str(part).strip()), context
+    return render_template_tokens(intro_template, context), context
 
 
 def build_vehicle_released_sms(
@@ -258,9 +269,11 @@ def build_vehicle_released_sms(
     released_at = released_at or getattr(vehicle, 'released_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
     plate_label = str(getattr(vehicle, 'plate_number', '') or '').strip() or 'بدون پلاک'
     next_discount_label = f"{to_persian_digits(str(round(float(next_discount_percent or 0), 2)).replace('.0', ''))}٪"
+    driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
     context = {
-        '[نام مشتری]': customer_display_name(getattr(vehicle, 'driver_name', '')) or 'مشتری',
-        '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', '')),
+        '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
+        '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', ''), driver_gender),
+        '[جنسیت مشتری]': customer_title(driver_gender),
         '[نام کارواش]': getattr(getattr(vehicle, 'tenant', None), 'name', '') or 'کارواش',
         '[پلاک]': plate_label,
         '[ساعت ترخیص]': format_local_time(released_at),

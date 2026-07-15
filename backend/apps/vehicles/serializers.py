@@ -293,6 +293,12 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
         return Decimal(str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0))
 
+    def _tax_percent(self, tenant):
+        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        if not getattr(settings_obj, 'tax_enabled', False):
+            return Decimal('0')
+        return min(Decimal('100'), max(Decimal('0'), Decimal(str(getattr(settings_obj, 'tax_percent', 0) or 0))))
+
     def _plate_loyalty(self, instance):
         return get_or_create_plate_loyalty(
             tenant=getattr(instance, 'tenant', None),
@@ -312,6 +318,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         tip_amount,
         loyalty_score,
         discount_percent_per_half_star,
+        tax_percent=Decimal('0'),
     ):
         service_list_subtotal = Decimal('0')
         services_total = Decimal('0')
@@ -331,7 +338,9 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             percent_per_half_star=discount_percent_per_half_star,
         )
         total_discount = facility_discount_total + loyalty_discount_total + manual_discount_total
-        final_total = max(Decimal('0'), services_total - loyalty_discount_total - manual_discount_total) + products_total + tip_amount
+        taxable_total = max(Decimal('0'), services_total - loyalty_discount_total - manual_discount_total) + products_total
+        tax_total = (taxable_total * Decimal(str(tax_percent or 0))) / Decimal('100')
+        final_total = taxable_total + tax_total + tip_amount
         return {
             'service_list_subtotal': service_list_subtotal,
             'services_total': services_total,
@@ -341,6 +350,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'manual_discount_total': manual_discount_total,
             'total_discount': total_discount,
             'discount_total': total_discount,
+            'tax_total': tax_total,
             'final_total': final_total,
         }
 
@@ -392,6 +402,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         customer = self._resolve_customer_profile(
             phone=driver_phone,
             full_name=driver_name,
+            gender=validated_data.get('driver_gender', ''),
             increment_visit=True,
             tenant=tenant,
         )
@@ -488,6 +499,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             tip_amount=max(Decimal('0'), tip_amount),
             loyalty_score=getattr(loyalty_profile, 'score', Decimal('0')),
             discount_percent_per_half_star=discount_percent_per_half_star,
+            tax_percent=self._tax_percent(tenant),
         )
         services_total = financials['services_total']
         share_base_total = services_total + products_total
@@ -516,6 +528,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             loyalty_discount_total=financials['loyalty_discount_total'],
             manual_discount_total=manual_discount_total,
             total_discount=financials['total_discount'],
+            tax_total=financials['tax_total'],
             tip_amount=max(Decimal('0'), tip_amount),
             final_total=financials['final_total'],
             worker_share_amount=worker_share_amount,
@@ -637,6 +650,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             instance.customer = self._resolve_customer_profile(
                 phone=driver_phone,
                 full_name=driver_name,
+                gender=validated_data.get('driver_gender', instance.driver_gender),
                 increment_visit=False,
                 tenant=tenant,
             )
@@ -802,6 +816,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             tip_amount=tip_amount,
             loyalty_score=getattr(loyalty_profile, 'score', Decimal('0')),
             discount_percent_per_half_star=discount_percent_per_half_star,
+            tax_percent=self._tax_percent(tenant),
         )
         carwash_share_amount = share_base_total - worker_share_amount
         final_total = financials['final_total']
@@ -826,6 +841,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         vehicle_job.loyalty_discount_total = financials['loyalty_discount_total']
         vehicle_job.manual_discount_total = manual_discount_total
         vehicle_job.total_discount = financials['total_discount']
+        vehicle_job.tax_total = financials['tax_total']
         vehicle_job.tip_amount = tip_amount
         vehicle_job.final_total = final_total
         vehicle_job.worker_share_amount = worker_share_amount
@@ -845,6 +861,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 'loyalty_discount_total',
                 'manual_discount_total',
                 'total_discount',
+                'tax_total',
                 'tip_amount',
                 'final_total',
                 'worker_share_amount',
@@ -1021,10 +1038,13 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         return result
 
-    def _resolve_customer_profile(self, phone, full_name='', increment_visit=False, tenant=None):
+    def _resolve_customer_profile(self, phone, full_name='', gender='', increment_visit=False, tenant=None):
         phone_value = self._normalize_phone(phone)
         if not phone_value:
             return None
+        normalized_gender = str(gender or '').strip().lower()
+        if normalized_gender not in {'male', 'female'}:
+            normalized_gender = ''
 
         customer = CustomerProfile.objects.filter(phone=phone_value).first()
         if not customer:
@@ -1032,6 +1052,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 phone=phone_value,
                 tenant=tenant,
                 full_name=(full_name or '').strip(),
+                gender=normalized_gender,
                 yearly_score=Decimal('0'),
                 score_year=timezone.localtime().year,
             )
@@ -1044,6 +1065,9 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if display_name and display_name != (customer.full_name or '').strip():
             customer.full_name = display_name
             update_fields.append('full_name')
+        if normalized_gender and normalized_gender != (customer.gender or ''):
+            customer.gender = normalized_gender
+            update_fields.append('gender')
 
         if increment_visit:
             current_year = timezone.localtime().year
@@ -1116,6 +1140,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'car_model',
             'car_color',
             'driver_name',
+            'driver_gender',
             'driver_phone',
             'is_piece_wash',
             'piece_details',
@@ -1153,5 +1178,6 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'car_model': {'required': False, 'allow_blank': True},
             'car_color': {'required': False, 'allow_blank': True},
             'driver_name': {'required': False, 'allow_blank': True},
+            'driver_gender': {'required': False, 'allow_blank': True},
             'driver_phone': {'required': False, 'allow_blank': True},
         }

@@ -24,6 +24,18 @@ DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = (
     'از اعتماد شما سپاسگزاریم 🌿'
 )
 
+DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
+    '[خطاب مشتری]\n'
+    'خودروی شما با پلاک [پلاک] در ساعت [ساعت تخصیص] روز [تاریخ تخصیص] در کارواش [نام کارواش] '
+    'برای انجام خدمات ثبت و تخصیص داده شد.\n\n'
+    'پیش فاکتور خدمات:\n'
+    '[خلاصه خدمات]\n'
+    'جمع کل: [جمع کل]\n'
+    'خودروی شما حدود 1 ساعت کاری دیگر آماده ترخیص است.\n'
+    'از اعتماد شما سپاسگزاریم.'
+)
+DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = ''
+
 DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
     '[خطاب مشتری]\n'
     'خودروی شما در ساعت [ساعت ترخیص] روز [تاریخ ترخیص] از کارواش [نام کارواش] ترخیص شد.\n'
@@ -249,6 +261,8 @@ class GeneralSettings(TimestampedModel):
         blank=True,
     )
     discount_percent_per_half_star = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    tax_enabled = models.BooleanField(default=False)
+    tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     preferred_bank_name = models.CharField(max_length=120, blank=True)
     bank_account_holder = models.CharField(max_length=120, blank=True)
     bank_card_number = models.CharField(max_length=32, blank=True)

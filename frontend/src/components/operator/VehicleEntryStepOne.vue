@@ -24,9 +24,6 @@
           <button type="button" class="camera-action primary-camera" :disabled="cameraState.loading" @click="startCamera">
             {{ cameraState.active ? 'راه‌اندازی مجدد دوربین' : 'باز کردن دوربین' }}
           </button>
-          <button type="button" class="camera-action live-camera" :class="{ active: cameraState.liveEnabled }" :disabled="!cameraState.active || cameraState.loading" @click="toggleLiveRecognition">
-            {{ cameraState.liveEnabled ? 'توقف لایو' : 'تشخیص لایو' }}
-          </button>
           <button type="button" class="camera-action" :disabled="cameraState.loading || !cameraState.active" @click="captureFromVideo">
             {{ cameraState.loading ? 'در حال تشخیص...' : 'تشخیص پلاک' }}
           </button>
@@ -175,6 +172,27 @@
             <input v-model="form.driver" placeholder="نام و نام خانوادگی" />
           </label>
           <label class="field">
+            <span>جنسیت راننده</span>
+            <div class="gender-bubbles" role="radiogroup" aria-label="جنسیت راننده">
+              <button
+                type="button"
+                class="gender-bubble"
+                :class="{ active: form.driverGender === 'male' }"
+                @click="form.driverGender = 'male'"
+              >
+                مرد
+              </button>
+              <button
+                type="button"
+                class="gender-bubble"
+                :class="{ active: form.driverGender === 'female' }"
+                @click="form.driverGender = 'female'"
+              >
+                زن
+              </button>
+            </div>
+          </label>
+          <label class="field">
             <span>شماره تماس</span>
             <input v-model="form.mobile" dir="ltr" placeholder="0912..." @input="onlyDigits('mobile')" />
             <small v-if="form.mobile && !isPhoneValid" class="field-error">شماره تماس باید دقیقا 11 رقم و با 09 شروع شود.</small>
@@ -215,6 +233,7 @@ const form = reactive({
   model: '',
   color: '',
   driver: '',
+  driverGender: 'male',
   mobile: '',
   customerScore: 0,
   customerLoyaltyVisitCount: 0,
@@ -254,16 +273,12 @@ const cameraState = reactive({
   message: '',
   error: false,
   lastConfidence: 0,
-  lastLatency: 0,
-  liveEnabled: false,
-  livePaused: false
+  lastLatency: 0
 })
 const letterSuggestions = ref([])
 const isAiPanelCollapsed = ref(false)
 const isMobileViewport = ref(window.matchMedia('(max-width: 640px)').matches)
 const mobileViewportQuery = window.matchMedia('(max-width: 640px)')
-let liveRecognitionTimer = null
-let liveRecognitionCooldown = 0
 let isHydratingForm = false
 const aiSessionId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(window.navigator.userAgent || '')
@@ -321,6 +336,9 @@ const hydrateForm = (data = {}) => {
   form.model = String(data.model || data.car_model || '')
   form.color = String(data.color || data.car_color || '')
   form.driver = String(data.driver || data.driver_name || '')
+  form.driverGender = ['male', 'female'].includes(String(data.driverGender || data.driver_gender || '').trim())
+    ? String(data.driverGender || data.driver_gender).trim()
+    : 'male'
   form.mobile = normalizeDigits(String(data.mobile || data.driver_phone || ''))
   form.customerScore = Math.max(0, Number(data.customerScore ?? data.customer_score ?? 0))
   form.customerLoyaltyVisitCount = Math.max(0, Number(data.customerLoyaltyVisitCount ?? data.customer_loyalty_visit_count ?? 0))
@@ -385,7 +403,6 @@ const setCameraMessage = (message, isError = false) => {
 }
 
 const stopCamera = () => {
-  stopLiveRecognition()
   if (cameraStream.value) {
     cameraStream.value.getTracks().forEach((track) => track.stop())
   }
@@ -417,8 +434,7 @@ const startCamera = async () => {
       await cameraVideoRef.value.play()
     }
     cameraState.active = true
-    setCameraMessage('دوربین آماده است. پلاک را داخل کادر نگه دارید تا خودکار خوانده شود.')
-    startLiveRecognition()
+    setCameraMessage('دوربین آماده است. هر وقت روی تصویر کلیک کنید همان لحظه پلاک خوانده می‌شود.')
   } catch (error) {
     stopCamera()
     const isInsecure = !canUseLiveCamera
@@ -429,52 +445,6 @@ const startCamera = async () => {
       true
     )
   }
-}
-
-const stopLiveRecognition = () => {
-  if (liveRecognitionTimer) clearInterval(liveRecognitionTimer)
-  liveRecognitionTimer = null
-  liveRecognitionCooldown = 0
-  cameraState.liveEnabled = false
-  cameraState.livePaused = false
-}
-
-const pauseLiveRecognition = () => {
-  if (liveRecognitionTimer) clearInterval(liveRecognitionTimer)
-  liveRecognitionTimer = null
-  cameraState.liveEnabled = false
-  cameraState.livePaused = true
-}
-
-const startLiveRecognition = () => {
-  if (!cameraState.active || form.isAnonymous || form.isPieceWash) return
-  if (liveRecognitionTimer) clearInterval(liveRecognitionTimer)
-  cameraState.liveEnabled = true
-  cameraState.livePaused = false
-  liveRecognitionCooldown = 0
-  liveRecognitionTimer = setInterval(runLiveRecognitionFrame, 1800)
-  runLiveRecognitionFrame()
-}
-
-const toggleLiveRecognition = () => {
-  if (cameraState.liveEnabled) {
-    pauseLiveRecognition()
-    setCameraMessage('تشخیص زنده متوقف شد. برای اسکن دوباره دکمه تشخیص لایو را بزنید.')
-    return
-  }
-  startLiveRecognition()
-}
-
-const runLiveRecognitionFrame = async () => {
-  if (!cameraState.active || !cameraVideoRef.value?.videoWidth || cameraState.loading || form.isAnonymous || form.isPieceWash) return
-  const hasPlate = hasCompleteManualPlate()
-  if (hasPlate && liveRecognitionCooldown > 0) {
-    liveRecognitionCooldown -= 1
-    return
-  }
-  const video = cameraVideoRef.value
-  const imageDataUrl = dataUrlFromCanvas(video, video.videoWidth, video.videoHeight)
-  await recognizePlateImage(imageDataUrl, { source: 'live' })
 }
 
 const dataUrlFromCanvas = (source, sourceWidth, sourceHeight) => {
@@ -603,10 +573,9 @@ const tryResolveLetterFromHistory = async () => {
   return true
 }
 
-const recognizePlateImage = async (imageDataUrl, options = {}) => {
-  const isLive = options.source === 'live'
+const recognizePlateImage = async (imageDataUrl) => {
   cameraState.loading = true
-  setCameraMessage(isLive ? 'در حال خواندن پلاک از تصویر زنده...' : 'در حال ارسال تصویر و تشخیص پلاک...')
+  setCameraMessage('در حال ارسال همین تصویر و تشخیص پلاک...')
   try {
     const { data } = await api.post('/vehicles/plate-recognition/', {
       session_id: aiSessionId,
@@ -615,12 +584,11 @@ const recognizePlateImage = async (imageDataUrl, options = {}) => {
     cameraState.lastConfidence = Number(data?.confidence || 0)
     cameraState.lastLatency = Number(data?.latency_ms || 0)
     if (data?.mode === 'stub') {
-      pauseLiveRecognition()
       setCameraMessage(data?.detail || 'مدل واقعی تشخیص پلاک هنوز روی سرویس AI نصب نشده است.', true)
       return
     }
     if (!data?.accepted) {
-      setCameraMessage(data?.detail || 'درخواست تشخیص پلاک پذیرفته نشد.', !isLive)
+      setCameraMessage(data?.detail || 'درخواست تشخیص پلاک پذیرفته نشد.', true)
       return
     }
     if (!applyRecognizedPlate(data)) {
@@ -630,16 +598,12 @@ const recognizePlateImage = async (imageDataUrl, options = {}) => {
         extractedText
           ? `متن پلاک خوانده شد اما فرم آن کامل نیست: ${extractedText}`
           : `پلاک در تصویر پیدا نشد${aiReason ? ` (${aiReason})` : ''}. عکس واضح‌تر و نزدیک‌تر بگیرید.`,
-        !isLive
+        true
       )
       return
     }
     const correctedFromHistory = await tryResolveLetterFromHistory()
     const confidenceText = cameraState.lastConfidence ? ` | اطمینان ${(cameraState.lastConfidence * 100).toFixed(0)}٪` : ''
-    if (isLive) {
-      liveRecognitionCooldown = 4
-      pauseLiveRecognition()
-    }
     setCameraMessage(
       correctedFromHistory
         ? `پلاک ${plate.value} از روی سابقه مشتری اصلاح و ثبت شد${confidenceText}.`
@@ -648,7 +612,7 @@ const recognizePlateImage = async (imageDataUrl, options = {}) => {
     if (isMobileViewport.value) isAiPanelCollapsed.value = true
   } catch (error) {
     const detail = error?.response?.data?.detail || 'ارتباط با سرویس تشخیص پلاک برقرار نشد.'
-    setCameraMessage(detail, !isLive)
+    setCameraMessage(detail, true)
   } finally {
     cameraState.loading = false
   }
@@ -681,6 +645,7 @@ const payload = () => ({
   model: form.isPieceWash ? 'قطعه‌شویی' : (form.isAnonymous ? '1111' : form.model.trim()),
   color: form.isPieceWash ? '-' : (form.isAnonymous ? '1111' : form.color.trim()),
   driver: form.driver.trim(),
+  driverGender: form.driverGender,
   mobile: form.mobile.trim(),
   customerScore: form.customerScore,
   customerLoyaltyVisitCount: form.customerLoyaltyVisitCount,
@@ -724,9 +689,8 @@ const detectedPlate = computed(() => (
 ))
 const cameraHintText = computed(() => {
   if (!cameraState.active) return 'ابتدا دوربین را باز کنید'
-  if (cameraState.liveEnabled) return 'پلاک را ثابت داخل کادر نگه دارید'
-  if (cameraState.livePaused) return 'برای اسکن دوباره تشخیص لایو را فعال کنید'
-  return 'روی تصویر کلیک کنید یا تشخیص لایو را فعال کنید'
+  if (cameraState.loading) return 'در حال تشخیص پلاک...'
+  return 'برای تشخیص پلاک روی تصویر کلیک کنید'
 })
 const detectedModelColor = computed(() => {
   const text = `${form.model.trim()} ${form.color.trim()}`.trim()
@@ -797,6 +761,9 @@ const applyPlateLookupData = (data = {}) => {
   form.model = String(data.car_model || data.model || '').trim()
   form.color = String(data.car_color || data.color || '').trim()
   form.driver = String(data.driver_name || data.driver || '').trim()
+  form.driverGender = ['male', 'female'].includes(String(data.driver_gender || data.driverGender || '').trim())
+    ? String(data.driver_gender || data.driverGender).trim()
+    : form.driverGender
   form.mobile = normalizeDigits(String(data.driver_phone || data.mobile || ''))
   form.customerScore = Math.max(0, Number(data.customer_score ?? data.customerScore ?? 0))
   form.customerLoyaltyVisitCount = Math.max(0, Number(data.customer_loyalty_visit_count ?? data.customerLoyaltyVisitCount ?? 0))
@@ -1234,6 +1201,33 @@ onBeforeUnmount(() => {
 .field textarea:focus {
   outline: 2px solid rgba(96, 165, 250, 0.18);
   background: rgba(239, 246, 255, 0.96);
+}
+
+.gender-bubbles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 5px;
+  border: 1px solid #dbe7f5;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.gender-bubble {
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.gender-bubble.active {
+  background: linear-gradient(135deg, #1e5fae, #3b82c4);
+  color: #fff;
+  box-shadow: 0 12px 22px -18px rgba(30, 95, 174, .75);
 }
 
 .piece-wash-toggle-row {

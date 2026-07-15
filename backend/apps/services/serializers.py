@@ -157,6 +157,11 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('درصد تخفیف باید بین ۰ تا ۱۰۰ باشد.')
         return value
 
+    def validate_tax_percent(self, value):
+        if value < Decimal('0') or value > Decimal('100'):
+            raise serializers.ValidationError('درصد مالیات باید بین ۰ تا ۱۰۰ باشد.')
+        return value
+
     def validate_bank_card_number(self, value):
         digits = ''.join(ch for ch in str(value or '') if ch.isdigit())
         if digits and len(digits) not in {16, 19}:
@@ -225,6 +230,8 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'discount_percent_per_half_star',
+            'tax_enabled',
+            'tax_percent',
             'preferred_bank_name',
             'bank_account_holder',
             'bank_card_number',

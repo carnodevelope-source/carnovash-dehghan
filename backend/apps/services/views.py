@@ -156,6 +156,8 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
             tenant=self.request.user.tenant,
             defaults={
                 'discount_percent_per_half_star': 0,
+                'tax_enabled': False,
+                'tax_percent': 0,
                 'preferred_bank_name': '',
                 'bank_account_holder': '',
                 'bank_card_number': '',

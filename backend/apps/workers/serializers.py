@@ -330,10 +330,6 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         if not username:
             username = _generate_worker_username(user_model, phone=phone)
         password = str(validated_data.get('password') or '').strip()
-        generated_password = False
-        if not password and role == 'worker':
-            password = secrets.token_urlsafe(10)
-            generated_password = True
         self.created_credentials = None
         is_available = validated_data.get('is_available', True)
         user = user_model.objects.create(
@@ -344,9 +340,12 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
             role=role,
             is_active=is_available,
         )
-        user.set_password(password)
+        if role == 'worker':
+            user.set_unusable_password()
+        else:
+            user.set_password(password)
         user.save()
-        if password and not generated_password:
+        if role != 'worker' and password:
             self.created_credentials = {
                 'tenant': tenant,
                 'phone': phone,
@@ -393,6 +392,7 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
     def update(self, instance, validated_data):
         user_model = get_user_model()
         next_phone = validated_data.get('phone', instance.user.phone)
+        next_role = str(validated_data.get('role', instance.user.role or 'worker') or 'worker').strip().lower()
         next_username = str(validated_data.get('username', instance.user.username) or '').strip()
         is_available = validated_data.get('is_available', instance.is_available)
         if not next_username:
@@ -404,11 +404,14 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         instance.user.full_name = validated_data.get('full_name', instance.user.full_name)
         instance.user.username = next_username
         instance.user.phone = next_phone
-        instance.user.role = validated_data.get('role', instance.user.role or 'worker')
+        instance.user.role = next_role
         instance.user.is_active = is_available
         password = str(validated_data.get('password') or '').strip()
         update_fields = ['full_name', 'username', 'phone', 'role', 'is_active']
-        if password:
+        if next_role == 'worker' and not password:
+            instance.user.set_unusable_password()
+            update_fields.append('password')
+        elif password:
             instance.user.set_password(password)
             update_fields.append('password')
         instance.user.save(update_fields=update_fields)

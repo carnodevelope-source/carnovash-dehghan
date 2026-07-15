@@ -55,6 +55,7 @@
           <h3>راننده و پذیرش</h3>
           <div class="vehicle-details-info-grid">
             <p><span>نام راننده</span><strong>{{ vehicle.driver_name || '-' }}</strong></p>
+            <p><span>جنسیت راننده</span><strong>{{ driverGenderLabel(vehicle.driver_gender) }}</strong></p>
             <p><span>شماره راننده</span><strong>{{ vehicle.driver_phone || '-' }}</strong></p>
             <p><span>ایجاد</span><strong>{{ formatDateTime(vehicle.created_at) }}</strong></p>
             <p><span>آخرین بروزرسانی</span><strong>{{ formatDateTime(vehicle.updated_at) }}</strong></p>
@@ -67,7 +68,7 @@
           <div class="vehicle-details-info-grid vehicle-details-info-grid-four">
             <p><span>پرسنل تخصیص</span><strong>{{ assignedWorkersLabel(vehicle.job) }}</strong></p>
             <p><span>همه پرسنل سفارش</span><strong>{{ assignedWorkersFullLabel(vehicle.job) }}</strong></p>
-            <p><span>نوع سهم</span><strong>{{ vehicle.job?.worker_payment_type === 'fixed' ? 'ثابت' : 'درصدی' }}</strong></p>
+            <p><span>نوع سهم</span><strong>{{ workerPaymentTypeLabel(vehicle.job?.worker_payment_type) }}</strong></p>
             <p><span>درصد سهم</span><strong>{{ formatPercent(vehicle.job?.worker_payment_percent) }}</strong></p>
             <p><span>سهم ثابت</span><strong>{{ formatMoney(vehicle.job?.worker_payment_fixed) }}</strong></p>
             <p><span>سهم پرسنل</span><strong>{{ formatMoney(workerTotalWithTip(vehicle.job)) }}</strong></p>
@@ -86,7 +87,6 @@
             <div v-for="line in vehicle.job.service_lines" :key="line.id" class="vehicle-details-list-item vehicle-details-service-item">
               <div>
                 <span class="vehicle-details-service-title">{{ line.service_name }}</span>
-                <small>تعداد: {{ Number(line.quantity || 1).toLocaleString('fa-IR') }}</small>
                 <small v-if="Number(line.discount_amount || 0) > 0" class="vehicle-details-service-discount-note">
                   تخفیف خدمت: {{ formatMoney(line.discount_amount) }}
                 </small>
@@ -175,6 +175,17 @@ const formatPaymentStatus = (value) => ({
   partial: 'پرداخت ناقص',
   paid: 'پرداخت کامل',
   refunded: 'مرجوع شده'
+}[value] || '-')
+
+const driverGenderLabel = (value) => ({
+  male: 'مرد',
+  female: 'زن'
+}[value] || '-')
+
+const workerPaymentTypeLabel = (value) => ({
+  fixed: 'ثابت',
+  hourly: 'ساعتی',
+  percent: 'درصدی'
 }[value] || '-')
 
 const formatMoney = (value) => formatThousandsToman(value)

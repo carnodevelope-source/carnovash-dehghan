@@ -344,17 +344,9 @@
                 <span>تاریخ پرداخت</span>
                 <BaseDatePicker v-model="ticketModal.context.payment_date" placeholder="انتخاب تاریخ پرداخت" :clearable="false" />
               </label>
-              <label>
-                <span>شماره سفارش</span>
-                <input v-model.trim="ticketModal.context.order_number" placeholder="مثلا 1482" />
-              </label>
             </template>
 
             <template v-else-if="ticketModal.category === 'operations'">
-              <label>
-                <span>شماره سفارش</span>
-                <input v-model.trim="ticketModal.context.order_number" placeholder="مثلا 1482" />
-              </label>
               <label>
                 <span>خدمت یا سرویس</span>
                 <input v-model.trim="ticketModal.context.service_name" placeholder="مثلا سرامیک بدنه" />
@@ -655,7 +647,6 @@ const buildStructuredMessage = () => {
     transaction_id: 'شماره تراکنش',
     payment_amount: 'مبلغ پرداخت',
     payment_date: 'تاریخ پرداخت',
-    order_number: 'شماره سفارش',
     service_name: 'سرویس',
     device_type: 'نوع دستگاه',
     browser_name: 'مرورگر / اپ',
@@ -665,6 +656,7 @@ const buildStructuredMessage = () => {
   }
 
   Object.entries(ticketModal.context).forEach(([key, value]) => {
+    if (key === 'order_number') return
     const text = String(value || '').trim()
     if (!text) return
     contextLines.push(`${fieldMap[key]}: ${text}`)
@@ -1187,16 +1179,17 @@ onMounted(async () => {
   display: grid;
   gap: 10px;
   padding: 18px;
-  border-radius: 24px;
-  border: 1px solid rgba(226, 232, 240, 0.86);
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: 18px;
+  border: 1px solid #dbe7f3;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color .18s ease;
 }
 
 .ticket-row:hover {
   transform: translateY(-1px);
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
+  border-color: #bcd3ef;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
 }
 
 .ticket-row.selected {
@@ -1365,13 +1358,14 @@ onMounted(async () => {
 .modal-form select {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(203, 213, 225, 0.8);
+  border: 1px solid #c9d8ea;
   border-radius: 16px;
-  padding: 10px 12px;
+  padding: 11px 13px;
   font: inherit;
-  background: rgba(248, 251, 255, 0.96);
+  background: #ffffff;
   color: #0f172a;
   resize: vertical;
+  box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.02);
 }
 
 .reply-form textarea,
@@ -1390,8 +1384,9 @@ onMounted(async () => {
 .modal-form textarea:focus,
 .modal-form select:focus {
   outline: none;
-  border-color: rgba(59, 130, 246, 0.35);
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08);
+  border-color: #3b82f6;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.10);
 }
 
 .modal-form input[readonly],

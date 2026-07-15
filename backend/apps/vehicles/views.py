@@ -360,6 +360,7 @@ class VehiclePlateLookupView(APIView):
                 'plate_right': latest_vehicle.plate_right or '',
                 'plate_type': latest_vehicle.plate_type or VehicleEntry.PlateType.CAR,
                 'driver_name': latest_vehicle.driver_name or '',
+                'driver_gender': latest_vehicle.driver_gender or '',
                 'driver_phone': latest_vehicle.driver_phone or '',
                 'car_model': latest_vehicle.car_model or '',
                 'car_color': latest_vehicle.car_color or '',
@@ -501,6 +502,12 @@ class VehicleReleaseCheckoutView(APIView):
             getattr(settings_obj, 'discount_percent_per_half_star', Decimal('0'))
         )
 
+    def _tax_percent(self, tenant):
+        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        if not getattr(settings_obj, 'tax_enabled', False):
+            return Decimal('0')
+        return self._clamp_percent(getattr(settings_obj, 'tax_percent', Decimal('0')))
+
     def _compute_discount(self, base_amount, customer_score, percent_per_half_star):
         discount_percent, discount_amount = compute_loyalty_discount(
             base_amount=base_amount,
@@ -609,6 +616,61 @@ class VehicleReleaseCheckoutView(APIView):
             )
         return workers
 
+    def _resolve_workers_from_payload(self, tenant, raw_workers):
+        if not isinstance(raw_workers, list):
+            return None
+
+        requested = []
+        seen_ids = set()
+        for item in raw_workers:
+            if not isinstance(item, dict):
+                continue
+            try:
+                worker_id = int(item.get('id') or item.get('worker_id') or 0)
+            except (TypeError, ValueError):
+                worker_id = 0
+            if worker_id <= 0 or worker_id in seen_ids:
+                continue
+            seen_ids.add(worker_id)
+            requested.append(
+                {
+                    'id': worker_id,
+                    'name': str(item.get('name') or item.get('worker_name') or '').strip(),
+                    'worker_share_percent': self._clamp_percent(item.get('worker_share_percent', 0)),
+                }
+            )
+
+        if not requested:
+            return []
+
+        profiles = list(
+            WorkerProfile.objects.select_related('user').filter(
+                tenant=tenant,
+                id__in=[item['id'] for item in requested],
+            )
+        )
+        profiles_by_id = {int(profile.id): profile for profile in profiles}
+        resolved = []
+        for item in requested:
+            profile = profiles_by_id.get(int(item['id']))
+            if not profile:
+                continue
+            name = (
+                item['name']
+                or ((profile.user.full_name or profile.user.username or '').strip() if getattr(profile, 'user', None) else '')
+                or f"نیرو {profile.id}"
+            )
+            resolved.append(
+                {
+                    'id': int(profile.id),
+                    'name': name,
+                    'tip_share_percent': Decimal(str(profile.tip_share_percent or 0)),
+                    'worker_share_percent': item['worker_share_percent'],
+                    'worker_share_amount': Decimal('0'),
+                }
+            )
+        return resolved
+
     def _default_worker_share_distribution(self, assigned_workers):
         worker_count = len(assigned_workers or [])
         if worker_count <= 0:
@@ -696,7 +758,7 @@ class VehicleReleaseCheckoutView(APIView):
 
     def _distribute_tip(self, tip_amount, assigned_workers):
         tip_value = max(Decimal('0'), Decimal(str(tip_amount or 0)))
-        if tip_value <= 0 or not assigned_workers:
+        if not assigned_workers:
             return [], Decimal('0')
 
         prepared = []
@@ -709,6 +771,15 @@ class VehicleReleaseCheckoutView(APIView):
                 percent = Decimal('100')
             prepared.append({**item, 'tip_share_percent': percent})
             total_percent += percent
+
+        if tip_value <= 0:
+            return [
+                {
+                    **item,
+                    'tip_share_amount': Decimal('0'),
+                }
+                for item in prepared
+            ], Decimal('0')
 
         if total_percent <= 0:
             return [
@@ -953,6 +1024,7 @@ class VehicleReleaseCheckoutView(APIView):
         service_lines_payload = request.data.get('service_lines', [])
         new_service_lines_payload = request.data.get('new_service_lines', [])
         product_lines_payload = request.data.get('product_lines', [])
+        assigned_workers_payload = request.data.get('assigned_workers', None)
         worker_share_distribution_payload = request.data.get('worker_share_distribution', [])
         tip_amount = Decimal(str(request.data.get('tip_amount', vehicle.job.tip_amount or 0)))
         payment_method = str(request.data.get('payment_method', Payment.Method.CASH) or Payment.Method.CASH).strip().lower()
@@ -1204,14 +1276,27 @@ class VehicleReleaseCheckoutView(APIView):
             Decimal('0'),
         )
         discount_total = facility_discount_total + loyalty_discount_total + manual_discount_total
-        final_total = max(Decimal('0'), completed_service_totals - loyalty_discount_total - manual_discount_total) + product_totals + tip_amount
+        taxable_total = max(Decimal('0'), completed_service_totals - loyalty_discount_total - manual_discount_total) + product_totals
+        tax_percent = self._tax_percent(tenant)
+        tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
+        final_total = taxable_total + tax_total + tip_amount
 
         share_base_total = completed_service_totals
         worker_share_base = vehicle.job.worker_share_amount or Decimal('0')
         if worker_share_base > share_base_total:
             worker_share_base = share_base_total
 
-        assigned_workers = self._resolve_assigned_workers(vehicle.job)
+        assigned_workers_from_payload = self._resolve_workers_from_payload(tenant, assigned_workers_payload)
+        assigned_workers = (
+            assigned_workers_from_payload
+            if assigned_workers_from_payload is not None
+            else self._resolve_assigned_workers(vehicle.job)
+        )
+        if assigned_workers_payload is not None and not assigned_workers:
+            return Response(
+                {'assigned_workers': ['حداقل یک پرسنل معتبر انتخاب کنید.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         worker_share_distribution, worker_share_base_total = self._normalize_worker_share_distribution(
             assigned_workers=assigned_workers,
             raw_distribution=worker_share_distribution_payload,
@@ -1286,7 +1371,7 @@ class VehicleReleaseCheckoutView(APIView):
         vehicle.job.discount_total = discount_total
         vehicle.job.facility_discount_total = facility_discount_total
         vehicle.job.loyalty_discount_total = loyalty_discount_total
-        vehicle.job.tax_total = 0
+        vehicle.job.tax_total = tax_total
         vehicle.job.service_list_subtotal = sum(
             (
                 Decimal(str(line.list_unit_price or 0)) * Decimal(str(line.quantity or 0))

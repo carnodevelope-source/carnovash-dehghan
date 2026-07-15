@@ -11,6 +11,10 @@ class TimestampedModel(models.Model):
 
 
 class CustomerProfile(TimestampedModel):
+    class Gender(models.TextChoices):
+        MALE = 'male', 'Male'
+        FEMALE = 'female', 'Female'
+
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,
@@ -20,6 +24,7 @@ class CustomerProfile(TimestampedModel):
     )
     phone = models.CharField(max_length=20, unique=True, db_index=True)
     full_name = models.CharField(max_length=120, blank=True)
+    gender = models.CharField(max_length=10, choices=Gender.choices, blank=True, default='')
     yearly_score = models.DecimalField(max_digits=3, decimal_places=1, default=0)
     score_year = models.PositiveSmallIntegerField(default=1400)
 
@@ -65,6 +70,10 @@ class PlateLoyaltyProfile(TimestampedModel):
 
 
 class VehicleEntry(TimestampedModel):
+    class DriverGender(models.TextChoices):
+        MALE = 'male', 'Male'
+        FEMALE = 'female', 'Female'
+
     class TariffType(models.TextChoices):
         TYPE_1 = 'type_1', 'Type 1'
         TYPE_2 = 'type_2', 'Type 2'
@@ -119,6 +128,7 @@ class VehicleEntry(TimestampedModel):
     car_model = models.CharField(max_length=120)
     car_color = models.CharField(max_length=60)
     driver_name = models.CharField(max_length=120)
+    driver_gender = models.CharField(max_length=10, choices=DriverGender.choices, blank=True, default='')
     driver_phone = models.CharField(max_length=20, db_index=True)
     is_piece_wash = models.BooleanField(default=False)
     piece_details = models.TextField(blank=True)
