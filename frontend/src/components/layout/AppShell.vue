@@ -110,6 +110,9 @@
             <span v-if="item.route === '/manager/wallet' && walletWarning.active" class="menu-warning-badge">
               {{ walletWarning.label }}
             </span>
+            <span v-else-if="item.route === '/support' && supportOpenCount > 0" class="menu-count-badge">
+              {{ supportOpenCount.toLocaleString('fa-IR') }}
+            </span>
           </RouterLink>
         </nav>
 
@@ -184,10 +187,13 @@ const isProfileMenuOpen = ref(false)
 const isLoggingOut = ref(false)
 const profileMenuRef = ref(null)
 const walletWarning = ref({ active: false, label: '', smsZero: false })
+const supportOpenCount = ref(0)
 const isMobileMenuOpen = ref(false)
 const topbarRef = ref(null)
 const topbarHeight = ref(64)
 const mobileLoginArtSrc = `${import.meta.env.BASE_URL}Mobile-bg-640.webp`
+let supportCountInterval = null
+let supportCountPollingInFlight = false
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))
@@ -342,7 +348,9 @@ const onLogoutClick = async () => {
 const loadWalletWarning = async () => {
   if (!['admin', 'manager', 'accountant'].includes(authStore.role)) return
   try {
-    const { data } = await api.get('/payments/wallet/dashboard/')
+    const { data } = await api.get('/payments/wallet/dashboard/', {
+      meta: { trackLoading: false, showErrorToast: false }
+    })
     const regularBalance = Number(data?.summary?.regular_balance || 0)
     const smsBalance = Number(data?.summary?.sms_balance || 0)
     const regularLow = regularBalance <= 100000
@@ -358,6 +366,28 @@ const loadWalletWarning = async () => {
   }
 }
 
+const loadSupportOpenCount = async () => {
+  if (route.path === '/support') return
+  if (!authStore.canAccessSupport) {
+    if (supportOpenCount.value !== 0) supportOpenCount.value = 0
+    return
+  }
+  if (supportCountPollingInFlight) return
+  supportCountPollingInFlight = true
+  try {
+    const { data } = await api.get('/auth/support/tickets/', {
+      meta: { trackLoading: false, showErrorToast: false }
+    })
+    const items = Array.isArray(data) ? data : []
+    const nextCount = items.filter((item) => item.status !== 'closed').length
+    if (supportOpenCount.value !== nextCount) supportOpenCount.value = nextCount
+  } catch (_error) {
+    if (supportOpenCount.value !== 0) supportOpenCount.value = 0
+  } finally {
+    supportCountPollingInFlight = false
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   window.addEventListener('resize', onWindowResize)
@@ -365,6 +395,8 @@ onMounted(() => {
   syncTopbarHeight()
   syncBodyScroll()
   loadWalletWarning()
+  loadSupportOpenCount()
+  supportCountInterval = window.setInterval(loadSupportOpenCount, 10000)
 })
 
 watch(() => route.fullPath, () => {
@@ -380,6 +412,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('resize', onWindowResize)
   window.removeEventListener('keydown', onWindowKeydown)
+  if (supportCountInterval) window.clearInterval(supportCountInterval)
   document.body.classList.remove('mobile-menu-open')
 })
 </script>
@@ -405,8 +438,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   padding: 0 24px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(12px);
+  background: #fff;
   border-bottom: 1px solid #e3e6ed;
 }
 
@@ -457,7 +489,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 .mobile-menu-toggle span {
@@ -712,6 +744,20 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
+.menu-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .menu-item.active {
   background: #dbeafe;
   color: #0058be;
@@ -919,12 +965,11 @@ onBeforeUnmount(() => {
     border-left: 1px solid #e3e6ed;
     border-bottom: 0;
     border-radius: 0;
-    box-shadow: 0 22px 50px rgba(15, 23, 42, 0.16);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
     z-index: 30;
     overflow: auto;
     overflow-x: hidden;
-    background: rgba(242, 244, 246, 0.98);
-    backdrop-filter: blur(12px);
+    background: #f2f4f6;
   }
 
   .mobile-sidebar-head {

@@ -133,25 +133,6 @@
               </div>
             </header>
 
-            <section class="metric-strip">
-              <article class="metric-card">
-                <small>آخرین پاسخ</small>
-                <strong>{{ ticketLastResponder(detailState.ticket) }}</strong>
-              </article>
-              <article class="metric-card">
-                <small>آخرین بروزرسانی</small>
-                <strong>{{ formatDateTime(detailState.ticket.updated_at) }}</strong>
-              </article>
-              <article class="metric-card">
-                <small>پاسخ‌اول</small>
-                <strong>{{ firstResponseLabel(detailState.ticket) }}</strong>
-              </article>
-              <article class="metric-card">
-                <small>رضایت</small>
-                <strong>{{ satisfactionLabel(detailState.ticket.customer_satisfaction) }}</strong>
-              </article>
-            </section>
-
             <section v-if="detailState.ticket.attachments?.length" class="ticket-attachments-shell">
               <div class="reply-head">
                 <strong>فایل‌های پیوست</strong>
@@ -406,7 +387,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
@@ -420,6 +401,8 @@ const activeStatusTab = ref('open')
 const activeCategoryTab = ref('all')
 const tickets = ref([])
 const messageThreadRef = ref(null)
+let supportPollingTimer = null
+let supportPollingInFlight = false
 
 const getEmptyContext = () => ({
   transaction_id: '',
@@ -453,9 +436,8 @@ const statusCount = computed(() => tickets.value.reduce((acc, item) => {
 }, { open: 0, pending: 0, answered: 0, closed: 0 }))
 
 const statusTrack = computed(() => [
-  { key: 'open', label: 'باز', count: statusCount.value.open, description: 'تازه ثبت شده یا هنوز پاسخ نگرفته' },
+  { key: 'open', label: 'باز', count: Number(statusCount.value.open || 0) + Number(statusCount.value.answered || 0), description: 'تیکت‌های فعال و بسته‌نشده' },
   { key: 'pending', label: 'در حال بررسی', count: statusCount.value.pending, description: 'گفتگو ادامه دارد و در صف رسیدگی است' },
-  { key: 'answered', label: 'پاسخ داده شده', count: statusCount.value.answered, description: 'پشتیبانی پاسخ داده و منتظر اقدام شماست' },
   { key: 'closed', label: 'بسته شده', count: statusCount.value.closed, description: 'پرونده‌های پایان‌یافته و آرشیوشده' }
 ])
 
@@ -503,7 +485,11 @@ const inProgressCount = computed(() => Number(statusCount.value.pending || 0) + 
 const filteredTickets = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   return tickets.value.filter((item) => {
-    if (item.status !== activeStatusTab.value) return false
+    if (activeStatusTab.value === 'open') {
+      if (!['open', 'answered'].includes(item.status)) return false
+    } else if (item.status !== activeStatusTab.value) {
+      return false
+    }
     if (activeCategoryTab.value !== 'all' && item.category !== activeCategoryTab.value) return false
     if (!query) return true
     const haystack = `${item.id} ${item.subject} ${item.message || ''} ${item.category || ''} ${item.last_message_preview || ''}`.toLowerCase()
@@ -638,7 +624,7 @@ const focusLatestTicket = async () => {
 }
 
 const toggleStatusFilter = () => {
-  const order = ['open', 'pending', 'answered', 'closed']
+  const order = ['open', 'pending', 'closed']
   const currentIndex = order.findIndex((item) => item === activeStatusTab.value)
   activeStatusTab.value = order[(currentIndex + 1) % order.length]
 }
@@ -736,16 +722,23 @@ const scrollMessagesToBottom = async () => {
 
 const openTicketDetail = async (ticketId, options = {}) => {
   if (!ticketId) return
-  detailState.loading = true
+  const isSoftRefresh = Boolean(options.soft)
+  if (!isSoftRefresh) detailState.loading = true
   if (!options.keepReply) detailState.replyBody = ''
   try {
-    const { data } = await api.get(`/auth/support/tickets/${ticketId}/`)
+    const { data } = await api.get(`/auth/support/tickets/${ticketId}/`, {
+      meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
+    })
+    const previousLastMessageId = detailState.ticket?.messages?.at?.(-1)?.id
     detailState.ticket = data
     detailState.feedbackScore = Number(data?.customer_satisfaction || 0)
     detailState.feedbackText = data?.customer_feedback || ''
-    await scrollMessagesToBottom()
+    const nextLastMessageId = data?.messages?.at?.(-1)?.id
+    if (!isSoftRefresh || previousLastMessageId !== nextLastMessageId) {
+      await scrollMessagesToBottom()
+    }
   } finally {
-    detailState.loading = false
+    if (!isSoftRefresh) detailState.loading = false
   }
 }
 
@@ -794,13 +787,38 @@ const ensureActiveTicket = async () => {
 
 const loadTickets = async (options = {}) => {
   const previousTicketId = detailState.ticket?.id
-  const { data } = await api.get('/auth/support/tickets/')
+  const { data } = await api.get('/auth/support/tickets/', {
+    meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
+  })
   tickets.value = Array.isArray(data) ? data : []
   if (options.preserveSelection && previousTicketId) {
     const exists = tickets.value.some((item) => item.id === previousTicketId)
-    if (exists) return
+    if (exists) {
+      if (options.refreshSelected && !detailState.replyBody) {
+        await openTicketDetail(previousTicketId, {
+          keepReply: true,
+          soft: true,
+          silent: Boolean(options.silent)
+        })
+      }
+      return
+    }
   }
   await ensureActiveTicket()
+}
+
+const refreshTicketsQuietly = async () => {
+  if (supportPollingInFlight || ticketModal.open || detailState.sendingReply) return
+  supportPollingInFlight = true
+  try {
+    await loadTickets({
+      preserveSelection: true,
+      refreshSelected: false,
+      silent: true
+    })
+  } finally {
+    supportPollingInFlight = false
+  }
 }
 
 const submitTicket = async () => {
@@ -843,6 +861,11 @@ onMounted(async () => {
     openWalletPaymentTicketModal()
     router.replace({ path: route.path, query: {} })
   }
+  supportPollingTimer = window.setInterval(refreshTicketsQuietly, 10000)
+})
+
+onBeforeUnmount(() => {
+  if (supportPollingTimer) window.clearInterval(supportPollingTimer)
 })
 </script>
 
@@ -1255,7 +1278,7 @@ onMounted(async () => {
 }
 
 .conversation-card {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 .conversation-copy {
@@ -1901,12 +1924,68 @@ onMounted(async () => {
 }
 
 .reply-shell {
-  position: sticky;
-  bottom: 0;
   z-index: 3;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(10px);
+}
+
+.reply-shell .reply-head small {
+  display: none;
+}
+
+.reply-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.reply-form textarea {
+  min-height: 54px;
+  max-height: 96px;
+  resize: none;
+}
+
+.conversation-card {
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.conversation-card > * {
+  min-width: 0;
+}
+
+.message-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.reply-shell {
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.reply-form {
+  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
+}
+
+.reply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.reply-actions .primary-btn {
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.reply-actions {
+  align-items: end;
+  justify-content: flex-end;
 }
 
 .reply-form textarea,
@@ -2027,8 +2106,20 @@ onMounted(async () => {
     border-radius: 18px;
   }
 
+  .reply-form {
+    grid-template-columns: 1fr;
+  }
+
+  .reply-actions {
+    justify-content: stretch;
+  }
+
+  .reply-actions .primary-btn {
+    width: 100%;
+  }
+
   .reply-form textarea {
-    min-height: 112px;
+    min-height: 72px;
     font-size: 16px;
   }
 

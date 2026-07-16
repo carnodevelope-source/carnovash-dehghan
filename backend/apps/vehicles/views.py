@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
@@ -487,6 +488,16 @@ class VehicleReleaseCheckoutView(APIView):
         return Decimal(str(value or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     @staticmethod
+    def _service_line_list_total(line):
+        quantity = Decimal(str(getattr(line, 'quantity', 0) or 0))
+        list_unit_price = Decimal(str(getattr(line, 'list_unit_price', 0) or 0))
+        if list_unit_price > 0:
+            return list_unit_price * quantity
+        return Decimal(str(getattr(line, 'line_total', 0) or 0)) + Decimal(
+            str(getattr(line, 'discount_amount', 0) or 0)
+        )
+
+    @staticmethod
     def _clamp_percent(value):
         percent = Decimal(str(value or 0))
         if percent < 0:
@@ -836,8 +847,10 @@ class VehicleReleaseCheckoutView(APIView):
                     'service_name': line.custom_service_name or (line.service.name if line.service else 'خدمت'),
                     'custom_service_name': line.custom_service_name,
                     'quantity': line.quantity,
+                    'list_unit_price': line.list_unit_price,
                     'unit_price': line.unit_price,
                     'line_total': line.line_total,
+                    'discount_amount': line.discount_amount,
                     'is_completed': line.is_completed,
                 }
             )
@@ -912,9 +925,14 @@ class VehicleReleaseCheckoutView(APIView):
                 }
             )
 
-        services_total = (
-            vehicle.job.service_lines.filter(is_completed=True).aggregate(total=Sum('line_total')).get('total')
-            or Decimal('0')
+        completed_lines = [line for line in vehicle.job.service_lines.all() if line.is_completed]
+        services_total = sum((Decimal(str(line.line_total or 0)) for line in completed_lines), Decimal('0'))
+        service_list_subtotal = sum(
+            (
+                self._service_line_list_total(line)
+                for line in completed_lines
+            ),
+            Decimal('0'),
         )
         products_total = vehicle.job.products_total or Decimal('0')
         tip_amount = vehicle.job.tip_amount or Decimal('0')
@@ -923,13 +941,25 @@ class VehicleReleaseCheckoutView(APIView):
         customer_score = Decimal(str(loyalty.get('score', 0) or 0))
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
         customer_discount_percent, loyalty_discount_total = self._compute_discount(
-            base_amount=services_total,
+            base_amount=service_list_subtotal,
             customer_score=customer_score,
             percent_per_half_star=discount_percent_per_half_star,
         )
-        facility_discount_total = vehicle.job.facility_discount_total or Decimal('0')
-        discount_total = facility_discount_total + loyalty_discount_total + manual_discount_total
-        final_total = max(Decimal('0'), services_total - loyalty_discount_total - manual_discount_total) + products_total + tip_amount
+        facility_discount_total = sum(
+            (
+                max(
+                    Decimal('0'),
+                    self._service_line_list_total(line) - Decimal(str(line.line_total or 0)),
+                )
+                for line in completed_lines
+            ),
+            Decimal('0'),
+        )
+        discount_total = min(
+            service_list_subtotal,
+            facility_discount_total + loyalty_discount_total + manual_discount_total,
+        )
+        final_total = max(Decimal('0'), service_list_subtotal - discount_total) + products_total + tip_amount
         assigned_workers = self._resolve_assigned_workers(vehicle.job)
         worker_share_distribution, distributed_worker_share_total = self._normalize_worker_share_distribution(
             assigned_workers=assigned_workers,
@@ -947,15 +977,20 @@ class VehicleReleaseCheckoutView(APIView):
             assigned_workers=assigned_workers,
         )
         assigned_workers_names = [item['name'] for item in assigned_workers_with_tip]
+        manager = get_user_model().objects.filter(tenant=tenant, role='manager').order_by('id').first()
 
         return Response(
             {
                 'vehicle': {
                     'id': vehicle.id,
+                    'admission_number': vehicle.admission_number,
+                    'tenant_address': getattr(tenant, 'address', '') or '',
+                    'manager_phone': getattr(manager, 'phone', '') if manager else '',
                     'plate_number': vehicle.plate_number,
                     'car_model': vehicle.car_model,
                     'car_color': vehicle.car_color,
                     'driver_name': vehicle.driver_name,
+                    'driver_gender': vehicle.driver_gender,
                     'driver_phone': vehicle.driver_phone,
                     'status': vehicle.status,
                     'payment_status': vehicle.payment_status,
@@ -970,6 +1005,7 @@ class VehicleReleaseCheckoutView(APIView):
                     'product_lines': product_lines,
                     'available_products': available_products,
                     'available_services': available_services,
+                    'service_list_subtotal': service_list_subtotal,
                     'services_total': services_total,
                     'products_total': products_total,
                     'discount_percent_per_half_star': float(discount_percent_per_half_star),
@@ -1253,29 +1289,43 @@ class VehicleReleaseCheckoutView(APIView):
             line.line_total = 0
             line.save(update_fields=['quantity', 'line_total'])
 
-        completed_service_totals = (
-            vehicle.job.service_lines.filter(is_completed=True).aggregate(total=Sum('line_total')).get('total')
-            or Decimal('0')
-        )
         completed_lines = list(vehicle.job.service_lines.filter(is_completed=True))
+        completed_service_totals = sum((Decimal(str(line.line_total or 0)) for line in completed_lines), Decimal('0'))
+        completed_service_list_subtotal = sum(
+            (
+                self._service_line_list_total(line)
+                for line in completed_lines
+            ),
+            Decimal('0'),
+        )
         manual_discount_total = vehicle.job.manual_discount_total or Decimal('0')
         loyalty = loyalty_snapshot(self._loyalty_profile(vehicle))
         customer_score = Decimal(str(loyalty.get('score', 0) or 0))
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
         customer_discount_percent, loyalty_discount_total = self._compute_discount(
-            base_amount=completed_service_totals,
+            base_amount=completed_service_list_subtotal,
             customer_score=customer_score,
             percent_per_half_star=discount_percent_per_half_star,
         )
         facility_discount_total = sum(
             (
-                max(Decimal('0'), (Decimal(str(line.list_unit_price or 0)) - Decimal(str(line.unit_price or 0))) * Decimal(str(line.quantity or 0)))
+                max(
+                    Decimal('0'),
+                    self._service_line_list_total(line) - Decimal(str(line.line_total or 0)),
+                )
                 for line in completed_lines
             ),
             Decimal('0'),
         )
-        discount_total = facility_discount_total + loyalty_discount_total + manual_discount_total
-        taxable_total = max(Decimal('0'), completed_service_totals - loyalty_discount_total - manual_discount_total) + product_totals
+        discount_total = min(
+            completed_service_list_subtotal,
+            facility_discount_total + loyalty_discount_total + manual_discount_total,
+        )
+        post_sale_discount_total = min(
+            completed_service_totals,
+            loyalty_discount_total + manual_discount_total,
+        )
+        taxable_total = max(Decimal('0'), completed_service_list_subtotal - discount_total) + product_totals
         tax_percent = self._tax_percent(tenant)
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount
@@ -1314,7 +1364,7 @@ class VehicleReleaseCheckoutView(APIView):
         carwash_share = (share_base_total - worker_share_base_total) + max(
             Decimal('0'),
             tip_amount - workers_tip_share_amount,
-        ) - discount_total
+        ) - post_sale_discount_total
         if carwash_share < 0:
             carwash_share = Decimal('0')
         workers_map = {
@@ -1371,13 +1421,7 @@ class VehicleReleaseCheckoutView(APIView):
         vehicle.job.facility_discount_total = facility_discount_total
         vehicle.job.loyalty_discount_total = loyalty_discount_total
         vehicle.job.tax_total = tax_total
-        vehicle.job.service_list_subtotal = sum(
-            (
-                Decimal(str(line.list_unit_price or 0)) * Decimal(str(line.quantity or 0))
-                for line in completed_lines
-            ),
-            Decimal('0'),
-        )
+        vehicle.job.service_list_subtotal = completed_service_list_subtotal
         vehicle.job.total_discount = discount_total
         vehicle.job.final_total = final_total
         vehicle.job.worker_share_amount = worker_share_base_total

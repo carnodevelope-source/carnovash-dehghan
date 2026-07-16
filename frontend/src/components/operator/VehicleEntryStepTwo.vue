@@ -892,8 +892,7 @@ onMounted(loadInitialData)
   justify-content: space-between;
   padding: 24px 28px;
   border-bottom: 1px solid rgba(212, 228, 255, 0.92);
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(16px);
+  background: #fff;
   position: sticky;
   top: 0;
   z-index: 4;
@@ -1066,7 +1065,6 @@ onMounted(loadInitialData)
   place-items: center;
   padding: 16px;
   background: rgba(15, 23, 42, 0.42);
-  backdrop-filter: blur(8px);
 }
 
 .service-picker-panel {
@@ -1081,7 +1079,7 @@ onMounted(loadInitialData)
   background:
     radial-gradient(circle at top right, rgba(0, 88, 190, 0.1), transparent 26%),
     #ffffff;
-  box-shadow: 0 28px 70px -40px rgba(15, 23, 42, 0.7);
+  box-shadow: 0 16px 42px -28px rgba(15, 23, 42, 0.7);
   overflow: hidden;
 }
 

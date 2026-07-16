@@ -11,6 +11,7 @@ from .models import (
     GeneralSettings,
     Service,
     ServiceChangeLog,
+    normalize_vehicle_assigned_sms_template,
     normalize_vehicle_released_sms_template,
 )
 from .serializers import GeneralSettingsSerializer, ServiceChangeLogSerializer, ServiceSerializer
@@ -187,6 +188,12 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
             changed_fields.append('sms_provider_base_url')
         if not str(settings_obj.sms_vehicle_assigned_template or '').strip():
             settings_obj.sms_vehicle_assigned_template = DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
+            changed_fields.append('sms_vehicle_assigned_template')
+        normalized_assigned_template = normalize_vehicle_assigned_sms_template(
+            settings_obj.sms_vehicle_assigned_template
+        )
+        if settings_obj.sms_vehicle_assigned_template != normalized_assigned_template:
+            settings_obj.sms_vehicle_assigned_template = normalized_assigned_template
             changed_fields.append('sms_vehicle_assigned_template')
         if not str(settings_obj.sms_vehicle_assigned_invoice_template or '').strip():
             settings_obj.sms_vehicle_assigned_invoice_template = DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE

@@ -335,6 +335,45 @@
                 </label>
               </div>
             </section>
+            <section class="general-settings-card printer-settings-card">
+              <div class="general-settings-head">
+                <div>
+                  <strong>تنظیمات فیش پرینتر</strong>
+                  <p class="helper-text">متن پایین فیش قبل از عبارت تشکر چاپ می‌شود و برای هر کارواش جداگانه قابل تغییر است.</p>
+                </div>
+                <label class="settings-toggle">
+                  <input v-model="generalSettings.receipt_printer_enabled" type="checkbox" />
+                  <span>{{ generalSettings.receipt_printer_enabled ? 'فعال' : 'غیرفعال' }}</span>
+                </label>
+              </div>
+              <div class="printer-settings-grid">
+                <label class="general-setting-label">
+                  <span>نام پرینتر</span>
+                  <input v-model.trim="generalSettings.receipt_printer_name" type="text" placeholder="مثلا XP-80C" />
+                </label>
+                <label class="general-setting-label">
+                  <span>عرض کاغذ</span>
+                  <select v-model="generalSettings.receipt_printer_paper_width">
+                    <option value="58mm">58mm</option>
+                    <option value="80mm">80mm</option>
+                    <option value="a4">A4</option>
+                  </select>
+                </label>
+                <label class="general-setting-label">
+                  <span>تعداد نسخه چاپ</span>
+                  <input v-model.number="generalSettings.receipt_print_copies" type="number" min="1" max="5" />
+                </label>
+                <label class="general-setting-label full-width">
+                  <span>متن پایین فیش</span>
+                  <textarea v-model.trim="generalSettings.receipt_footer_note" rows="4" placeholder="متنی که قبل از «از اعتماد شما سپاسگزاریم» در فیش و فاکتور چاپ می‌شود." />
+                </label>
+                <div class="printer-checks full-width">
+                  <label class="row-check"><input v-model="generalSettings.receipt_auto_print" type="checkbox" /><span>چاپ خودکار بعد از ترخیص</span></label>
+                  <label class="row-check"><input v-model="generalSettings.receipt_show_logo" type="checkbox" /><span>نمایش لوگو</span></label>
+                  <label class="row-check"><input v-model="generalSettings.receipt_show_qr" type="checkbox" /><span>نمایش QR</span></label>
+                </div>
+              </div>
+            </section>
             <section class="general-settings-card sms-settings-card">
               <div class="general-settings-head">
                 <div>
@@ -959,15 +998,17 @@ const smsTemplateTokens = [
   '[نام مشتری]',
   '[جنسیت مشتری]',
   '[نام کارواش]',
+  '[شماره پذیرش]',
   '[پلاک]',
   '[ساعت تخصیص]',
   '[تاریخ تخصیص]',
   '[خلاصه خدمات]',
   '[جمع کل]',
+  '[جمع نرخ نامه]',
   '[ساعت ترخیص]',
   '[تاریخ ترخیص]',
   '[امتیاز مشتری]',
-  '[درصد تخفیف سفارش بعد]',
+  '[درصد تخفیف مراجعه بعد]',
   '[درصد تخفیف امتیاز مشتری]',
   '[تعداد مراجعات]',
   '[انعام]',
@@ -978,31 +1019,55 @@ const smsTemplateTokens = [
   '[جمع تخفیف]'
 ]
 const ensureReleasedSmsTemplateDetails = (template) => {
-  const text = String(template || '').trim()
+  const text = String(template || '').replaceAll('سفارش بعد', 'مراجعه بعد').trim()
   if (!text) return text
   const lines = text.split('\n')
   const insertions = []
   if (!text.includes('[تعداد مراجعات]')) insertions.push('تعداد دفعات مراجعه: [تعداد مراجعات]')
   if (!text.includes('[انعام]')) insertions.push('انعام: [انعام]')
   if (!insertions.length) return text
-  const anchorIndex = lines.findIndex((line) => line.includes('[درصد تخفیف سفارش بعد]'))
+  const anchorIndex = lines.findIndex((line) => line.includes('[درصد تخفیف مراجعه بعد]') || line.includes('[درصد تخفیف سفارش بعد]'))
   const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : Math.max(1, lines.length - 3)
+  lines.splice(insertAt, 0, ...insertions)
+  return lines.join('\n')
+}
+const ensureAssignedSmsTemplateDetails = (template) => {
+  const text = String(template || '')
+    .replaceAll('با پلاک [پلاک] در ساعت', 'با پلاک [پلاک]، در ساعت')
+    .replaceAll('[ساعت تخصیص] روز', '[ساعت تخصیص]، روز')
+    .replaceAll('[تاریخ تخصیص] در کارواش', '[تاریخ تخصیص]، در کارواش')
+    .replaceAll('برای انجام خدمات ثبت و تخصیص داده شد', 'برای انجام خدمات، پذیرش شد')
+    .replaceAll('برای انجام خدمات، ثبت و تخصیص داده شد', 'برای انجام خدمات، پذیرش شد')
+    .replaceAll('تخصیص داده شد', 'پذیرش شد')
+    .trim()
+  if (!text) return text
+  const lines = text.split('\n')
+  const insertions = []
+  if (!text.includes('[شماره پذیرش]')) lines.splice(1, 0, 'شماره پذیرش: [شماره پذیرش]')
+  if (!text.includes('[جمع تخفیف]')) insertions.push('تخفیف این سفارش: [جمع تخفیف]')
+  if (!text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
+  if (!insertions.length) return text
+  const anchorIndex = lines.findIndex((line) => line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]'))
+  const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : lines.length
   lines.splice(insertAt, 0, ...insertions)
   return lines.join('\n')
 }
 const smsPreviewContext = computed(() => ({
   '[خطاب مشتری]': 'آقای رضایی عزیز',
-  '[نام مشتری]': 'آقا علی رضایی',
-  '[جنسیت مشتری]': 'آقا',
+  '[نام مشتری]': 'آقای علی رضایی',
+  '[جنسیت مشتری]': 'آقای',
   '[نام کارواش]': authStore.user?.tenant_name || authStore.user?.tenant?.name || 'سونامی',
-  '[پلاک]': '22 ب 345 67',
+  '[شماره پذیرش]': '۱۰۰۰',
+  '[پلاک]': '67 - 345 ب 22',
   '[ساعت تخصیص]': '10:30',
   '[تاریخ تخصیص]': '1405/04/22',
-  '[خلاصه خدمات]': 'شست‌وشوی کامل ---- 350،000 تومان',
+  '[خلاصه خدمات]': 'شست‌وشوی کامل: 350،000 تومان',
   '[جمع کل]': '350،000 تومان',
+  '[جمع نرخ نامه]': '350،000 تومان',
   '[ساعت ترخیص]': '12:15',
   '[تاریخ ترخیص]': '1405/04/22',
   '[امتیاز مشتری]': '2.5',
+  '[درصد تخفیف مراجعه بعد]': '10٪',
   '[درصد تخفیف سفارش بعد]': '10٪',
   '[درصد تخفیف امتیاز مشتری]': '10٪',
   '[تعداد مراجعات]': '5',
@@ -1020,11 +1085,11 @@ const renderSmsPreview = (template) => {
   })
   return message
 }
-const smsAssignedPreview = computed(() => renderSmsPreview([
+const smsAssignedPreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails([
   generalSettings.sms_vehicle_assigned_template,
   generalSettings.sms_vehicle_assigned_invoice_template
-].map((item) => String(item || '').trim()).filter(Boolean).join('\n\n')))
-const smsReleasedPreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_released_template))
+].map((item) => String(item || '').trim()).filter(Boolean).join('\n\n'))))
+const smsReleasedPreview = computed(() => renderSmsPreview(ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template)))
 
 watch(() => forms.purchase.product_id, (newProductId) => {
   const selected = products.value.find((item) => Number(item.id) === Number(newProductId))

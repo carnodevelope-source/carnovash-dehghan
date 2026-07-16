@@ -116,6 +116,14 @@ def _jalali_month_lte(left, right):
     return left_tuple <= right_tuple
 
 
+def _jalali_month_eq(left, right):
+    left_tuple = _jalali_month_tuple(left)
+    right_tuple = _jalali_month_tuple(right)
+    if not left_tuple or not right_tuple:
+        return False
+    return left_tuple == right_tuple
+
+
 def _resolve_worker_insurance_start_month(worker):
     if not worker:
         return ''
@@ -356,6 +364,10 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
     insurance_total = insurance_monthly_amount * Decimal(str(insurance_cycle_count))
     insurance_paid_total = _insurance_paid_amount_until_month(worker, insurance_target_month)
     insurance_selected_month_paid_total = _insurance_paid_amount_for_month(worker, insurance_target_month)
+    if insurance_start_month and _jalali_month_lte(insurance_start_month, insurance_target_month):
+        insurance_paid_total += insurance_monthly_amount
+    if _jalali_month_eq(insurance_start_month, insurance_target_month):
+        insurance_selected_month_paid_total += insurance_monthly_amount
     payable_total = wage_total + _normalize_decimal(aggregates['bonus_total']) - _normalize_decimal(aggregates['penalty_total']) - _normalize_decimal(aggregates['wage_paid_total'])
     if payable_total < 0:
         payable_total = Decimal('0')
@@ -365,7 +377,11 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
     insurance_balance = insurance_total - _normalize_decimal(insurance_paid_total)
     if insurance_balance < 0:
         insurance_balance = Decimal('0')
-    insurance_selected_month_balance = insurance_monthly_amount - insurance_selected_month_paid_total
+    insurance_selected_month_balance = (
+        insurance_monthly_amount - insurance_selected_month_paid_total
+        if insurance_start_month and _jalali_month_lte(insurance_start_month, insurance_target_month)
+        else Decimal('0')
+    )
     if insurance_selected_month_balance < 0:
         insurance_selected_month_balance = Decimal('0')
 

@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class TimestampedModel(models.Model):
@@ -151,6 +154,7 @@ class VehicleEntry(TimestampedModel):
     intake_source = models.CharField(
         max_length=20, choices=SourceType.choices, default=SourceType.MANUAL
     )
+    admission_number = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     ai_confidence = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     check_in_at = models.DateTimeField(auto_now_add=True)
     assigned_at = models.DateTimeField(null=True, blank=True)
@@ -180,6 +184,30 @@ class VehicleEntry(TimestampedModel):
 
     def __str__(self) -> str:
         return f'{self.plate_number} - {self.driver_name}'
+
+    def _next_daily_admission_number(self):
+        now = timezone.localtime(timezone.now())
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        latest = (
+            VehicleEntry.objects.filter(
+                tenant=self.tenant,
+                check_in_at__gte=day_start,
+                check_in_at__lt=day_end,
+            )
+            .exclude(pk=self.pk)
+            .aggregate(max_number=models.Max('admission_number'))
+            .get('max_number')
+        )
+        return max(1000, int(latest or 999) + 1)
+
+    def save(self, *args, **kwargs):
+        if not self.admission_number:
+            self.admission_number = self._next_daily_admission_number()
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None:
+                kwargs['update_fields'] = set(update_fields) | {'admission_number'}
+        super().save(*args, **kwargs)
 
 
 class BlockedPlate(TimestampedModel):

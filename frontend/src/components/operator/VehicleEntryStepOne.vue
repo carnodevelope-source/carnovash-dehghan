@@ -950,9 +950,9 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(199, 220, 255, 0.9);
   border-radius: 28px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 26px 60px -38px rgba(15, 23, 42, 0.35);
+  background: #fff;
+  box-shadow: 0 12px 32px -28px rgba(15, 23, 42, 0.35);
+  contain: content;
 }
 
 .ai-panel,

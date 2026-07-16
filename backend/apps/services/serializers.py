@@ -10,6 +10,7 @@ from .models import (
     Service,
     ServiceChangeLog,
     default_service_tiers,
+    normalize_vehicle_assigned_sms_template,
     normalize_vehicle_released_sms_template,
 )
 
@@ -206,6 +207,10 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
         if 'sms_vehicle_released_template' in attrs:
             attrs['sms_vehicle_released_template'] = normalize_vehicle_released_sms_template(
                 attrs.get('sms_vehicle_released_template')
+            )
+        if 'sms_vehicle_assigned_template' in attrs:
+            attrs['sms_vehicle_assigned_template'] = normalize_vehicle_assigned_sms_template(
+                attrs.get('sms_vehicle_assigned_template')
             )
         return attrs
 

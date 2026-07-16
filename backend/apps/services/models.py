@@ -12,8 +12,8 @@ class TimestampedModel(models.Model):
 
 DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
     '[خطاب مشتری]\n'
-    'خودروی شما با پلاک [پلاک] در ساعت [ساعت تخصیص] روز [تاریخ تخصیص] در کارواش [نام کارواش] '
-    'برای انجام خدمات ثبت و تخصیص داده شد.'
+    'خودروی شما با پلاک [پلاک]، در ساعت [ساعت تخصیص]، روز [تاریخ تخصیص]، در کارواش [نام کارواش] '
+    'برای انجام خدمات، پذیرش شد.'
 )
 
 DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = (
@@ -26,8 +26,8 @@ DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = (
 
 DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
     '[خطاب مشتری]\n'
-    'خودروی شما با پلاک [پلاک] در ساعت [ساعت تخصیص] روز [تاریخ تخصیص] در کارواش [نام کارواش] '
-    'برای انجام خدمات ثبت و تخصیص داده شد.\n\n'
+    'خودروی شما با پلاک [پلاک]، در ساعت [ساعت تخصیص]، روز [تاریخ تخصیص]، در کارواش [نام کارواش] '
+    'برای انجام خدمات، پذیرش شد.\n\n'
     'پیش فاکتور خدمات:\n'
     '[خلاصه خدمات]\n'
     'جمع کل: [جمع کل]\n'
@@ -40,7 +40,7 @@ DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
     '[خطاب مشتری]\n'
     'خودروی شما در ساعت [ساعت ترخیص] روز [تاریخ ترخیص] از کارواش [نام کارواش] ترخیص شد.\n'
     'امتیاز شما: [امتیاز مشتری] از ۵\n'
-    'درصد تخفیف سفارش بعد: [درصد تخفیف سفارش بعد]\n'
+    'درصد تخفیف مراجعه بعد: [درصد تخفیف مراجعه بعد]\n'
     'تعداد دفعات مراجعه: [تعداد مراجعات]\n'
     'انعام: [انعام]\n'
     'جمع تخفیف: [جمع تخفیف]\n'
@@ -49,8 +49,29 @@ DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
 )
 
 
-def normalize_vehicle_released_sms_template(template):
+def normalize_vehicle_assigned_sms_template(template):
     text = str(template or '').strip()
+    if not text:
+        return DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
+    replacements = {
+        'با پلاک [پلاک] در ساعت': 'با پلاک [پلاک]، در ساعت',
+        '[ساعت تخصیص] روز': '[ساعت تخصیص]، روز',
+        '[تاریخ تخصیص] در کارواش': '[تاریخ تخصیص]، در کارواش',
+        'برای انجام خدمات ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
+        'برای انجام خدمات، ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
+        'تخصیص داده شد': 'پذیرش شد',
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    if '[شماره پذیرش]' not in text:
+        lines = text.splitlines()
+        lines.insert(1 if lines else 0, 'شماره پذیرش: [شماره پذیرش]')
+        text = '\n'.join(lines)
+    return text
+
+
+def normalize_vehicle_released_sms_template(template):
+    text = str(template or '').replace('سفارش بعد', 'مراجعه بعد').strip()
     if not text:
         return DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE
 
@@ -64,7 +85,7 @@ def normalize_vehicle_released_sms_template(template):
         return text
 
     anchor_index = next(
-        (index for index, line in enumerate(lines) if '[درصد تخفیف سفارش بعد]' in line),
+        (index for index, line in enumerate(lines) if '[درصد تخفیف سفارش بعد]' in line or '[درصد تخفیف مراجعه بعد]' in line),
         -1,
     )
     insert_at = anchor_index + 1 if anchor_index >= 0 else max(1, len(lines) - 3)

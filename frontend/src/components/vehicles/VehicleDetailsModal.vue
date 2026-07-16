@@ -22,7 +22,7 @@
           </div>
           <div class="vehicle-details-summary-kpi">
             <span>جمع خدمات</span>
-            <strong>{{ formatMoney(vehicle.job?.services_total) }}</strong>
+            <strong>{{ formatMoney(jobServiceListSubtotal(vehicle.job)) }}</strong>
           </div>
           <div class="vehicle-details-summary-kpi">
             <span>مبلغ نهایی</span>
@@ -92,10 +92,7 @@
                 </small>
               </div>
               <div class="vehicle-details-service-price-box">
-                <small v-if="Number(line.discount_amount || 0) > 0" class="vehicle-details-service-base-price">
-                  {{ formatMoney(Number(line.line_total || 0) + Number(line.discount_amount || 0)) }}
-                </small>
-                <strong>{{ formatMoney(line.line_total) }}</strong>
+                <strong>{{ formatMoney(serviceLineListTotal(line)) }}</strong>
               </div>
             </div>
           </div>
@@ -189,6 +186,20 @@ const workerPaymentTypeLabel = (value) => ({
 }[value] || '-')
 
 const formatMoney = (value) => formatThousandsToman(value)
+const serviceLineListTotal = (line) => {
+  const quantity = Number(line?.quantity || 1) || 1
+  const listUnitPrice = Number(line?.list_unit_price || 0)
+  if (listUnitPrice > 0) return listUnitPrice * quantity
+  return Number(line?.line_total || 0) + Number(line?.discount_amount || 0)
+}
+const jobServiceListSubtotal = (job) => {
+  const stored = Number(job?.service_list_subtotal || 0)
+  if (stored > 0) return stored
+  return (Array.isArray(job?.service_lines) ? job.service_lines : []).reduce(
+    (sum, line) => sum + serviceLineListTotal(line),
+    0
+  )
+}
 const formatPercent = (value) => `${Number(value || 0).toLocaleString('fa-IR')}٪`
 const formatDateTime = (value) => {
   if (!value) return '-'

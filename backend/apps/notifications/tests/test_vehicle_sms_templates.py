@@ -7,11 +7,18 @@ from django.utils import timezone
 from apps.notifications.services import (
     build_vehicle_assignment_sms,
     build_vehicle_released_sms,
+    customer_display_name_with_title,
     make_json_safe,
 )
 
 
 class VehicleSmsTemplateTests(SimpleTestCase):
+    def test_customer_display_name_uses_aghaye_for_male_customer(self):
+        self.assertEqual(
+            customer_display_name_with_title('علی رضایی', 'male'),
+            'آقای علی رضایی',
+        )
+
     def test_make_json_safe_serializes_datetime_and_decimal(self):
         now = timezone.now()
         payload = make_json_safe({
@@ -36,6 +43,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
             ],
         )
         vehicle = SimpleNamespace(
+            admission_number=1000,
             tenant=tenant,
             job=job,
             driver_name='علی رضایی',
@@ -51,14 +59,55 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
 
         self.assertIn('علی رضایی عزیز', message)
-        self.assertIn('شست‌وشوی ویژه ---- ۷۵۰،۰۰۰ تومان', message)
-        self.assertIn('واکس بدنه ---- ۵۰۰،۰۰۰ تومان', message)
+        self.assertIn('شماره پذیرش: ۱۰۰۰', message)
+        self.assertIn('شست‌وشوی ویژه: ۷۵۰،۰۰۰ تومان', message)
+        self.assertIn('واکس بدنه: ۵۰۰،۰۰۰ تومان', message)
         self.assertIn('۱،۲۵۰،۰۰۰ تومان', message)
-        self.assertLess(message.index('پلاک: 22 ب 345 67'), message.index('شست‌وشوی ویژه'))
+        self.assertLess(message.index('پلاک: 67 - 345 ب 22'), message.index('شست‌وشوی ویژه'))
+
+    def test_assignment_invoice_sms_shows_tariff_discount_and_final_total(self):
+        tenant = SimpleNamespace(name='کارواش یک')
+        job = SimpleNamespace(
+            final_total=300000,
+            services_total=300000,
+            service_list_subtotal=400000,
+            products_total=0,
+            total_discount=100000,
+            service_lines=[
+                SimpleNamespace(custom_service_name='شست‌وشوی کامل', quantity=1, list_unit_price=400000, line_total=300000, discount_amount=100000),
+            ],
+        )
+        vehicle = SimpleNamespace(
+            admission_number=1000,
+            tenant=tenant,
+            job=job,
+            driver_name='علی رضایی',
+            plate_number='22 ص 377 54',
+            plate_left='22',
+            plate_letter='ص',
+            plate_mid='377',
+            plate_right='54',
+            ready_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        settings_obj = SimpleNamespace(
+            sms_vehicle_assigned_template='پلاک: [پلاک]',
+            sms_vehicle_assigned_invoice_template='[خلاصه خدمات]\nجمع کل: [جمع کل]',
+        )
+
+        message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
+
+        self.assertIn('پلاک: 54 - 377 ص 22', message)
+        self.assertIn('شماره پذیرش: ۱۰۰۰', message)
+        self.assertIn('شست‌وشوی کامل: ۴۰۰،۰۰۰ تومان', message)
+        self.assertIn('جمع کل: ۴۰۰،۰۰۰ تومان', message)
+        self.assertIn('تخفیف این سفارش: ۱۰۰،۰۰۰ تومان', message)
+        self.assertIn('مبلغ نهایی بعد از تخفیف: ۳۰۰،۰۰۰ تومان', message)
 
     def test_released_sms_uses_fallback_greeting_for_anonymous_customer(self):
         tenant = SimpleNamespace(name='کارواش یک')
         vehicle = SimpleNamespace(
+            admission_number=1000,
             tenant=tenant,
             driver_name='',
             plate_number='22 ب 345 67',
@@ -66,7 +115,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
             updated_at=timezone.now(),
         )
         settings_obj = SimpleNamespace(
-            sms_vehicle_released_template='[خطاب مشتری]\n[امتیاز مشتری]\n[درصد تخفیف سفارش بعد]'
+            sms_vehicle_released_template='[خطاب مشتری]\n[امتیاز مشتری]\nدرصد تخفیف سفارش بعد: [درصد تخفیف سفارش بعد]'
         )
 
         message, _context = build_vehicle_released_sms(
@@ -81,12 +130,15 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('مشتری عزیز', message)
         self.assertIn('۴.۵', message)
         self.assertIn('۴۵٪', message)
+        self.assertIn('درصد تخفیف مراجعه بعد', message)
+        self.assertNotIn('سفارش بعد', message)
         self.assertIn('تعداد دفعات مراجعه: ۰', message)
         self.assertIn('انعام: ۰ تومان', message)
 
     def test_released_sms_keeps_visit_count_and_tip_in_legacy_templates(self):
         tenant = SimpleNamespace(name='کارواش یک')
         vehicle = SimpleNamespace(
+            admission_number=1000,
             tenant=tenant,
             driver_name='علی رضایی',
             plate_number='22 ب 345 67',

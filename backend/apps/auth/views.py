@@ -734,7 +734,7 @@ class HqOverviewView(HqBaseView):
         if forbidden:
             return forbidden
 
-        open_statuses = [SupportTicket.Status.OPEN, SupportTicket.Status.PENDING]
+        open_statuses = [SupportTicket.Status.OPEN, SupportTicket.Status.PENDING, SupportTicket.Status.ANSWERED]
         summary = {
             'active_carwashes': CarWash.objects.filter(is_active=True).count(),
             'total_carwashes': CarWash.objects.count(),
@@ -1183,7 +1183,9 @@ class HqTicketListView(HqBaseView):
             if tenant:
                 tenant_filter |= Q(tenant=tenant)
             queryset = queryset.filter(tenant_filter).distinct()
-        if status_filter in {choice[0] for choice in SupportTicket.Status.choices}:
+        if status_filter == SupportTicket.Status.OPEN:
+            queryset = queryset.exclude(status=SupportTicket.Status.CLOSED)
+        elif status_filter in {choice[0] for choice in SupportTicket.Status.choices}:
             queryset = queryset.filter(status=status_filter)
         if priority_filter in {choice[0] for choice in SupportTicket.Priority.choices}:
             queryset = queryset.filter(priority=priority_filter)

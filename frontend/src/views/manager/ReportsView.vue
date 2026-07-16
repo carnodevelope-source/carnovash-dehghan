@@ -483,6 +483,8 @@ const selectedInsuranceMonthPaidAmount = computed(() => {
 })
 const selectedInsuranceMonthBalance = computed(() => {
   const monthlyAmount = Number(selectedWorkerSummary.value?.insurance_monthly_amount || 0)
+  const startMonth = normalizeInsuranceMonth(selectedWorkerSummary.value?.insurance_start_month)
+  if (!isJalaliMonthAfter(selectedInsuranceMonthKey.value, startMonth)) return 0
   return Math.max(0, monthlyAmount - selectedInsuranceMonthPaidAmount.value)
 })
 const payoutModalMaxAmount = computed(() => (
@@ -561,6 +563,20 @@ const normalizeInsuranceMonth = (value) => {
   const month = normalizeDigits(parts[1]).replace(/\D/g, '').slice(0, 2)
   if (!year || !month) return ''
   return `${year}/${month.padStart(2, '0')}`
+}
+
+const jalaliMonthIndex = (value) => {
+  const monthValue = normalizeInsuranceMonth(value)
+  if (!monthValue) return null
+  const [year, month] = monthValue.split('/').map((item) => Number(item))
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null
+  return (year * 12) + month
+}
+
+const isJalaliMonthAfter = (left, right) => {
+  const leftIndex = jalaliMonthIndex(left)
+  const rightIndex = jalaliMonthIndex(right)
+  return leftIndex !== null && rightIndex !== null && leftIndex > rightIndex
 }
 
 const insuranceMonthToFilterDate = (value) => {

@@ -1,4 +1,5 @@
 from unittest.mock import patch
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
@@ -8,7 +9,14 @@ from rest_framework.test import APIClient, APITestCase
 from apps.auth.models import CarWash
 from apps.notifications.models import NotificationLog
 from apps.payments.models import Wallet
-from apps.vehicles.models import CustomerProfile, VehicleEntry, VehicleJob, VehicleJobService
+from apps.services.models import GeneralSettings
+from apps.vehicles.models import (
+    CustomerProfile,
+    PlateLoyaltyProfile,
+    VehicleEntry,
+    VehicleJob,
+    VehicleJobService,
+)
 
 
 @override_settings(
@@ -102,6 +110,28 @@ class VehicleStatusSmsTests(APITestCase):
         )
         self.assertEqual(log.provider_response, '{"status":"success","data":{"id":"provider-1"}}')
         self.assertEqual(log.payload['provider_request']['line_number'], '30001234')
+
+    def test_admission_number_starts_from_1000_and_increments_daily(self):
+        self.assertEqual(self.vehicle.admission_number, 1000)
+
+        second_vehicle = VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='33 ج 444 55',
+            plate_left='33',
+            plate_letter='ج',
+            plate_mid='444',
+            plate_right='55',
+            plate_type=VehicleEntry.PlateType.CAR,
+            car_model='دنا',
+            car_color='مشکی',
+            driver_name='مشتری تست',
+            driver_phone='09121112222',
+            status=VehicleEntry.Status.ENTERED,
+            entered_by=self.manager,
+            updated_by=self.manager,
+        )
+
+        self.assertEqual(second_vehicle.admission_number, 1001)
 
     @patch('apps.notifications.services.send_provider_sms')
     def test_status_update_sends_release_sms_when_marked_released(self, mock_send_provider_sms):
@@ -322,6 +352,76 @@ class VehicleStatusSmsTests(APITestCase):
                 provider_message_id='provider-4',
             ).exists()
         )
+
+    @patch('apps.notifications.services.send_provider_sms')
+    def test_release_checkout_counts_facility_discount_once_from_list_price(self, mock_send_provider_sms):
+        mock_send_provider_sms.return_value = {
+            'ok': True,
+            'message': 'sent',
+            'provider_status': 200,
+            'provider_data': {'status': 'success', 'data': {'id': 'provider-discount'}} ,
+            'provider_id': 'provider-discount',
+            'raw_body': '{"status":"success","data":{"id":"provider-discount"}}',
+            'payload': {'line_number': '30001234', 'recipients': ['09120000000']},
+        }
+        GeneralSettings.objects.create(
+            tenant=self.tenant,
+            discount_percent_per_half_star=Decimal('0.5'),
+            tax_enabled=False,
+        )
+        PlateLoyaltyProfile.objects.create(
+            tenant=self.tenant,
+            plate_number=self.vehicle.plate_number,
+            plate_left=self.vehicle.plate_left,
+            plate_letter=self.vehicle.plate_letter,
+            plate_mid=self.vehicle.plate_mid,
+            plate_right=self.vehicle.plate_right,
+            score=Decimal('4.0'),
+            next_discount_percent=Decimal('4.00'),
+            visit_count=8,
+        )
+        self.job.manual_discount_total = Decimal('20000')
+        self.job.save(update_fields=['manual_discount_total', 'updated_at'])
+        VehicleJobService.objects.create(
+            tenant=self.tenant,
+            vehicle_job=self.job,
+            custom_service_name='discounted service',
+            quantity=1,
+            list_unit_price=Decimal('450000'),
+            unit_price=Decimal('400000'),
+            line_total=Decimal('400000'),
+            discount_amount=Decimal('50000'),
+            is_completed=True,
+        )
+        self.vehicle.status = VehicleEntry.Status.READY_TO_SETTLE
+        self.vehicle.save(update_fields=['status', 'updated_at'])
+
+        response = self.client.patch(
+            reverse('vehicle-release-checkout', args=[self.vehicle.id]),
+            {'payment_method': 'cash'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.service_list_subtotal, Decimal('450000.00'))
+        self.assertEqual(self.job.services_total, Decimal('400000.00'))
+        self.assertEqual(self.job.facility_discount_total, Decimal('50000.00'))
+        self.assertEqual(self.job.loyalty_discount_total, Decimal('18000.00'))
+        self.assertEqual(self.job.manual_discount_total, Decimal('20000.00'))
+        self.assertEqual(self.job.discount_total, Decimal('88000.00'))
+        self.assertEqual(self.job.final_total, Decimal('362000.00'))
+        log = NotificationLog.objects.get(
+            tenant=self.tenant,
+            vehicle_entry=self.vehicle,
+            template_code='vehicle_released',
+            status=NotificationLog.Status.SENT,
+        )
+        self.assertEqual(log.payload['final_total'], 362000.0)
+        self.assertEqual(log.payload['discount_total'], 88000.0)
+        self.assertEqual(log.payload['facility_discount_total'], 50000.0)
+        self.assertEqual(log.payload['loyalty_discount_total'], 18000.0)
+        self.assertEqual(log.payload['manual_discount_total'], 20000.0)
 
     @patch('apps.notifications.services.send_provider_sms')
     def test_vehicle_create_reuses_existing_customer_profile_by_phone(self, mock_send_provider_sms):

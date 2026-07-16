@@ -95,6 +95,10 @@ def format_toman(value):
     return f"{to_persian_digits(f'{amount:,}'.replace(',', '،'))} تومان"
 
 
+def _decimal_value(value):
+    return Decimal(str(value or 0))
+
+
 def gregorian_to_jalali(date_obj):
     gy = int(date_obj.year) - 1600
     gm = int(date_obj.month) - 1
@@ -146,7 +150,7 @@ def customer_display_name(name):
 def customer_title(gender=''):
     normalized = str(gender or '').strip().lower()
     if normalized == 'male':
-        return 'آقا'
+        return 'آقای'
     if normalized == 'female':
         return 'خانم'
     return ''
@@ -176,6 +180,26 @@ def iter_service_lines(job):
     return []
 
 
+def format_plate_for_sms(vehicle):
+    if not vehicle:
+        return 'بدون پلاک'
+    plate_type = str(getattr(vehicle, 'plate_type', '') or '').strip()
+    left = str(getattr(vehicle, 'plate_left', '') or '').strip()
+    letter = str(getattr(vehicle, 'plate_letter', '') or '').strip()
+    mid = str(getattr(vehicle, 'plate_mid', '') or '').strip()
+    right = str(getattr(vehicle, 'plate_right', '') or '').strip()
+    if plate_type == 'motorcycle':
+        if mid and letter:
+            return f'{letter} - {mid}'
+        return str(getattr(vehicle, 'plate_number', '') or '').strip() or 'بدون پلاک'
+    if right and mid and letter and left:
+        return f'{right} - {mid} {letter} {left}'
+    raw_parts = str(getattr(vehicle, 'plate_number', '') or '').strip().split()
+    if len(raw_parts) >= 4:
+        return f'{raw_parts[3]} - {raw_parts[2]} {raw_parts[1]} {raw_parts[0]}'
+    return str(getattr(vehicle, 'plate_number', '') or '').strip() or 'بدون پلاک'
+
+
 def refresh_vehicle_for_sms(vehicle):
     vehicle_id = getattr(vehicle, 'pk', None) or getattr(vehicle, 'id', None)
     if not vehicle_id:
@@ -189,20 +213,58 @@ def refresh_vehicle_for_sms(vehicle):
     )
 
 
+def assignment_discount_total(job):
+    if not job:
+        return Decimal('0')
+    for field in ('total_discount', 'discount_total'):
+        value = _decimal_value(getattr(job, field, 0))
+        if value > 0:
+            return value
+    discount_total = (
+        _decimal_value(getattr(job, 'facility_discount_total', 0))
+        + _decimal_value(getattr(job, 'loyalty_discount_total', 0))
+        + _decimal_value(getattr(job, 'manual_discount_total', 0))
+    )
+    if discount_total > 0:
+        return discount_total
+    return sum((_decimal_value(getattr(line, 'discount_amount', 0)) for line in iter_service_lines(job)), Decimal('0'))
+
+
+def _service_line_list_total(line):
+    quantity = _decimal_value(getattr(line, 'quantity', 1)) or Decimal('1')
+    list_unit_price = _decimal_value(getattr(line, 'list_unit_price', 0))
+    if list_unit_price > 0:
+        return list_unit_price * quantity
+    return _decimal_value(getattr(line, 'line_total', 0)) + _decimal_value(getattr(line, 'discount_amount', 0))
+
+
 def assignment_invoice_total(job):
     if not job:
-        return 0
-    final_total = Decimal(str(getattr(job, 'final_total', 0) or 0))
-    if final_total > 0:
-        return final_total
-    services_total = Decimal(str(getattr(job, 'services_total', 0) or 0))
-    products_total = Decimal(str(getattr(job, 'products_total', 0) or 0))
-    if services_total > 0 or products_total > 0:
-        return services_total + products_total
+        return Decimal('0')
+    service_list_subtotal = _decimal_value(getattr(job, 'service_list_subtotal', 0))
+    products_total = _decimal_value(getattr(job, 'products_total', 0))
+    if service_list_subtotal > 0:
+        return service_list_subtotal + products_total
     line_total = Decimal('0')
     for line in iter_service_lines(job):
-        line_total += Decimal(str(getattr(line, 'line_total', 0) or 0))
-    return line_total
+        line_total += _service_line_list_total(line)
+    if line_total > 0 or products_total > 0:
+        return line_total + products_total
+    services_total = _decimal_value(getattr(job, 'services_total', 0))
+    discount_total = assignment_discount_total(job)
+    if services_total > 0 or products_total > 0 or discount_total > 0:
+        return services_total + products_total + discount_total
+    return _decimal_value(getattr(job, 'final_total', 0))
+
+
+def assignment_invoice_final_total(job):
+    if not job:
+        return Decimal('0')
+    final_total = _decimal_value(getattr(job, 'final_total', 0))
+    if final_total > 0:
+        return final_total
+    total = assignment_invoice_total(job) - assignment_discount_total(job)
+    return total if total > 0 else Decimal('0')
 
 
 def build_services_sms_summary(job):
@@ -214,9 +276,45 @@ def build_services_sms_summary(job):
             or getattr(line, 'service_name', '')
             or 'خدمت'
         ).strip()
-        line_total = getattr(line, 'line_total', 0)
-        lines.append(f'{title} ---- {format_toman(line_total)}')
-    return '\n'.join(lines) if lines else 'خدمات ثبت شده است ---- مبلغ هنگام نهایی‌سازی اعلام می‌شود'
+        line_total = _service_line_list_total(line)
+        lines.append(f'{title}: {format_toman(line_total)}')
+    return '\n'.join(lines) if lines else 'خدمات ثبت شده است: مبلغ هنگام نهایی‌سازی اعلام می‌شود'
+
+
+def normalize_assignment_sms_wording(template):
+    text = str(template or '')
+    replacements = {
+        'با پلاک [پلاک] در ساعت': 'با پلاک [پلاک]، در ساعت',
+        '[ساعت تخصیص] روز': '[ساعت تخصیص]، روز',
+        '[تاریخ تخصیص] در کارواش': '[تاریخ تخصیص]، در کارواش',
+        'برای انجام خدمات ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
+        'برای انجام خدمات، ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
+        'تخصیص داده شد': 'پذیرش شد',
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
+def normalize_vehicle_assignment_sms_template(template):
+    text = normalize_assignment_sms_wording(template).strip()
+    if not text:
+        return text
+    lines = text.splitlines()
+    if '[شماره پذیرش]' not in text:
+        lines.insert(1 if lines else 0, 'شماره پذیرش: [شماره پذیرش]')
+        text = '\n'.join(lines)
+    insertions = []
+    if '[جمع تخفیف]' not in text:
+        insertions.append('تخفیف این سفارش: [جمع تخفیف]')
+    if '[مبلغ نهایی]' not in text:
+        insertions.append('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
+    if not insertions:
+        return text
+    anchor_index = next((index for index, line in enumerate(lines) if '[جمع کل]' in line or '[جمع نرخ نامه]' in line), -1)
+    insert_at = anchor_index + 1 if anchor_index >= 0 else len(lines)
+    lines[insert_at:insert_at] = insertions
+    return '\n'.join(lines)
 
 
 def render_template_tokens(template_text, context):
@@ -230,25 +328,29 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
     vehicle = refresh_vehicle_for_sms(vehicle)
     assigned_at = assigned_at or getattr(vehicle, 'ready_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
     job = getattr(vehicle, 'job', None)
-    plate_label = str(getattr(vehicle, 'plate_number', '') or '').strip() or 'بدون پلاک'
+    plate_label = format_plate_for_sms(vehicle)
     driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
     context = {
         '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
         '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', ''), driver_gender),
         '[جنسیت مشتری]': customer_title(driver_gender),
         '[نام کارواش]': getattr(getattr(vehicle, 'tenant', None), 'name', '') or 'کارواش',
+        '[شماره پذیرش]': to_persian_digits(getattr(vehicle, 'admission_number', None) or getattr(vehicle, 'id', '') or ''),
         '[پلاک]': plate_label,
         '[ساعت تخصیص]': format_local_time(assigned_at),
         '[تاریخ تخصیص]': format_jalali_date(assigned_at),
         '[خلاصه خدمات]': build_services_sms_summary(job),
         '[جمع کل]': format_toman(assignment_invoice_total(job)),
+        '[جمع نرخ نامه]': format_toman(assignment_invoice_total(job)),
+        '[جمع تخفیف]': format_toman(assignment_discount_total(job)),
+        '[مبلغ نهایی]': format_toman(assignment_invoice_final_total(job)),
     }
     intro_template = str(
         getattr(settings_obj, 'sms_vehicle_assigned_template', '')
         or DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
     ).strip()
     invoice_template = str(getattr(settings_obj, 'sms_vehicle_assigned_invoice_template', '') or '').strip()
-    template = '\n\n'.join(part for part in [intro_template, invoice_template] if part)
+    template = normalize_vehicle_assignment_sms_template('\n\n'.join(part for part in [intro_template, invoice_template] if part))
     return render_template_tokens(template, context), context
 
 
@@ -268,7 +370,7 @@ def build_vehicle_released_sms(
     manual_discount_total=0,
 ):
     released_at = released_at or getattr(vehicle, 'released_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
-    plate_label = str(getattr(vehicle, 'plate_number', '') or '').strip() or 'بدون پلاک'
+    plate_label = format_plate_for_sms(vehicle)
     next_discount_label = f"{to_persian_digits(str(round(float(next_discount_percent or 0), 2)).replace('.0', ''))}٪"
     driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
     context = {
@@ -276,11 +378,13 @@ def build_vehicle_released_sms(
         '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', ''), driver_gender),
         '[جنسیت مشتری]': customer_title(driver_gender),
         '[نام کارواش]': getattr(getattr(vehicle, 'tenant', None), 'name', '') or 'کارواش',
+        '[شماره پذیرش]': to_persian_digits(getattr(vehicle, 'admission_number', None) or getattr(vehicle, 'id', '') or ''),
         '[پلاک]': plate_label,
         '[ساعت ترخیص]': format_local_time(released_at),
         '[تاریخ ترخیص]': format_jalali_date(released_at),
         '[امتیاز مشتری]': to_persian_digits(str(round(float(customer_score or 0), 1)).replace('.0', '')),
         '[درصد تخفیف سفارش بعد]': next_discount_label,
+        '[درصد تخفیف مراجعه بعد]': next_discount_label,
         '[درصد تخفیف امتیاز مشتری]': next_discount_label,
         '[تعداد مراجعات]': to_persian_digits(str(int(visit_count or 0))),
         '[انعام]': format_toman(tip_amount),

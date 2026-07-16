@@ -607,18 +607,19 @@
         <div class="invoice-sheet" :class="invoiceSheetClass" :style="invoiceSheetStyle">
           <template v-if="invoiceIsThermal">
             <header class="thermal-sheet-head">
-              <strong>{{ invoiceCarwashName }}</strong>
+              <strong>{{ invoiceCarwashTitle }}</strong>
+              <small v-if="invoiceCarwashContactLine">{{ invoiceCarwashContactLine }}</small>
               <span>رسید ترخیص خودرو</span>
             </header>
 
             <section class="thermal-info-grid">
-              <p><span>شماره پذیرش:</span><strong>{{ Number(releaseCandidate?.id || 0).toLocaleString('fa-IR') }}</strong></p>
+              <p><span>شماره پذیرش:</span><strong>{{ invoiceAdmissionNumber }}</strong></p>
               <p><span>تاریخ:</span><strong>{{ invoiceIssuedAt }}</strong></p>
-              <p><span>دفعات مراجعه:</span><strong>{{ Number(releaseForm.customerLoyaltyVisitCount || 0).toLocaleString('fa-IR') }}</strong></p>
-              <p><span>پرداخت:</span><strong>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</strong></p>
+              <p><span>مراجعه / امتیاز:</span><strong>{{ Number(releaseForm.customerLoyaltyVisitCount || 0).toLocaleString('fa-IR') }} / {{ invoiceCustomerScoreLabel }}</strong></p>
+              <p><span>شماره تیپ:</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
               <p><span>مدل خودرو:</span><strong>{{ invoiceVehicleTitle }}</strong></p>
               <p><span>پلاک:</span><strong>{{ invoicePlateLabel }}</strong></p>
-              <p><span>مشتری:</span><strong>{{ invoiceCustomerName }}</strong></p>
+              <p><span>مشتری:</span><strong>{{ invoiceCustomerDisplayName }}</strong></p>
               <p><span>تلفن:</span><strong>{{ invoiceCustomerPhone }}</strong></p>
             </section>
 
@@ -627,19 +628,16 @@
                 <thead>
                   <tr>
                     <th>شرح خدمات / کالا</th>
-                    <th>تعداد</th>
                     <th>مبلغ<br />(تومان)</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="(line, lineIndex) in invoiceServiceLines" :key="`thermal-service-${line.id || lineIndex}`">
                     <td>{{ Number(lineIndex + 1).toLocaleString('fa-IR') }}. {{ line.service_name }}</td>
-                    <td>{{ Number(line.quantity || 1).toLocaleString('fa-IR') }}</td>
-                    <td>{{ moneyInputValue(line.line_total) }}</td>
+                    <td>{{ moneyInputValue(invoiceServiceLineListTotal(line)) }}</td>
                   </tr>
                   <tr v-for="(product, productIndex) in invoiceProductLines" :key="`thermal-product-${product.id}`">
                     <td>{{ Number(invoiceServiceLines.length + productIndex + 1).toLocaleString('fa-IR') }}. {{ product.name }}</td>
-                    <td>{{ Number(product.quantity || 0).toLocaleString('fa-IR') }}</td>
                     <td>{{ moneyInputValue(product.total) }}</td>
                   </tr>
                 </tbody>
@@ -648,19 +646,16 @@
 
             <section class="thermal-total-block">
               <p><span>جمع کل</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
-              <p><span>تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
-              <p v-if="releaseSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
-              <p v-if="releaseSummary.tipAmount > 0"><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
-              <p class="thermal-payable-total"><span>قابل پرداخت</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
+              <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
+              <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
+              <p><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
+              <p class="thermal-payable-total"><span>قیمت نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </section>
 
             <footer class="thermal-sheet-footer">
-              <p>* قیمت‌ها طبق نرخ‌نامه مجموعه محاسبه شده است.</p>
-              <p>* تخفیف اعمال‌شده از طرف کارواش لحاظ گردید.</p>
-              <p>* قبل از خروج، وسایل داخل خودرو را چک کنید.</p>
               <p v-if="releasePaymentBreakdownLabel">ترکیبی: {{ releasePaymentBreakdownLabel }}</p>
               <p v-if="invoiceDueDateLabel">سررسید: {{ invoiceDueDateLabel }}</p>
-              <p v-if="releaseForm.receiptFooterNote">{{ releaseForm.receiptFooterNote }}</p>
+              <p v-if="releaseForm.receiptFooterNote" class="receipt-custom-note">{{ releaseForm.receiptFooterNote }}</p>
               <strong>از اعتماد شما سپاسگزاریم</strong>
             </footer>
           </template>
@@ -668,21 +663,21 @@
           <template v-else>
           <header class="invoice-sheet-head">
             <div>
-              <small>{{ invoiceCarwashName }}</small>
+              <small>{{ invoiceCarwashContactLine || invoiceCarwashName }}</small>
               <strong>فاکتور نهایی سفارش</strong>
               <span>شماره فاکتور: {{ invoiceNumber }}</span>
             </div>
             <div class="invoice-sheet-meta">
-              <strong>{{ invoiceCarwashName }}</strong>
+              <strong>{{ invoiceCarwashTitle }}</strong>
               <span>تاریخ صدور: {{ invoiceIssuedAt }}</span>
-              <span>روش پرداخت: {{ paymentMethodLabel(releaseForm.paymentMethod) }}</span>
+              <span>شماره تیپ: {{ invoiceTariffTypeNumber }}</span>
             </div>
           </header>
 
           <section class="invoice-identity-grid">
             <article>
               <small>اطلاعات مشتری</small>
-              <p><span>نام</span><strong>{{ invoiceCustomerName }}</strong></p>
+              <p><span>نام</span><strong>{{ invoiceCustomerDisplayName }}</strong></p>
               <p><span>شماره تماس</span><strong>{{ invoiceCustomerPhone }}</strong></p>
               <p><span>امتیاز مشتری</span><strong>{{ formatCustomerScore(releaseForm.customerScore) }} | {{ releaseCustomerScoreStars }}</strong></p>
               <p><span>درصد تخفیف امتیاز</span><strong>{{ Number(releaseForm.customerLoyaltyDiscountPercent || 0).toLocaleString('fa-IR') }}٪</strong></p>
@@ -696,7 +691,7 @@
             </article>
             <article>
               <small>اطلاعات سفارش</small>
-              <p><span>شماره سفارش</span><strong>#{{ Number(releaseCandidate?.id || 0).toLocaleString('fa-IR') }}</strong></p>
+              <p><span>شماره پذیرش</span><strong>#{{ invoiceAdmissionNumber }}</strong></p>
               <p><span>وضعیت پرداخت</span><strong>{{ invoicePaymentStatusLabel }}</strong></p>
               <p><span>تاریخ ورود</span><strong>{{ invoiceCheckInLabel }}</strong></p>
             </article>
@@ -718,7 +713,7 @@
                 <tr v-for="(line, lineIndex) in invoiceServiceLines" :key="`invoice-service-${line.id || lineIndex}`">
                   <td>{{ line.service_name }}</td>
                   <td>{{ Number(line.quantity || 1).toLocaleString('fa-IR') }}</td>
-                  <td>{{ formatMoney(line.line_total) }}</td>
+                  <td>{{ formatMoney(invoiceServiceLineListTotal(line)) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -753,7 +748,7 @@
               <strong>جزئیات پرداخت</strong>
             </div>
             <div class="invoice-payment-grid">
-              <p><span>روش پرداخت</span><strong>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</strong></p>
+              <p><span>شماره تیپ</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
               <p><span>وضعیت</span><strong>{{ invoicePaymentStatusLabel }}</strong></p>
               <p v-if="releasePaymentBreakdownLabel"><span>پرداخت ترکیبی</span><strong>{{ releasePaymentBreakdownLabel }}</strong></p>
               <p v-if="invoiceDueDateLabel"><span>سررسید</span><strong>{{ invoiceDueDateLabel }}</strong></p>
@@ -766,23 +761,21 @@
               <strong>خلاصه مالی مشتری</strong>
             </div>
             <div class="invoice-totals">
-              <p><span>جمع قبل از تخفیف</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
-              <p><span>جمع خدمات</span><strong>{{ formatMoney(releaseSummary.servicesTotal) }}</strong></p>
-              <p><span>جمع محصولات</span><strong>{{ formatMoney(releaseSummary.productsTotal) }}</strong></p>
+              <p><span>جمع کل</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
               <p v-if="releaseSummary.facilityDiscountAmount > 0"><span>تخفیف مجموعه</span><strong>{{ formatMoney(releaseSummary.facilityDiscountAmount) }}</strong></p>
               <p v-if="releaseSummary.customerDiscountAmount > 0"><span>تخفیف امتیاز مشتری</span><strong>{{ formatMoney(releaseSummary.customerDiscountAmount) }}</strong></p>
               <p v-if="releaseSummary.manualDiscountAmount > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(releaseSummary.manualDiscountAmount) }}</strong></p>
               <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
-              <p v-if="releaseSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
-              <p class="invoice-grand-total"><span>مبلغ نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
+              <p><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
+              <p class="invoice-grand-total"><span>قیمت نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </div>
           </section>
 
           <footer class="invoice-sheet-footer">
             <p v-if="invoiceCustomerNote">توضیحات سفارش: {{ invoiceCustomerNote }}</p>
-            <p v-if="releaseForm.receiptFooterNote">{{ releaseForm.receiptFooterNote }}</p>
-            <p>{{ invoiceCarwashName }}</p>
+            <p v-if="releaseForm.receiptFooterNote" class="receipt-custom-note">{{ releaseForm.receiptFooterNote }}</p>
+            <p>از اعتماد شما سپاسگزاریم</p>
           </footer>
           </template>
         </div>
@@ -809,6 +802,7 @@ import { notifyError, notifyWarning } from '../../utils/notify'
 import { buildPlateNumber, isAnonymousPlate, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
 
 const search = ref('')
+const debouncedSearch = ref('')
 const activeFilter = ref('entered')
 const showVehicleModal = ref(false)
 const showVehicleDetailsModal = ref(false)
@@ -863,6 +857,8 @@ const releaseForm = ref({
   chequeAmount: 0,
   creditDueDate: '',
   receiptFooterNote: '',
+  carwashAddress: '',
+  managerPhone: '',
   receiptPrinterPaperWidth: '80mm',
   receiptPrintCopies: 1,
   bonusPenaltyAdjustments: [],
@@ -1135,6 +1131,8 @@ const closeReleaseModal = () => {
     chequeAmount: 0,
     creditDueDate: '',
     receiptFooterNote: '',
+    carwashAddress: '',
+    managerPhone: '',
     bonusPenaltyAdjustments: [],
     bonusPenaltyNote: '',
     newServiceLines: [],
@@ -1664,6 +1662,9 @@ const openReleaseModal = async (car) => {
         service_id: Number(line.service_id || line.service || 0),
         service_name: line.service_name,
         quantity: Number(line.quantity || 0),
+        list_unit_price: Number(line.list_unit_price || 0),
+        unit_price: Number(line.unit_price || 0),
+        discount_amount: Number(line.discount_amount || 0),
         line_total: Number(line.line_total || 0),
         is_completed: true,
         is_selected: true
@@ -1734,6 +1735,8 @@ const openReleaseModal = async (car) => {
       chequeAmount: 0,
       creditDueDate: '',
       receiptFooterNote: settingsResponse?.data?.receipt_footer_note || '',
+      carwashAddress: data?.vehicle?.tenant_address || authStore.user?.tenant?.address || '',
+      managerPhone: data?.vehicle?.manager_phone || authStore.user?.phone || '',
       receiptPrinterPaperWidth: settingsResponse?.data?.receipt_printer_paper_width || '80mm',
       receiptPrintCopies: Math.max(1, Number(settingsResponse?.data?.receipt_print_copies || 1)),
       taxEnabled: Boolean(settingsResponse?.data?.tax_enabled),
@@ -1819,6 +1822,17 @@ const invoiceFileLabel = computed(() => (
 const invoiceCarwashName = computed(() => (
   String(authStore.user?.tenant_name || '').trim() || 'کارواش'
 ))
+const invoiceCarwashTitle = computed(() => {
+  const name = invoiceCarwashName.value
+  return name.startsWith('کارواش') ? name : `کارواش ${name}`
+})
+const invoiceCarwashContactLine = computed(() => {
+  const parts = [
+    String(releaseForm.value.carwashAddress || '').trim(),
+    String(releaseForm.value.managerPhone || '').trim()
+  ].filter(Boolean)
+  return parts.join(' | ')
+})
 const invoicePreviewUrl = computed(() => (
   invoicePdfUrl.value
     ? `${invoicePdfUrl.value}#view=FitH&zoom=page-width`
@@ -1843,13 +1857,34 @@ const invoiceProductLines = computed(() => (
       .filter(Boolean)
     : []
 ))
-const invoiceNumber = computed(() => `CW-${Number(releaseCandidate.value?.id || 0).toLocaleString('fa-IR')}`)
+const invoiceAdmissionNumber = computed(() => Number(
+  releaseCandidate.value?.admission_number || releaseCandidate.value?.admissionNumber || releaseCandidate.value?.id || 0
+).toLocaleString('fa-IR'))
+const invoiceNumber = computed(() => `CW-${invoiceAdmissionNumber.value}`)
+const invoiceTariffTypeNumber = computed(() => {
+  const raw = String(
+    releaseCandidate.value?.tariff_type || releaseCandidate.value?.tariffType || 'type_1'
+  ).trim()
+  const match = raw.match(/(\d+)/)
+  return Number(match ? match[1] : 1).toLocaleString('fa-IR')
+})
 const invoiceCustomerName = computed(() => (
   String(releaseCandidate.value?.driverName || releaseCandidate.value?.driver_name || '').trim() || 'مشتری حضوری'
 ))
+const invoiceCustomerDisplayName = computed(() => {
+  const name = invoiceCustomerName.value
+  const gender = String(
+    releaseCandidate.value?.driverGender || releaseCandidate.value?.driver_gender || ''
+  ).trim().toLowerCase()
+  if (!name || name === 'مشتری حضوری') return name
+  if (gender === 'male' && !name.startsWith('آقای')) return `آقای ${name}`
+  if (gender === 'female' && !name.startsWith('خانم')) return `خانم ${name}`
+  return name
+})
 const invoiceCustomerPhone = computed(() => (
   String(releaseCandidate.value?.driverPhone || releaseCandidate.value?.driver_phone || '').trim() || '-'
 ))
+const invoiceCustomerScoreLabel = computed(() => `${formatCustomerScore(releaseForm.value.customerScore)} از ۵`)
 const invoiceVehicleTitle = computed(() => {
   const model = String(releaseCandidate.value?.model || releaseCandidate.value?.car_model || '').trim()
   const color = String(releaseCandidate.value?.colorName || releaseCandidate.value?.car_color || '').trim()
@@ -1869,7 +1904,13 @@ const invoiceCheckInLabel = computed(() => {
 const invoicePaymentStatusLabel = computed(() => (
   releaseSummary.value.finalTotal > 0 ? paymentStatusLabel(releaseCandidate.value?.payment_status) : 'تسویه شده'
 ))
-const invoiceSubtotal = computed(() => Number((releaseSummary.value.servicesTotal + releaseSummary.value.productsTotal).toFixed(2)))
+const invoiceServiceLineListTotal = (line) => {
+  const quantity = Number(line?.quantity || 1) || 1
+  const listUnitPrice = Number(line?.list_unit_price || 0)
+  if (listUnitPrice > 0) return listUnitPrice * quantity
+  return Number(line?.line_total || 0) + Number(line?.discount_amount || 0)
+}
+const invoiceSubtotal = computed(() => Number((releaseSummary.value.serviceListSubtotal + releaseSummary.value.productsTotal).toFixed(2)))
 const invoiceDueDateLabel = computed(() => (
   releaseForm.value.creditDueDate && ['credit', 'cheque', 'manual'].includes(releaseForm.value.paymentMethod)
     ? releaseForm.value.creditDueDate
@@ -1953,6 +1994,13 @@ const filteredReleaseProducts = computed(() => {
   if (!query) return items
   return items.filter((item) => `${item.name || ''} ${item.sku || ''}`.includes(query))
 })
+let searchDebounceTimer = null
+watch(search, (value) => {
+  if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = window.setTimeout(() => {
+    debouncedSearch.value = String(value || '')
+  }, 120)
+}, { immediate: true })
 const hasReleaseProducts = computed(() => (
   Array.isArray(releaseForm.value.availableProducts) && releaseForm.value.availableProducts.length > 0
 ))
@@ -1980,6 +2028,9 @@ const releaseSummary = computed(() => {
   const servicesTotal = releaseForm.value.serviceLines.reduce((sum, line) => (
     line.is_completed ? sum + Number(line.line_total || 0) : sum
   ), 0)
+  const rawServiceListSubtotal = releaseForm.value.serviceLines.reduce((sum, line) => (
+    line.is_completed ? sum + invoiceServiceLineListTotal(line) : sum
+  ), 0)
   const productsTotal = releaseForm.value.availableProducts.reduce((sum, product) => {
     const qty = getReleaseProductQty(product.id)
     return sum + (qty * Number(product.sale_price || 0))
@@ -1987,7 +2038,11 @@ const releaseSummary = computed(() => {
   const tipAmount = Math.max(0, Number(releaseForm.value.tipAmount || 0))
   const customerScore = Math.max(0, Math.min(5, Number(releaseForm.value.customerScore || 0)))
   const discountPercentPerHalfStar = Math.max(0, Number(releaseForm.value.discountPercentPerHalfStar || 0))
-  const facilityDiscountAmount = Math.max(0, Number(releaseForm.value.facilityDiscountTotal || 0))
+  const serviceListSubtotal = rawServiceListSubtotal > 0
+    ? rawServiceListSubtotal
+    : servicesTotal + Math.max(0, Number(releaseForm.value.facilityDiscountTotal || 0))
+  const computedFacilityDiscountAmount = Math.max(0, Number((serviceListSubtotal - servicesTotal).toFixed(2)))
+  const facilityDiscountAmount = computedFacilityDiscountAmount || Math.max(0, Number(releaseForm.value.facilityDiscountTotal || 0))
   const customerDiscountPercent = Math.max(
     0,
     Number(
@@ -1999,17 +2054,17 @@ const releaseSummary = computed(() => {
   const customerDiscountAmount = Number(
     (
       releaseForm.value.loyaltyDiscountTotal
-      || ((servicesTotal * customerDiscountPercent) / 100)
+      || ((serviceListSubtotal * customerDiscountPercent) / 100)
     ).toFixed(2)
   )
   const manualDiscountAmount = Math.max(0, Number(releaseForm.value.manualDiscountTotal || 0))
   const discountAmount = Math.min(
-    Math.max(0, servicesTotal + productsTotal + facilityDiscountAmount),
+    Math.max(0, serviceListSubtotal),
     Number((facilityDiscountAmount + customerDiscountAmount + manualDiscountAmount).toFixed(2))
   )
   const shareBaseTotal = Math.max(0, servicesTotal)
   const workerShareBase = Math.min(shareBaseTotal, Number(releaseForm.value.workerShareAmount || 0))
-  const taxableTotal = Math.max(0, servicesTotal + productsTotal - discountAmount)
+  const taxableTotal = Math.max(0, serviceListSubtotal + productsTotal - discountAmount)
   const taxPercent = releaseForm.value.taxEnabled ? Math.max(0, Math.min(100, Number(releaseForm.value.taxPercent || 0))) : 0
   const taxAmount = Number(((taxableTotal * taxPercent) / 100).toFixed(2))
   const finalTotalWithProducts = Math.max(0, taxableTotal + taxAmount + tipAmount)
@@ -2081,9 +2136,10 @@ const releaseSummary = computed(() => {
   }
   const carwashShare = Math.max(
     0,
-    Number((shareBaseTotal - workerShareBase + (tipAmount - allocatedTipTotal) - discountAmount).toFixed(2))
+    Number((shareBaseTotal - workerShareBase + (tipAmount - allocatedTipTotal) - Math.min(servicesTotal, customerDiscountAmount + manualDiscountAmount)).toFixed(2))
   )
   return {
+    serviceListSubtotal,
     servicesTotal,
     productsTotal,
     customerScore,
@@ -2138,8 +2194,8 @@ const buildInvoicePdf = async () => {
       .set({
         margin: invoicePageMetrics.value.margin,
         filename: `${invoiceFileLabel.value}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: invoiceIsThermal.value ? 2.2 : 2, useCORS: true, backgroundColor: '#ffffff' },
+        image: { type: 'png', quality: 1 },
+        html2canvas: { scale: invoiceIsThermal.value ? 4 : 3, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: invoicePageMetrics.value.format, orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       })
@@ -2460,6 +2516,8 @@ const handleStepTwoAssign = async (payload) => {
 }
 const cars = computed(() => vehicles.value.map((item) => ({
   id: item.id,
+  admission_number: item.admission_number,
+  admissionNumber: item.admission_number,
   statusKey: item.status,
   queueBucket: item.status === 'released' ? 'released' : item.status === 'cancelled' ? 'cancelled' : item.status === 'ready_to_settle' ? 'in_progress' : 'entered',
   status: item.status === 'cancelled' ? 'لغو' : item.status === 'released' ? 'ترخیص شده' : item.status === 'ready_to_settle' ? 'در حال انجام' : 'در انتظار تکمیل',
@@ -2473,6 +2531,8 @@ const cars = computed(() => vehicles.value.map((item) => ({
   plateMid: item.plate_mid || '---',
   plateRight: item.plate_right || '--',
   plateType: item.plate_type || 'car',
+  tariff_type: item.tariff_type || 'type_1',
+  tariffType: item.tariff_type || 'type_1',
   model: item.car_model,
   colorName: item.car_color,
   plateDisplay: item.plate_number || '-',
@@ -2480,6 +2540,7 @@ const cars = computed(() => vehicles.value.map((item) => ({
     ? item.job.service_lines.map((line) => line.service_name || 'خدمت').join('، ')
     : 'خدمت ثبت نشده',
   driverName: item.driver_name,
+  driver_gender: item.driver_gender,
   driverGender: item.driver_gender,
   driverPhone: item.driver_phone,
   customerScore: Number(item.customer_score || 0),
@@ -2510,8 +2571,8 @@ const filterItems = computed(() => [
 const filteredCars = computed(() => {
   let items = cars.value
   if (activeFilter.value !== 'all') items = items.filter((item) => item.queueBucket === activeFilter.value)
-  if (search.value.trim()) {
-    const query = search.value.trim().toLowerCase()
+  if (debouncedSearch.value.trim()) {
+    const query = debouncedSearch.value.trim().toLowerCase()
     items = items.filter((item) => [
       item.plateLeft,
       item.plateLetter,
@@ -2587,6 +2648,7 @@ watch(
 )
 onBeforeUnmount(() => {
   unlockBodyScrollForModal()
+  if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
   if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
   revokeInvoicePdfUrl()
 })
@@ -2600,11 +2662,11 @@ onBeforeUnmount(() => {
 .filters > .primary-btn { width: auto; margin-right: 0; }
 .chip { border: none; border-radius: 999px; padding: 11px 18px; background: #e6e8ea; color: #4b5563;font-size:13px; font-weight: 800; white-space: nowrap; }
 .chip.active { background: #0058be; color: #fff; }
-.cards-grid { margin-top: 18px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 20px; width: 100%; max-width: 100%; }
-.car-card { min-width: 0; background: #fff; border-right: 4px solid #0058be; border-radius: 16px; padding: 16px; box-shadow: 0 14px 30px -10px rgba(15,23,42,.12); display: flex; flex-direction: column; gap: 12px; transition: transform .2s ease, box-shadow .2s ease; }
-.car-card:hover { transform: translateY(-3px); box-shadow: 0 20px 34px -14px rgba(15,23,42,.16); }
-.car-card.card-released { opacity: .58; filter: grayscale(.2); }
-.car-card.card-released:hover { transform: none; box-shadow: 0 14px 30px -10px rgba(15,23,42,.12); }
+.cards-grid { margin-top: 18px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; width: 100%; max-width: 100%; }
+.car-card { min-width: 0; background: #fff; border-right: 4px solid #0058be; border-radius: 16px; padding: 14px; box-shadow: 0 6px 18px -14px rgba(15,23,42,.28); display: flex; flex-direction: column; gap: 10px; transition: border-color .12s ease; contain: content; content-visibility: auto; contain-intrinsic-size: 220px; }
+.car-card:hover { box-shadow: 0 8px 20px -16px rgba(15,23,42,.32); }
+.car-card.card-released { opacity: .7; }
+.car-card.card-released:hover { box-shadow: 0 6px 18px -14px rgba(15,23,42,.28); }
 .card-head { display: flex; justify-content: space-between; align-items: center; }
 .status { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #475569; }
 .dot { width: 8px; height: 8px; border-radius: 99px; }
@@ -2633,9 +2695,9 @@ onBeforeUnmount(() => {
 .danger-btn{background:#fee2e2;color:#b91c1c}
 .danger-btn:disabled{background:#e5e7eb;color:#94a3b8;cursor:not-allowed}
 .small-btn{padding:6px 10px}
-.release-panel { width: min(1420px, 100%); max-width: 100%; height: calc(100vh - 40px); max-height: calc(100vh - 40px); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; background: linear-gradient(180deg,#fdfefe,#f6fbff); }
+.release-panel { width: min(1420px, 100%); max-width: 100%; height: calc(100vh - 40px); max-height: calc(100vh - 40px); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; background: #f7fbff; contain: content; }
 .release-loading { min-height: 280px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 14px; }
-.release-modal-head{align-items:flex-start;gap:16px;padding:20px 24px;background:rgba(255,255,255,.9);backdrop-filter:blur(14px)}
+.release-modal-head{align-items:flex-start;gap:16px;padding:20px 24px;background:#fff}
 .release-modal-copy{display:grid;gap:4px}
 .release-modal-tools{display:flex;align-items:center;gap:12px;margin-inline-start:auto}
 .release-modal-vehicle{display:grid;gap:4px;padding:10px 14px;border-radius:18px;border:1px solid #d7e5f8;background:linear-gradient(180deg,#ffffff,#f4f8ff);min-width:0}
@@ -2650,10 +2712,10 @@ onBeforeUnmount(() => {
   radial-gradient(circle at top left, rgba(14,165,233,.14), transparent 28%),
   linear-gradient(180deg,#edf7ff,#eef5ff); }
 .release-layout.release-layout-no-products { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
-.release-col { background: rgba(255,255,255,.88); border: 1px solid rgba(191,215,255,.9); border-radius: 24px; padding: 18px; display: flex; flex-direction: column; min-height: 620px; box-shadow: 0 22px 45px -32px rgba(15,23,42,.45); backdrop-filter: blur(10px); }
+.release-col { background: #fff; border: 1px solid rgba(191,215,255,.9); border-radius: 24px; padding: 18px; display: flex; flex-direction: column; min-height: 620px; box-shadow: 0 10px 24px -22px rgba(15,23,42,.45); contain: content; }
 .release-products-col, .release-summary-col { border-right: 1px solid rgba(191,215,255,.85); }
 .release-title-inline{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.service-picker-overlay{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(15,23,42,.28);backdrop-filter:blur(6px)}
+.service-picker-overlay{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(15,23,42,.28)}
 .service-picker-panel{width:min(920px,100%);max-height:min(720px,100%);display:grid;gap:18px;padding:22px;border-radius:28px;background:linear-gradient(180deg,#ffffff,#f5f9ff);border:1px solid #d8e6ff;box-shadow:0 28px 60px -34px rgba(15,23,42,.45);overflow:auto}
 .service-picker-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .service-picker-head h4{margin:0;color:#0f172a;font-size:20px}
@@ -2847,33 +2909,33 @@ onBeforeUnmount(() => {
 .invoice-template{background:#fff;padding:0;box-sizing:border-box;overflow:hidden}
 .invoice-template *,.invoice-template *::before,.invoice-template *::after{box-sizing:border-box}
 .invoice-sheet{direction:rtl;background:#fff;color:#0f172a;font-family:Tahoma,Arial,sans-serif;display:grid;box-sizing:border-box;overflow:hidden;max-width:100%;contain:layout paint}
-.invoice-sheet-a5{font-size:.9em}
-.invoice-sheet-thermal{font-size:.82em;direction:rtl;background:#fff!important;color:#000!important;font-family:Tahoma,Arial,sans-serif;line-height:1.45}
+.invoice-sheet-a5{font-size:1em}
+.invoice-sheet-thermal{font-size:1em;direction:rtl;background:#fff!important;color:#000!important;font-family:Tahoma,Arial,sans-serif;line-height:1.35}
 .invoice-sheet-thermal,
 .invoice-sheet-thermal *{color:#000!important;background:#fff!important;background-color:#fff!important;box-shadow:none!important;text-shadow:none!important}
 .invoice-sheet-thermal{border-radius:0!important}
 .invoice-sheet-thermal *{border-color:#000!important}
 .invoice-sheet-head{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);justify-content:space-between;gap:8px;padding:10px 12px;border-radius:10px;background:linear-gradient(135deg,#0f172a,#0f4c81 58%,#0ea5e9);color:#fff;min-width:0;max-width:100%}
 .invoice-sheet-head > *{min-width:0}
-.invoice-sheet-head small{display:block;font-size:8px;color:rgba(255,255,255,.72);letter-spacing:0}
-.invoice-sheet-head strong{display:block;font-size:15px;line-height:1.35;margin-top:2px;overflow-wrap:anywhere}
-.invoice-sheet-head span{display:block;margin-top:3px;color:rgba(255,255,255,.78);font-size:8px;overflow-wrap:anywhere}
+.invoice-sheet-head small{display:block;font-size:10px;color:rgba(255,255,255,.72);letter-spacing:0}
+.invoice-sheet-head strong{display:block;font-size:18px;line-height:1.35;margin-top:2px;overflow-wrap:anywhere}
+.invoice-sheet-head span{display:block;margin-top:3px;color:rgba(255,255,255,.78);font-size:10px;overflow-wrap:anywhere}
 .invoice-sheet-meta{display:grid;gap:4px;justify-items:end;min-width:0;align-content:center}
-.invoice-sheet-meta strong{font-size:10px;overflow-wrap:anywhere}
+.invoice-sheet-meta strong{font-size:12px;overflow-wrap:anywhere}
 .invoice-sheet-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .invoice-sheet-grid article{border:1px solid #dbe7f5;border-radius:8px;padding:6px 7px;background:linear-gradient(180deg,#ffffff,#f8fbff);display:grid;gap:2px;min-width:0}
 .invoice-sheet-grid article span{font-size:8px;color:#64748b}
 .invoice-sheet-grid article strong{font-size:9px;line-height:1.6;min-width:0;overflow-wrap:anywhere;word-break:break-word}
 .invoice-identity-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .invoice-identity-grid article{border:1px solid #dbe7f5;border-radius:8px;padding:7px;background:linear-gradient(180deg,#ffffff,#f8fbff);display:grid;gap:4px;min-width:0}
-.invoice-identity-grid small{color:#0f4c81;font-size:9px;font-weight:800}
-.invoice-identity-grid p{margin:0;display:grid;grid-template-columns:minmax(0,.62fr) minmax(0,1fr);gap:6px;align-items:start;color:#334155;font-size:8px;line-height:1.5;min-width:0}
+.invoice-identity-grid small{color:#0f4c81;font-size:11px;font-weight:800}
+.invoice-identity-grid p{margin:0;display:grid;grid-template-columns:minmax(0,.62fr) minmax(0,1fr);gap:6px;align-items:start;color:#334155;font-size:10px;line-height:1.55;min-width:0}
 .invoice-identity-grid p span{color:#64748b;min-width:0}
-.invoice-identity-grid p strong{color:#0f172a;font-size:8px;font-weight:800;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.invoice-identity-grid p strong{color:#0f172a;font-size:10px;font-weight:800;min-width:0;overflow-wrap:anywhere;word-break:break-word}
 .invoice-sheet-section{display:grid;gap:6px;min-width:0;max-width:100%}
-.invoice-section-head strong{font-size:10px;color:#0f172a}
+.invoice-section-head strong{font-size:12px;color:#0f172a}
 .invoice-table{width:100%;max-width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;border:1px solid #dbe7f5;border-radius:8px;overflow:hidden}
-.invoice-table th,.invoice-table td{padding:4px 6px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:9px;line-height:1.6;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+.invoice-table th,.invoice-table td{padding:5px 7px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:11px;line-height:1.6;overflow-wrap:anywhere;word-break:break-word;min-width:0;vertical-align:middle}
 .invoice-table th{background:#eff6ff;color:#334155;font-weight:800}
 .invoice-services-table th:first-child,.invoice-services-table td:first-child{width:58%}
 .invoice-services-table th:nth-child(2),.invoice-services-table td:nth-child(2){width:14%;text-align:center}
@@ -2885,44 +2947,45 @@ onBeforeUnmount(() => {
 .invoice-table tr:last-child td{border-bottom:0}
 .invoice-payment-section{border:1px solid #dbe7f5;border-radius:10px;padding:7px 9px;background:#f8fbff}
 .invoice-payment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px}
-.invoice-payment-grid p{margin:0;display:grid;grid-template-columns:minmax(0,.65fr) minmax(0,1fr);gap:8px;color:#334155;font-size:8px;line-height:1.6;min-width:0}
+.invoice-payment-grid p{margin:0;display:grid;grid-template-columns:minmax(0,.65fr) minmax(0,1fr);gap:8px;color:#334155;font-size:10px;line-height:1.6;min-width:0}
 .invoice-payment-grid p span,.invoice-payment-grid p strong{min-width:0;overflow-wrap:anywhere;word-break:break-word}
 .invoice-payment-grid p strong{color:#0f172a}
 .invoice-total-section{border:1px solid #dbe7f5;border-radius:10px;padding:8px 10px;background:linear-gradient(180deg,#ffffff,#f8fbff)}
 .invoice-totals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px}
-.invoice-totals p{margin:0;display:grid;grid-template-columns:minmax(0,.75fr) minmax(0,1fr);gap:8px;color:#334155;font-size:9px;min-width:0}
+.invoice-totals p{margin:0;display:grid;grid-template-columns:minmax(0,.75fr) minmax(0,1fr);gap:8px;color:#334155;font-size:11px;min-width:0}
 .invoice-totals strong,.invoice-totals span{min-width:0;overflow-wrap:anywhere}
-.invoice-grand-total{grid-column:1 / -1;padding-top:5px;border-top:1px dashed #bfd7ff;font-size:11px;font-weight:800;color:#0f172a}
+.invoice-grand-total{grid-column:1 / -1;padding-top:6px;border-top:1px dashed #bfd7ff;font-size:14px;font-weight:900;color:#0f172a}
 .invoice-sheet-footer{padding-top:6px;border-top:1px dashed #cbd5e1;display:grid;gap:3px}
-.invoice-sheet-footer p{margin:0;color:#475569;font-size:8px;line-height:1.6;overflow-wrap:anywhere;word-break:break-word}
+.invoice-sheet-footer p{margin:0;color:#475569;font-size:10px;line-height:1.7;overflow-wrap:anywhere;word-break:break-word;white-space:pre-line}
 .thermal-sheet-head{display:grid;justify-items:center;gap:5px;padding:3px 0 8px;border-bottom:2px solid #000;text-align:center}
-.thermal-sheet-head strong{font-size:22px;font-weight:900;line-height:1.25}
-.thermal-sheet-head span{font-size:10px;font-weight:700;line-height:1.7;max-width:100%;overflow-wrap:anywhere}
+.thermal-sheet-head strong{font-size:26px;font-weight:900;line-height:1.22}
+.thermal-sheet-head span{font-size:13px;font-weight:800;line-height:1.5;max-width:100%;overflow-wrap:anywhere}
+.thermal-sheet-head small{font-size:11px;font-weight:800;line-height:1.65;max-width:100%;overflow-wrap:anywhere}
 .thermal-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 10px;padding:8px 0;border-bottom:2px solid #000}
-.thermal-info-grid p{margin:0;display:flex;align-items:flex-start;gap:3px;font-size:10px;line-height:1.65;min-width:0}
+.thermal-info-grid p{margin:0;display:flex;align-items:center;gap:4px;font-size:12px;line-height:1.55;min-width:0}
 .thermal-info-grid span{flex:0 0 auto;font-weight:700}
 .thermal-info-grid strong{min-width:0;font-weight:700;overflow-wrap:anywhere;word-break:break-word}
 .thermal-items-section{padding:8px 0}
 .thermal-items-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1.5px solid #000}
-.thermal-items-table th,.thermal-items-table td{border:1px solid #000;padding:5px 4px;text-align:center;vertical-align:middle;font-size:10px;line-height:1.55;overflow-wrap:anywhere;word-break:break-word}
-.thermal-items-table th{font-weight:900;font-size:10px;line-height:1.45}
-.thermal-items-table th:first-child,.thermal-items-table td:first-child{width:58%;text-align:right}
-.thermal-items-table th:nth-child(2),.thermal-items-table td:nth-child(2){width:14%}
-.thermal-items-table th:nth-child(3),.thermal-items-table td:nth-child(3){width:28%}
+.thermal-items-table th,.thermal-items-table td{border:1px solid #000;padding:7px 5px;text-align:center;vertical-align:middle;font-size:12px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}
+.thermal-items-table th{font-weight:900;font-size:12px;line-height:1.35}
+.thermal-items-table th:first-child,.thermal-items-table td:first-child{width:62%;text-align:center}
+.thermal-items-table th:nth-child(2),.thermal-items-table td:nth-child(2){width:38%}
 .thermal-total-block{display:grid;gap:4px;padding:6px 0 0}
-.thermal-total-block p{margin:0;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;line-height:1.7}
+.thermal-total-block p{margin:0;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;line-height:1.6}
 .thermal-total-block span{font-weight:800}
 .thermal-total-block strong{font-weight:900;text-align:left;white-space:nowrap}
-.thermal-payable-total{margin-top:4px!important;padding:8px 0!important;border-top:2px solid #000;border-bottom:4px double #000;font-size:14px!important;font-weight:900}
-.thermal-payable-total strong{font-size:15px}
+.thermal-payable-total{margin-top:4px!important;padding:8px 0!important;border-top:2px solid #000;border-bottom:4px double #000;font-size:16px!important;font-weight:900}
+.thermal-payable-total strong{font-size:17px}
 .thermal-sheet-footer{display:grid;gap:3px;padding-top:8px}
-.thermal-sheet-footer p{margin:0;text-align:right;font-size:9px;line-height:1.7}
-.thermal-sheet-footer strong{display:block;margin-top:8px;text-align:center;font-size:12px;font-weight:900;line-height:1.8}
-.modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); backdrop-filter: blur(3px); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-.modal-panel { width: min(1280px, 100%); max-width: 100%; max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 24px 60px -20px rgba(15,23,42,.4); }
+.thermal-sheet-footer p{margin:0;text-align:center;font-size:11px;line-height:1.65;font-weight:800;white-space:pre-line;overflow-wrap:anywhere;word-break:break-word}
+.thermal-sheet-footer .receipt-custom-note{padding-top:6px;border-top:1px dashed #000}
+.thermal-sheet-footer strong{display:block;margin-top:8px;text-align:center;font-size:14px;font-weight:900;line-height:1.7}
+.modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.modal-panel { width: min(1280px, 100%); max-width: 100%; max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 16px 42px -24px rgba(15,23,42,.45); contain: content; }
 .vehicle-entry-overlay { align-items: center; justify-content: center; }
 .vehicle-entry-panel { width: min(980px, 100%); max-width: 100%; }
-.vehicle-entry-head { background: rgba(255,255,255,.94); backdrop-filter: blur(12px); }
+.vehicle-entry-head { background: #fff; }
 .step-one-modal-panel {
   display: flex;
   flex-direction: column;

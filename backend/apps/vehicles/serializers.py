@@ -455,17 +455,26 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             list_unit_price = Decimal(str(line.get('list_unit_price', 0) or 0))
             unit_price = Decimal(str(line.get('unit_price', 0) or 0))
             line_total = Decimal(str(line.get('line_total', 0) or 0))
-            service_list_subtotal += list_unit_price * quantity
+            discount_amount = Decimal(str(line.get('discount_amount', 0) or 0))
+            list_line_total = (
+                list_unit_price * quantity
+                if list_unit_price > 0
+                else line_total + discount_amount
+            )
+            service_list_subtotal += list_line_total
             services_total += line_total
-            facility_discount_total += max(Decimal('0'), (list_unit_price - unit_price) * quantity)
+            facility_discount_total += max(Decimal('0'), list_line_total - line_total)
 
         loyalty_discount_percent, loyalty_discount_total = compute_loyalty_discount(
-            base_amount=services_total,
+            base_amount=service_list_subtotal,
             score=loyalty_score,
             percent_per_half_star=discount_percent_per_half_star,
         )
-        total_discount = facility_discount_total + loyalty_discount_total + manual_discount_total
-        taxable_total = max(Decimal('0'), services_total - loyalty_discount_total - manual_discount_total) + products_total
+        total_discount = min(
+            service_list_subtotal,
+            facility_discount_total + loyalty_discount_total + manual_discount_total,
+        )
+        taxable_total = max(Decimal('0'), service_list_subtotal - total_discount) + products_total
         tax_total = (taxable_total * Decimal(str(tax_percent or 0))) / Decimal('100')
         final_total = taxable_total + tax_total + tip_amount
         return {
@@ -1263,6 +1272,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         model = VehicleEntry
         fields = [
             'id',
+            'admission_number',
             'plate_number',
             'plate_left',
             'plate_letter',
@@ -1315,7 +1325,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'job',
             'status_logs',
         ]
-        read_only_fields = ['id', 'check_in_at', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'admission_number', 'check_in_at', 'created_at', 'updated_at']
         extra_kwargs = {
             'plate_number': {'required': False, 'allow_blank': True},
             'plate_left': {'required': False, 'allow_blank': True},

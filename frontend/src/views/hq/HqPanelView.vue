@@ -33,6 +33,7 @@
         >
           <span class="hq-nav-title">{{ tab.label }}</span>
           <span class="hq-nav-meta">{{ tab.meta }}</span>
+          <span v-if="tab.key === 'tickets' && openTicketCount > 0" class="hq-nav-count">{{ toFa(openTicketCount) }}</span>
         </button>
       </nav>
 
@@ -464,28 +465,6 @@
                 </div>
               </div>
 
-              <div class="hq-ticket-meta-grid">
-                <article v-if="authStore.isHqAdmin" class="hq-ticket-meta-card">
-                  <span>مسئول رسیدگی</span>
-                  <strong>{{ selectedTicket.assigned_to_name || 'بدون مسئول' }}</strong>
-                  <small>ارجاع فعلی این پرونده</small>
-                </article>
-                <article class="hq-ticket-meta-card">
-                  <span>پیام‌ها</span>
-                  <strong>{{ toFa(selectedTicket.messages?.length || 0) }} پیام</strong>
-                  <small>{{ toFa(selectedTicketInternalNotesCount) }} یادداشت داخلی</small>
-                </article>
-                <article class="hq-ticket-meta-card">
-                  <span>آخرین بروزرسانی</span>
-                  <strong>{{ dateTime(selectedTicket.updated_at) }}</strong>
-                  <small>{{ selectedTicketLastResponder }}</small>
-                </article>
-                <article class="hq-ticket-meta-card" :class="selectedTicketSla.state">
-                  <span>SLA</span>
-                  <strong>{{ selectedTicketSla.label }}</strong>
-                  <small>{{ selectedTicketSla.description }}</small>
-                </article>
-              </div>
             </div>
 
             <div class="chat-head-actions ticket-chat-actions desk-ticket-actions">
@@ -501,12 +480,6 @@
                   {{ member.full_name || member.username }}
                 </option>
               </select>
-            </div>
-
-            <div class="quick-status-row">
-              <button type="button" class="scope-chip" @click="ticketReply.status = 'answered'">علامت‌گذاری پاسخ داده شده</button>
-              <button type="button" class="scope-chip" @click="ticketReply.status = 'pending'">در انتظار پیگیری</button>
-              <button type="button" class="scope-chip danger-chip" @click="ticketReply.status = 'closed'">بستن تیکت</button>
             </div>
 
             <section v-if="canApproveRegistration" class="registration-approval-card">
@@ -1343,7 +1316,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../services/api'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
@@ -1363,6 +1336,12 @@ const allTabs = [
 ]
 const activeTab = ref(authStore.isHqAdmin ? 'overview' : 'tickets')
 const isMobileSidebarOpen = ref(false)
+let hqTicketPollingTimer = null
+let hqTicketPollingInFlight = false
+let knownTicketIds = new Set()
+let knownTicketActivity = new Map()
+let notificationAudioContext = null
+let notificationAudioUnlocked = false
 const visibleTabs = computed(() => {
   if (!authStore.isHqAdmin) return allTabs.filter((tab) => tab.key === 'tickets')
   return allTabs.filter((tab) => {
@@ -1525,21 +1504,23 @@ const ticketSummaryCards = computed(() => {
     if (['urgent', 'high'].includes(item.priority)) acc.urgent += 1
     return acc
   }, { total: 0, open: 0, pending: 0, answered: 0, closed: 0, unassigned: 0, mine: 0, urgent: 0 })
+  const activeCount = counts.open + counts.pending + counts.answered
   if (!authStore.isHqAdmin) {
     return [
-      { key: 'open', label: 'جدید / باز', value: counts.open, tone: 'open' },
+      { key: 'open', label: 'جدید / باز', value: activeCount, tone: 'open' },
       { key: 'pending', label: 'در حال پیگیری', value: counts.pending, tone: 'pending' },
       { key: 'answered', label: 'پاسخ داده شده', value: counts.answered, tone: 'mine' },
       { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' }
     ]
   }
   return [
-    { key: 'open', label: 'باز', value: counts.open, tone: 'open' },
+    { key: 'open', label: 'باز', value: activeCount, tone: 'open' },
     { key: 'pending', label: 'در انتظار', value: counts.pending, tone: 'pending' },
     { key: 'mine', label: 'ارجاع به من', value: counts.mine, tone: 'mine' },
     { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' }
   ]
 })
+const openTicketCount = computed(() => ticketSummaryCards.value.find((item) => item.key === 'open')?.value || 0)
 const activeTicketScopeLabel = computed(() => {
   const match = ticketScopeOptions.value.find((item) => item.key === ticketScope.value)
   return match?.label || 'همه تیکت‌ها'
@@ -1954,6 +1935,46 @@ const applyTicketTemplate = (body) => {
   const tenantName = selectedTicket.value?.tenant_name || 'کارواش'
   ticketReply.body = String(body || '').replaceAll('{{tenant_name}}', tenantName)
 }
+const unlockNotificationAudio = () => {
+  if (notificationAudioUnlocked || typeof window === 'undefined') return
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext
+  if (!AudioContextClass) return
+  notificationAudioContext = notificationAudioContext || new AudioContextClass()
+  notificationAudioContext.resume?.()
+  notificationAudioUnlocked = true
+}
+
+const playTicketDing = () => {
+  if (typeof window === 'undefined') return
+  try {
+    unlockNotificationAudio()
+    const context = notificationAudioContext
+    if (!context) return
+    const startedAt = context.currentTime
+    const gain = context.createGain()
+    gain.gain.setValueAtTime(0.0001, startedAt)
+    gain.gain.exponentialRampToValueAtTime(0.16, startedAt + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, startedAt + 0.36)
+    gain.connect(context.destination)
+
+    const firstTone = context.createOscillator()
+    firstTone.type = 'sine'
+    firstTone.frequency.setValueAtTime(880, startedAt)
+    firstTone.connect(gain)
+    firstTone.start(startedAt)
+    firstTone.stop(startedAt + 0.16)
+
+    const secondTone = context.createOscillator()
+    secondTone.type = 'sine'
+    secondTone.frequency.setValueAtTime(1175, startedAt + 0.12)
+    secondTone.connect(gain)
+    secondTone.start(startedAt + 0.12)
+    secondTone.stop(startedAt + 0.34)
+  } catch (_error) {
+    // Browser autoplay policies can block sound until the first user interaction.
+  }
+}
+
 const roleLabel = (message) => {
   if (message.sender_platform_role === 'hq_admin') return 'مدیرکل'
   if (message.sender_platform_role === 'hq_support') return 'پشتیبان مرکزی'
@@ -2020,8 +2041,10 @@ const setReportRange = (rangeKey) => {
   reportFilter.end = range.end
 }
 
-const loadOverview = async () => {
-  const { data } = await api.get('/auth/hq/overview/')
+const loadOverview = async (options = {}) => {
+  const { data } = await api.get('/auth/hq/overview/', {
+    meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
+  })
   overview.summary = data?.summary || {}
   overview.recent_carwashes = data?.recent_carwashes || []
   overview.recent_tickets = data?.recent_tickets || []
@@ -2070,51 +2093,94 @@ const toggleCarwashState = async (row) => {
   await loadOverview()
 }
 
-const loadTickets = async () => {
-  if (authStore.isHqAdmin && !carwashes.value.length) await loadCarwashes()
+const ticketActivitySignature = (ticket) => [
+  ticket?.last_message_at || '',
+  ticket?.messages_count || 0,
+  ticket?.status || ''
+].join('|')
+
+const loadTickets = async (options = {}) => {
+  if (authStore.isHqAdmin && !carwashes.value.length && !options.silent) await loadCarwashes()
   const { data } = await api.get('/auth/hq/tickets/', {
     params: {
       q: ticketQuery.value || undefined,
       status: ticketStatus.value,
       priority: ticketPriority.value,
       tenant_id: authStore.isHqAdmin ? (ticketTenantId.value || undefined) : undefined
-    }
+    },
+    meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
   })
-  tickets.value = Array.isArray(data) ? data : []
-  await ensureSelectedTicket()
+  const nextTickets = Array.isArray(data) ? data : []
+  if (knownTicketIds.size && options.notifyNew) {
+    const hasUserActivity = nextTickets.some((item) => {
+      if (item.status === 'closed') return false
+      const id = Number(item.id)
+      if (!knownTicketIds.has(id)) return true
+      return knownTicketActivity.get(id) !== ticketActivitySignature(item)
+    })
+    if (hasUserActivity) playTicketDing()
+  }
+  knownTicketIds = new Set(nextTickets.map((item) => Number(item.id)))
+  knownTicketActivity = new Map(nextTickets.map((item) => [Number(item.id), ticketActivitySignature(item)]))
+  tickets.value = nextTickets
+  if (!options.skipSelection) await ensureSelectedTicket(options)
 }
 
-const ensureSelectedTicket = async () => {
+const ensureSelectedTicket = async (options = {}) => {
   if (!visibleTickets.value.length) {
-    selectedTicket.value = null
+    if (!options.keepReply) selectedTicket.value = null
     return
   }
   if (selectedTicket.value?.id && visibleTickets.value.some((item) => item.id === selectedTicket.value.id)) {
     const stillExists = tickets.value.some((item) => item.id === selectedTicket.value.id)
     if (stillExists) {
-      await selectTicket(selectedTicket.value.id)
+      await selectTicket(selectedTicket.value.id, {
+        keepReply: Boolean(options.keepReply),
+        silent: Boolean(options.silent)
+      })
       return
     }
   }
   await selectTicket(visibleTickets.value[0].id)
 }
 
-const selectTicket = async (ticketId) => {
-  const { data } = await api.get(`/auth/hq/tickets/${ticketId}/`)
+const selectTicket = async (ticketId, options = {}) => {
+  const { data } = await api.get(`/auth/hq/tickets/${ticketId}/`, {
+    meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
+  })
   selectedTicket.value = data
-  ticketReply.body = ''
-  ticketReply.status = ''
-  ticketReply.assign_to_user_id = Number(data?.assigned_to || 0)
-  ticketReply.is_internal = false
-  const suggestedTransferAmount = isWalletCardPaymentTicket(data) && !walletTransfer.skipNextSuggestedAmount
-    ? extractWalletTransferAmount(data)
-    : 0
-  walletTransfer.amountText = suggestedTransferAmount > 0 ? String(suggestedTransferAmount) : ''
-  walletTransfer.skipNextSuggestedAmount = false
-  walletTransfer.error = ''
-  walletTransfer.success = ''
-  registrationApproval.error = ''
-  registrationApproval.message = ''
+  if (!options.keepReply) {
+    ticketReply.body = ''
+    ticketReply.status = ''
+  }
+  if (!options.keepReply) {
+    ticketReply.assign_to_user_id = Number(data?.assigned_to || 0)
+    ticketReply.is_internal = false
+    const suggestedTransferAmount = isWalletCardPaymentTicket(data) && !walletTransfer.skipNextSuggestedAmount
+      ? extractWalletTransferAmount(data)
+      : 0
+    walletTransfer.amountText = suggestedTransferAmount > 0 ? String(suggestedTransferAmount) : ''
+    walletTransfer.skipNextSuggestedAmount = false
+    walletTransfer.error = ''
+    walletTransfer.success = ''
+    registrationApproval.error = ''
+    registrationApproval.message = ''
+  }
+}
+
+const refreshTicketsQuietly = async () => {
+  if (hqTicketPollingInFlight) return
+  hqTicketPollingInFlight = true
+  try {
+    await loadTickets({
+      keepReply: true,
+      notifyNew: true,
+      silent: true,
+      skipSelection: true
+    })
+  } finally {
+    hqTicketPollingInFlight = false
+  }
 }
 
 const sendTicketReply = async () => {
@@ -2359,6 +2425,8 @@ watch(ticketScope, async () => {
 })
 
 onMounted(async () => {
+  window.addEventListener('pointerdown', unlockNotificationAudio, { once: true })
+  window.addEventListener('keydown', unlockNotificationAudio, { once: true })
   if (authStore.isHqAdmin) {
     await loadOverview()
     await loadCarwashes()
@@ -2368,6 +2436,15 @@ onMounted(async () => {
   }
   setReportRange('month')
   if (activeTab.value === 'tickets') await loadTickets()
+  hqTicketPollingTimer = window.setInterval(async () => {
+    await refreshTicketsQuietly()
+  }, 10000)
+})
+
+onBeforeUnmount(() => {
+  if (hqTicketPollingTimer) window.clearInterval(hqTicketPollingTimer)
+  window.removeEventListener('pointerdown', unlockNotificationAudio)
+  window.removeEventListener('keydown', unlockNotificationAudio)
 })
 </script>
 
@@ -2490,6 +2567,7 @@ onMounted(async () => {
   cursor: pointer;
   display: grid;
   gap: 4px;
+  position: relative;
   transition: 0.2s ease;
 }
 
@@ -2506,6 +2584,23 @@ onMounted(async () => {
 .hq-nav-meta {
   color: var(--muted);
   font-size: 12px;
+}
+
+.hq-nav-count {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .ghost-btn,
@@ -3689,16 +3784,14 @@ td strong {
 .ticket-chat-shell-rich {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 14px;
-}
-
-.support-ticket-mode .ticket-chat-shell-rich {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  max-height: calc(100dvh - 184px);
+  overflow: hidden;
 }
 
 .desk-detail-head {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
 .hq-page.support-only .ticket-chat-shell-rich {
@@ -3768,7 +3861,6 @@ td strong {
 
 .chat-stream {
   min-height: 0;
-  max-height: calc(100vh - 340px);
   overflow: auto;
   display: grid;
   gap: 12px;
@@ -3778,7 +3870,6 @@ td strong {
 }
 
 .hq-page.support-only .chat-stream {
-  max-height: calc(100vh - 340px);
   min-height: 0;
   overflow: auto;
 }
@@ -3837,16 +3928,16 @@ td strong {
 }
 
 .chat-reply {
-  padding: 18px;
-  border-radius: 24px;
+  padding: 12px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.96);
   display: grid;
-  gap: 12px;
+  gap: 8px;
   box-shadow: 0 18px 36px rgba(15, 23, 42, 0.05);
 }
 
 .ticket-chat-reply {
-  padding: 18px;
+  padding: 12px;
   position: sticky;
   bottom: 0;
   z-index: 2;
@@ -3860,6 +3951,7 @@ td strong {
 
 .template-chip-row {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .template-chip-row.compact {
@@ -3868,14 +3960,20 @@ td strong {
 
 .template-chip {
   border: 0;
-  border-radius: 16px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 7px 9px;
   background: rgba(219, 234, 254, 0.84);
   color: var(--primary);
   font: inherit;
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.desk-ticket-reply textarea {
+  min-height: 58px;
+  max-height: 96px;
+  resize: none;
 }
 
 .quick-status-row {
@@ -3899,10 +3997,13 @@ td strong {
 }
 
 .chat-reply textarea {
-  min-height: 140px;
+  min-height: 58px;
+  max-height: 96px;
   padding: 12px;
-  resize: vertical;
+  resize: none;
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   font-size: 13px;
 }
 
@@ -3921,6 +4022,39 @@ td strong {
 
 .ticket-chat-shell-rich > * {
   min-width: 0;
+}
+
+.command-body-grid-simple,
+.command-body-grid-simple.compact,
+.command-chat-card,
+.ticket-chat-shell-rich {
+  min-width: 0;
+}
+
+.ticket-chat-shell-rich {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ticket-chat-shell-rich .chat-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ticket-chat-reply {
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.chat-tools {
+  min-width: 0;
+}
+
+.chat-tools .primary-btn {
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .ticket-placeholder {
