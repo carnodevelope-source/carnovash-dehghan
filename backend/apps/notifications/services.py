@@ -459,6 +459,16 @@ def send_provider_sms(tenant, text, recipients, *, provider_config=None):
 def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extra_context=None):
     from apps.notifications.models import NotificationLog
 
+    if (
+        event_code in {'vehicle_assigned', 'vehicle_released'}
+        and getattr(vehicle, 'sms_notifications_enabled', True) is False
+    ):
+        return {
+            'ok': False,
+            'skipped': True,
+            'reason': 'vehicle_sms_disabled',
+        }
+
     extra_context = extra_context or {}
     phone = normalize_phone(getattr(vehicle, 'driver_phone', ''))
     if not is_valid_iran_mobile(phone):

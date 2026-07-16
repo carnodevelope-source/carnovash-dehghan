@@ -1021,6 +1021,7 @@ const mapVehicleToDraft = (source = {}) => ({
   driver: source.driver_name,
   driverGender: source.driver_gender || 'male',
   mobile: source.driver_phone,
+  smsNotificationsEnabled: source.sms_notifications_enabled !== false,
   customerScore: Number(source.customer_score || source.customerScore || 0),
   customerLoyaltyVisitCount: Number(source.customer_loyalty_visit_count || source.customerLoyaltyVisitCount || 0),
   customerLoyaltyDiscountPercent: Number(source.customer_loyalty_discount_percent || source.customerLoyaltyDiscountPercent || 0),
@@ -2346,6 +2347,7 @@ const buildCreateOrUpdatePayload = (payload, status) => {
       ? String(payload?.vehicle?.driverGender || payload?.vehicle?.driver_gender).trim()
       : '',
     driver_phone: (payload?.vehicle?.mobile || '').trim(),
+    sms_notifications_enabled: payload?.vehicle?.smsNotificationsEnabled !== false,
     notes: isPieceWash ? '' : (payload?.vehicle?.note || '').trim(),
     is_piece_wash: isPieceWash,
     piece_details: (payload?.vehicle?.pieceDetails || '').trim(),

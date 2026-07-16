@@ -130,6 +130,7 @@ class VehicleEntry(TimestampedModel):
     driver_name = models.CharField(max_length=120)
     driver_gender = models.CharField(max_length=10, choices=DriverGender.choices, blank=True, default='')
     driver_phone = models.CharField(max_length=20, db_index=True)
+    sms_notifications_enabled = models.BooleanField(default=True)
     is_piece_wash = models.BooleanField(default=False)
     piece_details = models.TextField(blank=True)
     customer = models.ForeignKey(

@@ -190,6 +190,65 @@ class VehicleStatusSmsTests(APITestCase):
         self.assertIn('۵۰۰', log.payload.get('text', ''))
 
     @patch('apps.notifications.services.send_provider_sms')
+    def test_assignment_modal_can_disable_assignment_and_release_sms_for_vehicle(self, mock_send_provider_sms):
+        mock_send_provider_sms.return_value = {
+            'ok': True,
+            'message': 'پیامک با موفقیت در صف ارسال قرار گرفت.',
+            'provider_status': 200,
+            'provider_data': {'status': 'success', 'data': {'id': 'provider-disabled'}},
+            'provider_id': 'provider-disabled',
+            'raw_body': '{"status":"success","data":{"id":"provider-disabled"}}',
+            'payload': {'line_number': '30001234', 'recipients': ['09121113333']},
+        }
+
+        create_response = self.client.post(
+            reverse('vehicle-list-create'),
+            {
+                'plate_number': '33 ج 444 56',
+                'plate_left': '33',
+                'plate_letter': 'ج',
+                'plate_mid': '444',
+                'plate_right': '56',
+                'plate_type': VehicleEntry.PlateType.CAR,
+                'car_model': 'دنا',
+                'car_color': 'مشکی',
+                'driver_name': 'مشتری بدون پیامک',
+                'driver_phone': '09121113333',
+                'status': VehicleEntry.Status.READY_TO_SETTLE,
+                'sms_notifications_enabled': False,
+                'services': [{'title': 'شست‌وشو', 'price': 500000}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        vehicle = VehicleEntry.objects.get(id=create_response.data['id'])
+        self.assertFalse(vehicle.sms_notifications_enabled)
+        self.assertFalse(
+            NotificationLog.objects.filter(
+                tenant=self.tenant,
+                vehicle_entry=vehicle,
+                template_code='vehicle_assigned',
+            ).exists()
+        )
+
+        release_response = self.client.patch(
+            reverse('vehicle-release-checkout', args=[vehicle.id]),
+            {'payment_method': 'cash'},
+            format='json',
+        )
+
+        self.assertEqual(release_response.status_code, 200)
+        self.assertFalse(
+            NotificationLog.objects.filter(
+                tenant=self.tenant,
+                vehicle_entry=vehicle,
+                template_code='vehicle_released',
+            ).exists()
+        )
+        mock_send_provider_sms.assert_not_called()
+
+    @patch('apps.notifications.services.send_provider_sms')
     def test_assignment_sms_uses_persisted_service_lines_and_non_zero_total(self, mock_send_provider_sms):
         mock_send_provider_sms.return_value = {
             'ok': True,

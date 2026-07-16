@@ -283,6 +283,13 @@
             <input v-model="blockedPlatePaymentConfirmed" type="checkbox" />
             <span>پرداخت شد</span>
           </label>
+          <label class="sms-notification-check">
+            <input v-model="smsNotificationsEnabled" type="checkbox" />
+            <span>
+              <strong>SMS</strong>
+              <small>ارسال پیامک تخصیص و ترخیص برای همین سفارش</small>
+            </span>
+          </label>
           <div class="summary-foot-actions">
             <button type="button" class="secondary-foot-btn" @click="emit('back')">بازگشت</button>
             <button type="button" class="primary-btn" :disabled="!canAssign" @click="onAssign">
@@ -323,6 +330,7 @@ const manualDiscountTotal = ref(0)
 const workerSharePercents = ref({})
 const servicePriceAdjustments = ref({})
 const blockedPlatePaymentConfirmed = ref(false)
+const smsNotificationsEnabled = ref(true)
 const pieceWashPrice = ref(0)
 const pieceDetails = ref('')
 const isServicePickerOpen = ref(false)
@@ -359,6 +367,7 @@ const normalizedVehicle = computed(() => {
     color: String(data.color || data.car_color || '').trim(),
     driver: String(data.driver || data.driver_name || '').trim(),
     mobile: String(data.mobile || data.driver_phone || '').trim(),
+    smsNotificationsEnabled: data.smsNotificationsEnabled ?? data.sms_notifications_enabled ?? true,
     note: String(data.note || data.notes || '').trim(),
     isPieceWash: Boolean(data.isPieceWash || data.is_piece_wash),
     pieceDetails: String(data.pieceDetails || data.piece_details || '').trim(),
@@ -717,6 +726,7 @@ const buildPayload = () => {
       color: vehicle.color,
       driver: vehicle.driver,
       mobile: vehicle.mobile,
+      smsNotificationsEnabled: smsNotificationsEnabled.value,
       note: vehicle.note,
       isPieceWash: vehicle.isPieceWash,
       pieceDetails: pieceDetails.value.trim(),
@@ -790,6 +800,7 @@ const hydrateFromVehicleInfo = () => {
   servicePriceAdjustments.value = {}
   selectedWorkerIds.value = [...new Set((vehicle.staffIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
   blockedPlatePaymentConfirmed.value = false
+  smsNotificationsEnabled.value = vehicle.smsNotificationsEnabled !== false
   pieceDetails.value = vehicle.pieceDetails || ''
   pieceWashPrice.value = isPieceWash.value ? Math.max(0, Number(vehicle.pieceWashPrice || 0)) : 0
   const existingWorkerSharePercents = (vehicle.staffMembers || []).reduce((accumulator, item) => {
@@ -1859,6 +1870,7 @@ onMounted(loadInitialData)
   gap: 10px;
 }
 
+.sms-notification-check,
 .blocked-payment-check {
   display: flex;
   align-items: center;
@@ -1871,9 +1883,34 @@ onMounted(loadInitialData)
   font-weight: 700;
 }
 
+.sms-notification-check {
+  align-items: flex-start;
+  border-color: #cfe1ff;
+  background: linear-gradient(180deg, #ffffff, #f4f9ff);
+  color: #0f172a;
+}
+
+.sms-notification-check span {
+  display: grid;
+  gap: 2px;
+}
+
+.sms-notification-check small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
 .blocked-payment-check input {
   width: 18px;
   height: 18px;
+}
+
+.sms-notification-check input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
 }
 
 .primary-btn {

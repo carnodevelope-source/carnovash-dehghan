@@ -1174,6 +1174,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'driver_name',
             'driver_gender',
             'driver_phone',
+            'sms_notifications_enabled',
             'is_piece_wash',
             'piece_details',
             'notes',
