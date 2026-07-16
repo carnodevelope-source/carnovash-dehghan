@@ -19,6 +19,7 @@ from apps.inventory.models import ExpenseEntry, StockMovement
 from apps.notifications.models import NotificationLog
 from apps.notifications.services import normalize_phone, send_provider_sms
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
+from apps.reports.views import ReportsDashboardView
 from apps.vehicles.models import VehicleEntry
 from apps.workers.models import WorkerAttendance, WorkerProfile
 from .feature_access import ATTENDANCE_FREE_WORKERS_LIMIT, feature_access_map_for_tenant, tenant_worker_count
@@ -47,6 +48,43 @@ from .serializers import (
     UserListSerializer,
     feature_access_map,
 )
+
+
+HQ_FEATURE_KEYS = {
+    CarWashFeaturePurchase.FeatureKey.SMS_CLUB,
+    CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT,
+    CarWashFeaturePurchase.FeatureKey.ATTENDANCE,
+    CarWashFeaturePurchase.FeatureKey.ACCOUNTING,
+    CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
+}
+
+HQ_FEATURE_META = {
+    CarWashFeaturePurchase.FeatureKey.SMS_CLUB: {
+        'label': 'پنل پیامک پیشرفته',
+        'tab_label': 'پنل پیامک',
+        'description': 'درآمد و پرداخت‌های مربوط به باشگاه مشتریان و ارسال پیامک.',
+    },
+    CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT: {
+        'label': 'وارد کردن مشتریان با اکسل',
+        'tab_label': 'ورود اکسل',
+        'description': 'خرید یا اقساط قابلیت ورود گروهی مشتریان با فایل اکسل.',
+    },
+    CarWashFeaturePurchase.FeatureKey.ATTENDANCE: {
+        'label': 'ورود و خروج',
+        'tab_label': 'حضور و غیاب',
+        'description': 'درآمد قابلیت کنترل ورود و خروج پرسنل.',
+    },
+    CarWashFeaturePurchase.FeatureKey.ACCOUNTING: {
+        'label': 'حسابداری',
+        'tab_label': 'حسابداری',
+        'description': 'درآمد قابلیت حسابداری و کنترل مالی داخلی کارواش.',
+    },
+    CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE: {
+        'label': 'پنل اصلی کارواش',
+        'tab_label': 'پنل اصلی',
+        'description': 'درآمد پایه نرم‌افزار و دسترسی اصلی پنل.',
+    },
+}
 
 
 def _parse_dt(value, end_of_day=False):
@@ -1476,6 +1514,11 @@ def _build_hq_report_snapshot(start=None, end=None):
             'services_total': Decimal('0'),
             'products_total': Decimal('0'),
             'refunded_total': Decimal('0'),
+            'hq_share_total': Decimal('0'),
+            'rah_share_total': Decimal('0'),
+            'feature_income_total': Decimal('0'),
+            'feature_paid_total': Decimal('0'),
+            'feature_remaining_total': Decimal('0'),
             'wallet_balance': Decimal('0'),
             'wallet_regular_balance': Decimal('0'),
             'wallet_sms_balance': Decimal('0'),
@@ -1485,6 +1528,7 @@ def _build_hq_report_snapshot(start=None, end=None):
             'wallet_manual_charge_total': Decimal('0'),
             'wallet_transactions_count': 0,
             'wallet_charge_health': 'idle',
+            'feature_breakdown': [],
             'last_activity_at': None,
         }
         for tenant in tenants
@@ -1606,6 +1650,79 @@ def _build_hq_report_snapshot(start=None, end=None):
         trend['date'] = trend_key
         trend['expense_total'] += amount
 
+    feature_summary = {
+        feature_key: {
+            'key': feature_key,
+            'label': HQ_FEATURE_META.get(feature_key, {}).get('label', feature_key),
+            'tab_label': HQ_FEATURE_META.get(feature_key, {}).get('tab_label', feature_key),
+            'description': HQ_FEATURE_META.get(feature_key, {}).get('description', ''),
+            'total_amount': Decimal('0'),
+            'paid_amount': Decimal('0'),
+            'remaining_amount': Decimal('0'),
+            'active_count': 0,
+            'purchase_count': 0,
+        }
+        for feature_key in HQ_FEATURE_KEYS
+    }
+    feature_purchases = CarWashFeaturePurchase.objects.select_related('tenant').all()
+    if start:
+        feature_purchases = feature_purchases.filter(purchased_at__gte=start)
+    if end:
+        feature_purchases = feature_purchases.filter(purchased_at__lte=end)
+
+    for purchase in feature_purchases:
+        tenant = purchase.tenant
+        if not tenant or tenant.id not in grouped:
+            continue
+        total_amount = Decimal(str(purchase.total_amount or 0))
+        paid_amount = Decimal(str(purchase.paid_amount or 0))
+        remaining_amount = Decimal(str(purchase.remaining_amount or 0))
+        is_hq_feature = purchase.feature_key in HQ_FEATURE_KEYS
+        row = grouped[tenant.id]
+        feature_item = {
+            'id': purchase.id,
+            'feature_key': purchase.feature_key,
+            'label': HQ_FEATURE_META.get(purchase.feature_key, {}).get('label', purchase.get_feature_key_display()),
+            'tab_label': HQ_FEATURE_META.get(purchase.feature_key, {}).get('tab_label', purchase.get_feature_key_display()),
+            'payment_plan': purchase.payment_plan,
+            'is_active': purchase.is_active,
+            'total_amount': total_amount,
+            'paid_amount': paid_amount,
+            'remaining_amount': remaining_amount,
+            'installment_months': purchase.installment_months,
+            'monthly_installment_amount': purchase.monthly_installment_amount,
+            'next_installment_due_at': purchase.next_installment_due_at,
+            'purchased_at': purchase.purchased_at,
+            'share_group': 'hq' if is_hq_feature else 'rah',
+        }
+        row['feature_breakdown'].append(feature_item)
+        row['feature_income_total'] += total_amount
+        row['feature_paid_total'] += paid_amount
+        row['feature_remaining_total'] += remaining_amount
+        if is_hq_feature:
+            row['hq_share_total'] += paid_amount
+            summary_item = feature_summary.setdefault(purchase.feature_key, {
+                'key': purchase.feature_key,
+                'label': purchase.get_feature_key_display(),
+                'tab_label': purchase.get_feature_key_display(),
+                'description': '',
+                'total_amount': Decimal('0'),
+                'paid_amount': Decimal('0'),
+                'remaining_amount': Decimal('0'),
+                'active_count': 0,
+                'purchase_count': 0,
+            })
+            summary_item['total_amount'] += total_amount
+            summary_item['paid_amount'] += paid_amount
+            summary_item['remaining_amount'] += remaining_amount
+            summary_item['purchase_count'] += 1
+            if purchase.is_active:
+                summary_item['active_count'] += 1
+        else:
+            row['rah_share_total'] += paid_amount
+        if not row['last_activity_at'] or purchase.purchased_at > row['last_activity_at']:
+            row['last_activity_at'] = purchase.purchased_at
+
     wallets = Wallet.objects.filter(is_active=True).only('tenant_id', 'wallet_type', 'balance')
     for wallet in wallets:
         if not wallet.tenant_id or wallet.tenant_id not in grouped:
@@ -1618,12 +1735,13 @@ def _build_hq_report_snapshot(start=None, end=None):
         else:
             row['wallet_regular_balance'] += balance
 
-    wallet_transactions = CashflowTransaction.objects.select_related('wallet')
+    wallet_transactions = CashflowTransaction.objects.select_related('wallet', 'tenant', 'created_by')
     if start:
         wallet_transactions = wallet_transactions.filter(transacted_at__gte=start)
     if end:
         wallet_transactions = wallet_transactions.filter(transacted_at__lte=end)
 
+    wallet_transaction_rows = []
     for tx in wallet_transactions:
         tenant_id = tx.tenant_id
         if not tenant_id or tenant_id not in grouped:
@@ -1649,6 +1767,22 @@ def _build_hq_report_snapshot(start=None, end=None):
             trend['wallet_deposit_total'] += amount
         else:
             trend['wallet_withdraw_total'] += amount
+        wallet_transaction_rows.append({
+            'id': tx.id,
+            'tenant_id': tenant_id,
+            'tenant_name': tx.tenant.name if tx.tenant_id else '',
+            'wallet_id': tx.wallet_id,
+            'wallet_name': tx.wallet.name if tx.wallet_id else '',
+            'wallet_type': tx.wallet.wallet_type if tx.wallet_id else '',
+            'direction': tx.direction,
+            'amount': amount,
+            'description': tx.description,
+            'reference_type': tx.reference_type,
+            'reference_id': tx.reference_id,
+            'transacted_at': tx.transacted_at,
+            'created_by_name': (tx.created_by.full_name or tx.created_by.username) if tx.created_by_id else '',
+            'share_group': 'hq' if tx.wallet_id and tx.wallet.wallet_type == Wallet.WalletType.SMS else 'rah',
+        })
 
     gateway_requests = WalletGatewayRequest.objects.filter(status=WalletGatewayRequest.Status.PAID)
     if start:
@@ -1679,6 +1813,7 @@ def _build_hq_report_snapshot(start=None, end=None):
             health = 'idle'
 
         item['net_amount'] = net_amount
+        item['rah_share_total'] += net_amount
         item['average_ticket'] = average_ticket
         item['completion_rate'] = completion_rate
         item['health'] = health
@@ -1716,6 +1851,11 @@ def _build_hq_report_snapshot(start=None, end=None):
     total_wallet_withdraws = sum((item['wallet_withdraw_total'] for item in rows), Decimal('0'))
     total_wallet_gateway = sum((item['wallet_gateway_charge_total'] for item in rows), Decimal('0'))
     total_wallet_manual = sum((item['wallet_manual_charge_total'] for item in rows), Decimal('0'))
+    total_hq_share = sum((item['hq_share_total'] for item in rows), Decimal('0'))
+    total_rah_share = sum((item['rah_share_total'] for item in rows), Decimal('0'))
+    total_feature_income = sum((item['feature_income_total'] for item in rows), Decimal('0'))
+    total_feature_paid = sum((item['feature_paid_total'] for item in rows), Decimal('0'))
+    total_feature_remaining = sum((item['feature_remaining_total'] for item in rows), Decimal('0'))
     total_vehicles = sum(item['vehicles_count'] for item in rows)
     total_released = sum(item['released_count'] for item in rows)
     total_cancelled = sum(item['cancelled_count'] for item in rows)
@@ -1746,6 +1886,11 @@ def _build_hq_report_snapshot(start=None, end=None):
         'wallet_gateway_charge_total': total_wallet_gateway,
         'wallet_manual_charge_total': total_wallet_manual,
         'wallet_transactions_count': sum(item['wallet_transactions_count'] for item in rows),
+        'hq_share_total': total_hq_share,
+        'rah_share_total': total_rah_share,
+        'feature_income_total': total_feature_income,
+        'feature_paid_total': total_feature_paid,
+        'feature_remaining_total': total_feature_remaining,
     }
 
     trends = []
@@ -1775,6 +1920,12 @@ def _build_hq_report_snapshot(start=None, end=None):
         'summary': summary,
         'rows': rows,
         'trends': trends,
+        'feature_summary': list(feature_summary.values()),
+        'wallet_transactions': sorted(
+            wallet_transaction_rows,
+            key=lambda item: item['transacted_at'] or timezone.now(),
+            reverse=True,
+        )[:250],
         'highlights': {
             'top_revenue': top_revenue,
             'top_volume': top_volume,
@@ -1795,6 +1946,33 @@ def _percent_change(current, previous):
             return 0
         return None
     return round(float(((current_value - previous_value) / previous_value) * Decimal('100')), 1)
+
+
+class HqCarWashReportsView(HqBaseView):
+    def get(self, request, pk):
+        forbidden = self.forbid_if_not_hq_admin(request)
+        if forbidden:
+            return forbidden
+
+        tenant = CarWash.objects.filter(pk=pk).first()
+        if not tenant:
+            return Response({'detail': 'کارواش پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        original_tenant = getattr(request.user, 'tenant', None)
+        request.user.tenant = tenant
+        try:
+            response = ReportsDashboardView().get(request)
+        finally:
+            request.user.tenant = original_tenant
+
+        payload = getattr(response, 'data', {}) or {}
+        payload['tenant'] = {
+            'id': tenant.id,
+            'name': tenant.name,
+            'address': tenant.address,
+            'is_active': tenant.is_active,
+        }
+        return Response(payload, status=getattr(response, 'status_code', status.HTTP_200_OK))
 
 
 class HqReportsView(HqBaseView):
