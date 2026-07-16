@@ -1020,7 +1020,10 @@ const renderSmsPreview = (template) => {
   })
   return message
 }
-const smsAssignedPreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_assigned_template))
+const smsAssignedPreview = computed(() => renderSmsPreview([
+  generalSettings.sms_vehicle_assigned_template,
+  generalSettings.sms_vehicle_assigned_invoice_template
+].map((item) => String(item || '').trim()).filter(Boolean).join('\n\n')))
 const smsReleasedPreview = computed(() => renderSmsPreview(generalSettings.sms_vehicle_released_template))
 
 watch(() => forms.purchase.product_id, (newProductId) => {

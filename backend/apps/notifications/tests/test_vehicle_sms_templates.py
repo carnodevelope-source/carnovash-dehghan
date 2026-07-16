@@ -54,6 +54,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('شست‌وشوی ویژه ---- ۷۵۰،۰۰۰ تومان', message)
         self.assertIn('واکس بدنه ---- ۵۰۰،۰۰۰ تومان', message)
         self.assertIn('۱،۲۵۰،۰۰۰ تومان', message)
+        self.assertLess(message.index('پلاک: 22 ب 345 67'), message.index('شست‌وشوی ویژه'))
 
     def test_released_sms_uses_fallback_greeting_for_anonymous_customer(self):
         tenant = SimpleNamespace(name='کارواش یک')

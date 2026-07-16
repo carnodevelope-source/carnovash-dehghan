@@ -248,7 +248,9 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
         getattr(settings_obj, 'sms_vehicle_assigned_template', '')
         or DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
     ).strip()
-    return render_template_tokens(intro_template, context), context
+    invoice_template = str(getattr(settings_obj, 'sms_vehicle_assigned_invoice_template', '') or '').strip()
+    template = '\n\n'.join(part for part in [intro_template, invoice_template] if part)
+    return render_template_tokens(template, context), context
 
 
 def build_vehicle_released_sms(

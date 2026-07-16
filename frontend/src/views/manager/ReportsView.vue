@@ -134,6 +134,9 @@
             </div>
           </div>
           <div v-if="selectedWorkerSummary" class="worker-summary-grid">
+            <article class="payout-card"><p>نوع پرداخت</p><strong>{{ workerPaymentTypeLabel(selectedWorkerSummary.payment_type) }}</strong></article>
+            <article v-if="selectedWorkerSummary.payment_type === 'hourly'" class="payout-card"><p>ساعت کاری</p><strong>{{ workHoursLabel(selectedWorkerSummary.attendance_hours) }}</strong></article>
+            <article v-if="selectedWorkerSummary.payment_type === 'hourly'" class="payout-card"><p>نرخ ساعتی</p><strong>{{ money(selectedWorkerSummary.hourly_wage) }}</strong></article>
             <article class="payout-card"><p>حق حقوق</p><strong>{{ money(selectedWorkerSummary.wage_total) }}</strong></article>
             <article class="payout-card"><p>پاداش</p><strong>{{ money(selectedWorkerSummary.bonus_total) }}</strong></article>
             <article class="payout-card"><p>جریمه</p><strong>{{ money(selectedWorkerSummary.penalty_total) }}</strong></article>
@@ -334,6 +337,8 @@ const money = (v) => formatThousandsToman(v)
 const dateTime = (v) => formatJalaliDate(v)
 const dateOnly = (v) => formatJalaliDate(v)
 const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assigned: 'در انتظار تکمیل', in_progress: 'در حال انجام', ready_to_settle: 'در انتظار تکمیل', released: 'ترخیص شده', cancelled: 'لغو' }[value] || '-')
+const workerPaymentTypeLabel = (value) => ({ hourly: 'ساعتی', fixed: 'ثابت', percent: 'درصدی' }[value] || '-')
+const workHoursLabel = (value) => `${Number(value || 0).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ساعت`
 const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', insurance_payment: 'پرداخت حق بیمه', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
 const paymentMethodLabel = (value) => ({ cash: 'نقدی', transfer: 'کارت به کارت', cheque: 'چک', credit: 'نسیه', pos: 'کارت‌خوان', manual: 'دستی' }[value] || value || '-')
 const paymentStateLabel = (value) => ({ success: 'تسویه شده', pending: 'در انتظار', failed: 'ناموفق', refunded: 'مرجوعی' }[value] || value || '-')

@@ -1,5 +1,5 @@
 ﻿from datetime import datetime, time
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.http import HttpResponse
 from django.db.models import Q, Sum, Value
@@ -28,6 +28,10 @@ def _parse_dt(value, end_of_day=False):
 
 def _normalize_decimal(value):
     return Decimal(str(value or 0))
+
+
+def _decimal_hours_from_minutes(minutes):
+    return (Decimal(str(minutes or 0)) / Decimal('60')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 def _normalize_jalali_month(value):
@@ -269,7 +273,49 @@ def _get_worker_jobs(tenant, worker_id):
     return [job for job in jobs if _job_has_worker(job, worker_id)]
 
 
-def _compute_worker_financials(worker, jobs, insurance_month=''):
+def _compute_worker_attendance_minutes(worker, *, start=None, end=None):
+    if not worker:
+        return 0
+
+    now = timezone.now()
+    effective_end = end or now
+    if effective_end > now:
+        effective_end = now
+
+    events = WorkerAttendance.objects.filter(worker=worker)
+    if end:
+        events = events.filter(event_at__lte=end)
+    events = list(events.order_by('event_at', 'id'))
+    if not events:
+        return 0
+
+    worked_seconds = 0
+    open_started_at = None
+    for event in events:
+        if event.event_type == WorkerAttendance.EventType.IN:
+            open_started_at = event.event_at
+            continue
+        if event.event_type != WorkerAttendance.EventType.OUT or not open_started_at:
+            continue
+        interval_start = open_started_at
+        interval_end = event.event_at
+        open_started_at = None
+        if start and interval_end < start:
+            continue
+        if interval_start > effective_end:
+            continue
+        clipped_start = max(interval_start, start) if start else interval_start
+        clipped_end = min(interval_end, effective_end)
+        worked_seconds += max((clipped_end - clipped_start).total_seconds(), 0)
+
+    if open_started_at and open_started_at <= effective_end:
+        clipped_start = max(open_started_at, start) if start else open_started_at
+        worked_seconds += max((effective_end - clipped_start).total_seconds(), 0)
+
+    return int(worked_seconds // 60)
+
+
+def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end=None):
     job_ids = [job.id for job in jobs if job]
     transactions = WorkerPayoutTransaction.objects.filter(worker=worker)
     if job_ids:
@@ -295,7 +341,13 @@ def _compute_worker_financials(worker, jobs, insurance_month=''):
             Value(Decimal('0')),
         ),
     )
-    wage_total = sum((_job_worker_share_for(job, worker.id) for job in jobs), Decimal('0'))
+    attendance_minutes = _compute_worker_attendance_minutes(worker, start=start, end=end)
+    attendance_hours = _decimal_hours_from_minutes(attendance_minutes)
+    hourly_wage = _normalize_decimal(getattr(worker, 'default_hourly_wage', 0))
+    if getattr(worker, 'payment_type', '') == WorkerProfile.PaymentType.HOURLY:
+        wage_total = (attendance_hours * hourly_wage).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    else:
+        wage_total = sum((_job_worker_share_for(job, worker.id) for job in jobs), Decimal('0'))
     tip_total = sum((_job_worker_tip_for(job, worker.id) for job in jobs), Decimal('0'))
     insurance_target_month = _normalize_jalali_month(insurance_month) or _current_jalali_month()
     insurance_start_month = _resolve_worker_insurance_start_month(worker)
@@ -319,6 +371,10 @@ def _compute_worker_financials(worker, jobs, insurance_month=''):
 
     return {
         'wage_total': wage_total,
+        'attendance_minutes': attendance_minutes,
+        'attendance_hours': attendance_hours,
+        'hourly_wage': hourly_wage,
+        'payment_type': getattr(worker, 'payment_type', ''),
         'tip_total': tip_total,
         'insurance_total': insurance_total,
         'insurance_monthly_amount': insurance_monthly_amount,
@@ -339,7 +395,7 @@ def _compute_worker_financials(worker, jobs, insurance_month=''):
     }
 
 
-def _compute_all_workers_totals(tenant, jobs, insurance_month=''):
+def _compute_all_workers_totals(tenant, jobs, insurance_month='', start=None, end=None):
     workers_map = {}
     for job in jobs:
         for worker_id in _job_worker_ids(job):
@@ -348,13 +404,28 @@ def _compute_all_workers_totals(tenant, jobs, insurance_month=''):
                     id=worker_id,
                     tenant=tenant,
                 ).first()
+    if tenant:
+        hourly_workers = WorkerProfile.objects.select_related('user').filter(
+            tenant=tenant,
+            payment_type=WorkerProfile.PaymentType.HOURLY,
+            is_deleted=False,
+            user__is_deleted=False,
+        )
+        for worker in hourly_workers:
+            workers_map.setdefault(worker.id, worker)
     workers = [item for item in workers_map.values() if item]
     total_payable = Decimal('0')
     total_bonus = Decimal('0')
     total_penalty = Decimal('0')
     total_insurance = Decimal('0')
     for worker in workers:
-        state = _compute_worker_financials(worker, [job for job in jobs if _job_has_worker(job, worker.id)], insurance_month=insurance_month)
+        state = _compute_worker_financials(
+            worker,
+            [job for job in jobs if _job_has_worker(job, worker.id)],
+            insurance_month=insurance_month,
+            start=start,
+            end=end,
+        )
         total_payable += state['payable_total']
         total_bonus += state['bonus_total']
         total_penalty += state['penalty_total']
@@ -499,7 +570,13 @@ class ReportsDashboardView(APIView):
         total_tip = sum((_normalize_decimal(getattr(vehicle.job, 'tip_amount', 0)) for vehicle in vehicles if getattr(vehicle, 'job', None)), Decimal('0'))
         total_discount = sum((_normalize_decimal(getattr(vehicle.job, 'discount_total', 0)) for vehicle in vehicles if getattr(vehicle, 'job', None)), Decimal('0'))
         all_jobs = [vehicle.job for vehicle in vehicles if getattr(vehicle, 'job', None)]
-        all_workers_totals = _compute_all_workers_totals(tenant, all_jobs, insurance_month=insurance_month)
+        all_workers_totals = _compute_all_workers_totals(
+            tenant,
+            all_jobs,
+            insurance_month=insurance_month,
+            start=start,
+            end=end,
+        )
 
         carwash_report = [{
             'row': i + 1,
@@ -651,10 +728,20 @@ class ReportsDashboardView(APIView):
         if worker_id:
             worker = WorkerProfile.objects.select_related('user').filter(id=worker_id, tenant=tenant).first()
             if worker:
-                worker_state = _compute_worker_financials(worker, worker_jobs, insurance_month=insurance_month)
+                worker_state = _compute_worker_financials(
+                    worker,
+                    worker_jobs,
+                    insurance_month=insurance_month,
+                    start=start,
+                    end=end,
+                )
                 selected_worker_summary = {
                     'worker_id': worker.id,
                     'worker_name': _worker_name(worker),
+                    'payment_type': worker_state['payment_type'],
+                    'attendance_minutes': int(worker_state['attendance_minutes']),
+                    'attendance_hours': float(worker_state['attendance_hours']),
+                    'hourly_wage': float(worker_state['hourly_wage']),
                     'wage_total': float(worker_state['wage_total']),
                     'tip_total': float(worker_state['tip_total']),
                     'insurance_total': float(worker_state['insurance_total']),
