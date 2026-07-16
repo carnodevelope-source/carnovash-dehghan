@@ -723,8 +723,8 @@
                 <strong>{{ toFa(smsCharacterCount) }}</strong>
               </article>
               <article class="detail-metric">
-                <small>تعداد پیامک</small>
-                <strong>{{ toFa(smsSegmentsPerRecipient) }}</strong>
+                <small>تعداد گیرنده</small>
+                <strong>{{ toFa(smsRecipients.length) }}</strong>
               </article>
               <article class="detail-metric">
                 <small>هزینه تخمینی</small>
@@ -1026,8 +1026,7 @@ const groupBuilderPreview = computed(() => {
 
 const smsRecipients = computed(() => smsComposer.recipients || [])
 const smsCharacterCount = computed(() => String(smsComposer.message || '').trim().length)
-const smsSegmentsPerRecipient = computed(() => Math.max(1, Math.ceil(Math.max(1, smsCharacterCount.value) / 70)))
-const estimatedSmsCost = computed(() => smsRecipients.value.length * smsSegmentsPerRecipient.value * Number(smsPricePerSegment.value || 0))
+const estimatedSmsCost = computed(() => smsRecipients.value.length * Number(smsPricePerSegment.value || 0))
 const hasEnoughSmsCredit = computed(() => smsCreditBalance.value >= estimatedSmsCost.value)
 const canSendSms = computed(() => smsRecipients.value.length > 0 && String(smsComposer.message || '').trim().length > 0 && hasEnoughSmsCredit.value)
 const smsPreviewText = computed(() => {
@@ -1320,7 +1319,7 @@ const loadCustomerClubData = async ({ showLoading = true } = {}) => {
     smsTemplates.value = Array.isArray(data?.templates) ? data.templates : []
     smsLogs.value = Array.isArray(data?.logs) ? data.logs : []
     smsCreditBalance.value = Number(data?.summary?.sms_balance || 0)
-    smsPricePerSegment.value = Number(data?.summary?.sms_price_per_segment || 500)
+    smsPricePerSegment.value = Number(data?.summary?.sms_price_per_segment || 400)
   } catch (_error) {
     customers.value = []
     customGroups.value = []

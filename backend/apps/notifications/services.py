@@ -1,5 +1,4 @@
 import json
-import math
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
@@ -522,9 +521,8 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
     if not text:
         return {'ok': False, 'reason': 'empty_template'}
 
-    sms_price = Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 500) or 500))
-    segments = max(1, math.ceil(len(text) / 70))
-    estimated_cost = sms_price * Decimal(segments)
+    sms_price = Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 400) or 400))
+    estimated_cost = sms_price
     balance = sms_wallet_balance(tenant)
 
     payload = make_json_safe({

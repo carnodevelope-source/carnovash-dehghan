@@ -970,12 +970,16 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
     def validate_plate_mid(self, value):
         normalized = str(value or '').strip()
+        if self._incoming_plate_type() == VehicleEntry.PlateType.MOTORCYCLE:
+            return ''.join(ch for ch in self._normalize_phone(normalized) if ch.isdigit())[:3]
         if len(normalized) > 3:
             raise serializers.ValidationError('بخش سه رقمی پلاک باید حداکثر ۳ کاراکتر باشد.')
         return normalized
 
     def validate_plate_letter(self, value):
         normalized = str(value or '').strip()
+        if self._incoming_plate_type() == VehicleEntry.PlateType.MOTORCYCLE:
+            return ''.join(ch for ch in self._normalize_phone(normalized) if ch.isdigit())[:5]
         if len(normalized) > 5:
             raise serializers.ValidationError('بخش حرف پلاک بیش از حد مجاز است.')
         return normalized

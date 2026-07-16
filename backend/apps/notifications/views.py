@@ -1,5 +1,4 @@
 import json
-import math
 import uuid
 from collections import Counter
 from decimal import Decimal
@@ -274,7 +273,7 @@ class CustomerClubDashboardView(APIView, SmsWalletMixin):
             {
                 'summary': {
                     'sms_balance': self._sms_wallet_balance(tenant),
-                    'sms_price_per_segment': getattr(settings, 'SMS_PRICE_PER_SEGMENT', 500),
+                    'sms_price_per_segment': getattr(settings, 'SMS_PRICE_PER_SEGMENT', 400),
                     'status_counts': {
                         'success': status_counts.get(NotificationLog.Status.SENT, 0),
                         'pending': status_counts.get(NotificationLog.Status.PENDING, 0),
@@ -517,14 +516,11 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
         tenant = getattr(request.user, 'tenant', None)
         recipients = validated['recipients']
         template_text = validated['template_text']
-        sms_price = Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 500) or 500))
+        sms_price = Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 400) or 400))
         campaign_id = str(uuid.uuid4())
         grouped_batches, rendered_recipients = group_sms_batches(recipients, template_text, getattr(tenant, 'name', ''))
 
-        estimated_total = Decimal('0')
-        for recipient in rendered_recipients:
-            segments = max(1, math.ceil(len(str(recipient.get('rendered_text') or '').strip()) / 70))
-            estimated_total += sms_price * Decimal(segments)
+        estimated_total = sms_price * Decimal(len(rendered_recipients))
 
         wallet_balance = self._sms_wallet_balance(tenant)
         if wallet_balance < estimated_total:
@@ -545,16 +541,15 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
         for rendered_text, batch_recipients in grouped_batches.items():
             phone_numbers = [recipient['phone'] for recipient in batch_recipients]
             provider_result = self._send_provider_request(text=rendered_text, recipients=phone_numbers)
-            segments = max(1, math.ceil(len(str(rendered_text or '').strip()) / 70))
-            batch_cost = sms_price * Decimal(segments) * Decimal(len(batch_recipients))
+            batch_cost = sms_price * Decimal(len(batch_recipients))
             extra_payload = {
                 'campaign_id': campaign_id,
                 'target_label': validated.get('target_label', ''),
                 'note': validated.get('note', ''),
                 'template_code': validated.get('template_code', ''),
                 'template_text': template_text,
-                'segments': segments,
-                'price_per_segment': str(sms_price),
+                'segments': 1,
+                'price_per_sms': str(sms_price),
                 'total_cost': str(batch_cost),
                 'provider_request': provider_result['payload'],
             }
@@ -588,7 +583,7 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
                             'message': provider_result['message'],
                             'provider_message_id': provider_result.get('provider_id', ''),
                             'rendered_text': recipient.get('rendered_text', ''),
-                            'cost': sms_price * Decimal(segments),
+                            'cost': sms_price,
                         }
                     )
             else:
@@ -610,7 +605,7 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
                             'message': provider_result['message'],
                             'provider_message_id': '',
                             'rendered_text': recipient.get('rendered_text', ''),
-                            'cost': sms_price * Decimal(segments),
+                            'cost': sms_price,
                         }
                     )
 
