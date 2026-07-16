@@ -928,6 +928,12 @@ const formatMoney = (value) => formatThousandsToman(value)
 const moneyInputValue = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
 const parseMoneyInput = (value) => fromThousandsTomanInput(normalizeDigits(value))
 const formatPercent = (value) => `${Number(value || 0).toLocaleString('fa-IR')}٪`
+const normalizeAiConfidence = (value) => {
+  if (value === null || value === undefined || value === '') return null
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return null
+  return Math.round(Math.min(999.99, Math.max(0, numericValue)) * 100) / 100
+}
 const formatDateTime = (value) => {
   if (!value) return '-'
   return new Intl.DateTimeFormat('fa-IR', {
@@ -2331,6 +2337,7 @@ const buildCreateOrUpdatePayload = (payload, status) => {
   const rebuiltPlate = buildPlateNumber({ left, letter, mid, right, plateType }) || plateRaw
   const isAnonymous = Boolean(payload?.vehicle?.isAnonymous)
   const isPieceWash = Boolean(payload?.vehicle?.isPieceWash)
+  const aiConfidence = normalizeAiConfidence(payload?.vehicle?.aiConfidence)
 
   return {
     plate_number: isPieceWash ? '' : (isAnonymous ? '' : rebuiltPlate),
@@ -2365,15 +2372,15 @@ const buildCreateOrUpdatePayload = (payload, status) => {
     manual_discount_total: Number(payload?.manual_discount_total || 0),
     share: payload?.share || {},
     intake_source: payload?.vehicle?.aiImageBase64 ? 'ai' : undefined,
-    ai_confidence: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiConfidence ?? null) : undefined,
+    ai_confidence: payload?.vehicle?.aiImageBase64 ? aiConfidence : undefined,
     ai_session_id: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiSessionId || '') : undefined,
     ai_raw_text: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiRawText || '') : undefined,
     ai_persian_text: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiPersianText || '') : undefined,
-    ai_converted_plate: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiConvertedPlate || '') : undefined,
-    ai_converted_plate_left: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiConvertedPlateLeft || '') : undefined,
-    ai_converted_plate_letter: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiConvertedPlateLetter || '') : undefined,
-    ai_converted_plate_mid: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiConvertedPlateMid || '') : undefined,
-    ai_converted_plate_right: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiConvertedPlateRight || '') : undefined,
+    ai_converted_plate: payload?.vehicle?.aiImageBase64 ? rebuiltPlate : undefined,
+    ai_converted_plate_left: payload?.vehicle?.aiImageBase64 ? (plateType === 'motorcycle' ? '' : left) : undefined,
+    ai_converted_plate_letter: payload?.vehicle?.aiImageBase64 ? letter : undefined,
+    ai_converted_plate_mid: payload?.vehicle?.aiImageBase64 ? mid : undefined,
+    ai_converted_plate_right: payload?.vehicle?.aiImageBase64 ? (plateType === 'motorcycle' ? '' : right) : undefined,
     ai_converted_plate_type: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiConvertedPlateType || plateType) : undefined,
     ai_image_base64: payload?.vehicle?.aiImageBase64 || undefined,
     ai_latency_ms: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiLatencyMs ?? null) : undefined,

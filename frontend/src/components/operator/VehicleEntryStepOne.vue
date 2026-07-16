@@ -304,6 +304,12 @@ let isHydratingForm = false
 const aiSessionId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(window.navigator.userAgent || '')
 const canUseLiveCamera = Boolean(window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname))
+const normalizeAiConfidence = (value) => {
+  if (value === null || value === undefined || value === '') return null
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return null
+  return Math.round(Math.min(999.99, Math.max(0, numericValue)) * 100) / 100
+}
 const OCR_LETTER_CONFUSIONS = {
   ب: ['ب', 'س', 'ص'],
   س: ['س', 'ب', 'ص'],
@@ -397,7 +403,7 @@ const hydrateForm = (data = {}) => {
     convertedPlateRight: String(data.aiConvertedPlateRight || '').trim(),
     convertedPlateType: String(data.aiConvertedPlateType || form.plateType || 'car').trim() || 'car',
     imageBase64: String(data.aiImageBase64 || '').trim(),
-    confidence: data.aiConfidence ?? null,
+    confidence: normalizeAiConfidence(data.aiConfidence),
     latencyMs: data.aiLatencyMs ?? null
   }
   syncLetterSuggestions(form.plateType === 'car' ? form.plateLetter : '')
@@ -644,20 +650,28 @@ const recognizePlateImage = async (imageDataUrl) => {
       session_id: aiSessionId,
       image_base64: imageDataUrl
     }, { meta: { trackLoading: false } })
-    cameraState.lastConfidence = Number(data?.confidence || 0)
+    const recognizedConfidence = normalizeAiConfidence(data?.confidence)
+    cameraState.lastConfidence = recognizedConfidence ?? 0
     cameraState.lastLatency = Number(data?.latency_ms || 0)
+    const recognizedPlateType = String(data?.plate_type || form.plateType || 'car').trim() || 'car'
+    const recognizedPlateMid = recognizedPlateType === 'motorcycle'
+      ? normalizeDigits(data?.plate_mid || '').replace(/\D/g, '').slice(0, 3)
+      : String(data?.plate_mid || '').trim()
+    const recognizedPlateLetter = recognizedPlateType === 'motorcycle'
+      ? normalizeDigits(data?.plate_letter || '').replace(/\D/g, '').slice(0, 5)
+      : normalizePlateLetter(data?.plate_letter || '')
     aiRecognitionSnapshot.value = {
       sessionId: aiSessionId,
       rawText: String(data?.text || '').trim(),
       persianText: String(data?.persian_text || '').trim(),
       convertedPlate: String(data?.plate_number || '').trim(),
-      convertedPlateLeft: String(data?.plate_left || '').trim(),
-      convertedPlateLetter: String(data?.plate_letter || '').trim(),
-      convertedPlateMid: String(data?.plate_mid || '').trim(),
-      convertedPlateRight: String(data?.plate_right || '').trim(),
-      convertedPlateType: String(data?.plate_type || form.plateType || 'car').trim() || 'car',
+      convertedPlateLeft: recognizedPlateType === 'motorcycle' ? '' : String(data?.plate_left || '').trim(),
+      convertedPlateLetter: recognizedPlateLetter,
+      convertedPlateMid: recognizedPlateMid,
+      convertedPlateRight: recognizedPlateType === 'motorcycle' ? '' : String(data?.plate_right || '').trim(),
+      convertedPlateType: recognizedPlateType,
       imageBase64: imageDataUrl,
-      confidence: data?.confidence ?? null,
+      confidence: recognizedConfidence,
       latencyMs: data?.latency_ms ?? null
     }
     if (data?.mode === 'stub') {

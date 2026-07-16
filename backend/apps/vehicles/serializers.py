@@ -3,7 +3,7 @@ from django.db.models import Q
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from .models import VehicleEntry
 from .models import BlockedPlate
@@ -207,6 +207,105 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         'ai_session_id',
         'ai_latency_ms',
     ]
+
+    def _motorcycle_plate_digits(self, value, limit):
+        return ''.join(ch for ch in self._normalize_phone(value) if ch.isdigit())[:limit]
+
+    def _plate_digits(self, value, limit):
+        return ''.join(ch for ch in self._normalize_phone(value) if ch.isdigit())[:limit]
+
+    def _car_plate_letter(self, value):
+        token = str(value or '').strip().replace('ك', 'ک').replace('ي', 'ی')
+        if not token:
+            return ''
+        if token.startswith('الف'):
+            return 'الف'
+        for char in token:
+            if char.isdigit() or char.isspace():
+                continue
+            return char
+        return ''
+
+    def _normalize_ai_confidence(self, value):
+        if value in (None, ''):
+            return None
+        try:
+            normalized = Decimal(str(value))
+            if not normalized.is_finite():
+                return None
+            normalized = normalized.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, TypeError, ValueError):
+            return value
+        return min(Decimal('999.99'), max(Decimal('0.00'), normalized))
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            mutable_data = data.copy()
+            if 'ai_confidence' in mutable_data:
+                mutable_data['ai_confidence'] = self._normalize_ai_confidence(
+                    mutable_data.get('ai_confidence')
+                )
+            plate_type = str(mutable_data.get('plate_type') or '').strip().lower()
+            if plate_type not in {VehicleEntry.PlateType.CAR, VehicleEntry.PlateType.MOTORCYCLE}:
+                data = mutable_data
+                mutable_data = None
+            if mutable_data is not None and plate_type == VehicleEntry.PlateType.MOTORCYCLE:
+                mutable_data['plate_left'] = ''
+                mutable_data['plate_right'] = ''
+                mutable_data['plate_mid'] = self._motorcycle_plate_digits(
+                    mutable_data.get('plate_mid') or mutable_data.get('ai_converted_plate_mid') or '',
+                    3,
+                )
+                mutable_data['plate_letter'] = self._motorcycle_plate_digits(
+                    mutable_data.get('plate_letter') or mutable_data.get('ai_converted_plate_letter') or '',
+                    5,
+                )
+                mutable_data['ai_converted_plate_left'] = ''
+                mutable_data['ai_converted_plate_right'] = ''
+                if mutable_data.get('ai_converted_plate_mid') or mutable_data.get('ai_converted_plate_letter'):
+                    mutable_data['ai_converted_plate_mid'] = self._motorcycle_plate_digits(
+                        mutable_data.get('ai_converted_plate_mid') or mutable_data.get('plate_mid') or '',
+                        3,
+                    )
+                    mutable_data['ai_converted_plate_letter'] = self._motorcycle_plate_digits(
+                        mutable_data.get('ai_converted_plate_letter') or mutable_data.get('plate_letter') or '',
+                        5,
+                    )
+                data = mutable_data
+            elif mutable_data is not None and plate_type == VehicleEntry.PlateType.CAR:
+                mutable_data['plate_left'] = self._plate_digits(
+                    mutable_data.get('plate_left') or mutable_data.get('ai_converted_plate_left') or '',
+                    2,
+                )
+                mutable_data['plate_mid'] = self._plate_digits(
+                    mutable_data.get('plate_mid') or mutable_data.get('ai_converted_plate_mid') or '',
+                    3,
+                )
+                mutable_data['plate_right'] = self._plate_digits(
+                    mutable_data.get('plate_right') or mutable_data.get('ai_converted_plate_right') or '',
+                    2,
+                )
+                mutable_data['plate_letter'] = self._car_plate_letter(
+                    mutable_data.get('plate_letter') or mutable_data.get('ai_converted_plate_letter') or ''
+                )
+                if mutable_data.get('ai_converted_plate_left') or mutable_data.get('ai_converted_plate_mid') or mutable_data.get('ai_converted_plate_right') or mutable_data.get('ai_converted_plate_letter'):
+                    mutable_data['ai_converted_plate_left'] = self._plate_digits(
+                        mutable_data.get('ai_converted_plate_left') or mutable_data.get('plate_left') or '',
+                        2,
+                    )
+                    mutable_data['ai_converted_plate_mid'] = self._plate_digits(
+                        mutable_data.get('ai_converted_plate_mid') or mutable_data.get('plate_mid') or '',
+                        3,
+                    )
+                    mutable_data['ai_converted_plate_right'] = self._plate_digits(
+                        mutable_data.get('ai_converted_plate_right') or mutable_data.get('plate_right') or '',
+                        2,
+                    )
+                    mutable_data['ai_converted_plate_letter'] = self._car_plate_letter(
+                        mutable_data.get('ai_converted_plate_letter') or mutable_data.get('plate_letter') or ''
+                    )
+                data = mutable_data
+        return super().to_internal_value(data)
 
     def _discard_ai_audit_fields(self, validated_data):
         for field in self._AI_AUDIT_FIELDS:

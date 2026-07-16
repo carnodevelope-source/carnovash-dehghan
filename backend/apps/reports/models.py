@@ -86,6 +86,6 @@ class WorkerPayoutTransaction(TimestampedModel):
         ordering = ['-created_at', '-id']
         indexes = [
             models.Index(fields=['worker', 'kind', 'created_at']),
-            models.Index(fields=['worker', 'kind', 'reference_month']),
+            models.Index(fields=['worker', 'kind', 'reference_month'], name='rpt_wrk_kind_mon_idx'),
             models.Index(fields=['tenant', 'created_at']),
         ]
