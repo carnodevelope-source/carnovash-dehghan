@@ -537,13 +537,13 @@ const startCamera = async () => {
 
 const dataUrlFromCanvas = (source, sourceWidth, sourceHeight) => {
   const canvas = cameraCanvasRef.value || document.createElement('canvas')
-  const maxWidth = 1280
+  const maxWidth = 960
   const scale = Math.min(1, maxWidth / Math.max(1, sourceWidth))
   canvas.width = Math.max(1, Math.round(sourceWidth * scale))
   canvas.height = Math.max(1, Math.round(sourceHeight * scale))
   const context = canvas.getContext('2d')
   context.drawImage(source, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.86)
+  return canvas.toDataURL('image/jpeg', 0.78)
 }
 
 const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
@@ -552,18 +552,6 @@ const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
   reader.onerror = () => reject(new Error('file_read_failed'))
   reader.readAsDataURL(file)
 })
-
-const captureStillFromTrack = async () => {
-  const track = cameraStream.value?.getVideoTracks?.()[0]
-  if (!track || typeof window.ImageCapture !== 'function') return ''
-  try {
-    const imageCapture = new window.ImageCapture(track)
-    const bitmap = await imageCapture.grabFrame()
-    return dataUrlFromCanvas(bitmap, bitmap.width, bitmap.height)
-  } catch (_error) {
-    return ''
-  }
-}
 
 const processCameraFile = async (event) => {
   const file = event.target?.files?.[0]
@@ -592,9 +580,8 @@ const captureFromVideo = async () => {
     await startCamera()
     return
   }
-  const highResDataUrl = await captureStillFromTrack()
   const video = cameraVideoRef.value
-  const imageDataUrl = highResDataUrl || dataUrlFromCanvas(video, video.videoWidth, video.videoHeight)
+  const imageDataUrl = dataUrlFromCanvas(video, video.videoWidth, video.videoHeight)
   await recognizePlateImage(imageDataUrl)
 }
 
@@ -666,7 +653,8 @@ const recognizePlateImage = async (imageDataUrl) => {
   try {
     const { data } = await api.post('/vehicles/plate-recognition/', {
       session_id: aiSessionId,
-      image_base64: imageDataUrl
+      image_base64: imageDataUrl,
+      force_process: false
     }, { meta: { trackLoading: false } })
     const recognizedConfidence = normalizeAiConfidence(data?.confidence)
     cameraState.lastConfidence = recognizedConfidence ?? 0

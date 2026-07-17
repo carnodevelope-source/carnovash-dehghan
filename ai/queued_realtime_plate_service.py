@@ -63,6 +63,11 @@ def build_runtime_args():
         requested_device = "cuda" if torch.cuda.is_available() else "cpu"
     args.device = requested_device
     args.half = requested_device == "cuda"
+    default_cpu_threads = min(4, max(1, os.cpu_count() or 1))
+    try:
+        args.cpu_threads = max(1, int(os.getenv("PLATE_AI_CPU_THREADS", default_cpu_threads) or default_cpu_threads))
+    except ValueError:
+        args.cpu_threads = default_cpu_threads
     return args
 
 
@@ -84,7 +89,7 @@ class QueuedRealtimePlateService:
         max_queue_size: int = 256,
     ):
         self.args = build_runtime_args()
-        configure_torch_runtime(self.args.device, 1)
+        configure_torch_runtime(self.args.device, self.args.cpu_threads)
         self.detector_device = self.args.device
         self.use_half = self.args.device == "cuda"
         self.detector = YOLO(detector_weights)
@@ -102,6 +107,9 @@ class QueuedRealtimePlateService:
         self.request_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
         self.sessions: Dict[str, SessionState] = {}
         self.metrics = {
+            "device": self.args.device,
+            "cpu_threads": self.args.cpu_threads,
+            "detector_imgsz": self.detector_imgsz,
             "submitted": 0,
             "dropped_queue_full": 0,
             "returned_without_gpu": 0,
@@ -234,16 +242,14 @@ class QueuedRealtimePlateService:
             state.last_thumb = self._make_thumb(request.frame_bgr)
             return None
 
+        has_cached_result = bool(state.last_raw_text)
         thumb = self._make_thumb(request.frame_bgr)
         if state.last_thumb is not None:
             diff = float(np.mean(cv2.absdiff(thumb, state.last_thumb)))
-            if diff < self.thumb_diff_threshold:
+            if has_cached_result and diff < self.thumb_diff_threshold:
                 state.last_thumb = thumb
                 return self._build_response(state, request, processed=False, reason="duplicate_frame")
         state.last_thumb = thumb
-
-        if state.frame_index % self.keyframe_interval != 0:
-            return self._build_response(state, request, processed=False, reason="non_keyframe")
 
         return None
 
@@ -268,6 +274,8 @@ class QueuedRealtimePlateService:
                 best_conf = det_conf
 
         if best_bbox is None:
+            state.last_bbox = None
+            self._clear_text_state(state)
             return self._build_response(state, request, processed=True, reason="no_plate")
 
         state.last_bbox = best_bbox
@@ -277,6 +285,8 @@ class QueuedRealtimePlateService:
         x1, y1, x2, y2 = best_bbox
         plate_crop = frame[y1:y2, x1:x2]
         if plate_crop.size == 0:
+            state.last_bbox = None
+            self._clear_text_state(state)
             return self._build_response(state, request, processed=True, reason="empty_crop")
 
         plate_image = cv2.resize(plate_crop, (self.args.imgW, self.args.imgH), interpolation=cv2.INTER_AREA)
@@ -294,8 +304,19 @@ class QueuedRealtimePlateService:
             if state.votes[raw_text] >= self.stable_hits:
                 state.stable_text = raw_text
                 state.stable_persian_text = state.last_persian_text
+        else:
+            self._clear_text_state(state)
 
         return self._build_response(state, request, processed=True, reason="ocr_ran", det_conf=best_conf)
+
+    @staticmethod
+    def _clear_text_state(state: SessionState) -> None:
+        state.last_raw_text = ""
+        state.last_persian_text = ""
+        state.last_confidence = 0.0
+        state.votes.clear()
+        state.stable_text = ""
+        state.stable_persian_text = ""
 
     def _build_response(self, state: SessionState, request: FrameRequest, processed: bool, reason: str, det_conf: float = 0.0) -> Dict:
         latency_ms = (time.perf_counter() - request.enqueue_time) * 1000.0

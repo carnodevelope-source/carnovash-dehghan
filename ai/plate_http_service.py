@@ -33,6 +33,12 @@ def _decode_image(image_value: str):
     return frame
 
 
+def _as_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def _json_response(handler: BaseHTTPRequestHandler, status_code: int, payload: dict):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status_code)
@@ -71,6 +77,7 @@ def make_handler(service: QueuedRealtimePlateService, started_at: float):
                 _json_response(self, 404, {"detail": "Not found."})
                 return
 
+            request_started = time.perf_counter()
             try:
                 content_length = int(self.headers.get("Content-Length", "0") or "0")
                 if content_length <= 0:
@@ -78,15 +85,20 @@ def make_handler(service: QueuedRealtimePlateService, started_at: float):
                 payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
                 session_id = str(payload.get("session_id") or "default").strip() or "default"
                 timeout_sec = float(payload.get("timeout_sec") or 4.0)
-                force_process = bool(payload.get("force_process", False))
+                force_process = _as_bool(payload.get("force_process", False))
                 image_value = payload.get("image_base64") or payload.get("image_data_url") or ""
+                decode_started = time.perf_counter()
                 frame = _decode_image(str(image_value))
+                decode_latency_ms = (time.perf_counter() - decode_started) * 1000.0
                 result = service.submit_frame(
                     session_id=session_id,
                     frame_bgr=frame,
                     timeout_sec=timeout_sec,
                     force_process=force_process,
                 )
+                result = dict(result)
+                result["decode_latency_ms"] = round(decode_latency_ms, 2)
+                result["bridge_latency_ms"] = round((time.perf_counter() - request_started) * 1000.0, 2)
             except ValueError as exc:
                 _json_response(self, 400, {"accepted": False, "detail": str(exc)})
                 return
