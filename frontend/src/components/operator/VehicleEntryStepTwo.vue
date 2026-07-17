@@ -292,7 +292,7 @@
           </label>
           <div class="summary-foot-actions">
             <button type="button" class="secondary-foot-btn" @click="emit('back')">بازگشت</button>
-            <button type="button" class="primary-btn" :disabled="!canAssign" @click="onAssign">
+            <button type="button" class="primary-btn" :disabled="!canAssign || submitting || actionLocked" @click="onAssign">
               تایید و تخصیص کار
             </button>
           </div>
@@ -311,7 +311,8 @@ import { resolveApiErrorMessage } from '../../utils/apiError'
 import { resolvePlateParts } from '../../utils/plate'
 
 const props = defineProps({
-  vehicleInfo: { type: Object, default: () => ({}) }
+  vehicleInfo: { type: Object, default: () => ({}) },
+  submitting: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['back', 'assign', 'close'])
@@ -336,6 +337,7 @@ const pieceDetails = ref('')
 const isServicePickerOpen = ref(false)
 const hasOpenedInitialServicePicker = ref(false)
 const activeVehicleKey = ref('')
+const actionLocked = ref(false)
 
 const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -436,6 +438,7 @@ const queueFrontWorkerId = computed(() => {
 const filteredWorkers = computed(() => {
   const query = workerSearch.value.trim().toLowerCase()
   return workers.value.filter((item) => {
+    if (String(item.role || 'worker').trim().toLowerCase() !== 'worker') return false
     if (!query) return true
     return `${item.full_name || ''} ${item.phone || ''}`.toLowerCase().includes(query)
   })
@@ -777,7 +780,8 @@ const buildPayload = () => {
 }
 
 const onAssign = () => {
-  if (!canAssign.value) return
+  if (!canAssign.value || props.submitting || actionLocked.value) return
+  actionLocked.value = true
   emit('assign', buildPayload())
 }
 
@@ -844,6 +848,7 @@ const loadInitialData = async () => {
       .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
 
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
+      .filter((item) => String(item.role || 'worker').trim().toLowerCase() === 'worker')
 
     const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
     selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
@@ -865,6 +870,9 @@ const loadInitialData = async () => {
 }
 
 watch(() => props.vehicleInfo, hydrateFromVehicleInfo, { immediate: true, deep: true })
+watch(() => props.submitting, (value) => {
+  if (!value) actionLocked.value = false
+})
 watch(selectedWorkers, (workersList) => {
   applyWorkerPaymentDefaults(workersList)
 }, { immediate: true, deep: true })

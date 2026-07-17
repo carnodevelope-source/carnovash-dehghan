@@ -215,6 +215,22 @@ def _worker_name(worker):
     return worker.user.full_name or worker.user.username or '-'
 
 
+def _job_worker_names(job):
+    if not job:
+        return '-'
+    snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
+    names = []
+    for item in snapshot:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('name') or '').strip()
+        if name and name not in names:
+            names.append(name)
+    if names:
+        return '، '.join(names)
+    return _worker_name(job.assigned_worker)
+
+
 def _job_has_worker(job, worker_id):
     if not worker_id or not job:
         return True
@@ -582,7 +598,7 @@ class ReportsDashboardView(APIView):
                 'penalty_total': float(job_adjustments['penalty_total']),
                 'discount_total': float(job.discount_total) if job else 0,
                 'tip_amount': float(job.tip_amount) if job else 0,
-                'worker_name': _worker_name(job.assigned_worker) if job else '-',
+                'worker_name': _job_worker_names(job),
                 'products': ', '.join(product_names),
                 'services': ', '.join(service_names),
                 'created_at': vehicle.check_in_at,

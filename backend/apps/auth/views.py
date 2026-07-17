@@ -146,11 +146,31 @@ def _is_wallet_card_payment_ticket(ticket):
     )
 
 
+def _is_wallet_bank_withdrawal_ticket(ticket):
+    text = f'{getattr(ticket, "subject", "")}\n{getattr(ticket, "message", "")}'.lower()
+    return 'wallet-bank-withdrawal' in text
+
+
 def _parse_wallet_id_from_ticket(ticket):
-    match = re.search(r'شناسه کیف پول مقصد\s*:\s*(\d+)', getattr(ticket, 'message', '') or '')
+    message = getattr(ticket, 'message', '') or ''
+    match = re.search(r'wallet_id\s*:\s*(\d+)', message, flags=re.IGNORECASE)
+    if not match:
+        match = re.search(r'شناسه کیف پول مقصد\s*:\s*(\d+)', message)
     if not match:
         return None
     return int(match.group(1))
+
+
+def _parse_wallet_withdraw_amount_from_ticket(ticket):
+    message = getattr(ticket, 'message', '') or ''
+    match = re.search(r'withdraw_amount\s*:\s*([0-9.,]+)', message, flags=re.IGNORECASE)
+    if not match:
+        return Decimal('0')
+    raw = match.group(1).replace(',', '')
+    try:
+        return Decimal(raw)
+    except Exception:
+        return Decimal('0')
 
 
 def _send_ticket_assigned_sms(ticket):
@@ -1371,6 +1391,97 @@ class HqTicketWalletTransferView(HqBaseView):
             ticket=ticket,
             sender=request.user,
             body=f'انتقال وجه کارت به کارت تایید شد و مبلغ {amount:,.0f} تومان به کیف پول «{wallet.name}» اضافه شد.',
+            is_internal=True,
+        )
+        ticket.status = SupportTicket.Status.ANSWERED
+        ticket.responded_by = request.user
+        ticket.responded_at = message.created_at
+        if not ticket.first_response_at:
+            ticket.first_response_at = message.created_at
+        ticket.last_message_at = message.created_at
+        ticket.save(update_fields=[
+            'status',
+            'responded_by',
+            'responded_at',
+            'first_response_at',
+            'last_message_at',
+            'updated_at',
+        ])
+        if ticket.assigned_to_id:
+            _recalculate_support_metrics(ticket.assigned_to)
+        return Response(
+            {
+                'wallet_id': wallet.id,
+                'wallet_name': wallet.name,
+                'wallet_balance': wallet.balance,
+                'transaction_id': cashflow.id,
+                'ticket': SupportTicketDetailSerializer(ticket).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class HqTicketWalletWithdrawView(HqBaseView):
+    @transaction.atomic
+    def post(self, request, pk):
+        forbidden = self.forbid_if_not_hq(request)
+        if forbidden:
+            return forbidden
+
+        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).select_related('tenant', 'assigned_to')
+        if not _is_hq_admin(request.user):
+            tenant = getattr(request.user, 'tenant', None)
+            tenant_filter = Q(assigned_to=request.user)
+            if tenant:
+                tenant_filter |= Q(tenant=tenant)
+            queryset = queryset.filter(tenant_filter).distinct()
+        ticket = queryset.first()
+        if not ticket:
+            return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        if not _is_wallet_bank_withdrawal_ticket(ticket):
+            return Response({'detail': 'برداشت فقط برای تیکت برداشت بانکی کیف پول مجاز است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_cashflow = CashflowTransaction.objects.filter(
+            tenant=ticket.tenant,
+            reference_type='wallet_bank_withdrawal_ticket',
+            reference_id=ticket.id,
+        ).first()
+        if existing_cashflow:
+            return Response({'detail': 'برداشت این تیکت قبلا ثبت شده است.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = HqTicketWalletTransferSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        amount = serializer.validated_data.get('amount') or _parse_wallet_withdraw_amount_from_ticket(ticket)
+        wallet_id = serializer.validated_data.get('wallet_id') or _parse_wallet_id_from_ticket(ticket)
+        if not wallet_id:
+            return Response({'detail': 'کیف پول مبدا در تیکت مشخص نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+        if amount <= 0:
+            return Response({'detail': 'مبلغ برداشت در تیکت معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        wallet = Wallet.objects.select_for_update().filter(pk=wallet_id, tenant=ticket.tenant, is_active=True).first()
+        if not wallet:
+            return Response({'detail': 'کیف پول مبدا معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        current_balance = Decimal(str(wallet.balance or 0))
+        if current_balance < amount:
+            return Response({'detail': 'موجودی کیف پول برای ثبت برداشت کافی نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        wallet.balance = current_balance - amount
+        wallet.save(update_fields=['balance', 'updated_at'])
+        cashflow = CashflowTransaction.objects.create(
+            tenant=ticket.tenant,
+            wallet=wallet,
+            direction=CashflowTransaction.Direction.OUT,
+            amount=amount,
+            description=f'برداشت بانکی از تیکت #{ticket.id}',
+            reference_type='wallet_bank_withdrawal_ticket',
+            reference_id=ticket.id,
+            created_by=request.user,
+        )
+        message = SupportTicketMessage.objects.create(
+            ticket=ticket,
+            sender=request.user,
+            body=f'برداشت بانکی انجام شد و مبلغ {amount:,.0f} تومان از کیف پول «{wallet.name}» کسر شد.',
             is_internal=True,
         )
         ticket.status = SupportTicket.Status.ANSWERED

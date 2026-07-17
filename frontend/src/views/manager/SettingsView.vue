@@ -339,7 +339,7 @@
               <div class="general-settings-head">
                 <div>
                   <strong>تنظیمات فیش پرینتر</strong>
-                  <p class="helper-text">متن پایین فیش قبل از عبارت تشکر چاپ می‌شود و برای هر کارواش جداگانه قابل تغییر است.</p>
+                  <p class="helper-text">متن هدر زیر آدرس مجموعه و متن پایین فیش برای هر کارواش جداگانه قابل تغییر است.</p>
                 </div>
                 <label class="settings-toggle">
                   <input v-model="generalSettings.receipt_printer_enabled" type="checkbox" />
@@ -362,6 +362,10 @@
                 <label class="general-setting-label">
                   <span>تعداد نسخه چاپ</span>
                   <input v-model.number="generalSettings.receipt_print_copies" type="number" min="1" max="5" />
+                </label>
+                <label class="general-setting-label full-width">
+                  <span>متن هدر فیش</span>
+                  <textarea v-model.trim="generalSettings.receipt_header_note" rows="3" placeholder="متنی که زیر آدرس مجموعه در فیش چاپ می‌شود." />
                 </label>
                 <label class="general-setting-label full-width">
                   <span>متن پایین فیش</span>
@@ -802,6 +806,7 @@ const generalSettings = reactive({
   receipt_auto_print: false,
   receipt_show_logo: false,
   receipt_show_qr: false,
+  receipt_header_note: '',
   receipt_footer_note: '',
   sms_provider_base_url: 'https://api.iranpayamak.com',
   sms_provider_line_number: '',
@@ -1159,6 +1164,7 @@ const loadAll = async () => {
       generalSettings.receipt_auto_print = Boolean(gs.data?.receipt_auto_print)
       generalSettings.receipt_show_logo = Boolean(gs.data?.receipt_show_logo)
       generalSettings.receipt_show_qr = Boolean(gs.data?.receipt_show_qr)
+      generalSettings.receipt_header_note = gs.data?.receipt_header_note || ''
       generalSettings.receipt_footer_note = gs.data?.receipt_footer_note || ''
       generalSettings.sms_provider_base_url = gs.data?.sms_provider_base_url || 'https://api.iranpayamak.com'
       generalSettings.sms_provider_line_number = gs.data?.sms_provider_line_number || ''
@@ -1186,6 +1192,7 @@ const loadAll = async () => {
       generalSettings.receipt_auto_print = false
       generalSettings.receipt_show_logo = false
       generalSettings.receipt_show_qr = false
+      generalSettings.receipt_header_note = ''
       generalSettings.receipt_footer_note = ''
       generalSettings.sms_provider_base_url = 'https://api.iranpayamak.com'
       generalSettings.sms_provider_line_number = ''
@@ -1222,6 +1229,7 @@ const saveGeneralSettings = async () => {
       receipt_auto_print: Boolean(generalSettings.receipt_auto_print),
       receipt_show_logo: Boolean(generalSettings.receipt_show_logo),
       receipt_show_qr: Boolean(generalSettings.receipt_show_qr),
+      receipt_header_note: generalSettings.receipt_header_note || '',
       receipt_footer_note: generalSettings.receipt_footer_note || '',
       sms_vehicle_assigned_template: ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template || ''),
       sms_vehicle_assigned_invoice_template: generalSettings.sms_vehicle_assigned_invoice_template || '',
@@ -1246,6 +1254,7 @@ const saveGeneralSettings = async () => {
     generalSettings.receipt_auto_print = Boolean(response.data?.receipt_auto_print)
     generalSettings.receipt_show_logo = Boolean(response.data?.receipt_show_logo)
     generalSettings.receipt_show_qr = Boolean(response.data?.receipt_show_qr)
+    generalSettings.receipt_header_note = response.data?.receipt_header_note || ''
     generalSettings.receipt_footer_note = response.data?.receipt_footer_note || ''
     generalSettings.sms_provider_base_url = response.data?.sms_provider_base_url || 'https://api.iranpayamak.com'
     generalSettings.sms_provider_line_number = response.data?.sms_provider_line_number || ''

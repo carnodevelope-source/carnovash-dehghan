@@ -495,7 +495,7 @@
               <small v-if="registrationApproval.error" class="transfer-feedback error">{{ registrationApproval.error }}</small>
             </section>
 
-            <section v-if="isWalletCardPaymentTicket(selectedTicket)" class="wallet-ticket-transfer-card">
+            <section v-if="isWalletOperationTicket(selectedTicket)" class="wallet-ticket-transfer-card">
               <div>
                 <span>عملیات تیکت پرداخت</span>
                 <strong>انتقال پول به کیف پول مقصد</strong>
@@ -506,7 +506,7 @@
                 <input v-model="walletTransfer.amountText" inputmode="numeric" placeholder="مثلا ۲۵۰۰۰۰" />
               </label>
               <button type="button" class="primary-btn wallet-transfer-btn" :disabled="walletTransfer.submitting" @click="submitWalletTransfer">
-                {{ walletTransfer.submitting ? 'در حال انتقال...' : 'انتقال پول' }}
+                {{ walletTransfer.submitting ? walletOperationSubmittingLabel : walletOperationButtonLabel }}
               </button>
               <small v-if="walletTransfer.error" class="transfer-feedback error">{{ walletTransfer.error }}</small>
               <small v-if="walletTransfer.success" class="transfer-feedback success">{{ walletTransfer.success }}</small>
@@ -1802,6 +1802,11 @@ const extractWalletTransferAmount = (ticket) => {
     ...(Array.isArray(ticket?.messages) ? ticket.messages.map((item) => item?.body || '') : [])
   ].join('\n')
   const normalized = normalizeDigits(messageText)
+  const withdrawMatch = normalized.match(/withdraw_amount\s*[:：]?\s*([\d,.\s]+)/i)
+  if (withdrawMatch) {
+    const withdrawAmount = parseTransferAmount(withdrawMatch[1])
+    if (withdrawAmount > 0) return withdrawAmount
+  }
   const patterns = [
     /مبلغ\s*پرداخت\s*[:：]?\s*([\d,\s٬،]+)/i,
     /مبلغ\s*واریز\s*[:：]?\s*([\d,\s٬،]+)/i,
@@ -1819,6 +1824,13 @@ const isWalletCardPaymentTicket = (ticket) => {
   const text = `${ticket?.subject || ''}\n${ticket?.message || ''}`.toLowerCase()
   return text.includes('wallet-card-payment') || (text.includes('کارت به کارت') && text.includes('کیف پول'))
 }
+const isWalletBankWithdrawalTicket = (ticket) => {
+  const text = `${ticket?.subject || ''}\n${ticket?.message || ''}`.toLowerCase()
+  return text.includes('wallet-bank-withdrawal')
+}
+const isWalletOperationTicket = (ticket) => isWalletCardPaymentTicket(ticket) || isWalletBankWithdrawalTicket(ticket)
+const walletOperationButtonLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'برداشت' : 'انتقال پول')
+const walletOperationSubmittingLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'در حال برداشت...' : 'در حال انتقال...')
 const initials = (value) => {
   const parts = String(value || '').trim().split(' ').filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`
@@ -2176,7 +2188,7 @@ const selectTicket = async (ticketId, options = {}) => {
   if (!options.keepReply) {
     ticketReply.assign_to_user_id = Number(data?.assigned_to || 0)
     ticketReply.is_internal = false
-    const suggestedTransferAmount = isWalletCardPaymentTicket(data) && !walletTransfer.skipNextSuggestedAmount
+    const suggestedTransferAmount = isWalletOperationTicket(data) && !walletTransfer.skipNextSuggestedAmount
       ? extractWalletTransferAmount(data)
       : 0
     walletTransfer.amountText = suggestedTransferAmount > 0 ? String(suggestedTransferAmount) : ''
@@ -2228,10 +2240,16 @@ const submitWalletTransfer = async () => {
   }
   walletTransfer.submitting = true
   try {
-    await api.post(`/auth/hq/tickets/${selectedTicket.value.id}/wallet-transfer/`, { amount })
+    const endpoint = isWalletBankWithdrawalTicket(selectedTicket.value)
+      ? `/auth/hq/tickets/${selectedTicket.value.id}/wallet-withdraw/`
+      : `/auth/hq/tickets/${selectedTicket.value.id}/wallet-transfer/`
+    await api.post(endpoint, { amount })
     walletTransfer.amountText = ''
     walletTransfer.success = 'انتقال وجه ثبت شد و کیف پول مقصد شارژ شد.'
     walletTransfer.skipNextSuggestedAmount = true
+    if (isWalletBankWithdrawalTicket(selectedTicket.value)) {
+      walletTransfer.success = 'برداشت ثبت شد و مبلغ از کیف پول کم شد.'
+    }
     await selectTicket(selectedTicket.value.id)
     await loadTickets()
     await loadOverview()

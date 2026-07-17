@@ -12,7 +12,7 @@ export const useAuthStore = defineStore('auth', {
     licenseStatus: (state) => state.user?.license_status || {},
     isLicenseLocked: (state) => state.user?.license_status?.is_locked === true,
     canAccessManagerSettings: (state) => ['manager', 'admin'].includes(state.user?.role),
-    canAccessWallet: (state) => ['accountant', 'manager', 'admin'].includes(state.user?.role),
+    canAccessWallet: (state) => ['accountant', 'manager', 'admin', 'operator'].includes(state.user?.role),
     canAccessReports: (state) => ['manager', 'admin'].includes(state.user?.role),
     canAccessSupport: (state) => ['accountant', 'admin', 'owner', 'manager', 'operator', 'worker'].includes(state.user?.role),
     canAccessDashboard: (state) => ['admin', 'owner', 'manager', 'operator', 'worker'].includes(state.user?.role)

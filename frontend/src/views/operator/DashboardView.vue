@@ -92,6 +92,7 @@
           <div class="step-one-scroll-body">
             <VehicleEntryStepOne
               :vehicle-info="vehicleDraft"
+              :submitting="stepSubmitting"
               @continue="handleStepOneContinue"
               @refer="handleStepOneRefer"
             />
@@ -101,6 +102,7 @@
         <VehicleEntryStepTwo
           v-else
           :vehicle-info="vehicleDraft"
+          :submitting="stepSubmitting"
           @back="modalStep = 1"
           @close="closeVehicleModal"
           @assign="handleStepTwoAssign"
@@ -115,6 +117,8 @@
       @close="closeVehicleDetails"
       @cancel="cancelVehicle"
       @block-plate="blockSelectedVehiclePlate"
+      @edit-workers="editSelectedVehicleWorkers"
+      @edit-tip="editSelectedVehicleTip"
     />
     <div v-if="showReleaseModal" class="modal-overlay" @click.self="closeReleaseModal">
       <section class="modal-panel release-panel">
@@ -405,7 +409,7 @@
             <div class="release-actions">
               <button type="button" class="back-btn" @click="closeReleaseModal">انصراف</button>
               <button type="button" class="confirm-release-btn" :disabled="releaseSubmitting" @click="confirmReleaseVehicle">
-                {{ releaseSubmitting ? 'در حال ثبت...' : 'تایید و ترخیص خودرو' }}
+                {{ releaseSubmitting ? 'در حال ثبت...' : (jobEditMode ? 'ثبت تغییرات' : 'تایید و ترخیص خودرو') }}
               </button>
             </div>
           </div>
@@ -616,7 +620,7 @@
             <header class="thermal-sheet-head">
               <strong>{{ invoiceCarwashTitle }}</strong>
               <small v-if="invoiceCarwashContactLine">{{ invoiceCarwashContactLine }}</small>
-              <span>رسید ترخیص خودرو</span>
+              <small v-if="invoiceReceiptHeaderNote" class="receipt-custom-note">{{ invoiceReceiptHeaderNote }}</small>
             </header>
 
             <section class="thermal-info-grid">
@@ -672,6 +676,7 @@
           <header class="invoice-sheet-head">
             <div>
               <small>{{ invoiceCarwashContactLine || invoiceCarwashName }}</small>
+              <small v-if="invoiceReceiptHeaderNote" class="receipt-custom-note">{{ invoiceReceiptHeaderNote }}</small>
               <strong>فاکتور نهایی سفارش</strong>
               <span>شماره فاکتور: {{ invoiceNumber }}</span>
             </div>
@@ -821,6 +826,7 @@ const showReleaseServicePicker = ref(false)
 const showReleaseWorkerEditor = ref(false)
 const releaseCheckoutLoading = ref(false)
 const releaseSubmitting = ref(false)
+const stepSubmitting = ref(false)
 const invoiceGenerating = ref(false)
 const invoicePdfUrl = ref('')
 const invoiceErrorMessage = ref('')
@@ -834,6 +840,7 @@ const tempReleaseWorkerRows = ref([])
 const releaseWorkerSearch = ref('')
 const invoiceRenderTimer = ref(null)
 const vehicleAutoSmsEnabled = ref(true)
+const jobEditMode = ref('')
 const invoiceLayout = ref({
   preset: 'a4',
   thermalWidthMm: 80,
@@ -865,6 +872,7 @@ const releaseForm = ref({
   chequeShaba: '',
   chequeAmount: 0,
   creditDueDate: '',
+  receiptHeaderNote: '',
   receiptFooterNote: '',
   carwashAddress: '',
   managerPhone: '',
@@ -899,6 +907,7 @@ const openVehicleModal = () => {
   showVehicleModal.value = true
 }
 const closeVehicleModal = () => {
+  if (stepSubmitting.value) return
   showVehicleModal.value = false
   modalStep.value = 1
   vehicleDraft.value = null
@@ -1119,6 +1128,7 @@ const closeReleaseModal = () => {
   tempReleaseWorkerRows.value = []
   releaseCheckoutLoading.value = false
   releaseSubmitting.value = false
+  jobEditMode.value = ''
   releaseForm.value = {
     serviceLines: [],
     availableProducts: [],
@@ -1143,8 +1153,9 @@ const closeReleaseModal = () => {
     chequeBank: '',
     chequeShaba: '',
     chequeAmount: 0,
-    creditDueDate: '',
-    receiptFooterNote: '',
+      creditDueDate: '',
+      receiptHeaderNote: '',
+      receiptFooterNote: '',
     carwashAddress: '',
     managerPhone: '',
     bonusPenaltyAdjustments: [],
@@ -1225,6 +1236,7 @@ const normalizeReleaseAssignedWorkers = (workers) => {
 }
 const normalizeAvailableReleaseWorkers = (workers) => (
   (Array.isArray(workers) ? workers : [])
+    .filter((item) => String(item?.role || item?.user?.role || 'worker').trim().toLowerCase() === 'worker')
     .map((item) => ({
       id: Number(item?.id || 0),
       name: normalizeWorkerName(item?.full_name || item?.name || item?.user?.full_name || item?.username || ''),
@@ -1748,6 +1760,7 @@ const openReleaseModal = async (car) => {
       chequeShaba: '',
       chequeAmount: 0,
       creditDueDate: '',
+      receiptHeaderNote: settingsResponse?.data?.receipt_header_note || '',
       receiptFooterNote: settingsResponse?.data?.receipt_footer_note || '',
       carwashAddress: data?.vehicle?.tenant_address || authStore.user?.tenant?.address || '',
       managerPhone: data?.vehicle?.manager_phone || authStore.user?.phone || '',
@@ -1849,6 +1862,7 @@ const invoiceCarwashContactLine = computed(() => {
   ].filter(Boolean)
   return parts.join(' | ')
 })
+const invoiceReceiptHeaderNote = computed(() => String(releaseForm.value.receiptHeaderNote || '').trim())
 const invoicePreviewUrl = computed(() => (
   invoicePdfUrl.value
     ? `${invoicePdfUrl.value}#view=FitH&zoom=page-width`
@@ -1906,9 +1920,23 @@ const invoiceVehicleTitle = computed(() => {
   const color = String(releaseCandidate.value?.colorName || releaseCandidate.value?.car_color || '').trim()
   return `${model} ${color}`.trim() || 'قطعه‌شویی'
 })
-const invoicePlateLabel = computed(() => (
-  String(releaseCandidate.value?.plateDisplay || releaseCandidate.value?.plate_number || '').trim() || 'قطعه‌شویی'
-))
+const invoicePlateLabel = computed(() => {
+  const source = releaseCandidate.value || {}
+  const plateType = String(source.plateType || source.plate_type || '').trim()
+  if (plateType === 'motorcycle') {
+    return buildPlateNumber({
+      plateType,
+      mid: source.plateMid || source.plate_mid || '',
+      letter: source.plateLetter || source.plate_letter || ''
+    }) || String(source.plateDisplay || source.plate_number || '').trim() || 'قطعه‌شویی'
+  }
+  const right = String(source.plateRight || source.plate_right || '').trim()
+  const letter = String(source.plateLetter || source.plate_letter || '').trim()
+  const mid = String(source.plateMid || source.plate_mid || '').trim()
+  const left = String(source.plateLeft || source.plate_left || '').trim()
+  if (right && letter && mid && left) return `${right} ${letter} ${mid} - ${left}`
+  return String(source.plateDisplay || source.plate_number || '').trim() || 'قطعه‌شویی'
+})
 const invoiceAdmissionLabel = computed(() => (
   releaseCandidate.value?.isPieceWash || releaseCandidate.value?.is_piece_wash ? 'قطعه‌شویی' : 'خودرو'
 ))
@@ -2261,6 +2289,10 @@ const printInvoicePdf = () => {
 }
 const confirmReleaseVehicle = async () => {
   if (!releaseCandidate.value?.id) return
+  if (jobEditMode.value) {
+    await persistJobAdjust()
+    return
+  }
   if (releaseForm.value.assignedWorkers.length && !selectedAssignedWorkers.value.length) {
     notifyWarning('حداقل یک نیرو را برای این تسویه انتخاب کنید.', { title: 'اطلاعات ناقص تسویه' })
     return
@@ -2352,7 +2384,78 @@ const confirmReleaseVehicle = async () => {
     releaseSubmitting.value = false
   }
 }
+
+const buildJobAdjustPayload = () => ({
+  assigned_workers: selectedAssignedWorkers.value.map((worker) => ({
+    id: Number(worker.id || 0),
+    name: String(worker.name || '').trim(),
+    worker_share_percent: Math.max(0, Math.min(100, Number(worker.worker_share_percent ?? 0)))
+  })).filter((worker) => worker.id > 0),
+  worker_share_distribution: (releaseForm.value.assignedWorkers || []).map((worker) => ({
+    id: Number(worker.id || 0),
+    worker_share_percent: Math.max(0, Math.min(100, Number(worker.worker_share_percent ?? 0)))
+  })).filter((worker) => worker.id > 0),
+  tip_amount: Math.max(0, Number(releaseForm.value.tipAmount || 0))
+})
+
+const persistJobAdjust = async () => {
+  if (!releaseCandidate.value?.id || releaseSubmitting.value) return
+  if (releaseForm.value.assignedWorkers.length && !selectedAssignedWorkers.value.length) {
+    notifyWarning('حداقل یک نیرو انتخاب کنید.', { title: 'ویرایش نیرو' })
+    return
+  }
+  try {
+    releaseSubmitting.value = true
+    const { data } = await api.patch(`/vehicles/${releaseCandidate.value.id}/job-adjust/`, buildJobAdjustPayload())
+    const idx = vehicleStore.vehicles.findIndex((item) => Number(item.id) === Number(data?.id))
+    if (idx >= 0) vehicleStore.vehicles[idx] = data
+    vehicleStore.selectedVehicle = data
+    closeReleaseModal()
+    showVehicleDetailsModal.value = false
+  } catch (error) {
+    console.error('persistJobAdjust error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'ویرایش سفارش ناموفق بود.'), { title: 'خطا در ویرایش سفارش' })
+  } finally {
+    releaseSubmitting.value = false
+  }
+}
+
+const editSelectedVehicleWorkers = async () => {
+  if (!selectedVehicle.value?.id) return
+  jobEditMode.value = 'workers'
+  await openReleaseModal({
+    ...selectedVehicle.value,
+    statusKey: selectedVehicle.value.status,
+    plateDisplay: selectedVehicle.value.plate_number,
+    plateLeft: selectedVehicle.value.plate_left,
+    plateLetter: selectedVehicle.value.plate_letter,
+    plateMid: selectedVehicle.value.plate_mid,
+    plateRight: selectedVehicle.value.plate_right,
+    plateType: selectedVehicle.value.plate_type
+  })
+  openReleaseWorkerEditor()
+}
+
+const editSelectedVehicleTip = async () => {
+  const vehicle = selectedVehicle.value
+  if (!vehicle?.id) return
+  const currentTip = Number(vehicle.job?.tip_amount || 0)
+  const rawValue = window.prompt('مبلغ انعام جدید را وارد کنید', String(Math.round(currentTip)))
+  if (rawValue === null) return
+  const nextTip = Math.max(0, parseMoneyInput(rawValue))
+  try {
+    const { data } = await api.patch(`/vehicles/${vehicle.id}/job-adjust/`, { tip_amount: nextTip })
+    const idx = vehicleStore.vehicles.findIndex((item) => Number(item.id) === Number(data?.id))
+    if (idx >= 0) vehicleStore.vehicles[idx] = data
+    vehicleStore.selectedVehicle = data
+  } catch (error) {
+    console.error('editSelectedVehicleTip error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'ویرایش انعام ناموفق بود.'), { title: 'خطا در ویرایش انعام' })
+  }
+}
 const handleStepOneContinue = async (payload) => {
+  if (stepSubmitting.value) return
+  stepSubmitting.value = true
   try {
     const payloadWithSmsDefault = {
       ...payload,
@@ -2397,6 +2500,8 @@ const handleStepOneContinue = async (payload) => {
   } catch (error) {
     console.error('continue step one error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'ذخیره اطلاعات مرحله اول ناموفق بود.'), { title: 'خطا در ثبت خودرو' })
+  } finally {
+    stepSubmitting.value = false
   }
 }
 const buildCreateOrUpdatePayload = (payload, status) => {
@@ -2513,6 +2618,8 @@ const refreshVehicleBoard = async () => {
 }
 
 const handleStepOneRefer = async (payload) => {
+  if (stepSubmitting.value) return
+  stepSubmitting.value = true
   try {
     const plateStatus = await fetchPlateBlockedStatus(payload)
     if (plateStatus.is_blocked) {
@@ -2525,10 +2632,14 @@ const handleStepOneRefer = async (payload) => {
   } catch (error) {
     console.error('refer step one error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
+  } finally {
+    stepSubmitting.value = false
   }
 }
 
 const handleStepTwoAssign = async (payload) => {
+  if (stepSubmitting.value) return
+  stepSubmitting.value = true
   try {
     await saveVehicle(payload, 'ready_to_settle')
     await refreshVehicleBoard()
@@ -2536,6 +2647,8 @@ const handleStepTwoAssign = async (payload) => {
   } catch (error) {
     console.error('assign step two error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
+  } finally {
+    stepSubmitting.value = false
   }
 }
 const cars = computed(() => vehicles.value.map((item) => ({

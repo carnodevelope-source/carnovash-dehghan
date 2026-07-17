@@ -173,6 +173,7 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
                 'receipt_auto_print': False,
                 'receipt_show_logo': False,
                 'receipt_show_qr': False,
+                'receipt_header_note': '',
                 'receipt_footer_note': '',
                 'sms_provider_base_url': 'https://api.iranpayamak.com',
                 'sms_provider_api_key': '',

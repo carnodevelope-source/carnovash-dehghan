@@ -1,6 +1,6 @@
 export const ATTENDANCE_ROUTE = '/manager/attendance'
 
-const ATTENDANCE_ALLOWED_ROLES = ['manager', 'admin']
+const ATTENDANCE_ALLOWED_ROLES = ['manager', 'admin', 'operator']
 const ATTENDANCE_UPGRADE_MESSAGE = 'ورود و خروج تا ۵ نیرو رایگان است. برای نیروهای بیشتر باید آپشن ورود و خروج را از کیف پول خریداری کنید.'
 
 export const hasFeatureAccess = (user, featureKey) => {

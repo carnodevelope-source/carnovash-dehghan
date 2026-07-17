@@ -369,7 +369,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if not worker_ids:
             return None, None
 
-        profiles = list(WorkerProfile.objects.filter(tenant=tenant, id__in=worker_ids))
+        profiles = list(WorkerProfile.objects.filter(tenant=tenant, id__in=worker_ids, user__role='worker'))
         if not profiles:
             return None, None
 
@@ -527,11 +527,12 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             )
         assigned_worker = None
         if worker_id:
-            assigned_worker = WorkerProfile.objects.filter(id=worker_id, tenant=tenant).first()
+            assigned_worker = WorkerProfile.objects.filter(id=worker_id, tenant=tenant, user__role='worker').first()
         if not assigned_worker and worker_name:
             assigned_worker = WorkerProfile.objects.select_related('user').filter(
                 Q(user__full_name__iexact=worker_name) | Q(user__username__iexact=worker_name),
                 tenant=tenant,
+                user__role='worker',
             ).first()
 
         driver_phone = self._normalize_phone(validated_data.get('driver_phone'))
@@ -809,11 +810,12 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         assigned_worker = None
         if worker_id_provided and worker_id:
-            assigned_worker = WorkerProfile.objects.filter(id=worker_id, tenant=tenant).first()
+            assigned_worker = WorkerProfile.objects.filter(id=worker_id, tenant=tenant, user__role='worker').first()
         if worker_name_provided and (not assigned_worker) and worker_name:
             assigned_worker = WorkerProfile.objects.select_related('user').filter(
                 Q(user__full_name__iexact=worker_name) | Q(user__username__iexact=worker_name),
                 tenant=tenant,
+                user__role='worker',
             ).first()
 
         vehicle_job, _ = VehicleJob.objects.get_or_create(

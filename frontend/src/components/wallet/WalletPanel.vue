@@ -421,6 +421,17 @@
               </button>
             </div>
 
+            <div v-if="actionModal.destinationType === 'bank'" class="bank-withdraw-fields">
+              <label>
+                <span>شماره شبا</span>
+                <input v-model="actionModal.bankAccountIban" dir="ltr" inputmode="text" placeholder="IR..." />
+              </label>
+              <label>
+                <span>نام صاحب حساب</span>
+                <input v-model="actionModal.bankAccountHolder" type="text" placeholder="اختیاری" />
+              </label>
+            </div>
+
             <div v-if="actionModal.destinationType === 'wallet'" class="wallet-choice-grid">
               <button
                 v-for="wallet in transferDestinationWallets"
@@ -460,7 +471,11 @@
             </label>
           </div>
 
-          <div class="wallet-note">
+          <div v-if="actionModal.type === 'withdraw' && actionModal.destinationType === 'bank'" class="wallet-note">
+            درخواست برداشت بانکی برای پشتیبانی تیکت می‌شود و بعد از انجام دستی، با دکمه برداشت از کیف پول کم خواهد شد.
+          </div>
+
+          <div v-else class="wallet-note">
             {{ actionModal.type === 'deposit' ? 'واریز کارت به کارت بعد از بررسی رسید توسط پشتیبانی به کیف پول اضافه می‌شود.' : 'برداشت بلافاصله از موجودی کیف پول کسر می‌شود.' }}
           </div>
 
@@ -611,6 +626,8 @@ const actionModal = reactive({
   walletId: null,
   destinationType: 'bank',
   destinationWalletId: null,
+  bankAccountIban: '',
+  bankAccountHolder: '',
   paymentMethod: 'card',
   amountText: '',
   description: '',
@@ -800,6 +817,11 @@ const actionAmountError = computed(() => {
       if (Number(actionModal.destinationWalletId) === Number(actionModal.walletId)) return 'کیف پول مقصد نمی‌تواند با مبدا یکی باشد.'
     }
   }
+  if (actionModal.type === 'withdraw' && actionModal.destinationType === 'bank') {
+    const iban = String(actionModal.bankAccountIban || '').replace(/[\s-]/g, '')
+    if (!iban) return 'شماره شبا را برای برداشت بانکی وارد کنید.'
+    if (iban.length < 10) return 'شماره شبا معتبر نیست.'
+  }
   return ''
 })
 const canSubmitAction = computed(() => !actionModal.submitting && !actionAmountError.value)
@@ -885,6 +907,8 @@ const openActionModal = (type) => {
   actionModal.type = type
   actionModal.destinationType = 'bank'
   actionModal.destinationWalletId = null
+  actionModal.bankAccountIban = ''
+  actionModal.bankAccountHolder = ''
   actionModal.paymentMethod = 'card'
   actionModal.amountText = ''
   actionModal.description = ''
@@ -938,6 +962,8 @@ const closeActionModal = () => {
   actionModal.open = false
   actionModal.destinationType = 'bank'
   actionModal.destinationWalletId = null
+  actionModal.bankAccountIban = ''
+  actionModal.bankAccountHolder = ''
   actionModal.paymentMethod = 'card'
   actionModal.amountText = ''
   actionModal.description = ''
@@ -982,6 +1008,12 @@ const submitAction = async () => {
       destination_type: actionModal.type === 'withdraw' ? actionModal.destinationType : undefined,
       destination_wallet_id: actionModal.type === 'withdraw' && actionModal.destinationType === 'wallet'
         ? actionModal.destinationWalletId
+        : undefined,
+      bank_account_iban: actionModal.type === 'withdraw' && actionModal.destinationType === 'bank'
+        ? String(actionModal.bankAccountIban || '').trim()
+        : undefined,
+      bank_account_holder: actionModal.type === 'withdraw' && actionModal.destinationType === 'bank'
+        ? String(actionModal.bankAccountHolder || '').trim()
         : undefined,
       amount,
       description: (actionModal.description || '').trim() || undefined
@@ -1277,6 +1309,10 @@ onMounted(async () => {
 .destination-toggle button.active{background:#fff;border-color:transparent}
 .destination-toggle span{color:#0f172a;font-size:14px;font-weight:900}
 .destination-toggle small{color:#64748b;font-size:11px;font-weight:800}
+.bank-withdraw-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.bank-withdraw-fields label{display:grid;gap:6px}
+.bank-withdraw-fields span{font-size:12px;font-weight:900;color:#334155}
+.bank-withdraw-fields input{width:100%;border:1px solid #e2e8f0;border-radius:14px;padding:12px;background:#fff;color:#0f172a;font-weight:800}
 .wallet-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .wallet-choice-card{min-height:92px;border:1px solid #efe4ff;border-radius:16px;background:#fbf8ff;padding:14px 15px;display:grid;gap:6px;text-align:right;cursor:pointer;transition:border-color .2s ease,transform .2s ease,background .2s ease}
 .wallet-choice-card:hover{transform:translateY(-1px);border-color:#dbc8ff;background:#fff}
@@ -1327,6 +1363,6 @@ onMounted(async () => {
 .submit-deposit{background:linear-gradient(135deg,#3b7f71,#6ca69a)}
 .submit-withdraw{background:linear-gradient(135deg,#b85b5b,#d98383)}
 @media (max-width:1200px){.wallet-hero-shell{grid-template-columns:1fr}.wallet-summary-board{grid-template-columns:repeat(2,minmax(0,1fr))}.options-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:900px){.history-head,.options-head,.wallet-modal-section-head{flex-direction:column;align-items:stretch}.history-head h2,.options-head h2{font-size:28px}.hero-main{flex-direction:column}.hero-main h2{font-size:44px}.hero-action{min-width:0;width:100%;font-size:22px;height:60px}.gateway-amounts,.deposit-method-grid,.payment-plan-grid,.wallet-choice-grid,.installment-live-preview,.option-live-grid,.destination-toggle,.wallet-balance-preview-grid{grid-template-columns:1fr}}
+@media (max-width:900px){.history-head,.options-head,.wallet-modal-section-head{flex-direction:column;align-items:stretch}.history-head h2,.options-head h2{font-size:28px}.hero-main{flex-direction:column}.hero-main h2{font-size:44px}.hero-action{min-width:0;width:100%;font-size:22px;height:60px}.gateway-amounts,.deposit-method-grid,.payment-plan-grid,.wallet-choice-grid,.installment-live-preview,.option-live-grid,.destination-toggle,.bank-withdraw-fields,.wallet-balance-preview-grid{grid-template-columns:1fr}}
 @media (max-width:640px){.shortcut-grid,.wallet-summary-board,.options-grid{grid-template-columns:1fr}.tx-item{grid-template-columns:1fr;justify-items:start}.tx-value-col{width:100%;justify-content:space-between}.history-controls,.hero-actions,.hero-top,.tx-title-row,.wallet-modal-title-row{flex-direction:column;align-items:stretch}.filter-pill{width:100%;justify-content:space-between;flex-wrap:wrap}.wallet-modal-overlay{padding:12px}.wallet-modal{max-height:calc(100dvh - 24px)}.wallet-modal-head,.wallet-modal-body{padding:16px}.wallet-modal-highlight{align-items:flex-start;flex-direction:column}.wallet-modal-highlight strong{font-size:21px}.wallet-modal-symbol{width:46px;height:46px;border-radius:15px;font-size:20px}.wallet-modal-section{padding:14px;border-radius:20px}.quick-amounts button{width:100%}.tx-value{white-space:normal}.hero-main h2{font-size:34px}.wallet-shortcuts,.wallet-hero,.history-panel,.options-panel{padding:16px}.option-progress-head{align-items:flex-start;flex-direction:column}}
 </style>

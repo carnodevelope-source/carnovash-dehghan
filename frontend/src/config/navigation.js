@@ -59,7 +59,9 @@ export const navigationByRole = {
       label: 'عملیات',
       items: [
         item('مدیریت خودروها', '/', 'home'),
-        supportItem
+        item('کیف پول', '/manager/wallet', 'wallet'),
+        supportItem,
+        item('ورود و خروج', '/manager/attendance', 'calendar')
       ]
     }
   ],

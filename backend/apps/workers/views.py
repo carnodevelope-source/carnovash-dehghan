@@ -25,7 +25,7 @@ from .serializers import (
 
 
 def _is_manager(user):
-    return getattr(user, 'role', '') in {'admin', 'manager'}
+    return getattr(user, 'role', '') in {'admin', 'manager', 'operator'}
 
 
 def _today_bounds():
@@ -205,7 +205,11 @@ class WorkerProfileListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         tenant = _resolve_request_tenant(self.request)
-        return WorkerProfile.objects.select_related('user').filter(tenant=tenant, is_deleted=False, user__is_deleted=False).order_by(
+        return WorkerProfile.objects.select_related('user').filter(
+            tenant=tenant,
+            is_deleted=False,
+            user__is_deleted=False,
+        ).order_by(
             'user__full_name',
             'user__username',
         )
@@ -297,7 +301,7 @@ class AttendanceDashboardView(APIView):
         start, end, now = _today_bounds()
         workers = list(
             WorkerProfile.objects.select_related('user')
-            .filter(tenant=tenant, is_deleted=False, user__is_deleted=False)
+            .filter(tenant=tenant, is_deleted=False, user__is_deleted=False, user__role='worker')
             .order_by('user__full_name', 'user__username')
         )
         events = list(

@@ -296,6 +296,7 @@ class GeneralSettings(TimestampedModel):
     receipt_auto_print = models.BooleanField(default=False)
     receipt_show_logo = models.BooleanField(default=False)
     receipt_show_qr = models.BooleanField(default=False)
+    receipt_header_note = models.TextField(blank=True)
     receipt_footer_note = models.TextField(blank=True)
     sms_provider_base_url = models.CharField(max_length=255, blank=True, default='https://api.iranpayamak.com')
     sms_provider_api_key = models.CharField(max_length=255, blank=True)

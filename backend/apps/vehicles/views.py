@@ -569,7 +569,7 @@ class VehicleReleaseCheckoutView(APIView):
 
         if orphan_names:
             candidate_profiles = list(
-                WorkerProfile.objects.select_related('user').filter(tenant=job.tenant)
+                WorkerProfile.objects.select_related('user').filter(tenant=job.tenant, user__role='worker')
             )
             profiles_by_name = {}
             for profile in candidate_profiles:
@@ -596,6 +596,7 @@ class VehicleReleaseCheckoutView(APIView):
         profiles = list(
             WorkerProfile.objects.select_related('user').filter(
                 tenant=job.tenant,
+                user__role='worker',
             ).filter(
                 Q(id__in=ordered_ids) | Q(user_id__in=ordered_ids)
             )
@@ -657,6 +658,7 @@ class VehicleReleaseCheckoutView(APIView):
             WorkerProfile.objects.select_related('user').filter(
                 tenant=tenant,
                 id__in=[item['id'] for item in requested],
+                user__role='worker',
             )
         )
         profiles_by_id = {int(profile.id): profile for profile in profiles}
@@ -1603,3 +1605,134 @@ class VehicleReleaseCheckoutView(APIView):
             },
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class VehicleJobAdjustView(VehicleReleaseCheckoutView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _snapshot_from_workers(self, assigned_workers_with_tip):
+        return [
+            {
+                'id': int(item['id']),
+                'name': item.get('name') or '',
+                'worker_share_percent': float(item.get('worker_share_percent') or 0),
+                'worker_share_amount': float(item.get('worker_share_amount') or 0),
+                'tip_share_percent': float(item.get('tip_share_percent') or 0),
+                'tip_share_amount': float(item.get('tip_share_amount') or 0),
+            }
+            for item in assigned_workers_with_tip
+            if item.get('id')
+        ]
+
+    def _recompute_job_totals(self, job, *, tip_amount, workers_tip_share_amount):
+        service_list_subtotal = self._money(job.service_list_subtotal or 0)
+        services_total = self._money(job.services_total or 0)
+        products_total = self._money(job.products_total or 0)
+        discount_total = self._money(job.total_discount or job.discount_total or 0)
+        tax_total = self._money(job.tax_total or 0)
+        worker_share_amount = self._money(job.worker_share_amount or 0)
+        post_sale_discount_total = self._money(job.loyalty_discount_total or 0) + self._money(job.manual_discount_total or 0)
+        final_total = max(Decimal('0'), service_list_subtotal - discount_total) + products_total + tax_total + tip_amount
+        carwash_share = (
+            max(Decimal('0'), services_total - worker_share_amount)
+            + max(Decimal('0'), tip_amount - workers_tip_share_amount)
+            - post_sale_discount_total
+        )
+        return self._money(final_total), max(Decimal('0'), self._money(carwash_share))
+
+    @transaction.atomic
+    def patch(self, request, pk):
+        tenant = getattr(request.user, 'tenant', None)
+        vehicle = (
+            VehicleEntry.objects.select_for_update()
+            .select_related('job')
+            .filter(pk=pk, tenant=tenant)
+            .first()
+        )
+        if not vehicle or not getattr(vehicle, 'job', None):
+            return Response({'detail': 'Vehicle job not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        job = vehicle.job
+        assigned_workers_payload = request.data.get('assigned_workers', None)
+        worker_share_distribution_payload = request.data.get('worker_share_distribution', [])
+        tip_amount = self._money(request.data.get('tip_amount', job.tip_amount or 0))
+        if tip_amount < 0:
+            return Response({'tip_amount': ['Invalid tip value.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        assigned_workers_from_payload = self._resolve_workers_from_payload(tenant, assigned_workers_payload)
+        assigned_workers = (
+            assigned_workers_from_payload
+            if assigned_workers_from_payload is not None
+            else self._resolve_assigned_workers(job)
+        )
+        if assigned_workers_payload is not None and not assigned_workers:
+            return Response(
+                {'assigned_workers': ['حداقل یک پرسنل معتبر انتخاب کنید.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        worker_share_distribution, worker_share_base_total = self._normalize_worker_share_distribution(
+            assigned_workers=assigned_workers,
+            raw_distribution=worker_share_distribution_payload,
+            worker_share_base=job.worker_share_amount or Decimal('0'),
+        )
+        distribution_by_id = {int(item['id']): item for item in worker_share_distribution if item.get('id')}
+        for worker in assigned_workers:
+            distribution_item = distribution_by_id.get(int(worker['id']))
+            if distribution_item:
+                worker['worker_share_percent'] = distribution_item['worker_share_percent']
+                worker['worker_share_amount'] = distribution_item['worker_share_amount']
+
+        assigned_workers_with_tip, workers_tip_share_amount = self._distribute_tip(
+            tip_amount=tip_amount,
+            assigned_workers=assigned_workers,
+        )
+        final_total, carwash_share = self._recompute_job_totals(
+            job,
+            tip_amount=tip_amount,
+            workers_tip_share_amount=workers_tip_share_amount,
+        )
+
+        primary_worker_id = assigned_workers_with_tip[0]['id'] if assigned_workers_with_tip else None
+        primary_worker = None
+        if primary_worker_id:
+            primary_worker = WorkerProfile.objects.filter(
+                tenant=tenant,
+                id=primary_worker_id,
+                user__role='worker',
+            ).first()
+
+        job.assigned_worker = primary_worker
+        job.assigned_workers_snapshot = self._snapshot_from_workers(assigned_workers_with_tip)
+        job.tip_amount = tip_amount
+        job.workers_tip_share_amount = workers_tip_share_amount
+        job.worker_share_amount = worker_share_base_total
+        job.carwash_share_amount = carwash_share
+        job.final_total = final_total
+        job.save(update_fields=[
+            'assigned_worker',
+            'assigned_workers_snapshot',
+            'tip_amount',
+            'workers_tip_share_amount',
+            'worker_share_amount',
+            'carwash_share_amount',
+            'final_total',
+            'updated_at',
+        ])
+
+        if assigned_workers_payload is not None and assigned_workers_with_tip:
+            WorkerProfile.objects.filter(
+                tenant=tenant,
+                id__in=[int(item['id']) for item in assigned_workers_with_tip],
+                user__role='worker',
+            ).update(last_assigned_at=timezone.now(), updated_at=timezone.now())
+
+        latest_payment = vehicle.payments.order_by('-created_at', '-id').first()
+        if latest_payment:
+            latest_payment.amount = final_total
+            latest_payment.tip_amount = tip_amount
+            latest_payment.save(update_fields=['amount', 'tip_amount', 'updated_at'])
+
+        vehicle.updated_by = request.user if getattr(request.user, 'is_authenticated', False) else None
+        vehicle.save(update_fields=['updated_by', 'updated_at'])
+        return Response(VehicleEntrySerializer(vehicle).data, status=status.HTTP_200_OK)

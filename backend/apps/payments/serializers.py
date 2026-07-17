@@ -71,4 +71,6 @@ class WalletWithdrawSerializer(serializers.Serializer):
     )
     destination_wallet_id = serializers.IntegerField(required=False)
     amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0.01)
+    bank_account_iban = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    bank_account_holder = serializers.CharField(max_length=120, required=False, allow_blank=True)
     description = serializers.CharField(max_length=255, required=False, allow_blank=True)

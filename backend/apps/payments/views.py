@@ -23,7 +23,7 @@ from .serializers import (
     WalletSerializer,
     WalletWithdrawSerializer,
 )
-from apps.auth.models import CarWashFeaturePurchase
+from apps.auth.models import CarWashFeaturePurchase, SupportTicket, SupportTicketMessage
 
 
 FEATURE_OPTION_CATALOG = {
@@ -270,18 +270,46 @@ class WalletBaseMixin:
             default_name='کیف پول پیامک',
         )
 
+    def _ensure_single_wallets(self, tenant):
+        default_wallet = self._get_or_create_default_wallet(tenant)
+        sms_wallet = self._get_or_create_sms_wallet(tenant)
+        canonical_wallets = [
+            (Wallet.WalletType.BANK, default_wallet),
+            (Wallet.WalletType.SMS, sms_wallet),
+        ]
+        for wallet_type, canonical in canonical_wallets:
+            duplicate_wallets = list(
+                Wallet.objects.select_for_update()
+                .filter(tenant=tenant, wallet_type=wallet_type, is_active=True)
+                .exclude(id=canonical.id)
+                .order_by('id')
+            )
+            if not duplicate_wallets:
+                continue
+            transfer_total = sum((Decimal(str(wallet.balance or 0)) for wallet in duplicate_wallets), Decimal('0'))
+            if transfer_total:
+                canonical = Wallet.objects.select_for_update().get(id=canonical.id)
+                canonical.balance = Decimal(str(canonical.balance or 0)) + transfer_total
+                canonical.save(update_fields=['balance', 'updated_at'])
+            Wallet.objects.filter(id__in=[wallet.id for wallet in duplicate_wallets]).update(is_active=False)
+        return (
+            Wallet.objects.select_for_update().get(id=default_wallet.id),
+            Wallet.objects.select_for_update().get(id=sms_wallet.id),
+        )
+
     def _resolve_wallet_for_update(self, wallet_id, tenant):
+        default_wallet, sms_wallet = self._ensure_single_wallets(tenant)
+        allowed_wallet_ids = {default_wallet.id, sms_wallet.id}
         wallet = None
         if wallet_id:
             wallet = (
                 Wallet.objects.select_for_update()
-                .filter(id=wallet_id, tenant=tenant, is_active=True)
+                .filter(id=wallet_id, tenant=tenant, is_active=True, id__in=allowed_wallet_ids)
                 .first()
             )
         if wallet is not None:
             return wallet
 
-        default_wallet = self._get_or_create_default_wallet(tenant)
         return Wallet.objects.select_for_update().get(id=default_wallet.id)
 
     def _collect_due_installments(self, tenant, user=None):
@@ -413,13 +441,12 @@ class WalletDashboardView(WalletBaseMixin, APIView):
     @transaction.atomic
     def get(self, request):
         tenant = getattr(request.user, 'tenant', None)
-        self._get_or_create_default_wallet(tenant)
-        self._get_or_create_sms_wallet(tenant)
+        default_wallet, sms_wallet = self._ensure_single_wallets(tenant)
         self._collect_due_installments(tenant, request.user)
         tx_type = str(request.query_params.get('type', 'all')).strip().lower()
         query = str(request.query_params.get('q', '')).strip()
 
-        wallets = Wallet.objects.filter(tenant=tenant, is_active=True).order_by('id')
+        wallets = Wallet.objects.filter(tenant=tenant, is_active=True, id__in=[default_wallet.id, sms_wallet.id]).order_by('id')
         transactions = CashflowTransaction.objects.select_related('wallet').filter(tenant=tenant).order_by('-transacted_at')
 
         if tx_type in {'payments', 'withdraw', 'withdrawal', 'withdrawals'}:
@@ -435,7 +462,7 @@ class WalletDashboardView(WalletBaseMixin, APIView):
             )
 
         transactions = transactions[:100]
-        totals = Wallet.objects.filter(tenant=tenant, is_active=True).aggregate(
+        totals = Wallet.objects.filter(tenant=tenant, is_active=True, id__in=[default_wallet.id, sms_wallet.id]).aggregate(
             total_balance=Coalesce(Sum('balance'), Value(Decimal('0'))),
             regular_balance=Coalesce(
                 Sum('balance', filter=~Q(wallet_type=Wallet.WalletType.SMS)),
@@ -799,6 +826,56 @@ class WalletDepositCheckoutView(APIView):
 
 
 class WalletWithdrawView(WalletBaseMixin, APIView):
+    def _normalize_iban(self, value):
+        normalized = str(value or '').replace(' ', '').replace('-', '').upper()
+        if normalized and not normalized.startswith('IR'):
+            normalized = f'IR{normalized}'
+        return normalized
+
+    def _create_bank_withdraw_ticket(self, *, tenant, user, source_wallet, amount, iban, holder, description):
+        now = timezone.now()
+        assigned_to = None
+        try:
+            from apps.auth.models import User
+            assigned_to = (
+                User.objects.filter(platform_role=User.PlatformRoles.HQ_SUPPORT, is_active=True)
+                .order_by('-id')
+                .first()
+            )
+        except Exception:
+            assigned_to = None
+        message = "\n".join([
+            "wallet-bank-withdrawal",
+            f"wallet_id: {source_wallet.id}",
+            f"withdraw_amount: {amount}",
+            f"iban: {iban}",
+            f"account_holder: {holder or '-'}",
+            f"wallet_name: {source_wallet.name}",
+            f"tenant_id: {tenant.id if tenant else ''}",
+            f"tenant_name: {tenant.name if tenant else ''}",
+            f"description: {description or '-'}",
+            "",
+            f"درخواست برداشت {amount:,.0f} تومان از کیف پول «{source_wallet.name}» به شماره شبا {iban} ثبت شد.",
+            "بعد از انجام دستی واریز بانکی، از دکمه برداشت همین تیکت استفاده کنید تا مبلغ از کیف پول کم شود.",
+        ])
+        ticket = SupportTicket.objects.create(
+            tenant=tenant,
+            created_by=user if getattr(user, 'is_authenticated', False) else None,
+            subject='درخواست برداشت از کیف پول به حساب بانکی',
+            message=message,
+            category=SupportTicket.Category.FINANCIAL,
+            priority=SupportTicket.Priority.HIGH,
+            status=SupportTicket.Status.OPEN,
+            assigned_to=assigned_to,
+            last_message_at=now,
+        )
+        SupportTicketMessage.objects.create(
+            ticket=ticket,
+            sender=user if getattr(user, 'is_authenticated', False) else None,
+            body=message,
+        )
+        return ticket
+
     def post(self, request):
         serializer = WalletWithdrawSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -807,6 +884,8 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
         amount = Decimal(str(data['amount']))
         destination_type = data.get('destination_type') or 'bank'
         description = (data.get('description') or '').strip()
+        bank_account_iban = self._normalize_iban(data.get('bank_account_iban'))
+        bank_account_holder = (data.get('bank_account_holder') or '').strip()
 
         with transaction.atomic():
             tenant = getattr(request.user, 'tenant', None)
@@ -819,9 +898,6 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
             if current_balance < amount:
                 raise ValidationError({'detail': 'موجودی کیف پول برای برداشت کافی نیست.'})
 
-            source_wallet.balance = current_balance - amount
-            source_wallet.save(update_fields=['balance', 'updated_at'])
-
             destination_wallet = None
             if destination_type == 'wallet':
                 destination_wallet_id = data.get('destination_wallet_id')
@@ -832,14 +908,45 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
 
                 destination_wallet = (
                     Wallet.objects.select_for_update()
-                    .filter(id=destination_wallet_id, tenant=tenant, is_active=True)
+                    .filter(
+                        id=destination_wallet_id,
+                        tenant=tenant,
+                        is_active=True,
+                        wallet_type__in=[Wallet.WalletType.BANK, Wallet.WalletType.SMS],
+                    )
                     .first()
                 )
                 if destination_wallet is None:
                     raise ValidationError({'destination_wallet_id': ['کیف پول مقصد معتبر نیست.']})
 
+                source_wallet.balance = current_balance - amount
+                source_wallet.save(update_fields=['balance', 'updated_at'])
                 destination_wallet.balance = Decimal(str(destination_wallet.balance or 0)) + amount
                 destination_wallet.save(update_fields=['balance', 'updated_at'])
+            else:
+                if not bank_account_iban or len(bank_account_iban) < 10:
+                    raise ValidationError({'bank_account_iban': ['شماره شبا را برای برداشت بانکی وارد کنید.']})
+                ticket = self._create_bank_withdraw_ticket(
+                    tenant=tenant,
+                    user=request.user,
+                    source_wallet=source_wallet,
+                    amount=amount,
+                    iban=bank_account_iban,
+                    holder=bank_account_holder,
+                    description=description,
+                )
+                return Response(
+                    {
+                        'detail': 'درخواست برداشت بانکی ثبت شد و برای پشتیبانی تیکت خودکار ساخته شد.',
+                        'wallet': WalletSerializer(source_wallet).data,
+                        'ticket': {
+                            'id': ticket.id,
+                            'subject': ticket.subject,
+                            'status': ticket.status,
+                        },
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
 
             default_description = (
                 f"انتقال به {destination_wallet.name}"

@@ -56,7 +56,7 @@
           </div>
         </div>
 
-        <section v-if="!form.isPieceWash" class="tariff-type-row" aria-label="تیپ نرخنامه">
+        <section v-if="!form.isPieceWash && !isMobileViewport" class="tariff-type-row" aria-label="تیپ نرخنامه">
           <span>تیپ نرخنامه</span>
           <div class="tariff-bubbles">
             <button
@@ -202,14 +202,30 @@
           </label>
         </div>
 
+        <section v-if="!form.isPieceWash && isMobileViewport" class="tariff-type-row mobile-tariff-row" aria-label="شماره تیپ">
+          <span>شماره تیپ:</span>
+          <div class="tariff-bubbles">
+            <button
+              v-for="option in availableTariffTypeOptions"
+              :key="option.value"
+              type="button"
+              class="tariff-bubble"
+              :class="{ active: form.tariffType === option.value }"
+              @click="form.tariffType = option.value"
+            >
+              {{ option.label.replace('تیپ ', '') }}
+            </button>
+          </div>
+        </section>
+
         <label v-if="!form.isPieceWash" class="field">
           <span>توضیحات</span>
           <textarea v-model="form.note" rows="3" placeholder="نکات تکمیلی"></textarea>
         </label>
 
         <footer class="actions">
-          <button type="button" class="secondary" @click="onRefer">ارجاع</button>
-          <button type="submit" class="primary" :disabled="!canSubmit">ادامه</button>
+          <button type="button" class="secondary" :disabled="submitting || actionLocked" @click="onRefer">ارجاع</button>
+          <button type="submit" class="primary" :disabled="!canSubmit || submitting || actionLocked">{{ submitting || actionLocked ? 'در حال ثبت...' : 'ادامه' }}</button>
         </footer>
       </form>
     </div>
@@ -224,7 +240,8 @@ import { buildPlateNumber, isValidIranMobile, normalizeDigits, normalizePhone, n
 
 const emit = defineEmits(['cancel', 'continue', 'refer'])
 const props = defineProps({
-  vehicleInfo: { type: Object, default: () => ({}) }
+  vehicleInfo: { type: Object, default: () => ({}) },
+  submitting: { type: Boolean, default: false }
 })
 
 const form = reactive({
@@ -299,6 +316,7 @@ const cameraState = reactive({
 const letterSuggestions = ref([])
 const isAiPanelCollapsed = ref(false)
 const isMobileViewport = ref(window.matchMedia('(max-width: 640px)').matches)
+const actionLocked = ref(false)
 const mobileViewportQuery = window.matchMedia('(max-width: 640px)')
 let isHydratingForm = false
 const aiSessionId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -767,13 +785,20 @@ const payload = () => ({
 })
 
 const onContinue = () => {
-  if (!canSubmit.value) return
+  if (!canSubmit.value || props.submitting || actionLocked.value) return
+  actionLocked.value = true
   emit('continue', payload())
 }
 
 const onRefer = () => {
+  if (props.submitting || actionLocked.value) return
+  actionLocked.value = true
   emit('refer', payload())
 }
+
+watch(() => props.submitting, (value) => {
+  if (!value) actionLocked.value = false
+})
 
 const detectedPlateParts = computed(() => resolvePlateParts({
   raw: detectedPlateSnapshot.value.plateNumber,
@@ -1658,8 +1683,18 @@ onBeforeUnmount(() => {
     gap: 6px;
   }
   .tariff-bubble {
-    height: 34px;
+    aspect-ratio: 1 / 1;
+    height: auto;
+    min-height: 34px;
     font-size: 11px;
+    padding: 0;
+  }
+  .mobile-tariff-row .tariff-bubbles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .mobile-tariff-row .tariff-bubble {
+    border-radius: 999px;
+    font-size: 13px;
   }
   .camera-action {
     min-height: 40px;
