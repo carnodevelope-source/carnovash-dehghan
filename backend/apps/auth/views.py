@@ -51,11 +51,7 @@ from .serializers import (
 
 
 HQ_FEATURE_KEYS = {
-    CarWashFeaturePurchase.FeatureKey.SMS_CLUB,
     CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT,
-    CarWashFeaturePurchase.FeatureKey.ATTENDANCE,
-    CarWashFeaturePurchase.FeatureKey.ACCOUNTING,
-    CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
 }
 
 HQ_FEATURE_META = {
@@ -85,6 +81,25 @@ HQ_FEATURE_META = {
         'description': 'درآمد پایه نرم‌افزار و دسترسی اصلی پنل.',
     },
 }
+
+KARNO_WALLET_REFERENCE_TYPES = {'customer_import_excel'}
+
+
+def _feature_share_group(feature_key):
+    return 'hq' if feature_key in HQ_FEATURE_KEYS else 'rah'
+
+
+def _wallet_transaction_share_group(tx):
+    wallet_type = tx.wallet.wallet_type if tx.wallet_id else ''
+    if tx.reference_type in KARNO_WALLET_REFERENCE_TYPES:
+        return 'hq'
+    if wallet_type == Wallet.WalletType.SMS and tx.direction == CashflowTransaction.Direction.IN:
+        return 'hq'
+    return 'rah'
+
+
+def _wallet_transaction_share_amount(tx):
+    return Decimal(str(tx.amount or 0)) if _wallet_transaction_share_group(tx) == 'hq' else Decimal('0')
 
 
 def _parse_dt(value, end_of_day=False):
@@ -1679,7 +1694,7 @@ def _build_hq_report_snapshot(start=None, end=None):
         total_amount = Decimal(str(purchase.total_amount or 0))
         paid_amount = Decimal(str(purchase.paid_amount or 0))
         remaining_amount = Decimal(str(purchase.remaining_amount or 0))
-        is_hq_feature = purchase.feature_key in HQ_FEATURE_KEYS
+        share_group = _feature_share_group(purchase.feature_key)
         row = grouped[tenant.id]
         feature_item = {
             'id': purchase.id,
@@ -1695,13 +1710,13 @@ def _build_hq_report_snapshot(start=None, end=None):
             'monthly_installment_amount': purchase.monthly_installment_amount,
             'next_installment_due_at': purchase.next_installment_due_at,
             'purchased_at': purchase.purchased_at,
-            'share_group': 'hq' if is_hq_feature else 'rah',
+            'share_group': share_group,
         }
         row['feature_breakdown'].append(feature_item)
         row['feature_income_total'] += total_amount
         row['feature_paid_total'] += paid_amount
         row['feature_remaining_total'] += remaining_amount
-        if is_hq_feature:
+        if share_group == 'hq':
             row['hq_share_total'] += paid_amount
             summary_item = feature_summary.setdefault(purchase.feature_key, {
                 'key': purchase.feature_key,
@@ -1750,7 +1765,10 @@ def _build_hq_report_snapshot(start=None, end=None):
             continue
         row = grouped[tenant_id]
         amount = Decimal(str(tx.amount or 0))
+        share_group = _wallet_transaction_share_group(tx)
+        karno_share_amount = _wallet_transaction_share_amount(tx)
         row['wallet_transactions_count'] += 1
+        row['hq_share_total'] += karno_share_amount
         if tx.direction == CashflowTransaction.Direction.IN:
             row['wallet_deposit_total'] += amount
             if tx.reference_type == 'wallet_gateway_deposit':
@@ -1783,7 +1801,8 @@ def _build_hq_report_snapshot(start=None, end=None):
             'reference_id': tx.reference_id,
             'transacted_at': tx.transacted_at,
             'created_by_name': (tx.created_by.full_name or tx.created_by.username) if tx.created_by_id else '',
-            'share_group': 'hq' if tx.wallet_id and tx.wallet.wallet_type == Wallet.WalletType.SMS else 'rah',
+            'share_group': share_group,
+            'share_amount': karno_share_amount,
         })
 
     gateway_requests = WalletGatewayRequest.objects.filter(status=WalletGatewayRequest.Status.PAID)

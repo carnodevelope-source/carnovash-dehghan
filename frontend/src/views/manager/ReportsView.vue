@@ -36,7 +36,9 @@
         </div>
         <div class="field">
           <span><IconlyIcon name="calendar" size="xs" />ماه بیمه</span>
-          <BaseDatePicker v-model="filters.insuranceMonthJalali" placeholder="1405/01/01" />
+          <select v-model="filters.insuranceMonthJalali">
+            <option v-for="item in insuranceMonthOptions" :key="`filter-${item.value}`" :value="item.value">{{ item.label }}</option>
+          </select>
         </div>
         <div class="field">
           <span><IconlyIcon name="category" size="xs" />نوع وسیله</span>
@@ -280,13 +282,21 @@ const rangeOptions = [
   { key: 'month', label: 'این ماه', icon: 'document' },
   { key: 'all', label: 'کل', icon: 'category' }
 ]
+
+const currentJalaliMonthValue = () => {
+  const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+    month: '2-digit'
+  }).formatToParts(new Date())
+  return parts.find((item) => item.type === 'month')?.value || '01'
+}
+
 const filters = reactive({
   rangeKey: 'today',
   startJalali: '',
   endJalali: '',
   q: '',
   workerId: '',
-  insuranceMonthJalali: '',
+  insuranceMonthJalali: currentJalaliMonthValue(),
   plateType: '',
   plateLeft: '',
   plateLetter: '',
@@ -554,15 +564,17 @@ const normalizeInsuranceMonth = (value) => {
   const normalized = String(value || '').trim().replace(/-/g, '/')
   const parts = normalized.split('/')
   if (parts.length === 1) {
-    const monthOnly = normalizeDigits(parts[0]).replace(/\D/g, '').slice(0, 2)
+    const monthOnly = normalizeDigits(parts[0]).replace(/\D/g, '').slice(0, 2).padStart(2, '0')
     const year = resolveInsuranceYear()
-    return monthOnly && year ? `${year}/${monthOnly.padStart(2, '0')}` : ''
+    const monthNumber = Number(monthOnly)
+    return monthNumber >= 1 && monthNumber <= 12 && year ? `${year}/${monthOnly}` : ''
   }
   if (parts.length < 2) return ''
   const year = normalizeDigits(parts[0]).replace(/\D/g, '').slice(0, 4)
-  const month = normalizeDigits(parts[1]).replace(/\D/g, '').slice(0, 2)
-  if (!year || !month) return ''
-  return `${year}/${month.padStart(2, '0')}`
+  const month = normalizeDigits(parts[1]).replace(/\D/g, '').slice(0, 2).padStart(2, '0')
+  const monthNumber = Number(month)
+  if (!year || monthNumber < 1 || monthNumber > 12) return ''
+  return `${year}/${month}`
 }
 
 const jalaliMonthIndex = (value) => {
@@ -581,7 +593,7 @@ const isJalaliMonthAfter = (left, right) => {
 
 const insuranceMonthToFilterDate = (value) => {
   const monthValue = normalizeInsuranceMonth(value)
-  return monthValue ? `${monthValue}/01` : ''
+  return monthValue ? monthValue.split('/')[1] : ''
 }
 
 const getCurrentJalaliYear = () => {
@@ -733,7 +745,7 @@ const resetFilters = () => {
   filters.endJalali = ''
   filters.q = ''
   filters.workerId = ''
-  filters.insuranceMonthJalali = ''
+  filters.insuranceMonthJalali = currentJalaliMonthValue()
   filters.plateType = ''
   filters.plateLeft = ''
   filters.plateLetter = ''

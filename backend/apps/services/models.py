@@ -11,41 +11,30 @@ class TimestampedModel(models.Model):
 
 
 DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
-    '[خطاب مشتری]\n'
-    'خودروی شما با پلاک [پلاک]، در ساعت [ساعت تخصیص]، روز [تاریخ تخصیص]، در کارواش [نام کارواش] '
-    'برای انجام خدمات، پذیرش شد.'
-)
-
-DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = (
-    'پیش فاکتور خدمات:\n'
-    '[خلاصه خدمات]\n'
-    'جمع کل: [جمع کل]\n'
-    'خودروی شما حدود 1 ساعت کاری دیگر آماده ترخیص است.\n'
-    'از اعتماد شما سپاسگزاریم 🌿'
-)
-
-DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
-    '[خطاب مشتری]\n'
-    'خودروی شما با پلاک [پلاک]، در ساعت [ساعت تخصیص]، روز [تاریخ تخصیص]، در کارواش [نام کارواش] '
+    '[نام مشتری] عزیز\n'
+    'شماره پذیرش: [شماره پذیرش]\n'
+    'خودروی شما با پلاک [پلاک]، در ساعت [ساعت تخصیص]، روز [تاریخ تخصیص] در مجموعه کارواش [نام کارواش] '
     'برای انجام خدمات، پذیرش شد.\n\n'
     'پیش فاکتور خدمات:\n'
     '[خلاصه خدمات]\n'
     'جمع کل: [جمع کل]\n'
-    'خودروی شما حدود 1 ساعت کاری دیگر آماده ترخیص است.\n'
+    'تخفیف این سفارش: [جمع تخفیف]\n'
+    'مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]\n'
+    'خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.\n'
     'از اعتماد شما سپاسگزاریم.'
 )
 DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = ''
 
 DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
-    '[خطاب مشتری]\n'
-    'خودروی شما در ساعت [ساعت ترخیص] روز [تاریخ ترخیص] از کارواش [نام کارواش] ترخیص شد.\n'
+    '[نام مشتری] عزیز\n'
+    'خودروی شما در ساعت [ساعت ترخیص] روز [تاریخ ترخیص] از مجموعه کارواش [نام کارواش] ترخیص شد.\n'
     'امتیاز شما: [امتیاز مشتری] از ۵\n'
     'درصد تخفیف مراجعه بعد: [درصد تخفیف مراجعه بعد]\n'
     'تعداد دفعات مراجعه: [تعداد مراجعات]\n'
     'انعام: [انعام]\n'
     'جمع تخفیف: [جمع تخفیف]\n'
     'مبلغ نهایی: [مبلغ نهایی]\n'
-    '[نام کارواش]'
+    'به امید دیدار مجدد'
 )
 
 
@@ -53,13 +42,16 @@ def normalize_vehicle_assigned_sms_template(template):
     text = str(template or '').strip()
     if not text:
         return DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
+    text = text.replace('[خطاب مشتری]', '[نام مشتری] عزیز')
     replacements = {
         'با پلاک [پلاک] در ساعت': 'با پلاک [پلاک]، در ساعت',
         '[ساعت تخصیص] روز': '[ساعت تخصیص]، روز',
-        '[تاریخ تخصیص] در کارواش': '[تاریخ تخصیص]، در کارواش',
+        '[تاریخ تخصیص]، در کارواش': '[تاریخ تخصیص] در مجموعه کارواش',
+        '[تاریخ تخصیص] در کارواش': '[تاریخ تخصیص] در مجموعه کارواش',
         'برای انجام خدمات ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
         'برای انجام خدمات، ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
         'تخصیص داده شد': 'پذیرش شد',
+        '1 ساعت کاری': '30 دقیقه',
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -71,7 +63,13 @@ def normalize_vehicle_assigned_sms_template(template):
 
 
 def normalize_vehicle_released_sms_template(template):
-    text = str(template or '').replace('سفارش بعد', 'مراجعه بعد').strip()
+    text = (
+        str(template or '')
+        .replace('[خطاب مشتری]', '[نام مشتری] عزیز')
+        .replace('سفارش بعد', 'مراجعه بعد')
+        .replace('از کارواش', 'از مجموعه کارواش')
+        .strip()
+    )
     if not text:
         return DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE
 
@@ -302,6 +300,7 @@ class GeneralSettings(TimestampedModel):
     sms_provider_base_url = models.CharField(max_length=255, blank=True, default='https://api.iranpayamak.com')
     sms_provider_api_key = models.CharField(max_length=255, blank=True)
     sms_provider_line_number = models.CharField(max_length=50, blank=True)
+    sms_vehicle_auto_send_enabled = models.BooleanField(default=True)
     sms_vehicle_assigned_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE)
     sms_vehicle_assigned_invoice_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE)
     sms_vehicle_released_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE)

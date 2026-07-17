@@ -380,6 +380,12 @@
                   <strong>تنظیمات سرویس پیامک</strong>
                 </div>
               </div>
+              <div class="sms-auto-send-panel">
+                <label class="row-check">
+                  <input v-model="generalSettings.sms_vehicle_auto_send_enabled" type="checkbox" />
+                  <span>ارسال خودکار پیامک تخصیص و ترخیص</span>
+                </label>
+              </div>
               <div class="sms-template-grid">
                 <article class="sms-template-card">
                   <label class="general-setting-label sms-template-editor">
@@ -801,6 +807,7 @@ const generalSettings = reactive({
   sms_provider_line_number: '',
   sms_provider_api_key_configured: false,
   sms_provider_source: 'env',
+  sms_vehicle_auto_send_enabled: true,
   sms_vehicle_assigned_template: '',
   sms_vehicle_assigned_invoice_template: '',
   sms_vehicle_released_template: ''
@@ -994,7 +1001,6 @@ const filteredServices = computed(() => services.value.filter((i) => (`${i.name}
 const fullStarDiscountLabel = computed(() => `${Number((Number(generalSettings.discount_percent_per_half_star || 0) * 2).toFixed(2)).toLocaleString('fa-IR')}٪`)
 const expensesTotal = computed(() => filteredExpenses.value.reduce((sum, item) => sum + Number(item.amount || 0), 0))
 const smsTemplateTokens = [
-  '[خطاب مشتری]',
   '[نام مشتری]',
   '[جنسیت مشتری]',
   '[نام کارواش]',
@@ -1019,7 +1025,11 @@ const smsTemplateTokens = [
   '[جمع تخفیف]'
 ]
 const ensureReleasedSmsTemplateDetails = (template) => {
-  const text = String(template || '').replaceAll('سفارش بعد', 'مراجعه بعد').trim()
+  const text = String(template || '')
+    .replaceAll('[خطاب مشتری]', '[نام مشتری] عزیز')
+    .replaceAll('سفارش بعد', 'مراجعه بعد')
+    .replaceAll('از کارواش', 'از مجموعه کارواش')
+    .trim()
   if (!text) return text
   const lines = text.split('\n')
   const insertions = []
@@ -1033,12 +1043,15 @@ const ensureReleasedSmsTemplateDetails = (template) => {
 }
 const ensureAssignedSmsTemplateDetails = (template) => {
   const text = String(template || '')
+    .replaceAll('[خطاب مشتری]', '[نام مشتری] عزیز')
     .replaceAll('با پلاک [پلاک] در ساعت', 'با پلاک [پلاک]، در ساعت')
     .replaceAll('[ساعت تخصیص] روز', '[ساعت تخصیص]، روز')
-    .replaceAll('[تاریخ تخصیص] در کارواش', '[تاریخ تخصیص]، در کارواش')
+    .replaceAll('[تاریخ تخصیص]، در کارواش', '[تاریخ تخصیص] در مجموعه کارواش')
+    .replaceAll('[تاریخ تخصیص] در کارواش', '[تاریخ تخصیص] در مجموعه کارواش')
     .replaceAll('برای انجام خدمات ثبت و تخصیص داده شد', 'برای انجام خدمات، پذیرش شد')
     .replaceAll('برای انجام خدمات، ثبت و تخصیص داده شد', 'برای انجام خدمات، پذیرش شد')
     .replaceAll('تخصیص داده شد', 'پذیرش شد')
+    .replaceAll('1 ساعت کاری', '30 دقیقه')
     .trim()
   if (!text) return text
   const lines = text.split('\n')
@@ -1151,7 +1164,8 @@ const loadAll = async () => {
       generalSettings.sms_provider_line_number = gs.data?.sms_provider_line_number || ''
       generalSettings.sms_provider_api_key_configured = Boolean(gs.data?.sms_provider_api_key_configured)
       generalSettings.sms_provider_source = gs.data?.sms_provider_source || 'env'
-      generalSettings.sms_vehicle_assigned_template = gs.data?.sms_vehicle_assigned_template || ''
+      generalSettings.sms_vehicle_auto_send_enabled = gs.data?.sms_vehicle_auto_send_enabled !== false
+      generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(gs.data?.sms_vehicle_assigned_template || '')
       generalSettings.sms_vehicle_assigned_invoice_template = gs.data?.sms_vehicle_assigned_invoice_template || ''
       generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(gs.data?.sms_vehicle_released_template || '')
     } catch {
@@ -1177,6 +1191,7 @@ const loadAll = async () => {
       generalSettings.sms_provider_line_number = ''
       generalSettings.sms_provider_api_key_configured = false
       generalSettings.sms_provider_source = 'env'
+      generalSettings.sms_vehicle_auto_send_enabled = true
       generalSettings.sms_vehicle_assigned_template = ''
       generalSettings.sms_vehicle_assigned_invoice_template = ''
       generalSettings.sms_vehicle_released_template = ''
@@ -1208,8 +1223,9 @@ const saveGeneralSettings = async () => {
       receipt_show_logo: Boolean(generalSettings.receipt_show_logo),
       receipt_show_qr: Boolean(generalSettings.receipt_show_qr),
       receipt_footer_note: generalSettings.receipt_footer_note || '',
-      sms_vehicle_assigned_template: generalSettings.sms_vehicle_assigned_template || '',
+      sms_vehicle_assigned_template: ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template || ''),
       sms_vehicle_assigned_invoice_template: generalSettings.sms_vehicle_assigned_invoice_template || '',
+      sms_vehicle_auto_send_enabled: Boolean(generalSettings.sms_vehicle_auto_send_enabled),
       sms_vehicle_released_template: ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template || '')
     }
     const response = await api.patch('/services/general-settings/', payload)
@@ -1235,7 +1251,8 @@ const saveGeneralSettings = async () => {
     generalSettings.sms_provider_line_number = response.data?.sms_provider_line_number || ''
     generalSettings.sms_provider_api_key_configured = Boolean(response.data?.sms_provider_api_key_configured)
     generalSettings.sms_provider_source = response.data?.sms_provider_source || 'env'
-    generalSettings.sms_vehicle_assigned_template = response.data?.sms_vehicle_assigned_template || ''
+    generalSettings.sms_vehicle_auto_send_enabled = response.data?.sms_vehicle_auto_send_enabled !== false
+    generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(response.data?.sms_vehicle_assigned_template || '')
     generalSettings.sms_vehicle_assigned_invoice_template = response.data?.sms_vehicle_assigned_invoice_template || ''
     generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(response.data?.sms_vehicle_released_template || '')
     t('تنظیمات عمومی ذخیره شد')
@@ -1593,6 +1610,13 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .modal-form input, .modal-form select { height: 42px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 10px; background: #fff; }
 .modal-form textarea { border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px; background: #fff; font: inherit; resize: vertical; }
 .sms-settings-card { gap: 18px; }
+.sms-auto-send-panel {
+  display: flex;
+  padding: 12px 14px;
+  border: 1px solid #dbe5f0;
+  border-radius: 16px;
+  background: #f8fbff;
+}
 .sms-template-grid { display: grid; gap: 14px; }
 .sms-template-card {
   display: grid;

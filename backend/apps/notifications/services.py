@@ -282,14 +282,16 @@ def build_services_sms_summary(job):
 
 
 def normalize_assignment_sms_wording(template):
-    text = str(template or '')
+    text = str(template or '').replace('[خطاب مشتری]', '[نام مشتری] عزیز')
     replacements = {
         'با پلاک [پلاک] در ساعت': 'با پلاک [پلاک]، در ساعت',
         '[ساعت تخصیص] روز': '[ساعت تخصیص]، روز',
-        '[تاریخ تخصیص] در کارواش': '[تاریخ تخصیص]، در کارواش',
+        '[تاریخ تخصیص]، در کارواش': '[تاریخ تخصیص] در مجموعه کارواش',
+        '[تاریخ تخصیص] در کارواش': '[تاریخ تخصیص] در مجموعه کارواش',
         'برای انجام خدمات ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
         'برای انجام خدمات، ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
         'تخصیص داده شد': 'پذیرش شد',
+        '1 ساعت کاری': '30 دقیقه',
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -593,6 +595,17 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
         return {'ok': False, 'reason': 'invalid_phone'}
 
     settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+    if (
+        event_code in {'vehicle_assigned', 'vehicle_released'}
+        and settings_obj is not None
+        and getattr(settings_obj, 'sms_vehicle_auto_send_enabled', True) is False
+    ):
+        return {
+            'ok': False,
+            'skipped': True,
+            'reason': 'vehicle_auto_sms_disabled',
+        }
+
     if event_code == 'vehicle_assigned':
         text, context = build_vehicle_assignment_sms(
             settings_obj,

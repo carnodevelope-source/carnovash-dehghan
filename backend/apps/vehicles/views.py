@@ -1064,6 +1064,9 @@ class VehicleReleaseCheckoutView(APIView):
         tip_amount = Decimal(str(request.data.get('tip_amount', vehicle.job.tip_amount or 0)))
         payment_method = str(request.data.get('payment_method', Payment.Method.CASH) or Payment.Method.CASH).strip().lower()
         payment_breakdown = request.data.get('payment_breakdown', [])
+        sms_notifications_enabled = request.data.get('sms_notifications_enabled', vehicle.sms_notifications_enabled)
+        if isinstance(sms_notifications_enabled, str):
+            sms_notifications_enabled = sms_notifications_enabled.strip().lower() not in {'0', 'false', 'off', 'no'}
         credit_due_date = request.data.get('credit_due_date')
         cheque_number = str(request.data.get('cheque_number', '') or '').strip()
         cheque_serial_number = str(request.data.get('cheque_serial_number', '') or '').strip()
@@ -1534,8 +1537,9 @@ class VehicleReleaseCheckoutView(APIView):
         vehicle.payment_status = payment_status
         vehicle.payment_method = payment_method
         vehicle.status = VehicleEntry.Status.RELEASED
+        vehicle.sms_notifications_enabled = bool(sms_notifications_enabled)
         vehicle.released_at = timezone.now()
-        vehicle.save(update_fields=['status', 'payment_status', 'payment_method', 'released_at', 'updated_at'])
+        vehicle.save(update_fields=['status', 'payment_status', 'payment_method', 'sms_notifications_enabled', 'released_at', 'updated_at'])
 
         if normalized_adjustments:
             workers_map = {

@@ -489,6 +489,13 @@
                 <span>توضیح پاداش/جریمه</span>
                 <textarea v-model.trim="releaseForm.bonusPenaltyNote" rows="3" placeholder="دلیل ثبت پاداش یا جریمه را وارد کنید"></textarea>
               </label>
+              <label class="release-sms-check detail-field detail-field-wide" :class="{ disabled: !releaseForm.smsAutoSendEnabled }">
+                <input v-model="releaseForm.smsNotificationsEnabled" type="checkbox" :disabled="!releaseForm.smsAutoSendEnabled" />
+                <span>
+                  <strong>SMS</strong>
+                  <small>{{ releaseForm.smsAutoSendEnabled ? 'ارسال پیامک ترخیص برای همین سفارش' : 'ارسال خودکار پیامک در تنظیمات غیرفعال است' }}</small>
+                </span>
+              </label>
             </div>
           </section>
         </div>
@@ -615,7 +622,8 @@
             <section class="thermal-info-grid">
               <p><span>شماره پذیرش:</span><strong>{{ invoiceAdmissionNumber }}</strong></p>
               <p><span>تاریخ:</span><strong>{{ invoiceIssuedAt }}</strong></p>
-              <p><span>مراجعه / امتیاز:</span><strong>{{ Number(releaseForm.customerLoyaltyVisitCount || 0).toLocaleString('fa-IR') }} / {{ invoiceCustomerScoreLabel }}</strong></p>
+              <p><span>تعداد مراجعه:</span><strong>{{ Number(releaseForm.customerLoyaltyVisitCount || 0).toLocaleString('fa-IR') }}</strong></p>
+              <p><span>امتیاز:</span><strong>{{ invoiceCustomerScoreLabel }}</strong></p>
               <p><span>شماره تیپ:</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
               <p><span>مدل خودرو:</span><strong>{{ invoiceVehicleTitle }}</strong></p>
               <p><span>پلاک:</span><strong>{{ invoicePlateLabel }}</strong></p>
@@ -825,6 +833,7 @@ const tempReleaseServiceIds = ref([])
 const tempReleaseWorkerRows = ref([])
 const releaseWorkerSearch = ref('')
 const invoiceRenderTimer = ref(null)
+const vehicleAutoSmsEnabled = ref(true)
 const invoiceLayout = ref({
   preset: 'a4',
   thermalWidthMm: 80,
@@ -863,6 +872,8 @@ const releaseForm = ref({
   receiptPrintCopies: 1,
   bonusPenaltyAdjustments: [],
   bonusPenaltyNote: '',
+  smsNotificationsEnabled: true,
+  smsAutoSendEnabled: true,
   newServiceLines: [],
   availableServicesToAdd: [],
   selectedServiceToAdd: 0
@@ -881,7 +892,10 @@ const hasOperatorModalOpen = computed(() => (
 
 const openVehicleModal = () => {
   modalStep.value = 1
-  vehicleDraft.value = null
+  vehicleDraft.value = {
+    smsNotificationsEnabled: vehicleAutoSmsEnabled.value,
+    smsAutoSendEnabled: vehicleAutoSmsEnabled.value
+  }
   showVehicleModal.value = true
 }
 const closeVehicleModal = () => {
@@ -1743,6 +1757,8 @@ const openReleaseModal = async (car) => {
       taxPercent: Number(settingsResponse?.data?.tax_percent || 0),
       bonusPenaltyAdjustments: [],
       bonusPenaltyNote: '',
+      smsNotificationsEnabled: settingsResponse?.data?.sms_vehicle_auto_send_enabled !== false && data?.vehicle?.sms_notifications_enabled !== false,
+      smsAutoSendEnabled: settingsResponse?.data?.sms_vehicle_auto_send_enabled !== false,
       newServiceLines: [],
       availableServicesToAdd: Array.isArray(data?.job?.available_services) ? data.job.available_services.map((item) => ({
         id: Number(item.id),
@@ -1877,14 +1893,14 @@ const invoiceCustomerDisplayName = computed(() => {
     releaseCandidate.value?.driverGender || releaseCandidate.value?.driver_gender || ''
   ).trim().toLowerCase()
   if (!name || name === 'مشتری حضوری') return name
-  if (gender === 'male' && !name.startsWith('آقای')) return `آقای ${name}`
-  if (gender === 'female' && !name.startsWith('خانم')) return `خانم ${name}`
+  if (gender === 'male' && !/^(آقای|اقای)\s+/.test(name)) return `اقای ${name}`
+  if (gender === 'female' && !/^خانم\s+/.test(name)) return `خانم ${name}`
   return name
 })
 const invoiceCustomerPhone = computed(() => (
   String(releaseCandidate.value?.driverPhone || releaseCandidate.value?.driver_phone || '').trim() || '-'
 ))
-const invoiceCustomerScoreLabel = computed(() => `${formatCustomerScore(releaseForm.value.customerScore)} از ۵`)
+const invoiceCustomerScoreLabel = computed(() => `${Number(releaseForm.value.customerScore || 0).toLocaleString('fa-IR')} از ۵`)
 const invoiceVehicleTitle = computed(() => {
   const model = String(releaseCandidate.value?.model || releaseCandidate.value?.car_model || '').trim()
   const color = String(releaseCandidate.value?.colorName || releaseCandidate.value?.car_color || '').trim()
@@ -2323,7 +2339,8 @@ const confirmReleaseVehicle = async () => {
           penalty: Math.max(0, Number(item.penalty || 0))
         }))
         .filter((item) => item.worker_id > 0 && (item.bonus > 0 || item.penalty > 0)),
-      bonus_penalty_note: String(releaseForm.value.bonusPenaltyNote || '').trim() || undefined
+      bonus_penalty_note: String(releaseForm.value.bonusPenaltyNote || '').trim() || undefined,
+      sms_notifications_enabled: Boolean(releaseForm.value.smsNotificationsEnabled)
     })
     const idx = vehicleStore.vehicles.findIndex((item) => item.id === releaseCandidate.value.id)
     if (idx >= 0) vehicleStore.vehicles[idx] = data
@@ -2337,15 +2354,22 @@ const confirmReleaseVehicle = async () => {
 }
 const handleStepOneContinue = async (payload) => {
   try {
+    const payloadWithSmsDefault = {
+      ...payload,
+      smsNotificationsEnabled: payload?.smsNotificationsEnabled ?? payload?.sms_notifications_enabled ?? vehicleAutoSmsEnabled.value,
+      smsAutoSendEnabled: vehicleAutoSmsEnabled.value
+    }
     const plateStatus = await fetchPlateBlockedStatus(payload)
     if (plateStatus.is_blocked) {
-      vehicleDraft.value = { ...payload, is_plate_blocked: true }
+      vehicleDraft.value = { ...payloadWithSmsDefault, is_plate_blocked: true }
       modalStep.value = 2
       return
     }
     const savedVehicle = await saveVehicle({ vehicle: payload }, 'entered')
     vehicleDraft.value = {
       ...mapVehicleToDraft(savedVehicle),
+      smsNotificationsEnabled: savedVehicle?.sms_notifications_enabled ?? payloadWithSmsDefault.smsNotificationsEnabled,
+      smsAutoSendEnabled: vehicleAutoSmsEnabled.value,
       detectedPlate: payload.detectedPlate,
       detectedPlateLeft: payload.detectedPlateLeft,
       detectedPlateLetter: payload.detectedPlateLetter,
@@ -2629,8 +2653,20 @@ const blockSelectedVehiclePlate = async () => {
   }
 }
 
+const loadVehicleSmsSettings = async () => {
+  try {
+    const { data } = await api.get('/services/general-settings/', {
+      meta: { trackLoading: false, showErrorToast: false }
+    })
+    vehicleAutoSmsEnabled.value = data?.sms_vehicle_auto_send_enabled !== false
+  } catch {
+    vehicleAutoSmsEnabled.value = true
+  }
+}
+
 onMounted(() => {
   vehicleStore.fetchVehicles()
+  loadVehicleSmsSettings()
 })
 watch(hasOperatorModalOpen, (isOpen) => {
   if (isOpen) lockBodyScrollForModal()
@@ -2868,6 +2904,11 @@ onBeforeUnmount(() => {
 .release-secondary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .detail-field{margin-top:0;padding:14px;border:1px solid #d6e6ff;border-radius:18px;background:rgba(255,255,255,.8)}
 .detail-field-wide{grid-column:span 2}
+.release-sms-check{display:flex;align-items:center;gap:12px}
+.release-sms-check.disabled{opacity:.62}
+.release-sms-check input{width:18px;height:18px;accent-color:#2563eb}
+.release-sms-check span{display:grid;gap:2px}
+.release-sms-check small{color:#64748b;font-size:12px}
 .split-payment-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
 .split-payment-summary{grid-column:1/-1;padding:14px 16px;border-radius:18px;background:linear-gradient(180deg,#f8fbff,#edf7ff);border:1px dashed #bcd8ff;display:grid;gap:6px}
 .split-payment-summary strong{font-size:14px;color:#0f172a}

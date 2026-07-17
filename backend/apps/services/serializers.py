@@ -257,6 +257,7 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
             'sms_provider_line_number',
             'sms_provider_api_key_configured',
             'sms_provider_source',
+            'sms_vehicle_auto_send_enabled',
             'sms_vehicle_assigned_template',
             'sms_vehicle_assigned_invoice_template',
             'sms_vehicle_released_template',

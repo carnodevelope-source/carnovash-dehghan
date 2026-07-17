@@ -279,6 +279,54 @@ class VehicleStatusSmsTests(APITestCase):
         mock_send_provider_sms.assert_not_called()
 
     @patch('apps.notifications.services.send_provider_sms')
+    def test_general_settings_can_disable_automatic_assignment_sms(self, mock_send_provider_sms):
+        GeneralSettings.objects.create(
+            tenant=self.tenant,
+            sms_vehicle_auto_send_enabled=False,
+        )
+
+        response = self.client.patch(
+            reverse('vehicle-status-update', args=[self.vehicle.id]),
+            {'status': VehicleEntry.Status.READY_TO_SETTLE},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            NotificationLog.objects.filter(
+                tenant=self.tenant,
+                vehicle_entry=self.vehicle,
+                template_code='vehicle_assigned',
+            ).exists()
+        )
+        mock_send_provider_sms.assert_not_called()
+
+    @patch('apps.notifications.services.send_provider_sms')
+    def test_general_settings_can_disable_automatic_release_sms(self, mock_send_provider_sms):
+        GeneralSettings.objects.create(
+            tenant=self.tenant,
+            sms_vehicle_auto_send_enabled=False,
+        )
+        self.vehicle.status = VehicleEntry.Status.READY_TO_SETTLE
+        self.vehicle.save(update_fields=['status', 'updated_at'])
+
+        response = self.client.patch(
+            reverse('vehicle-release-checkout', args=[self.vehicle.id]),
+            {'payment_method': 'cash', 'sms_notifications_enabled': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            NotificationLog.objects.filter(
+                tenant=self.tenant,
+                vehicle_entry=self.vehicle,
+                template_code='vehicle_released',
+            ).exists()
+        )
+        mock_send_provider_sms.assert_not_called()
+
+    @patch('apps.notifications.services.send_provider_sms')
     def test_assignment_sms_uses_persisted_service_lines_and_non_zero_total(self, mock_send_provider_sms):
         mock_send_provider_sms.return_value = {
             'ok': True,

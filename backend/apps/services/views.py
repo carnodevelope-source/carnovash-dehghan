@@ -177,6 +177,7 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
                 'sms_provider_base_url': 'https://api.iranpayamak.com',
                 'sms_provider_api_key': '',
                 'sms_provider_line_number': '',
+                'sms_vehicle_auto_send_enabled': True,
                 'sms_vehicle_assigned_template': DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE,
                 'sms_vehicle_assigned_invoice_template': DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE,
                 'sms_vehicle_released_template': DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE,

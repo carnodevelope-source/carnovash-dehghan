@@ -283,11 +283,11 @@
             <input v-model="blockedPlatePaymentConfirmed" type="checkbox" />
             <span>پرداخت شد</span>
           </label>
-          <label class="sms-notification-check">
-            <input v-model="smsNotificationsEnabled" type="checkbox" />
+          <label class="sms-notification-check" :class="{ disabled: !normalizedVehicle.smsAutoSendEnabled }">
+            <input v-model="smsNotificationsEnabled" type="checkbox" :disabled="!normalizedVehicle.smsAutoSendEnabled" />
             <span>
               <strong>SMS</strong>
-              <small>ارسال پیامک تخصیص و ترخیص برای همین سفارش</small>
+              <small>{{ normalizedVehicle.smsAutoSendEnabled ? 'ارسال پیامک تخصیص و ترخیص برای همین سفارش' : 'ارسال خودکار پیامک در تنظیمات غیرفعال است' }}</small>
             </span>
           </label>
           <div class="summary-foot-actions">
@@ -368,6 +368,7 @@ const normalizedVehicle = computed(() => {
     driver: String(data.driver || data.driver_name || '').trim(),
     mobile: String(data.mobile || data.driver_phone || '').trim(),
     smsNotificationsEnabled: data.smsNotificationsEnabled ?? data.sms_notifications_enabled ?? true,
+    smsAutoSendEnabled: data.smsAutoSendEnabled ?? data.sms_auto_send_enabled ?? true,
     note: String(data.note || data.notes || '').trim(),
     isPieceWash: Boolean(data.isPieceWash || data.is_piece_wash),
     pieceDetails: String(data.pieceDetails || data.piece_details || '').trim(),
@@ -800,7 +801,7 @@ const hydrateFromVehicleInfo = () => {
   servicePriceAdjustments.value = {}
   selectedWorkerIds.value = [...new Set((vehicle.staffIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
   blockedPlatePaymentConfirmed.value = false
-  smsNotificationsEnabled.value = vehicle.smsNotificationsEnabled !== false
+  smsNotificationsEnabled.value = vehicle.smsAutoSendEnabled !== false && vehicle.smsNotificationsEnabled !== false
   pieceDetails.value = vehicle.pieceDetails || ''
   pieceWashPrice.value = isPieceWash.value ? Math.max(0, Number(vehicle.pieceWashPrice || 0)) : 0
   const existingWorkerSharePercents = (vehicle.staffMembers || []).reduce((accumulator, item) => {
@@ -1886,6 +1887,10 @@ onMounted(loadInitialData)
   border-color: #cfe1ff;
   background: linear-gradient(180deg, #ffffff, #f4f9ff);
   color: #0f172a;
+}
+
+.sms-notification-check.disabled {
+  opacity: .62;
 }
 
 .sms-notification-check span {

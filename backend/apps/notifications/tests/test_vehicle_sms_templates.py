@@ -59,6 +59,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
 
         self.assertIn('علی رضایی عزیز', message)
+        self.assertNotIn('[خطاب مشتری]', message)
         self.assertIn('شماره پذیرش: ۱۰۰۰', message)
         self.assertIn('شست‌وشوی ویژه: ۷۵۰،۰۰۰ تومان', message)
         self.assertIn('واکس بدنه: ۵۰۰،۰۰۰ تومان', message)
@@ -104,6 +105,44 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('تخفیف این سفارش: ۱۰۰،۰۰۰ تومان', message)
         self.assertIn('مبلغ نهایی بعد از تخفیف: ۳۰۰،۰۰۰ تومان', message)
 
+    def test_default_assignment_sms_is_single_admission_and_invoice_message(self):
+        tenant = SimpleNamespace(name='میلان')
+        job = SimpleNamespace(
+            final_total=265000,
+            services_total=265000,
+            service_list_subtotal=350000,
+            products_total=0,
+            total_discount=85000,
+            service_lines=[
+                SimpleNamespace(custom_service_name='شست‌وشوی کامل', list_unit_price=350000, line_total=265000),
+            ],
+        )
+        vehicle = SimpleNamespace(
+            admission_number=1000,
+            tenant=tenant,
+            job=job,
+            driver_name='',
+            plate_number='22 ب 345 67',
+            ready_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        settings_obj = SimpleNamespace(
+            sms_vehicle_assigned_template='',
+            sms_vehicle_assigned_invoice_template='',
+        )
+
+        message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
+
+        self.assertIn('مشتری عزیز', message)
+        self.assertIn('شماره پذیرش: ۱۰۰۰', message)
+        self.assertIn('در مجموعه کارواش میلان برای انجام خدمات، پذیرش شد.', message)
+        self.assertIn('پیش فاکتور خدمات:', message)
+        self.assertIn('شست‌وشوی کامل: ۳۵۰،۰۰۰ تومان', message)
+        self.assertIn('جمع کل: ۳۵۰،۰۰۰ تومان', message)
+        self.assertIn('تخفیف این سفارش: ۸۵،۰۰۰ تومان', message)
+        self.assertIn('مبلغ نهایی بعد از تخفیف: ۲۶۵،۰۰۰ تومان', message)
+        self.assertIn('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.', message)
+
     def test_released_sms_uses_fallback_greeting_for_anonymous_customer(self):
         tenant = SimpleNamespace(name='کارواش یک')
         vehicle = SimpleNamespace(
@@ -128,6 +167,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         )
 
         self.assertIn('مشتری عزیز', message)
+        self.assertNotIn('[خطاب مشتری]', message)
         self.assertIn('۴.۵', message)
         self.assertIn('۴۵٪', message)
         self.assertIn('درصد تخفیف مراجعه بعد', message)

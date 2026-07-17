@@ -659,7 +659,7 @@
             <article>
               <small>سهم کارنو</small>
               <strong>{{ money(reports.summary.hq_share_total || 0) }}</strong>
-              <span>آپشن‌ها و کیف پول پیامک</span>
+              <span>کیف پول پیامک و ورود مشتریان با اکسل</span>
             </article>
             <article>
               <small>سهم آراکار</small>
@@ -712,7 +712,7 @@
             <article class="share-card hq">
               <small>سهم کارنو</small>
               <strong>{{ money(reports.summary.hq_share_total || 0) }}</strong>
-              <p>پنل پیامک، اکسل مشتریان، ورود و خروج، حسابداری، پنل اصلی و کیف پول پیامک.</p>
+              <p>شارژ کیف پول پیامک و هزینه وارد کردن مشتریان با اکسل.</p>
             </article>
             <article class="share-card rah">
               <small>سهم آراکار</small>
@@ -742,7 +742,7 @@
             <article class="report-focus-card">
               <small>{{ hqShareTab === 'sms_wallet' ? 'کیف پول پیامک' : selectedHqFeature?.label || 'سهم کارنو' }}</small>
               <strong>{{ money(hqShareFeatureTotal) }}</strong>
-              <p>{{ hqShareTab === 'sms_wallet' ? 'همه تراکنش‌هایی که روی کیف پول پیامک ثبت شده‌اند.' : selectedHqFeature?.description || 'ریز پرداختی‌های این قابلیت در مجموعه.' }}</p>
+              <p>{{ hqShareTab === 'sms_wallet' ? 'شارژهای ثبت‌شده روی کیف پول پیامک که سهم کارنو هستند.' : selectedHqFeature?.description || 'ریز پرداختی‌های این قابلیت در مجموعه.' }}</p>
             </article>
             <article class="report-focus-card">
               <small>تعداد ردیف</small>
@@ -1416,14 +1416,10 @@ const reportTabs = [
   { key: 'revenue', label: 'گزارش درآمد' },
   { key: 'wallet', label: 'گزارش کیف پول' }
 ]
-const hqShareTab = ref('sms_club')
+const hqShareTab = ref('sms_wallet')
 const hqShareTabs = [
-  { key: 'sms_club', label: 'پنل پیامک پیشرفته' },
+  { key: 'sms_wallet', label: 'کیف پول پیامک' },
   { key: 'excel_import', label: 'وارد کردن مشتریان با اکسل' },
-  { key: 'attendance', label: 'ورود و خروج' },
-  { key: 'accounting', label: 'حسابداری' },
-  { key: 'core_software', label: 'پنل اصلی' },
-  { key: 'sms_wallet', label: 'کیف پول پیامک' }
 ]
 const selectedReportTenantId = ref('')
 const tenantReportTab = ref('overall')
@@ -1699,7 +1695,30 @@ const selectedHqFeature = computed(() => hqFeatureSummary.value.find((item) => i
 const selectedHqFeatureRows = computed(() => {
   if (hqShareTab.value === 'sms_wallet') {
     return (Array.isArray(reports.wallet_transactions) ? reports.wallet_transactions : [])
-      .filter((item) => item.wallet_type === 'sms')
+      .filter((item) => item.wallet_type === 'sms' && item.share_group === 'hq')
+  }
+  if (hqShareTab.value === 'excel_import') {
+    const featureRows = reportRows.value
+      .map((row) => ({
+        ...row,
+        feature: (Array.isArray(row.feature_breakdown) ? row.feature_breakdown : [])
+          .find((item) => item.feature_key === hqShareTab.value)
+      }))
+      .filter((row) => row.feature)
+    const transactionRows = (Array.isArray(reports.wallet_transactions) ? reports.wallet_transactions : [])
+      .filter((item) => item.reference_type === 'customer_import_excel' && item.share_group === 'hq')
+      .map((item) => ({
+        ...item,
+        feature: {
+          label: 'وارد کردن مشتریان با اکسل',
+          payment_plan: 'wallet',
+          paid_amount: item.share_amount || item.amount || 0,
+          remaining_amount: 0,
+          installment_months: 0,
+          share_group: item.share_group
+        }
+      }))
+    return [...featureRows, ...transactionRows]
   }
   return reportRows.value
     .map((row) => ({
@@ -1710,7 +1729,7 @@ const selectedHqFeatureRows = computed(() => {
     .filter((row) => row.feature)
 })
 const hqShareFeatureTotal = computed(() => selectedHqFeatureRows.value.reduce((sum, item) => {
-  if (hqShareTab.value === 'sms_wallet') return sum + Number(item.amount || 0)
+  if (hqShareTab.value === 'sms_wallet') return sum + Number(item.share_amount || item.amount || 0)
   return sum + Number(item.feature?.paid_amount || 0)
 }, 0))
 const rahShareRows = computed(() => reportRows.value.filter((row) => Number(row.rah_share_total || 0) || Number(row.net_amount || 0)))
@@ -1882,7 +1901,8 @@ const tenantCellValue = (row, column) => {
 const paymentPlanLabel = (value) => ({
   cash: 'نقدی',
   installment: 'قسطی',
-  manual: 'دستی'
+  manual: 'دستی',
+  wallet: 'کیف پول'
 }[value] || 'نامشخص')
 const trendValue = (item) => Number(item?.[reportTrendMetricKey.value] || 0)
 const trendBarStyle = (item) => {
