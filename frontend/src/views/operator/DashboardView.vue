@@ -906,8 +906,9 @@ const openVehicleModal = () => {
   }
   showVehicleModal.value = true
 }
-const closeVehicleModal = () => {
-  if (stepSubmitting.value) return
+const closeVehicleModal = (options = {}) => {
+  const force = options?.force === true
+  if (stepSubmitting.value && !force) return
   showVehicleModal.value = false
   modalStep.value = 1
   vehicleDraft.value = null
@@ -1117,7 +1118,9 @@ const handleCardAction = async (car) => {
   modalStep.value = (car.statusKey === 'entered' && !hasCompletedStepOneData(source)) ? 1 : 2
   showVehicleModal.value = true
 }
-const closeReleaseModal = () => {
+const closeReleaseModal = (options = {}) => {
+  const force = options?.force === true
+  if (releaseSubmitting.value && !force) return
   showReleaseModal.value = false
   showReleaseServicePicker.value = false
   showReleaseWorkerEditor.value = false
@@ -1786,7 +1789,7 @@ const openReleaseModal = async (car) => {
   } catch (error) {
     console.error('openReleaseModal error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'بارگذاری اطلاعات ترخیص ناموفق بود.'), { title: 'خطا در بارگذاری ترخیص' })
-    closeReleaseModal()
+    closeReleaseModal({ force: true })
   } finally {
     releaseCheckoutLoading.value = false
   }
@@ -2376,7 +2379,7 @@ const confirmReleaseVehicle = async () => {
     })
     const idx = vehicleStore.vehicles.findIndex((item) => item.id === releaseCandidate.value.id)
     if (idx >= 0) vehicleStore.vehicles[idx] = data
-    closeReleaseModal()
+    closeReleaseModal({ force: true })
   } catch (error) {
     console.error('confirmReleaseVehicle error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'ترخیص خودرو ناموفق بود.'), { title: 'خطا در ترخیص خودرو' })
@@ -2410,7 +2413,7 @@ const persistJobAdjust = async () => {
     const idx = vehicleStore.vehicles.findIndex((item) => Number(item.id) === Number(data?.id))
     if (idx >= 0) vehicleStore.vehicles[idx] = data
     vehicleStore.selectedVehicle = data
-    closeReleaseModal()
+    closeReleaseModal({ force: true })
     showVehicleDetailsModal.value = false
   } catch (error) {
     console.error('persistJobAdjust error:', error?.response?.data || error)
@@ -2628,7 +2631,7 @@ const handleStepOneRefer = async (payload) => {
       return
     }
     await saveVehicle({ vehicle: payload }, 'entered')
-    closeVehicleModal()
+    closeVehicleModal({ force: true })
   } catch (error) {
     console.error('refer step one error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
@@ -2643,7 +2646,7 @@ const handleStepTwoAssign = async (payload) => {
   try {
     await saveVehicle(payload, 'ready_to_settle')
     await refreshVehicleBoard()
-    closeVehicleModal()
+    closeVehicleModal({ force: true })
   } catch (error) {
     console.error('assign step two error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
