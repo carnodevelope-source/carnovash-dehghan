@@ -108,6 +108,16 @@ def _jalali_months_between(start_month, end_month):
     return (end_index - start_index) + 1
 
 
+def _jalali_next_month(value):
+    month_tuple = _jalali_month_tuple(value)
+    if not month_tuple:
+        return ''
+    year, month = month_tuple
+    if month >= 12:
+        return f'{year + 1:04d}/01'
+    return f'{year:04d}/{month + 1:02d}'
+
+
 def _jalali_month_lte(left, right):
     left_tuple = _jalali_month_tuple(left)
     right_tuple = _jalali_month_tuple(right)
@@ -359,15 +369,12 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
     tip_total = sum((_job_worker_tip_for(job, worker.id) for job in jobs), Decimal('0'))
     insurance_target_month = _normalize_jalali_month(insurance_month) or _current_jalali_month()
     insurance_start_month = _resolve_worker_insurance_start_month(worker)
+    insurance_due_start_month = _jalali_next_month(insurance_start_month)
     insurance_monthly_amount = _normalize_decimal(getattr(worker, 'insurance_amount', 0))
-    insurance_cycle_count = _jalali_months_between(insurance_start_month, insurance_target_month)
+    insurance_cycle_count = _jalali_months_between(insurance_due_start_month, insurance_target_month)
     insurance_total = insurance_monthly_amount * Decimal(str(insurance_cycle_count))
     insurance_paid_total = _insurance_paid_amount_until_month(worker, insurance_target_month)
     insurance_selected_month_paid_total = _insurance_paid_amount_for_month(worker, insurance_target_month)
-    if insurance_start_month and _jalali_month_lte(insurance_start_month, insurance_target_month):
-        insurance_paid_total += insurance_monthly_amount
-    if _jalali_month_eq(insurance_start_month, insurance_target_month):
-        insurance_selected_month_paid_total += insurance_monthly_amount
     payable_total = wage_total + _normalize_decimal(aggregates['bonus_total']) - _normalize_decimal(aggregates['penalty_total']) - _normalize_decimal(aggregates['wage_paid_total'])
     if payable_total < 0:
         payable_total = Decimal('0')
@@ -379,7 +386,7 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
         insurance_balance = Decimal('0')
     insurance_selected_month_balance = (
         insurance_monthly_amount - insurance_selected_month_paid_total
-        if insurance_start_month and _jalali_month_lte(insurance_start_month, insurance_target_month)
+        if insurance_due_start_month and _jalali_month_lte(insurance_due_start_month, insurance_target_month)
         else Decimal('0')
     )
     if insurance_selected_month_balance < 0:
@@ -396,6 +403,7 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
         'insurance_monthly_amount': insurance_monthly_amount,
         'insurance_cycle_count': insurance_cycle_count,
         'insurance_start_month': insurance_start_month,
+        'insurance_due_start_month': insurance_due_start_month,
         'insurance_target_month': insurance_target_month,
         'bonus_total': _normalize_decimal(aggregates['bonus_total']),
         'penalty_total': _normalize_decimal(aggregates['penalty_total']),
@@ -775,6 +783,7 @@ class ReportsDashboardView(APIView):
                     'insurance_balance': float(worker_state['insurance_balance']),
                     'insurance_month': worker_state['insurance_target_month'],
                     'insurance_start_month': worker_state['insurance_start_month'],
+                    'insurance_due_start_month': worker_state['insurance_due_start_month'],
                 }
                 selected_worker_transactions = [
                     {
@@ -891,9 +900,9 @@ class ReportsWorkerPayoutView(APIView):
             return Response({'insurance_month': ['ماه بیمه معتبر نیست.']}, status=status.HTTP_400_BAD_REQUEST)
         worker_state = _compute_worker_financials(worker, jobs, insurance_month=insurance_month)
         if payout_target == 'insurance':
-            insurance_start_month = worker_state['insurance_start_month']
-            if not insurance_start_month or not _jalali_month_lte(insurance_start_month, insurance_month):
-                return Response({'insurance_month': ['این ماه قبل از شروع همکاری این نیرو است.']}, status=status.HTTP_400_BAD_REQUEST)
+            insurance_due_start_month = worker_state['insurance_due_start_month']
+            if not insurance_due_start_month or not _jalali_month_lte(insurance_due_start_month, insurance_month):
+                return Response({'insurance_month': ['مانده حق بیمه از ماه بعد از شروع همکاری نیرو محاسبه می‌شود.']}, status=status.HTTP_400_BAD_REQUEST)
             payable_total = worker_state['insurance_selected_month_balance']
             if payable_total <= 0:
                 return Response({'detail': f'این ماه قبلا تسویه شده است: {insurance_month}.'}, status=status.HTTP_400_BAD_REQUEST)

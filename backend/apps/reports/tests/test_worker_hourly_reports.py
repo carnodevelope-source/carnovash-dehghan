@@ -81,12 +81,13 @@ class WorkerHourlyReportsTests(APITestCase):
             start_month_state = _compute_worker_financials(self.worker, [], insurance_month='1405/04')
             next_month_state = _compute_worker_financials(self.worker, [], insurance_month='1405/05')
 
-        self.assertEqual(start_month_state['insurance_total'], Decimal('1000'))
-        self.assertEqual(start_month_state['insurance_paid_total'], Decimal('1000'))
+        self.assertEqual(start_month_state['insurance_total'], Decimal('0'))
+        self.assertEqual(start_month_state['insurance_paid_total'], Decimal('0'))
         self.assertEqual(start_month_state['insurance_balance'], Decimal('0'))
         self.assertEqual(start_month_state['insurance_selected_month_balance'], Decimal('0'))
-        self.assertEqual(next_month_state['insurance_total'], Decimal('2000'))
-        self.assertEqual(next_month_state['insurance_paid_total'], Decimal('1000'))
+        self.assertEqual(start_month_state['insurance_due_start_month'], '1405/05')
+        self.assertEqual(next_month_state['insurance_total'], Decimal('1000'))
+        self.assertEqual(next_month_state['insurance_paid_total'], Decimal('0'))
         self.assertEqual(next_month_state['insurance_balance'], Decimal('1000'))
         self.assertEqual(next_month_state['insurance_selected_month_balance'], Decimal('1000'))
 
@@ -104,8 +105,8 @@ class WorkerHourlyReportsTests(APITestCase):
         with patch('apps.reports.views._resolve_worker_insurance_start_month', return_value='1405/04'):
             state = _compute_worker_financials(self.worker, [], insurance_month='1405/05')
 
-        self.assertEqual(state['insurance_total'], Decimal('2000'))
-        self.assertEqual(state['insurance_paid_total'], Decimal('1400'))
+        self.assertEqual(state['insurance_total'], Decimal('1000'))
+        self.assertEqual(state['insurance_paid_total'], Decimal('400'))
         self.assertEqual(state['insurance_balance'], Decimal('600'))
         self.assertEqual(state['insurance_selected_month_paid_total'], Decimal('400'))
         self.assertEqual(state['insurance_selected_month_balance'], Decimal('600'))
