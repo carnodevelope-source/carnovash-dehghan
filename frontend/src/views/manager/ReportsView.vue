@@ -303,7 +303,7 @@ const filters = reactive({
   plateMid: '',
   plateRight: ''
 })
-const summary = reactive({ vehicles_count: 0, carwash_total: 0, worker_total: 0, tips_total: 0, discount_total: 0, payable_worker_total: 0, bonus_total: 0, penalty_total: 0 })
+const summary = reactive({ vehicles_count: 0, carwash_total: 0, worker_total: 0, tips_total: 0, discount_total: 0, final_total: 0, before_discount_total: 0, payable_worker_total: 0, bonus_total: 0, penalty_total: 0 })
 const sectionTotals = reactive({ overall: {}, carwash: {}, worker: {}, tips: {}, revenue: {}, attendance: {}, blacklist: {} })
 const data = reactive({ overall_report: [], carwash_report: [], worker_report: [], tips_report: [], attendance_report: [], blacklist_report: [], revenue_report: [] })
 const expandedServiceRows = ref({})
@@ -372,14 +372,25 @@ const toggleServicesRow = (row) => {
     [key]: !expandedServiceRows.value[key]
   }
 }
+const overallAmount = (key) => Number(sectionTotals.overall?.[key] ?? summary?.[key] ?? 0)
+const overallFinalAmount = () => {
+  const explicitTotal = overallAmount('final_total')
+  if (explicitTotal > 0) return explicitTotal
+  return overallAmount('carwash_total') + overallAmount('worker_total') + overallAmount('tips_total')
+}
+const overallBeforeDiscountAmount = () => (
+  Math.round(overallFinalAmount()) + Math.round(overallAmount('discount_total'))
+)
 const visibleSummaryCards = computed(() => {
   if (activeTab.value === 'overall') {
     return [
-      { key: 'visits_count', label: 'کل مراجعات', value: Number(sectionTotals.overall.vehicles_count || summary.vehicles_count || 0).toLocaleString('fa-IR') },
-      { key: 'carwash_total', label: 'حق کارواش', value: money(sectionTotals.overall.carwash_total || 0) },
-      { key: 'worker_total', label: 'حق نیرو', value: money(sectionTotals.overall.worker_total || 0) },
-      { key: 'tips_total', label: 'انعام', value: money(sectionTotals.overall.tips_total || 0) },
-      { key: 'discount_total', label: 'تخفیف', value: money(sectionTotals.overall.discount_total || summary.discount_total || 0) }
+      { key: 'visits_count', label: 'کل مراجعات', value: Number(overallAmount('vehicles_count')).toLocaleString('fa-IR') },
+      { key: 'final_total', label: 'مبلغ نهایی', value: money(overallFinalAmount()) },
+      { key: 'carwash_total', label: 'حق کارواش', value: money(overallAmount('carwash_total')) },
+      { key: 'worker_total', label: 'حق نیرو', value: money(overallAmount('worker_total')) },
+      { key: 'tips_total', label: 'انعام', value: money(overallAmount('tips_total')) },
+      { key: 'discount_total', label: 'جمع تخفیف', value: money(overallAmount('discount_total')) },
+      { key: 'before_discount_total', label: 'قبل از تخفیف', value: money(overallBeforeDiscountAmount()) }
     ]
   }
   if (activeTab.value === 'carwash') {

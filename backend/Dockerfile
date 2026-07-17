@@ -1,6 +1,5 @@
-# syntax=docker/dockerfile:1.7
-
-FROM python:3.12-slim
+ARG PYTHON_IMAGE=docker.arvancloud.ir/python:3.12-slim
+FROM ${PYTHON_IMAGE}
 
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
@@ -18,8 +17,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --default-timeout=120 --retries=8 -r requirements.txt
+RUN pip install --default-timeout=120 --retries=8 -r requirements.txt
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

@@ -1,12 +1,12 @@
-# syntax=docker/dockerfile:1.7
+ARG NODE_IMAGE=docker.arvancloud.ir/node:20-alpine
+ARG NGINX_IMAGE=docker.arvancloud.ir/nginx:1.27-alpine
 
-FROM node:20-alpine AS build
+FROM ${NODE_IMAGE} AS build
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm config set registry https://registry.npmjs.org/ \
+RUN npm config set registry https://registry.npmjs.org/ \
     && npm config set cache /root/.npm \
     && npm ci --prefer-offline --no-audit --progress=false
 
@@ -17,7 +17,7 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM ${NGINX_IMAGE}
 
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html

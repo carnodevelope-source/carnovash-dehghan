@@ -7,7 +7,7 @@ export const toThousandsToman = (value) => Number(value || 0)
 const formatFaNumber = (numeric, options = {}) => {
   const {
     minimumFractionDigits = 0,
-    maximumFractionDigits = Number.isInteger(numeric) ? 0 : 1
+    maximumFractionDigits = 0
   } = options
   return numeric.toLocaleString('fa-IR', {
     minimumFractionDigits,
