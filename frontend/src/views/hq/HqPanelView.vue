@@ -69,49 +69,84 @@
         </div>
       </header>
 
+      <section v-if="authStore.isHqAdmin" class="hq-context-strip">
+        <div class="hq-scope-card">
+          <small>Scope</small>
+          <strong>{{ hqActiveScopeLabel }}</strong>
+          <span>{{ hqFreshnessLabel }}</span>
+        </div>
+        <div class="hq-jump-tabs" role="tablist" aria-label="میانبر تب‌های HQ">
+          <button
+            v-for="tab in visibleTabs"
+            :key="`jump-${tab.key}`"
+            type="button"
+            class="hq-jump-tab"
+            :class="{ active: activeTab === tab.key }"
+            @click="selectTab(tab.key)"
+          >
+            <span>{{ tab.label }}</span>
+            <small>{{ tab.meta }}</small>
+          </button>
+        </div>
+      </section>
+
       <section v-if="activeTab === 'overview'" class="overview-grid">
-        <article class="hero-card">
-          <div class="hero-stats">
-            <div class="metric-box">
-              <small>کارواش فعال</small>
-              <strong>{{ overview.summary.active_carwashes || 0 }}</strong>
+        <article class="hero-card overview-hero-card">
+          <div class="hero-copy">
+            <span class="hero-label">Operational Home</span>
+            <h2>اول صف کار و استثناها را ببین، بعد KPIها را.</h2>
+            <p>این صفحه برای تریاژ سریع، تصمیم با context و دریل‌داون مستقیم به کارواش، گزارش یا تیکت طراحی شده است. هر کارت باید یا هشدار باشد یا راه میانبر به اقدام.</p>
+            <div class="hero-action-row">
+              <button
+                v-for="action in overviewQuickActions"
+                :key="action.key"
+                type="button"
+                class="hero-action-btn"
+                :class="action.tone"
+                @click="action.run()"
+              >
+                <strong>{{ action.label }}</strong>
+                <span>{{ action.caption }}</span>
+              </button>
             </div>
-            <div class="metric-box">
-              <small>تیکت باز</small>
-              <strong>{{ overview.summary.open_tickets || 0 }}</strong>
-            </div>
-            <div class="metric-box">
-              <small>خودروهای امروز</small>
-              <strong>{{ overview.summary.today_vehicles || 0 }}</strong>
-            </div>
+          </div>
+          <div class="hero-stats overview-alert-grid">
+            <article
+              v-for="item in overviewAttentionCards"
+              :key="item.key"
+              class="attention-card"
+              :class="item.tone"
+            >
+              <small>{{ item.label }}</small>
+              <strong>{{ item.value }}</strong>
+              <p>{{ item.description }}</p>
+            </article>
           </div>
         </article>
 
-        <article class="summary-card">
+        <article class="summary-card overview-decision-card">
           <div class="summary-head">
-            <h3>خلاصه سریع</h3>
-            <span>شاخص‌های کلیدی امروز</span>
+            <h3>تصمیم‌های سریع</h3>
+            <span>شاخص‌هایی که مستقیم به اقدام عملی وصل می‌شوند</span>
           </div>
-          <div class="summary-items">
-            <div class="summary-item">
-              <span>کل کارواش‌ها</span>
-              <strong>{{ overview.summary.total_carwashes || 0 }}</strong>
-            </div>
-            <div class="summary-item warn">
-              <span>تیکت فوری</span>
-              <strong>{{ overview.summary.urgent_tickets || 0 }}</strong>
-            </div>
-            <div class="summary-item">
-              <span>پشتیبان فعال</span>
-              <strong>{{ overview.summary.hq_support_users || 0 }}</strong>
-            </div>
+          <div class="decision-grid">
+            <article
+              v-for="item in overviewHealthCards"
+              :key="item.key"
+              class="decision-card"
+              :class="item.tone"
+            >
+              <small>{{ item.label }}</small>
+              <strong>{{ item.value }}</strong>
+              <span>{{ item.caption }}</span>
+            </article>
           </div>
         </article>
 
-        <article class="list-card">
+        <article class="list-card overview-list-card">
           <div class="card-head">
             <h3>کارواش‌های تازه</h3>
-            <button type="button" class="link-btn" @click="activeTab = 'carwashes'">مدیریت</button>
+            <button type="button" class="link-btn" @click="selectTab('carwashes')">مدیریت</button>
           </div>
           <div class="compact-list">
             <div v-for="item in overview.recent_carwashes" :key="item.id" class="compact-row">
@@ -119,15 +154,18 @@
                 <strong>{{ item.name }}</strong>
                 <small>{{ item.manager?.full_name || 'بدون مدیر' }}</small>
               </div>
-              <span class="status-dot" :class="{ off: !item.is_active }">{{ item.is_active ? 'فعال' : 'غیرفعال' }}</span>
+              <div class="compact-row-actions">
+                <span class="status-dot" :class="{ off: !item.is_active }">{{ item.is_active ? 'فعال' : 'غیرفعال' }}</span>
+                <button type="button" class="mini-link-btn" @click="openCarwashFromOverview(item.id)">نمایش</button>
+              </div>
             </div>
           </div>
         </article>
 
-        <article class="list-card">
+        <article class="list-card overview-list-card">
           <div class="card-head">
             <h3>آخرین تیکت‌ها</h3>
-            <button type="button" class="link-btn" @click="activeTab = 'tickets'">ورود به مرکز تیکت</button>
+            <button type="button" class="link-btn" @click="selectTab('tickets')">ورود به مرکز تیکت</button>
           </div>
           <div class="compact-list">
             <div v-for="item in overview.recent_tickets" :key="item.id" class="compact-row">
@@ -135,7 +173,10 @@
                 <strong>{{ item.subject }}</strong>
                 <small>{{ item.tenant_name }}</small>
               </div>
-              <span class="ticket-mini-status" :class="`ticket-${item.status}`">{{ statusLabel(item.status) }}</span>
+              <div class="compact-row-actions">
+                <span class="ticket-mini-status" :class="`ticket-${item.status}`">{{ statusLabel(item.status) }}</span>
+                <button type="button" class="mini-link-btn" @click="openTicketFromOverview(item.id)">پیگیری</button>
+              </div>
             </div>
           </div>
         </article>
@@ -742,7 +783,7 @@
             <article class="report-focus-card">
               <small>{{ hqShareTab === 'sms_wallet' ? 'کیف پول پیامک' : selectedHqFeature?.label || 'سهم کارنو' }}</small>
               <strong>{{ money(hqShareFeatureTotal) }}</strong>
-              <p>{{ hqShareTab === 'sms_wallet' ? 'شارژهای ثبت‌شده روی کیف پول پیامک که سهم کارنو هستند.' : selectedHqFeature?.description || 'ریز پرداختی‌های این قابلیت در مجموعه.' }}</p>
+              <p>{{ hqShareTab === 'sms_wallet' ? 'هزینه‌های کسرشده بابت ارسال پیامک که سهم کارنو هستند؛ شارژ کیف پول سهم محسوب نمی‌شود.' : selectedHqFeature?.description || 'ریز پرداختی‌های این قابلیت در مجموعه.' }}</p>
             </article>
             <article class="report-focus-card">
               <small>تعداد ردیف</small>
@@ -765,7 +806,7 @@
                 <tr v-for="(row, index) in selectedHqFeatureRows" :key="`${hqShareTab}-${row.id || row.tenant_id || index}`">
                   <template v-if="hqShareTab === 'sms_wallet'">
                     <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
-                    <td>{{ row.tenant_name }}</td>
+                  <td><button type="button" class="tenant-ledger-link" @click="openPaymentDetailModal(row.tenant_id)">{{ row.tenant_name }}</button></td>
                     <td>{{ row.wallet_name }}</td>
                     <td><span class="direction-pill" :class="row.direction">{{ walletDirectionLabel(row.direction) }}</span></td>
                     <td>{{ money(row.amount) }}</td>
@@ -899,6 +940,8 @@
             <article class="report-kpi-card"><small>شارژ درگاه</small><strong>{{ money(reports.summary.wallet_gateway_charge_total || 0) }}</strong></article>
             <article class="report-kpi-card"><small>شارژ دستی</small><strong>{{ money(reports.summary.wallet_manual_charge_total || 0) }}</strong></article>
             <article class="report-kpi-card"><small>کیف پول پیامک</small><strong>{{ money(reports.summary.wallet_sms_balance_total || 0) }}</strong></article>
+            <article class="report-kpi-card"><small>SMS ارسال‌شده</small><strong>{{ toFa(reports.summary.sms_sent_count || 0) }}</strong></article>
+            <article class="report-kpi-card"><small>هزینه کل SMS</small><strong>{{ money(reports.summary.sms_cost_total || 0) }}</strong></article>
           </div>
           <div class="table-wrap report-table-wrap rich-table">
             <table>
@@ -906,7 +949,7 @@
               <tbody>
                 <tr v-for="(row, index) in walletLedgerRows" :key="row.id">
                   <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
-                  <td>{{ row.tenant_name }}</td>
+                  <td><button type="button" class="tenant-ledger-link" @click="openPaymentDetailModal(row.tenant_id)">{{ row.tenant_name }}</button></td>
                   <td>{{ row.wallet_name }}</td>
                   <td>{{ row.wallet_type === 'sms' ? 'پیامک' : 'عادی' }}</td>
                   <td><span class="direction-pill" :class="row.direction">{{ walletDirectionLabel(row.direction) }}</span></td>
@@ -1275,6 +1318,44 @@
       </section>
     </main>
 
+    <div v-if="paymentDetailModal.open" class="modal-overlay" @click.self="closePaymentDetailModal">
+      <div class="modal-card hq-payment-detail-modal" dir="rtl">
+        <div class="card-head">
+          <div>
+            <h3>{{ selectedPaymentTenantRow?.tenant_name || 'ریز پرداختی کارواش' }}</h3>
+            <span>تفکیک واریز، برداشت، سهم کارنو، سهم آراکار و هزینه پیامک</span>
+          </div>
+          <button type="button" class="ghost-btn" @click="closePaymentDetailModal">بستن</button>
+        </div>
+        <div class="report-kpi-grid compact-modal-kpis">
+          <article class="report-kpi-card spotlight"><small>موجودی کیف پول</small><strong>{{ money(selectedPaymentTenantRow?.wallet_balance || 0) }}</strong></article>
+          <article class="report-kpi-card"><small>واریزها</small><strong>{{ money(selectedPaymentTenantRow?.wallet_deposit_total || 0) }}</strong><span>بدون سهم</span></article>
+          <article class="report-kpi-card"><small>برداشت‌ها</small><strong>{{ money(selectedPaymentTenantRow?.wallet_withdraw_total || 0) }}</strong></article>
+          <article class="report-kpi-card"><small>سهم کارنو</small><strong>{{ money(selectedPaymentTenantRow?.hq_share_total || 0) }}</strong></article>
+          <article class="report-kpi-card"><small>سهم آراکار</small><strong>{{ money(selectedPaymentTenantRow?.rah_share_total || 0) }}</strong></article>
+          <article class="report-kpi-card"><small>SMS / هزینه</small><strong>{{ toFa(selectedPaymentTenantRow?.sms_sent_count || 0) }} / {{ money(selectedPaymentTenantRow?.sms_cost_total || 0) }}</strong></article>
+        </div>
+        <div class="table-wrap report-table-wrap rich-table modal-ledger-table">
+          <table>
+            <thead><tr><th>ردیف</th><th>کیف پول</th><th>نوع</th><th>مبلغ</th><th>شرح</th><th>مرجع</th><th>سهم</th><th>زمان</th></tr></thead>
+            <tbody>
+              <tr v-for="(row, index) in selectedPaymentTenantTransactions" :key="row.id">
+                <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
+                <td>{{ row.wallet_name }}</td>
+                <td><span class="direction-pill" :class="row.direction">{{ walletDirectionLabel(row.direction) }}</span></td>
+                <td>{{ money(row.amount) }}</td>
+                <td>{{ row.description || '-' }}</td>
+                <td>{{ row.reference_type || '-' }}</td>
+                <td>{{ shareGroupLabel(row.share_group) }}</td>
+                <td>{{ dateTime(row.transacted_at) }}</td>
+              </tr>
+              <tr v-if="!selectedPaymentTenantTransactions.length"><td colspan="8">برای این کارواش در بازه انتخابی تراکنشی ثبت نشده است.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div v-if="editSupportModal.open" class="modal-overlay" @click.self="closeEditSupportModal">
       <div class="modal-card" dir="rtl">
         <div class="card-head">
@@ -1355,6 +1436,8 @@ const visibleTabs = computed(() => {
   })
 })
 const currentTabTitle = computed(() => visibleTabs.value.find((tab) => tab.key === activeTab.value)?.label || 'پنل مرکزی')
+const hqActiveScopeLabel = computed(() => 'شبکه کامل کارواش‌ها / HQ')
+const hqFreshnessLabel = computed(() => `آخرین تازه‌سازی: ${formatJalaliDate(new Date())}`)
 
 const selectTab = (tabKey) => {
   activeTab.value = tabKey
@@ -1370,6 +1453,75 @@ const closeMobileSidebar = () => {
 }
 
 const overview = reactive({ summary: {}, recent_carwashes: [], recent_tickets: [] })
+const overviewAttentionCards = computed(() => ([
+  {
+    key: 'urgent_tickets',
+    label: 'فوری و نیازمند توجه',
+    value: toFa(overview.summary.urgent_tickets || 0),
+    description: Number(overview.summary.urgent_tickets || 0) > 0 ? 'ورود مستقیم به مرکز تیکت و شروع تریاژ.' : 'در حال حاضر مورد بحرانی ثبت نشده است.',
+    tone: Number(overview.summary.urgent_tickets || 0) > 0 ? 'danger' : 'stable'
+  },
+  {
+    key: 'open_tickets',
+    label: 'صف باز پشتیبانی',
+    value: toFa(overview.summary.open_tickets || 0),
+    description: 'حجم فعلی صفی که هنوز بسته نشده و نیاز به پیگیری دارد.',
+    tone: Number(overview.summary.open_tickets || 0) > 12 ? 'warn' : 'neutral'
+  },
+  {
+    key: 'today_vehicles',
+    label: 'عملیات امروز',
+    value: toFa(overview.summary.today_vehicles || 0),
+    description: 'تعداد خودروهای ثبت‌شده امروز در کل شبکه.',
+    tone: 'info'
+  }
+]))
+const overviewHealthCards = computed(() => ([
+  {
+    key: 'active_carwashes',
+    label: 'کارواش فعال',
+    value: toFa(overview.summary.active_carwashes || 0),
+    caption: `از ${toFa(overview.summary.total_carwashes || 0)} کارواش ثبت‌شده`,
+    tone: 'success'
+  },
+  {
+    key: 'hq_support_users',
+    label: 'پشتیبان فعال',
+    value: toFa(overview.summary.hq_support_users || 0),
+    caption: 'ظرفیت پاسخ‌گویی فعلی تیم مرکزی',
+    tone: 'neutral'
+  },
+  {
+    key: 'recent_carwashes',
+    label: 'ورود جدید به شبکه',
+    value: toFa(overview.recent_carwashes.length || 0),
+    caption: 'کارواش‌های تازه برای مانیتورینگ سریع',
+    tone: 'info'
+  }
+]))
+const overviewQuickActions = computed(() => ([
+  {
+    key: 'tickets',
+    label: 'ورود به صف تیکت',
+    caption: `${toFa(overview.summary.open_tickets || 0)} تیکت باز`,
+    tone: 'primary',
+    run: () => selectTab('tickets')
+  },
+  {
+    key: 'reports',
+    label: 'تحلیل مالی HQ',
+    caption: 'سهم‌ها، کیف پول و شبکه',
+    tone: 'secondary',
+    run: () => selectTab('reports')
+  },
+  {
+    key: 'carwashes',
+    label: 'نظارت کارواش‌ها',
+    caption: 'ورود به فهرست و drill-down شعبه‌ها',
+    tone: 'secondary',
+    run: () => selectTab('carwashes')
+  }
+]))
 
 const carwashes = ref([])
 const carwashQuery = ref('')
@@ -1422,11 +1574,8 @@ const reportTabs = [
   { key: 'wallet', label: 'گزارش کیف پول' }
 ]
 const hqShareTab = ref('sms_wallet')
-const hqShareTabs = [
-  { key: 'sms_wallet', label: 'کیف پول پیامک' },
-  { key: 'excel_import', label: 'وارد کردن مشتریان با اکسل' },
-]
 const selectedReportTenantId = ref('')
+const paymentDetailModal = reactive({ open: false, tenantId: null })
 const tenantReportTab = ref('overall')
 const tenantReportTabs = [
   { key: 'overall', label: 'گزارش کل' },
@@ -1696,11 +1845,18 @@ const reportRows = computed(() => {
   return items.sort((a, b) => Number(b.paid_amount || 0) - Number(a.paid_amount || 0))
 })
 const hqFeatureSummary = computed(() => (Array.isArray(reports.feature_summary) ? reports.feature_summary : []))
+const hqShareTabs = computed(() => [
+  { key: 'sms_wallet', label: 'کیف پول پیامک' },
+  ...hqFeatureSummary.value.map((item) => ({
+    key: item.key,
+    label: item.tab_label || item.label || item.key
+  }))
+])
 const selectedHqFeature = computed(() => hqFeatureSummary.value.find((item) => item.key === hqShareTab.value) || null)
 const selectedHqFeatureRows = computed(() => {
   if (hqShareTab.value === 'sms_wallet') {
     return (Array.isArray(reports.wallet_transactions) ? reports.wallet_transactions : [])
-      .filter((item) => item.wallet_type === 'sms' && item.share_group === 'hq')
+      .filter((item) => item.wallet_type === 'sms' && item.direction === 'out' && item.share_group === 'hq')
   }
   if (hqShareTab.value === 'excel_import') {
     const featureRows = reportRows.value
@@ -1737,9 +1893,20 @@ const hqShareFeatureTotal = computed(() => selectedHqFeatureRows.value.reduce((s
   if (hqShareTab.value === 'sms_wallet') return sum + Number(item.share_amount || item.amount || 0)
   return sum + Number(item.feature?.paid_amount || 0)
 }, 0))
-const rahShareRows = computed(() => reportRows.value.filter((row) => Number(row.rah_share_total || 0) || Number(row.net_amount || 0)))
+const rahShareRows = computed(() => reportRows.value.filter((row) => Number(row.rah_share_total || 0)))
 const walletLedgerRows = computed(() => (Array.isArray(reports.wallet_transactions) ? [...reports.wallet_transactions] : [])
   .sort((a, b) => new Date(b.transacted_at || 0) - new Date(a.transacted_at || 0)))
+const selectedPaymentTenantRow = computed(() => reportRows.value.find((row) => Number(row.tenant_id) === Number(paymentDetailModal.tenantId)) || null)
+const selectedPaymentTenantTransactions = computed(() => walletLedgerRows.value.filter((row) => Number(row.tenant_id) === Number(paymentDetailModal.tenantId)))
+const openPaymentDetailModal = (tenantId) => {
+  if (!tenantId) return
+  paymentDetailModal.tenantId = tenantId
+  paymentDetailModal.open = true
+}
+const closePaymentDetailModal = () => {
+  paymentDetailModal.open = false
+  paymentDetailModal.tenantId = null
+}
 const selectedTenantReport = computed(() => tenantReport.data || {})
 const selectedTenantReportSummary = computed(() => selectedTenantReport.value.summary || {})
 const tenantReportRows = computed(() => {
@@ -1889,8 +2056,9 @@ const walletHealthLabel = (value) => ({
 }[value] || 'سالم')
 const shareGroupLabel = (value) => ({
   hq: 'سهم کارنو',
-  rah: 'سهم آراکار'
-}[value] || 'سهم آراکار')
+  rah: 'سهم آراکار',
+  none: 'بدون سهم'
+}[value] || 'بدون سهم')
 const walletDirectionLabel = (value) => ({
   in: 'واریز',
   out: 'برداشت'
@@ -2122,6 +2290,18 @@ const loadCarwashInsight = async (tenantId) => {
   } finally {
     carwashInsight.loading = false
   }
+}
+
+const openCarwashFromOverview = async (tenantId) => {
+  selectTab('carwashes')
+  if (!carwashes.value.length) await loadCarwashes()
+  await loadCarwashInsight(tenantId)
+}
+
+const openTicketFromOverview = async (ticketId) => {
+  selectTab('tickets')
+  if (!tickets.value.length) await loadTickets({ silent: true })
+  await selectTicket(ticketId, { silent: true })
 }
 
 const createCarwash = async () => {
@@ -2728,6 +2908,65 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+.hq-context-strip {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.hq-scope-card {
+  border-radius: 24px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, rgba(12, 74, 110, 0.96), rgba(2, 132, 199, 0.92));
+  color: #f8fafc;
+  display: grid;
+  gap: 4px;
+  box-shadow: 0 20px 44px rgba(2, 132, 199, 0.16);
+}
+
+.hq-scope-card small,
+.hq-scope-card span {
+  color: rgba(248, 250, 252, 0.78);
+}
+
+.hq-scope-card strong {
+  font-size: 18px;
+}
+
+.hq-jump-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.hq-jump-tab {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 20px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.76);
+  text-align: right;
+  display: grid;
+  gap: 4px;
+  transition: .18s ease;
+}
+
+.hq-jump-tab span {
+  font-weight: 800;
+  color: var(--text);
+}
+
+.hq-jump-tab small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.hq-jump-tab.active {
+  border-color: rgba(14, 165, 233, 0.3);
+  background: linear-gradient(180deg, rgba(240, 249, 255, 0.98), rgba(226, 232, 240, 0.92));
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.05);
+}
+
 .hq-role-badge,
 .meta-chip {
   border-radius: 999px;
@@ -2772,16 +3011,152 @@ onBeforeUnmount(() => {
   gap: 18px;
 }
 
+.overview-hero-card {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+  align-items: stretch;
+}
+
 .hero-copy p,
 .hero-copy span {
   margin: 0;
   color: var(--muted);
 }
 
+.hero-label {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0369a1 !important;
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .hero-copy h2 {
   margin: 10px 0 12px;
   font-size: 28px;
   line-height: 1.5;
+}
+
+.hero-action-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.hero-action-btn {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 20px;
+  padding: 14px 15px;
+  background: rgba(255, 255, 255, 0.9);
+  text-align: right;
+  display: grid;
+  gap: 6px;
+}
+
+.hero-action-btn strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.hero-action-btn span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.hero-action-btn.primary {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.14), rgba(15, 93, 215, 0.08));
+  border-color: rgba(14, 165, 233, 0.24);
+}
+
+.overview-alert-grid {
+  grid-template-columns: 1fr;
+  align-content: stretch;
+}
+
+.attention-card {
+  border-radius: 22px;
+  padding: 16px 18px;
+  display: grid;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.attention-card small,
+.decision-card small {
+  color: var(--muted);
+}
+
+.attention-card strong {
+  font-size: 28px;
+  color: var(--text);
+}
+
+.attention-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.8;
+  font-size: 12px;
+}
+
+.attention-card.danger {
+  background: linear-gradient(180deg, rgba(254, 242, 242, 0.96), rgba(255, 255, 255, 0.9));
+  border-color: rgba(248, 113, 113, 0.22);
+}
+
+.attention-card.warn {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.96), rgba(255, 255, 255, 0.9));
+  border-color: rgba(245, 158, 11, 0.22);
+}
+
+.attention-card.info {
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.9));
+}
+
+.overview-decision-card {
+  grid-column: 1 / -1;
+}
+
+.decision-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.decision-card {
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.03);
+  display: grid;
+  gap: 5px;
+}
+
+.decision-card strong {
+  font-size: 24px;
+  color: var(--text);
+}
+
+.decision-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.decision-card.success {
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.decision-card.info {
+  background: rgba(14, 165, 233, 0.08);
+}
+
+.overview-list-card {
+  min-height: 100%;
 }
 
 .hero-stats,
@@ -2865,6 +3240,23 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.compact-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mini-link-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #0369a1;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .compact-row strong,
@@ -4278,6 +4670,36 @@ td strong {
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
 }
 
+.hq-payment-detail-modal {
+  width: min(1120px, 100%);
+  display: grid;
+  gap: 16px;
+}
+
+.compact-modal-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.modal-ledger-table {
+  max-height: 430px;
+  overflow: auto;
+}
+
+.tenant-ledger-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #0f4c81;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.tenant-ledger-link:hover {
+  color: #0284c7;
+  text-decoration: underline;
+}
+
 .inline-toggle {
   display: flex !important;
   align-items: center;
@@ -4863,6 +5285,13 @@ td strong {
     grid-template-columns: 1fr;
   }
 
+  .hq-context-strip,
+  .overview-hero-card,
+  .hero-action-row,
+  .decision-grid {
+    grid-template-columns: 1fr;
+  }
+
   .report-kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -4957,7 +5386,11 @@ td strong {
   .report-side-stats,
   .report-glance-strip,
   .trend-bars,
-  .tenant-monitor-grid {
+  .tenant-monitor-grid,
+  .hq-jump-tabs,
+  .hero-action-row,
+  .decision-grid,
+  .compact-modal-kpis {
     grid-template-columns: 1fr;
   }
 
@@ -4965,7 +5398,8 @@ td strong {
   .tenant-panel-head,
   .wallet-monitor-row,
   .option-monitor-row,
-  .transaction-monitor-row {
+  .transaction-monitor-row,
+  .compact-row-actions {
     flex-direction: column;
     align-items: stretch;
   }

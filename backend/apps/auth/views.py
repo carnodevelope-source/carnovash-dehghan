@@ -1,7 +1,6 @@
 ﻿from datetime import datetime, time, timedelta
 from collections import defaultdict
 import re
-from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model, login, logout
@@ -51,8 +50,13 @@ from .serializers import (
 )
 
 
-HQ_FEATURE_KEYS = {
+KARNO_FEATURE_KEYS = {
+    CarWashFeaturePurchase.FeatureKey.SMS_CLUB,
     CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT,
+    CarWashFeaturePurchase.FeatureKey.ATTENDANCE,
+    CarWashFeaturePurchase.FeatureKey.ACCOUNTING,
+    CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
+    CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE,
 }
 
 HQ_FEATURE_META = {
@@ -83,24 +87,37 @@ HQ_FEATURE_META = {
     },
 }
 
-KARNO_WALLET_REFERENCE_TYPES = {'customer_import_excel'}
+HQ_FEATURE_KEYS = KARNO_FEATURE_KEYS
+
+KARNO_WALLET_REFERENCE_TYPES = {
+    'customer_import_excel',
+    'feature_option_purchase',
+    'feature_option_installment',
+    'feature_option_installment_manual',
+    'sms_campaign_send',
+    'vehicle_assigned_sms',
+    'vehicle_released_sms',
+    'system_sms',
+}
 
 
 def _feature_share_group(feature_key):
-    return 'hq' if feature_key in HQ_FEATURE_KEYS else 'rah'
+    return 'hq' if feature_key in KARNO_FEATURE_KEYS else 'rah'
 
 
 def _wallet_transaction_share_group(tx):
     wallet_type = tx.wallet.wallet_type if tx.wallet_id else ''
+    if tx.direction == CashflowTransaction.Direction.IN:
+        return 'none'
     if tx.reference_type in KARNO_WALLET_REFERENCE_TYPES:
         return 'hq'
-    if wallet_type == Wallet.WalletType.SMS and tx.direction == CashflowTransaction.Direction.IN:
+    if wallet_type == Wallet.WalletType.SMS:
         return 'hq'
     return 'rah'
 
 
 def _wallet_transaction_share_amount(tx):
-    return Decimal(str(tx.amount or 0)) if _wallet_transaction_share_group(tx) == 'hq' else Decimal('0')
+    return Decimal(str(tx.amount or 0)) if _wallet_transaction_share_group(tx) in {'hq', 'rah'} else Decimal('0')
 
 
 def _parse_dt(value, end_of_day=False):
@@ -964,16 +981,33 @@ class HqCarWashInsightView(HqBaseView):
             {
                 'id': tx.id,
                 'wallet_name': tx.wallet.name if tx.wallet_id else '',
+                'wallet_type': tx.wallet.wallet_type if tx.wallet_id else '',
                 'direction': tx.direction,
                 'amount': tx.amount,
                 'description': tx.description,
                 'reference_type': tx.reference_type,
+                'reference_id': tx.reference_id,
                 'transacted_at': tx.transacted_at,
+                'share_group': _wallet_transaction_share_group(tx),
+                'share_amount': _wallet_transaction_share_amount(tx),
             }
             for tx in CashflowTransaction.objects.select_related('wallet')
             .filter(tenant=tenant)
-            .order_by('-transacted_at')[:8]
+            .order_by('-transacted_at')[:100]
         ]
+        sms_summary = NotificationLog.objects.filter(
+            tenant=tenant,
+            channel=NotificationLog.Channel.SMS,
+            status=NotificationLog.Status.SENT,
+        ).aggregate(sent_count=Count('id'))
+        sms_cost_total = sum(
+            (
+                _money(tx.amount)
+                for tx in today_wallet_transactions
+                if tx.wallet_id and tx.wallet.wallet_type == Wallet.WalletType.SMS and tx.direction == CashflowTransaction.Direction.OUT
+            ),
+            Decimal('0'),
+        )
 
         purchases = []
         installment_summary = {
@@ -1073,6 +1107,10 @@ class HqCarWashInsightView(HqBaseView):
                     'summary': wallet_summary,
                     'wallets': wallet_rows,
                     'recent_transactions': recent_wallet_transactions,
+                    'sms_summary': {
+                        'sent_count': sms_summary.get('sent_count') or 0,
+                        'today_cost_total': sms_cost_total,
+                    },
                 },
                 'options': {
                     'summary': installment_summary,
@@ -1652,6 +1690,7 @@ def _build_hq_report_snapshot(start=None, end=None):
             'refunded_total': Decimal('0'),
             'hq_share_total': Decimal('0'),
             'rah_share_total': Decimal('0'),
+            'unallocated_wallet_total': Decimal('0'),
             'feature_income_total': Decimal('0'),
             'feature_paid_total': Decimal('0'),
             'feature_remaining_total': Decimal('0'),
@@ -1663,8 +1702,15 @@ def _build_hq_report_snapshot(start=None, end=None):
             'wallet_gateway_charge_total': Decimal('0'),
             'wallet_manual_charge_total': Decimal('0'),
             'wallet_transactions_count': 0,
+            'sms_sent_count': 0,
+            'sms_cost_total': Decimal('0'),
             'wallet_charge_health': 'idle',
             'feature_breakdown': [],
+            'share_breakdown': {
+                'hq': Decimal('0'),
+                'rah': Decimal('0'),
+                'none': Decimal('0'),
+            },
             'last_activity_at': None,
         }
         for tenant in tenants
@@ -1677,6 +1723,9 @@ def _build_hq_report_snapshot(start=None, end=None):
             'expense_total': Decimal('0'),
             'wallet_deposit_total': Decimal('0'),
             'wallet_withdraw_total': Decimal('0'),
+            'hq_share_total': Decimal('0'),
+            'rah_share_total': Decimal('0'),
+            'sms_cost_total': Decimal('0'),
         }
     )
 
@@ -1839,7 +1888,6 @@ def _build_hq_report_snapshot(start=None, end=None):
         row['feature_paid_total'] += paid_amount
         row['feature_remaining_total'] += remaining_amount
         if share_group == 'hq':
-            row['hq_share_total'] += paid_amount
             summary_item = feature_summary.setdefault(purchase.feature_key, {
                 'key': purchase.feature_key,
                 'label': purchase.get_feature_key_display(),
@@ -1857,8 +1905,6 @@ def _build_hq_report_snapshot(start=None, end=None):
             summary_item['purchase_count'] += 1
             if purchase.is_active:
                 summary_item['active_count'] += 1
-        else:
-            row['rah_share_total'] += paid_amount
         if not row['last_activity_at'] or purchase.purchased_at > row['last_activity_at']:
             row['last_activity_at'] = purchase.purchased_at
 
@@ -1888,9 +1934,15 @@ def _build_hq_report_snapshot(start=None, end=None):
         row = grouped[tenant_id]
         amount = Decimal(str(tx.amount or 0))
         share_group = _wallet_transaction_share_group(tx)
-        karno_share_amount = _wallet_transaction_share_amount(tx)
+        share_amount = _wallet_transaction_share_amount(tx)
         row['wallet_transactions_count'] += 1
-        row['hq_share_total'] += karno_share_amount
+        row['share_breakdown'][share_group] += share_amount
+        if share_group == 'hq':
+            row['hq_share_total'] += share_amount
+        elif share_group == 'rah':
+            row['rah_share_total'] += share_amount
+        else:
+            row['unallocated_wallet_total'] += amount
         if tx.direction == CashflowTransaction.Direction.IN:
             row['wallet_deposit_total'] += amount
             if tx.reference_type == 'wallet_gateway_deposit':
@@ -1899,6 +1951,8 @@ def _build_hq_report_snapshot(start=None, end=None):
                 row['wallet_manual_charge_total'] += amount
         else:
             row['wallet_withdraw_total'] += amount
+            if tx.wallet_id and tx.wallet.wallet_type == Wallet.WalletType.SMS:
+                row['sms_cost_total'] += amount
         if not row['last_activity_at'] or tx.transacted_at > row['last_activity_at']:
             row['last_activity_at'] = tx.transacted_at
 
@@ -1909,6 +1963,12 @@ def _build_hq_report_snapshot(start=None, end=None):
             trend['wallet_deposit_total'] += amount
         else:
             trend['wallet_withdraw_total'] += amount
+        if share_group == 'hq':
+            trend['hq_share_total'] += share_amount
+        elif share_group == 'rah':
+            trend['rah_share_total'] += share_amount
+        if tx.direction == CashflowTransaction.Direction.OUT and tx.wallet_id and tx.wallet.wallet_type == Wallet.WalletType.SMS:
+            trend['sms_cost_total'] += amount
         wallet_transaction_rows.append({
             'id': tx.id,
             'tenant_id': tenant_id,
@@ -1924,8 +1984,21 @@ def _build_hq_report_snapshot(start=None, end=None):
             'transacted_at': tx.transacted_at,
             'created_by_name': (tx.created_by.full_name or tx.created_by.username) if tx.created_by_id else '',
             'share_group': share_group,
-            'share_amount': karno_share_amount,
+            'share_amount': share_amount,
+            'hq_share_amount': share_amount if share_group == 'hq' else Decimal('0'),
+            'rah_share_amount': share_amount if share_group == 'rah' else Decimal('0'),
         })
+
+    sms_logs = NotificationLog.objects.filter(channel=NotificationLog.Channel.SMS, status=NotificationLog.Status.SENT)
+    if start:
+        sms_logs = sms_logs.filter(sent_at__gte=start)
+    if end:
+        sms_logs = sms_logs.filter(sent_at__lte=end)
+    sms_counts = sms_logs.values('tenant_id').annotate(total=Count('id'))
+    for item in sms_counts:
+        tenant_id = item.get('tenant_id')
+        if tenant_id and tenant_id in grouped:
+            grouped[tenant_id]['sms_sent_count'] = item.get('total') or 0
 
     gateway_requests = WalletGatewayRequest.objects.filter(status=WalletGatewayRequest.Status.PAID)
     if start:
@@ -1956,7 +2029,6 @@ def _build_hq_report_snapshot(start=None, end=None):
             health = 'idle'
 
         item['net_amount'] = net_amount
-        item['rah_share_total'] += net_amount
         item['average_ticket'] = average_ticket
         item['completion_rate'] = completion_rate
         item['health'] = health
@@ -1996,6 +2068,7 @@ def _build_hq_report_snapshot(start=None, end=None):
     total_wallet_manual = sum((item['wallet_manual_charge_total'] for item in rows), Decimal('0'))
     total_hq_share = sum((item['hq_share_total'] for item in rows), Decimal('0'))
     total_rah_share = sum((item['rah_share_total'] for item in rows), Decimal('0'))
+    total_unallocated_wallet = sum((item['unallocated_wallet_total'] for item in rows), Decimal('0'))
     total_feature_income = sum((item['feature_income_total'] for item in rows), Decimal('0'))
     total_feature_paid = sum((item['feature_paid_total'] for item in rows), Decimal('0'))
     total_feature_remaining = sum((item['feature_remaining_total'] for item in rows), Decimal('0'))
@@ -2033,6 +2106,9 @@ def _build_hq_report_snapshot(start=None, end=None):
         'wallet_transactions_count': sum(item['wallet_transactions_count'] for item in rows),
         'hq_share_total': total_hq_share,
         'rah_share_total': total_rah_share,
+        'unallocated_wallet_total': total_unallocated_wallet,
+        'sms_sent_count': sum(item['sms_sent_count'] for item in rows),
+        'sms_cost_total': sum((item['sms_cost_total'] for item in rows), Decimal('0')),
         'feature_income_total': total_feature_income,
         'feature_paid_total': total_feature_paid,
         'feature_remaining_total': total_feature_remaining,

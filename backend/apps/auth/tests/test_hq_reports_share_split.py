@@ -42,7 +42,7 @@ class HqReportsShareSplitTests(TestCase):
         self.assertEqual(int(payload['summary']['final_total']), 1000000)
         self.assertEqual(int(payload['summary']['before_discount_total']), 1125000)
 
-    def test_karno_share_only_counts_sms_wallet_and_customer_excel_import(self):
+    def test_karno_share_counts_only_wallet_out_for_features_and_sms(self):
         tenant = CarWash.objects.create(name='میلان', slug='milan-share')
         regular_wallet = Wallet.objects.create(
             tenant=tenant,
@@ -103,6 +103,22 @@ class HqReportsShareSplitTests(TestCase):
         CashflowTransaction.objects.create(
             tenant=tenant,
             wallet=regular_wallet,
+            direction=CashflowTransaction.Direction.OUT,
+            amount=3000000,
+            description='feature option purchase',
+            reference_type='feature_option_purchase',
+        )
+        CashflowTransaction.objects.create(
+            tenant=tenant,
+            wallet=regular_wallet,
+            direction=CashflowTransaction.Direction.OUT,
+            amount=400000,
+            description='bank withdrawal',
+            reference_type='wallet_bank_withdrawal_ticket',
+        )
+        CashflowTransaction.objects.create(
+            tenant=tenant,
+            wallet=regular_wallet,
             direction=CashflowTransaction.Direction.IN,
             amount=900000,
             description='شارژ کیف پول اصلی',
@@ -112,11 +128,12 @@ class HqReportsShareSplitTests(TestCase):
         payload = _build_hq_report_snapshot()
         row = next(item for item in payload['rows'] if item['tenant_id'] == tenant.id)
 
-        self.assertEqual(int(row['hq_share_total']), 800000)
-        self.assertEqual(int(row['rah_share_total']), 3000000)
-        self.assertEqual(
+        self.assertEqual(int(row['hq_share_total']), 3150000)
+        self.assertEqual(int(row['rah_share_total']), 400000)
+        self.assertEqual(int(row['unallocated_wallet_total']), 1100000)
+        self.assertIn(
+            CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT,
             {item['key'] for item in payload['feature_summary']},
-            {CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT},
         )
         excel_transaction = next(
             item for item in payload['wallet_transactions']
@@ -132,7 +149,8 @@ class HqReportsShareSplitTests(TestCase):
         )
         self.assertEqual(excel_transaction['share_group'], 'hq')
         self.assertEqual(int(excel_transaction['share_amount']), 100000)
-        self.assertEqual(sms_charge['share_group'], 'hq')
-        self.assertEqual(int(sms_charge['share_amount']), 200000)
-        self.assertEqual(sms_send['share_group'], 'rah')
-        self.assertEqual(int(sms_send['share_amount']), 0)
+        self.assertEqual(sms_charge['share_group'], 'none')
+        self.assertEqual(int(sms_charge['share_amount']), 0)
+        self.assertEqual(sms_send['share_group'], 'hq')
+        self.assertEqual(int(sms_send['share_amount']), 50000)
+        self.assertEqual(int(payload['summary']['sms_cost_total']), 50000)
