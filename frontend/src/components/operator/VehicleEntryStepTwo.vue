@@ -459,7 +459,12 @@ const normalizedVehicle = computed(() => {
     driver: String(data.driver || data.driver_name || '').trim(),
     mobile: String(data.mobile || data.driver_phone || '').trim(),
     smsNotificationsEnabled: data.smsNotificationsEnabled ?? data.sms_notifications_enabled ?? true,
-    smsAutoSendEnabled: data.smsAutoSendEnabled ?? data.sms_auto_send_enabled ?? true,
+    smsAutoSendEnabled: (
+      data.smsAutoSendEnabled
+      ?? data.sms_auto_send_enabled
+      ?? data.sms_vehicle_auto_send_enabled
+      ?? true
+    ),
     note: String(data.note || data.notes || '').trim(),
     isPieceWash: Boolean(data.isPieceWash || data.is_piece_wash),
     pieceDetails: String(data.pieceDetails || data.piece_details || '').trim(),
@@ -822,7 +827,7 @@ const buildPayload = () => {
       color: vehicle.color,
       driver: vehicle.driver,
       mobile: vehicle.mobile,
-      smsNotificationsEnabled: smsNotificationsEnabled.value,
+      smsNotificationsEnabled: normalizedVehicle.value.smsAutoSendEnabled !== false && smsNotificationsEnabled.value,
       note: vehicle.note,
       isPieceWash: vehicle.isPieceWash,
       pieceDetails: pieceDetails.value.trim(),
@@ -1012,6 +1017,16 @@ const hydrateFromVehicleInfo = () => {
   ensureDefaultWorkerSelection()
   openInitialServicePicker()
 }
+
+watch(() => normalizedVehicle.value.smsAutoSendEnabled, (enabled) => {
+  if (enabled === false) {
+    smsNotificationsEnabled.value = false
+    return
+  }
+  if (normalizedVehicle.value.smsNotificationsEnabled !== false) {
+    smsNotificationsEnabled.value = true
+  }
+})
 
 const ensureDefaultWorkerSelection = () => {
   if (selectedWorkerIds.value.length || !workers.value.length) return

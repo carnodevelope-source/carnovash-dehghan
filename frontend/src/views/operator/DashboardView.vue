@@ -1392,6 +1392,7 @@ const mapVehicleToDraft = (source = {}) => ({
   driverGender: source.driver_gender || 'male',
   mobile: source.driver_phone,
   smsNotificationsEnabled: source.sms_notifications_enabled !== false,
+  smsAutoSendEnabled: source.smsAutoSendEnabled ?? source.sms_auto_send_enabled ?? source.sms_vehicle_auto_send_enabled ?? vehicleAutoSmsEnabled.value,
   customerScore: Number(source.customer_score || source.customerScore || 0),
   customerLoyaltyVisitCount: Number(source.customer_loyalty_visit_count || source.customerLoyaltyVisitCount || 0),
   customerLoyaltyDiscountPercent: Number(source.customer_loyalty_discount_percent || source.customerLoyaltyDiscountPercent || 0),
@@ -2892,7 +2893,12 @@ const buildCreateOrUpdatePayload = (payload, status) => {
       ? String(payload?.vehicle?.driverGender || payload?.vehicle?.driver_gender).trim()
       : '',
     driver_phone: (payload?.vehicle?.mobile || '').trim(),
-    sms_notifications_enabled: payload?.vehicle?.smsNotificationsEnabled !== false,
+    sms_notifications_enabled: (
+      payload?.vehicle?.smsAutoSendEnabled !== false
+      && payload?.vehicle?.sms_auto_send_enabled !== false
+      && payload?.vehicle?.sms_vehicle_auto_send_enabled !== false
+      && payload?.vehicle?.smsNotificationsEnabled !== false
+    ),
     notes: isPieceWash ? '' : (payload?.vehicle?.note || '').trim(),
     is_piece_wash: isPieceWash,
     piece_details: (payload?.vehicle?.pieceDetails || '').trim(),
