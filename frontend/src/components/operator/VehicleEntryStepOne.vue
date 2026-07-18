@@ -85,72 +85,21 @@
           </button>
         </div>
 
-        <label v-if="!form.isPieceWash" class="field">
+        <div v-if="!form.isPieceWash" class="field">
           <span>شماره پلاک</span>
-          <div class="plate-tools">
-            <label class="plate-type-select">
-              <span>نوع پلاک</span>
-              <select v-model="form.plateType">
-                <option value="car">خودرو</option>
-                <option value="motorcycle">موتور سیکلت</option>
-              </select>
-            </label>
-            <label class="toggle-check">
-              <input v-model="form.isAnonymous" type="checkbox" />
-              <span>بی‌نام</span>
-            </label>
-            <label class="toggle-check">
-              <input v-model="form.isPieceWash" type="checkbox" />
-              <span>قطعه‌شویی</span>
-            </label>
-          </div>
-          <div
-            v-if="!form.isAnonymous"
-            class="plate-entry-shell"
-            :class="[`plate-entry-${form.plateType}`]"
-          >
-            <div v-if="form.plateType === 'motorcycle'" class="manual-plate-badge manual-plate-motorcycle" dir="ltr">
-              <div class="manual-plate-blue manual-plate-blue-motor">
-                <span>I.R.</span>
-                <span>IRAN</span>
-              </div>
-              <div class="manual-plate-main">
-                <div class="motor-row-top">
-                  <input v-model="form.plateMid" class="plate-input mid" maxlength="3" inputmode="numeric" placeholder="---" @focus="selectFieldText" @input="onlyDigits('plateMid')" />
-                </div>
-                <div class="motor-row-bottom">
-                  <input v-model="form.plateLetter" class="plate-input motor-bottom-input" maxlength="5" inputmode="numeric" placeholder="-----" @focus="selectFieldText" @input="onlyDigits('plateLetter')" />
-                </div>
-              </div>
-            </div>
-            <div v-else class="manual-plate-badge manual-plate-car" dir="ltr">
-              <div class="manual-plate-main manual-plate-white-wrap">
-                <input ref="plateRightInputRef" v-model="form.plateRight" class="plate-input right" maxlength="2" inputmode="numeric" placeholder="--" @focus="selectFieldText" @input="handlePlatePartInput('plateRight')" />
-                <select ref="plateLetterInputRef" v-model="form.plateLetter" class="plate-input letter plate-letter-select" @change="handlePlatePartInput('plateLetter')">
-                  <option value="">حرف</option>
-                  <option v-for="letter in plateLetterOptions" :key="letter" :value="letter">{{ letter }}</option>
-                </select>
-                <input ref="plateMidInputRef" v-model="form.plateMid" class="plate-input mid" maxlength="3" inputmode="numeric" placeholder="---" @focus="selectFieldText" @input="handlePlatePartInput('plateMid')" />
-              </div>
-              <div class="manual-plate-blue">
-                <input ref="plateLeftInputRef" v-model="form.plateLeft" class="plate-input blue-input" maxlength="2" inputmode="numeric" placeholder="--" @focus="selectFieldText" @input="handlePlatePartInput('plateLeft')" />
-              </div>
-            </div>
-          </div>
-          <div v-else class="anonymous-plate-note">برای پذیرش بی‌نام، ورود دستی پلاک پنهان می‌شود.</div>
-          <div v-if="form.plateType === 'car' && letterSuggestionOptions.length > 1" class="letter-suggestions">
-            <button
-              v-for="option in letterSuggestionOptions"
-              :key="option"
-              type="button"
-              class="letter-chip"
-              :class="{ active: form.plateLetter === option }"
-              @click="selectLetterSuggestion(option)"
-            >
-              {{ option }}
-            </button>
-          </div>
-        </label>
+          <PlateEditor
+            v-model:plate-left="form.plateLeft"
+            v-model:plate-letter="form.plateLetter"
+            v-model:plate-mid="form.plateMid"
+            v-model:plate-right="form.plateRight"
+            v-model:plate-type="form.plateType"
+            v-model:anonymous="form.isAnonymous"
+            v-model:piece-wash="form.isPieceWash"
+            :letter-suggestions="letterSuggestionOptions"
+            show-anonymous-toggle
+            show-piece-wash-toggle
+          />
+        </div>
         <div v-else class="piece-wash-toggle-row">
           <label class="toggle-check">
             <input v-model="form.isPieceWash" type="checkbox" />
@@ -236,6 +185,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
 import PlateBadge from '../vehicles/PlateBadge.vue'
+import PlateEditor from '../vehicles/PlateEditor.vue'
 import { buildPlateNumber, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
 
 const emit = defineEmits(['cancel', 'continue', 'refer'])
@@ -300,10 +250,6 @@ const aiRecognitionSnapshot = ref({
 const cameraVideoRef = ref(null)
 const cameraCanvasRef = ref(null)
 const cameraFileInputRef = ref(null)
-const plateRightInputRef = ref(null)
-const plateLetterInputRef = ref(null)
-const plateMidInputRef = ref(null)
-const plateLeftInputRef = ref(null)
 const cameraStream = ref(null)
 const cameraState = reactive({
   active: false,
@@ -345,7 +291,6 @@ const OCR_LETTER_CONFUSIONS = {
   ع: ['ع', 'غ'],
   غ: ['غ', 'ع']
 }
-const plateLetterOptions = ['الف', 'ب', 'پ', 'ت', 'ث', 'ج', 'چ', 'ح', 'خ', 'د', 'ذ', 'ر', 'ز', 'ژ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ک', 'گ', 'ل', 'م', 'ن', 'و', 'ه', 'ی']
 const showAiPanel = computed(() => !isMobileViewport.value || !isAiPanelCollapsed.value)
 const availableTariffTypeOptions = computed(() => (
   form.plateType === 'motorcycle' ? motorcycleTariffTypeOptions : carTariffTypeOptions
@@ -432,36 +377,6 @@ const onlyDigits = (key) => {
   form[key] = normalized
 }
 
-const onlyLetter = () => {
-  if (isMotorcyclePlate()) {
-    form.plateLetter = normalizeDigits(form.plateLetter).replace(/\D/g, '').slice(0, 5)
-    letterSuggestions.value = []
-    return
-  }
-  form.plateLetter = normalizePlateLetter(form.plateLetter)
-  syncLetterSuggestions(form.plateLetter)
-}
-
-const focusNextPlatePart = (key) => {
-  if (isMotorcyclePlate()) return
-  const target = {
-    plateRight: form.plateRight.length >= 2 ? plateLetterInputRef.value : null,
-    plateLetter: form.plateLetter ? plateMidInputRef.value : null,
-    plateMid: form.plateMid.length >= 3 ? plateLeftInputRef.value : null
-  }[key]
-  if (!target || typeof target.focus !== 'function') return
-  requestAnimationFrame(() => target.focus())
-}
-
-const handlePlatePartInput = (key) => {
-  if (key === 'plateLetter') {
-    onlyLetter()
-  } else {
-    onlyDigits(key)
-  }
-  focusNextPlatePart(key)
-}
-
 const buildLetterSuggestions = (letter) => {
   if (isMotorcyclePlate()) return []
   const normalized = normalizePlateLetter(letter)
@@ -471,18 +386,6 @@ const buildLetterSuggestions = (letter) => {
 
 const syncLetterSuggestions = (letter) => {
   letterSuggestions.value = buildLetterSuggestions(letter)
-}
-
-const selectFieldText = (event) => {
-  const element = event?.target
-  if (!element || typeof element.select !== 'function') return
-  requestAnimationFrame(() => element.select())
-}
-
-const selectLetterSuggestion = (letter) => {
-  if (isMotorcyclePlate()) return
-  form.plateLetter = normalizePlateLetter(letter)
-  syncLetterSuggestions(form.plateLetter)
 }
 
 const setCameraMessage = (message, isError = false) => {
@@ -537,13 +440,13 @@ const startCamera = async () => {
 
 const dataUrlFromCanvas = (source, sourceWidth, sourceHeight) => {
   const canvas = cameraCanvasRef.value || document.createElement('canvas')
-  const maxWidth = 1280
+  const maxWidth = 960
   const scale = Math.min(1, maxWidth / Math.max(1, sourceWidth))
   canvas.width = Math.max(1, Math.round(sourceWidth * scale))
   canvas.height = Math.max(1, Math.round(sourceHeight * scale))
   const context = canvas.getContext('2d')
   context.drawImage(source, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.86)
+  return canvas.toDataURL('image/jpeg', 0.78)
 }
 
 const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
@@ -552,18 +455,6 @@ const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
   reader.onerror = () => reject(new Error('file_read_failed'))
   reader.readAsDataURL(file)
 })
-
-const captureStillFromTrack = async () => {
-  const track = cameraStream.value?.getVideoTracks?.()[0]
-  if (!track || typeof window.ImageCapture !== 'function') return ''
-  try {
-    const imageCapture = new window.ImageCapture(track)
-    const bitmap = await imageCapture.grabFrame()
-    return dataUrlFromCanvas(bitmap, bitmap.width, bitmap.height)
-  } catch (_error) {
-    return ''
-  }
-}
 
 const processCameraFile = async (event) => {
   const file = event.target?.files?.[0]
@@ -592,9 +483,8 @@ const captureFromVideo = async () => {
     await startCamera()
     return
   }
-  const highResDataUrl = await captureStillFromTrack()
   const video = cameraVideoRef.value
-  const imageDataUrl = highResDataUrl || dataUrlFromCanvas(video, video.videoWidth, video.videoHeight)
+  const imageDataUrl = dataUrlFromCanvas(video, video.videoWidth, video.videoHeight)
   await recognizePlateImage(imageDataUrl)
 }
 
@@ -666,7 +556,8 @@ const recognizePlateImage = async (imageDataUrl) => {
   try {
     const { data } = await api.post('/vehicles/plate-recognition/', {
       session_id: aiSessionId,
-      image_base64: imageDataUrl
+      image_base64: imageDataUrl,
+      force_process: false
     }, { meta: { trackLoading: false } })
     const recognizedConfidence = normalizeAiConfidence(data?.confidence)
     cameraState.lastConfidence = recognizedConfidence ?? 0
@@ -881,6 +772,11 @@ watch(() => form.plateType, (value) => {
     ...detectedPlateSnapshot.value,
     plateType: detectedPlateSnapshot.value.plateNumber ? detectedPlateSnapshot.value.plateType : value
   }
+})
+
+watch(() => form.plateLetter, (value) => {
+  if (isHydratingForm || form.plateType !== 'car') return
+  syncLetterSuggestions(value)
 })
 
 let lookupTimer = null

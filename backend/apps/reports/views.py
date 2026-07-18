@@ -597,6 +597,8 @@ class ReportsDashboardView(APIView):
                 'bonus_total': float(job_adjustments['bonus_total']),
                 'penalty_total': float(job_adjustments['penalty_total']),
                 'discount_total': float(job.discount_total) if job else 0,
+                'final_total': float(job.final_total) if job else 0,
+                'before_discount_total': float((job.final_total or 0) + (job.discount_total or 0)) if job else 0,
                 'tip_amount': float(job.tip_amount) if job else 0,
                 'worker_name': _job_worker_names(job),
                 'products': ', '.join(product_names),
@@ -609,6 +611,8 @@ class ReportsDashboardView(APIView):
         total_worker = sum((_normalize_decimal(getattr(vehicle.job, 'worker_share_amount', 0)) for vehicle in vehicles if getattr(vehicle, 'job', None)), Decimal('0'))
         total_tip = sum((_normalize_decimal(getattr(vehicle.job, 'tip_amount', 0)) for vehicle in vehicles if getattr(vehicle, 'job', None)), Decimal('0'))
         total_discount = sum((_normalize_decimal(getattr(vehicle.job, 'discount_total', 0)) for vehicle in vehicles if getattr(vehicle, 'job', None)), Decimal('0'))
+        total_final = sum((_normalize_decimal(getattr(vehicle.job, 'final_total', 0)) for vehicle in vehicles if getattr(vehicle, 'job', None)), Decimal('0'))
+        total_before_discount = total_final + total_discount
         all_jobs = [vehicle.job for vehicle in vehicles if getattr(vehicle, 'job', None)]
         all_workers_totals = _compute_all_workers_totals(
             tenant,
@@ -834,6 +838,8 @@ class ReportsDashboardView(APIView):
                 'worker_total': float(total_worker),
                 'tips_total': float(total_tip),
                 'discount_total': float(total_discount),
+                'final_total': float(total_final),
+                'before_discount_total': float(total_before_discount),
                 'payable_worker_total': float(all_workers_totals['payable_total']),
                 'insurance_total': float(all_workers_totals['insurance_total']),
                 'payable_tip_total': float(selected_worker_summary['tip_balance']) if selected_worker_summary else 0,
@@ -847,6 +853,8 @@ class ReportsDashboardView(APIView):
                     'worker_total': float(total_worker),
                     'tips_total': float(total_tip),
                     'discount_total': float(total_discount),
+                    'final_total': float(total_final),
+                    'before_discount_total': float(total_before_discount),
                 },
                 'carwash': {'carwash_total': float(total_carwash)},
                 'worker': {

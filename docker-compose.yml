@@ -1,6 +1,6 @@
 services:
   db:
-    image: mysql:8.4
+    image: ${MYSQL_IMAGE:-docker.arvancloud.ir/mysql:8.4}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -26,6 +26,8 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        PYTHON_IMAGE: ${BACKEND_PYTHON_IMAGE:-docker.arvancloud.ir/python:3.12-slim}
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-replace-me}
       DJANGO_DEBUG: "False"
@@ -70,12 +72,15 @@ services:
     build:
       context: .
       dockerfile: ai/Dockerfile
+      args:
+        PYTHON_IMAGE: ${PLATE_AI_PYTHON_IMAGE:-docker.arvancloud.ir/python:3.12-slim}
     environment:
       PYTHONUNBUFFERED: "1"
       TZ: ${TZ:-Asia/Tehran}
       PLATE_AI_DEVICE: ${PLATE_AI_DEVICE:-auto}
       PLATE_AI_PORT: ${PLATE_AI_PORT:-8765}
       PLATE_AI_IMGSZ: ${PLATE_AI_IMGSZ:-640}
+      PLATE_AI_CPU_THREADS: ${PLATE_AI_CPU_THREADS:-4}
       PLATE_AI_THRESHOLD: ${PLATE_AI_THRESHOLD:-0.45}
       PLATE_AI_MIN_BOX_AREA: ${PLATE_AI_MIN_BOX_AREA:-300}
       PLATE_AI_BATCH_SIZE: ${PLATE_AI_BATCH_SIZE:-8}
@@ -116,6 +121,8 @@ services:
     build:
       context: ./frontend
       args:
+        NODE_IMAGE: ${FRONTEND_NODE_IMAGE:-docker.arvancloud.ir/node:20-alpine}
+        NGINX_IMAGE: ${FRONTEND_NGINX_IMAGE:-docker.arvancloud.ir/nginx:1.27-alpine}
         VITE_API_BASE_URL: /api
     depends_on:
       backend:

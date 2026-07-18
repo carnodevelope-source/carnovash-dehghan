@@ -1641,6 +1641,8 @@ def _build_hq_report_snapshot(start=None, end=None):
             'active_queue_count': 0,
             'payments_count': 0,
             'paid_amount': Decimal('0'),
+            'final_total': Decimal('0'),
+            'before_discount_total': Decimal('0'),
             'pending_amount': Decimal('0'),
             'expense_total': Decimal('0'),
             'tips_total': Decimal('0'),
@@ -1724,10 +1726,13 @@ def _build_hq_report_snapshot(start=None, end=None):
         event_dt = payment.paid_at or payment.created_at
         amount = Decimal(str(payment.amount or 0))
         if payment.status == Payment.Status.SUCCESS:
+            discount_amount = Decimal(str(payment.discount_amount or 0))
             row['payments_count'] += 1
             row['paid_amount'] += amount
+            row['final_total'] += amount
+            row['before_discount_total'] += amount + discount_amount
             row['tips_total'] += Decimal(str(payment.tip_amount or 0))
-            row['discount_total'] += Decimal(str(payment.discount_amount or 0))
+            row['discount_total'] += discount_amount
             row['services_total'] += Decimal(str(payment.service_amount or 0))
             row['products_total'] += Decimal(str(payment.product_amount or 0))
             if event_dt and (not row['last_activity_at'] or event_dt > row['last_activity_at']):
@@ -2005,6 +2010,8 @@ def _build_hq_report_snapshot(start=None, end=None):
         'released_count': total_released,
         'cancelled_count': total_cancelled,
         'paid_amount': total_paid,
+        'final_total': sum((item['final_total'] for item in rows), Decimal('0')),
+        'before_discount_total': sum((item['before_discount_total'] for item in rows), Decimal('0')),
         'expense_total': total_expense,
         'net_total': total_net,
         'pending_amount': total_pending,

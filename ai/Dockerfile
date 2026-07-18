@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+ARG PYTHON_IMAGE=docker.arvancloud.ir/python:3.12-slim
+FROM ${PYTHON_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -17,10 +18,8 @@ RUN apt-get -o Acquire::Retries=5 -o Acquire::ForceIPv4=true update \
 
 COPY ai/requirements.txt /tmp/requirements.txt
 COPY backend/packages /opt/packages
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-index --find-links=/opt/packages -r /tmp/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip uninstall -y opencv-python \
+RUN pip install --no-index --find-links=/opt/packages -r /tmp/requirements.txt
+RUN pip uninstall -y opencv-python \
     && pip install --no-index --find-links=/opt/packages --force-reinstall --no-deps opencv-python-headless
 
 COPY ai/ /app/

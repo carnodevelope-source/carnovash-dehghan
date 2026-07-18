@@ -667,9 +667,9 @@
               <span>عملیات، درآمد و هزینه‌های شعب</span>
             </article>
             <article>
-              <small>ریز تراکنش کیف پول</small>
-              <strong>{{ toFa(walletLedgerRows.length) }}</strong>
-              <span>واریز، برداشت و شارژ</span>
+              <small>درآمد نهایی</small>
+              <strong>{{ money(hqFinalAmount()) }}</strong>
+              <span>قبل از تخفیف: {{ money(hqBeforeDiscountAmount()) }}</span>
             </article>
           </div>
         </div>
@@ -845,13 +845,16 @@
               <div v-if="tenantReport.error" class="error-box" role="alert">{{ tenantReport.error }}</div>
               <div v-else-if="tenantReport.loading" class="empty-note">در حال دریافت گزارش کارواش انتخابی...</div>
               <template v-else>
-                <div class="report-kpi-grid tenant-kpis">
-                  <article class="report-kpi-card spotlight"><small>حق کارواش</small><strong>{{ money(selectedTenantReportSummary.carwash_total || 0) }}</strong></article>
-                  <article class="report-kpi-card"><small>حق نیرو</small><strong>{{ money(selectedTenantReportSummary.worker_total || 0) }}</strong></article>
-                  <article class="report-kpi-card"><small>انعام</small><strong>{{ money(selectedTenantReportSummary.tips_total || 0) }}</strong></article>
-                  <article class="report-kpi-card"><small>پرداختنی نیرو</small><strong>{{ money(selectedTenantReportSummary.payable_worker_total || 0) }}</strong></article>
-                  <article class="report-kpi-card"><small>بیمه</small><strong>{{ money(selectedTenantReportSummary.insurance_total || 0) }}</strong></article>
-                  <article class="report-kpi-card"><small>تعداد خودرو</small><strong>{{ toFa(selectedTenantReportSummary.vehicles_count || 0) }}</strong></article>
+                <div class="report-kpi-grid tenant-kpis finance-kpi-grid">
+                  <article class="report-kpi-card spotlight"><small>مبلغ نهایی</small><strong>{{ money(tenantFinalAmount()) }}</strong><span>بعد از تخفیف، شامل انعام</span></article>
+                  <article class="report-kpi-card"><small>قبل از تخفیف</small><strong>{{ money(tenantBeforeDiscountAmount()) }}</strong><span>مبلغ نهایی + جمع تخفیف</span></article>
+                  <article class="report-kpi-card"><small>جمع تخفیف</small><strong>{{ money(tenantSummaryAmount('discount_total')) }}</strong><span>تخفیف مجموعه، امتیاز و دستی</span></article>
+                  <article class="report-kpi-card"><small>حق کارواش</small><strong>{{ money(tenantSummaryAmount('carwash_total')) }}</strong><span>سهم شعبه بعد از تسویه سهم‌ها</span></article>
+                  <article class="report-kpi-card"><small>حق نیرو</small><strong>{{ money(tenantSummaryAmount('worker_total')) }}</strong><span>سهم اجرای خدمات</span></article>
+                  <article class="report-kpi-card"><small>انعام</small><strong>{{ money(tenantSummaryAmount('tips_total')) }}</strong><span>انعام ثبت‌شده روی سفارش‌ها</span></article>
+                  <article class="report-kpi-card"><small>پرداختنی نیرو</small><strong>{{ money(tenantSummaryAmount('payable_worker_total')) }}</strong><span>مانده حقوق محاسبه‌شده</span></article>
+                  <article class="report-kpi-card"><small>بیمه</small><strong>{{ money(tenantSummaryAmount('insurance_total')) }}</strong><span>مانده حق بیمه</span></article>
+                  <article class="report-kpi-card"><small>تعداد خودرو</small><strong>{{ toFa(tenantSummaryAmount('vehicles_count')) }}</strong><span>کل مراجعات بازه</span></article>
                 </div>
 
                 <div class="hq-share-tabs compact" role="tablist" aria-label="تب‌های گزارش کارواش">
@@ -924,8 +927,10 @@
           <div class="report-tabs network-tabs">
             <button v-for="tab in reportTabs" :key="tab.key" type="button" class="report-tab-btn" :class="{ active: reportTab === tab.key }" @click="reportTab = tab.key">{{ tab.label }}</button>
           </div>
-          <div class="report-kpi-grid">
+          <div class="report-kpi-grid report-money-kpis">
             <article v-if="reportTab === 'revenue'" class="report-kpi-card spotlight"><small>درآمد وصول‌شده</small><strong>{{ money(reports.summary.paid_amount || 0) }}</strong><span class="delta-badge" :class="deltaClass(reports.summary.revenue_change_percent)">{{ formatPercentChange(reports.summary.revenue_change_percent) }}</span></article>
+            <article v-if="reportTab === 'revenue'" class="report-kpi-card"><small>قبل از تخفیف</small><strong>{{ money(hqBeforeDiscountAmount()) }}</strong><span>درآمد وصول‌شده + تخفیف</span></article>
+            <article v-if="reportTab === 'revenue'" class="report-kpi-card"><small>جمع تخفیف</small><strong>{{ money(hqSummaryAmount('discount_total')) }}</strong><span>تخفیف ثبت‌شده پرداخت‌های موفق</span></article>
             <article v-if="reportTab === 'revenue'" class="report-kpi-card"><small>خالص شبکه</small><strong>{{ money(reports.summary.net_total || 0) }}</strong><span class="delta-badge" :class="deltaClass(reports.summary.net_change_percent)">{{ formatPercentChange(reports.summary.net_change_percent) }}</span></article>
             <article v-if="reportTab === 'revenue'" class="report-kpi-card"><small>تعداد خودرو</small><strong>{{ toFa(reports.summary.vehicles_count || 0) }}</strong></article>
             <article v-if="reportTab === 'wallet'" class="report-kpi-card spotlight"><small>موجودی کل کیف پول‌ها</small><strong>{{ money(reports.summary.wallet_balance_total || 0) }}</strong></article>
@@ -934,10 +939,10 @@
           </div>
           <div class="table-wrap report-table-wrap rich-table">
             <table v-if="reportTab === 'revenue'">
-              <thead><tr><th>رتبه</th><th>کارواش</th><th>وضعیت</th><th>درآمد وصولی</th><th>خالص</th><th>میانگین فاکتور</th><th>مطالبات</th><th>پرداخت موفق</th></tr></thead>
+              <thead><tr><th>رتبه</th><th>کارواش</th><th>وضعیت</th><th>درآمد وصولی</th><th>قبل از تخفیف</th><th>تخفیف</th><th>خالص</th><th>میانگین فاکتور</th><th>مطالبات</th><th>پرداخت موفق</th></tr></thead>
               <tbody>
                 <tr v-for="(row, index) in reportRows" :key="row.tenant_id">
-                  <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td><td><strong>{{ row.tenant_name }}</strong><small class="row-sub">{{ formatDate(row.last_activity_at) }}</small></td><td><span class="health-pill" :class="row.health">{{ healthLabel(row.health) }}</span></td><td>{{ money(row.paid_amount) }}</td><td>{{ money(row.net_amount) }}</td><td>{{ money(row.average_ticket) }}</td><td>{{ money(row.pending_amount) }}</td><td>{{ toFa(row.payments_count || 0) }}</td>
+                  <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td><td><strong>{{ row.tenant_name }}</strong><small class="row-sub">{{ formatDate(row.last_activity_at) }}</small></td><td><span class="health-pill" :class="row.health">{{ healthLabel(row.health) }}</span></td><td>{{ money(row.paid_amount) }}</td><td>{{ money(rowBeforeDiscountAmount(row)) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.net_amount) }}</td><td>{{ money(row.average_ticket) }}</td><td>{{ money(row.pending_amount) }}</td><td>{{ toFa(row.payments_count || 0) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1752,7 +1757,7 @@ const tenantReportRows = computed(() => {
 })
 const tenantReportColumns = computed(() => ({
   overall: [
-    ['row', 'ردیف'], ['driver_name', 'راننده'], ['driver_phone', 'شماره'], ['plate_number', 'پلاک'], ['status', 'وضعیت'], ['carwash_share', 'حق کارواش', 'money'], ['worker_share', 'حق نیرو', 'money'], ['discount_total', 'تخفیف', 'money'], ['tip_amount', 'انعام', 'money'], ['worker_name', 'نیرو'], ['services', 'خدمات'], ['created_at', 'تاریخ', 'date']
+    ['row', 'ردیف'], ['driver_name', 'راننده'], ['driver_phone', 'شماره'], ['plate_number', 'پلاک'], ['status', 'وضعیت'], ['final_total', 'مبلغ نهایی', 'money'], ['before_discount_total', 'قبل از تخفیف', 'money'], ['carwash_share', 'حق کارواش', 'money'], ['worker_share', 'حق نیرو', 'money'], ['discount_total', 'جمع تخفیف', 'money'], ['tip_amount', 'انعام', 'money'], ['worker_name', 'نیرو'], ['services', 'خدمات'], ['created_at', 'تاریخ', 'date']
   ],
   carwash: [
     ['row', 'ردیف'], ['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['carwash_share', 'حق کارواش', 'money'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ', 'date']
@@ -1792,6 +1797,20 @@ const reportPeriodLabel = computed(() => {
 
 const money = (value) => formatThousandsToman(value)
 const toFa = (value) => Number(value || 0).toLocaleString('fa-IR')
+const roundedMoneySum = (...values) => values.reduce((sum, value) => sum + Math.round(Number(value || 0)), 0)
+const hqSummaryAmount = (key) => Number(reports.summary?.[key] || 0)
+const hqFinalAmount = () => hqSummaryAmount('final_total') || hqSummaryAmount('paid_amount')
+const hqBeforeDiscountAmount = () => roundedMoneySum(hqFinalAmount(), hqSummaryAmount('discount_total'))
+const tenantSummaryAmount = (key) => Number(selectedTenantReportSummary.value?.[key] || 0)
+const tenantFinalAmount = () => {
+  const explicitTotal = tenantSummaryAmount('final_total')
+  if (explicitTotal > 0) return explicitTotal
+  return tenantSummaryAmount('carwash_total') + tenantSummaryAmount('worker_total') + tenantSummaryAmount('tips_total')
+}
+const tenantBeforeDiscountAmount = () => roundedMoneySum(tenantFinalAmount(), tenantSummaryAmount('discount_total'))
+const rowBeforeDiscountAmount = (row) => {
+  return roundedMoneySum(row?.paid_amount || row?.final_total || 0, row?.discount_total || 0)
+}
 const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))
   .replace(/[٠-٩]/g, (digit) => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
@@ -1900,6 +1919,9 @@ const plateTypeLabel = (value) => ({
 }[value] || value || '-')
 const tenantCellValue = (row, column) => {
   const [key, _label, type] = column
+  if (key === 'before_discount_total') {
+    return money(roundedMoneySum(row?.final_total || 0, row?.discount_total || 0))
+  }
   const value = row?.[key]
   if (type === 'money') return money(value || 0)
   if (type === 'date') return dateTime(value)
@@ -4456,6 +4478,14 @@ td strong {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.report-money-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.finance-kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
 .report-kpi-card,
 .report-highlight-card,
 .report-trend-card,
@@ -4471,6 +4501,7 @@ td strong {
   display: grid;
   gap: 8px;
   min-height: 138px;
+  align-content: start;
 }
 
 .report-kpi-card.spotlight {
@@ -5664,7 +5695,7 @@ td strong {
 }
 
 .tenant-kpis {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
 .hq-share-tabs.compact {

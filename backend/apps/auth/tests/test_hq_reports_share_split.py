@@ -2,10 +2,46 @@ from django.test import TestCase
 
 from apps.auth.models import CarWash, CarWashFeaturePurchase
 from apps.auth.views import _build_hq_report_snapshot
-from apps.payments.models import CashflowTransaction, Wallet
+from apps.payments.models import CashflowTransaction, Payment, Wallet
+from apps.vehicles.models import VehicleEntry
 
 
 class HqReportsShareSplitTests(TestCase):
+    def test_hq_report_exposes_final_and_before_discount_totals(self):
+        tenant = CarWash.objects.create(name='تهران', slug='tehran-report')
+        vehicle = VehicleEntry.objects.create(
+            tenant=tenant,
+            plate_number='12ب34567',
+            plate_left='12',
+            plate_letter='ب',
+            plate_mid='345',
+            plate_right='67',
+            car_model='206',
+            car_color='سفید',
+            driver_name='رضا',
+            driver_phone='09120000000',
+            status=VehicleEntry.Status.RELEASED,
+        )
+        Payment.objects.create(
+            tenant=tenant,
+            vehicle_entry=vehicle,
+            method=Payment.Method.CASH,
+            status=Payment.Status.SUCCESS,
+            amount=1000000,
+            service_amount=950000,
+            product_amount=0,
+            tip_amount=50000,
+            discount_amount=125000,
+        )
+
+        payload = _build_hq_report_snapshot()
+        row = next(item for item in payload['rows'] if item['tenant_id'] == tenant.id)
+
+        self.assertEqual(int(row['final_total']), 1000000)
+        self.assertEqual(int(row['before_discount_total']), 1125000)
+        self.assertEqual(int(payload['summary']['final_total']), 1000000)
+        self.assertEqual(int(payload['summary']['before_discount_total']), 1125000)
+
     def test_karno_share_only_counts_sms_wallet_and_customer_excel_import(self):
         tenant = CarWash.objects.create(name='میلان', slug='milan-share')
         regular_wallet = Wallet.objects.create(

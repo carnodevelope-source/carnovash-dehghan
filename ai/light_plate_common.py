@@ -97,11 +97,16 @@ LETTER_ALIASES = {
 
 
 def configure_torch_runtime(device: str, cpu_threads: int) -> None:
+    runtime_threads = max(1, cpu_threads)
+    try:
+        cv2.setNumThreads(runtime_threads)
+    except Exception:
+        pass
     if device in {"cuda", "auto"} and not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for this configuration, but no GPU is available.")
     if device == "cuda":
         return
-    torch.set_num_threads(max(1, cpu_threads))
+    torch.set_num_threads(runtime_threads)
     if hasattr(torch, "set_num_interop_threads"):
         try:
             torch.set_num_interop_threads(1)

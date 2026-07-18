@@ -389,12 +389,17 @@ class VehiclePlateRecognitionView(APIView):
         session_id = f'tenant-{tenant.id}:{session_suffix}'
         service_url = str(getattr(settings, 'PLATE_AI_SERVICE_URL', 'http://127.0.0.1:8765')).rstrip('/')
         timeout_seconds = float(getattr(settings, 'PLATE_AI_TIMEOUT_SECONDS', 5.0) or 5.0)
+        force_process_value = request.data.get('force_process', False)
+        if isinstance(force_process_value, str):
+            force_process = force_process_value.strip().lower() in {'1', 'true', 'yes', 'on'}
+        else:
+            force_process = bool(force_process_value)
         payload = json.dumps(
             {
                 'session_id': session_id,
                 'image_base64': image_base64,
                 'timeout_sec': max(1.0, timeout_seconds - 0.5),
-                'force_process': True,
+                'force_process': force_process,
             }
         ).encode('utf-8')
 

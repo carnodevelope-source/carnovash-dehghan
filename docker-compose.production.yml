@@ -5,7 +5,7 @@ services:
       - "80"
 
   edge-nginx:
-    image: nginx:1.27-alpine
+    image: ${EDGE_NGINX_IMAGE:-docker.arvancloud.ir/nginx:1.27-alpine}
     depends_on:
       frontend:
         condition: service_healthy
@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
 
   certbot:
-    image: certbot/certbot:latest
+    image: ${CERTBOT_IMAGE:-docker.arvancloud.ir/certbot/certbot:latest}
     profiles: ["ops"]
     volumes:
       - ./docker-data/certbot-www:/var/www/certbot
