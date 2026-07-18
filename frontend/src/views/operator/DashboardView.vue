@@ -436,6 +436,10 @@
               <span>انعام (تومان)</span>
               <input :value="moneyInputValue(releaseForm.tipAmount)" type="text" inputmode="numeric" @input="releaseForm.tipAmount = parseMoneyInput($event.target.value)" />
             </label>
+            <label class="tip-input-row modern-input-row">
+              <span>تخفیف دستی (تومان)</span>
+              <input :value="moneyInputValue(releaseForm.manualDiscountTotal)" type="text" inputmode="numeric" @input="releaseForm.manualDiscountTotal = parseMoneyInput($event.target.value)" />
+            </label>
             <div class="worker-selection-panel">
               <div class="worker-selection-head">
                 <div>
@@ -2694,6 +2698,7 @@ const confirmReleaseVehicle = async () => {
         worker_share_percent: Math.max(0, Math.min(100, Number(worker.worker_share_percent ?? 0)))
       })).filter((worker) => worker.id > 0),
       tip_amount: Math.max(0, Number(releaseForm.value.tipAmount || 0)),
+      manual_discount_total: Math.max(0, Number(releaseForm.value.manualDiscountTotal || 0)),
       payment_method: releaseForm.value.paymentMethod,
       payment_breakdown: releasePaymentBreakdown.value.map((item) => ({
         method: item.method,
