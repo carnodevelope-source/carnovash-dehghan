@@ -1,5 +1,6 @@
 ﻿from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import timedelta
 import json
 import re
 from urllib.error import HTTPError, URLError
@@ -10,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import F, Q, Sum
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -43,6 +45,15 @@ class VehicleEntryListCreateView(generics.ListCreateAPIView):
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
+        date_start = parse_date(self.request.query_params.get('date_start') or '')
+        date_end = parse_date(self.request.query_params.get('date_end') or '')
+        current_timezone = timezone.get_current_timezone()
+        if date_start:
+            start_at = timezone.make_aware(datetime.combine(date_start, datetime.min.time()), current_timezone)
+            queryset = queryset.filter(check_in_at__gte=start_at)
+        if date_end:
+            end_at = timezone.make_aware(datetime.combine(date_end + timedelta(days=1), datetime.min.time()), current_timezone)
+            queryset = queryset.filter(check_in_at__lt=end_at)
         return queryset
 
     def perform_create(self, serializer):

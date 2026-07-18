@@ -9,8 +9,31 @@
     @update:search-query="search = $event"
   >
     <div class="dashboard-content">
-        <div class="filters">
+        <div class="vehicle-toolbar">
           <button class="primary-btn" @click="openVehicleModal">ثبت خودروی جدید</button>
+          <div class="date-range-chips" aria-label="فیلتر بازه خودروها">
+            <button
+              v-for="item in datePresetItems"
+              :key="item.key"
+              type="button"
+              class="date-chip"
+              :class="{ active: dateRangeMode === item.key }"
+              @click="selectDatePreset(item.key)"
+            >
+              {{ item.label }}
+            </button>
+            <button
+              type="button"
+              class="date-chip custom-range-chip"
+              :class="{ active: dateRangeMode === 'custom' }"
+              @click="openDateRangeModal"
+            >
+              بازه تاریخی
+            </button>
+          </div>
+          <span class="active-range-label">{{ activeDateRangeLabel }}</span>
+        </div>
+        <div class="filters">
           <button
             v-for="item in filterItems"
             :key="item.key"
@@ -75,9 +98,35 @@
             </button>
             <div v-else class="card-passive-state">ترخیص انجام شد</div>
           </article>
-        </section>
+      </section>
     </div>
   </AppShell>
+
+  <div v-if="showDateRangeModal" class="modal-overlay date-range-overlay" @click.self="closeDateRangeModal">
+    <section class="modal-panel date-range-panel">
+      <header class="modal-head">
+        <div>
+          <p class="modal-step">بازه تاریخی</p>
+          <h2>انتخاب تاریخ خودروها</h2>
+        </div>
+        <button class="close-btn" type="button" @click="closeDateRangeModal">✕</button>
+      </header>
+      <div class="date-range-modal-body">
+        <label class="date-range-field">
+          <span>شروع بازه</span>
+          <BaseDatePicker v-model="dateRangeDraft.startJalali" placeholder="1405/01/01" :clearable="false" />
+        </label>
+        <label class="date-range-field">
+          <span>پایان بازه</span>
+          <BaseDatePicker v-model="dateRangeDraft.endJalali" placeholder="1405/01/30" :clearable="false" />
+        </label>
+      </div>
+      <footer class="date-range-actions">
+        <button type="button" class="secondary-btn" @click="closeDateRangeModal">انصراف</button>
+        <button type="button" class="primary-btn" @click="applyCustomDateRange">اعمال بازه</button>
+      </footer>
+    </section>
+  </div>
 
   <div v-if="showVehicleModal" class="modal-overlay" @click.self="closeVehicleModal">
       <section class="modal-panel" :class="{ 'step-one-modal-panel': modalStep === 1, 'step-two-modal-panel': modalStep === 2 }">
@@ -857,10 +906,20 @@ import { buildPlateNumber, isAnonymousPlate, normalizeDigits, resolvePlateParts,
 const search = ref('')
 const debouncedSearch = ref('')
 const activeFilter = ref('entered')
+const dateRangeMode = ref('today')
+const customDateRange = ref({
+  startJalali: getTodayJalaliString(),
+  endJalali: getTodayJalaliString()
+})
+const dateRangeDraft = ref({
+  startJalali: getTodayJalaliString(),
+  endJalali: getTodayJalaliString()
+})
 const showVehicleModal = ref(false)
 const showVehicleDetailsModal = ref(false)
 const showPlateEditModal = ref(false)
 const showReleaseModal = ref(false)
+const showDateRangeModal = ref(false)
 const showChequeDetailsModal = ref(false)
 const showInvoicePreviewModal = ref(false)
 const showReleaseServicePicker = ref(false)
@@ -947,6 +1006,7 @@ const hasOperatorModalOpen = computed(() => (
   || showChequeDetailsModal.value
   || showInvoicePreviewModal.value
   || showReleaseWorkerEditor.value
+  || showDateRangeModal.value
 ))
 
 const openVehicleModal = () => {
@@ -1157,6 +1217,127 @@ const parseJalaliToIso = (input) => {
     gm += 1
   }
   return `${gy}-${String(gm + 1).padStart(2, '0')}-${String(gDayNo + 1).padStart(2, '0')}`
+}
+function localDateOnly(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+function shiftLocalDate(date, days) {
+  const next = localDateOnly(date)
+  next.setDate(next.getDate() + days)
+  return next
+}
+function formatIsoDate(date) {
+  const localDate = localDateOnly(date)
+  return `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`
+}
+function getJalaliParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric'
+  }).formatToParts(date)
+  return {
+    y: Number(parts.find((item) => item.type === 'year')?.value || 1400),
+    m: Number(parts.find((item) => item.type === 'month')?.value || 1),
+    d: Number(parts.find((item) => item.type === 'day')?.value || 1)
+  }
+}
+function formatJalaliParts(parts) {
+  return `${parts.y}/${String(parts.m).padStart(2, '0')}/${String(parts.d).padStart(2, '0')}`
+}
+function getTodayJalaliString() {
+  return formatJalaliParts(getJalaliParts(new Date()))
+}
+function isoDateToLocalDate(isoDate) {
+  const match = String(isoDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return null
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+}
+function jalaliToLocalDate(jalaliDate) {
+  const isoDate = parseJalaliToIso(jalaliDate)
+  return isoDateToLocalDate(isoDate)
+}
+function presetDateRange(mode) {
+  const today = localDateOnly(new Date())
+  if (mode === 'yesterday') {
+    const yesterday = shiftLocalDate(today, -1)
+    const jalali = formatJalaliParts(getJalaliParts(yesterday))
+    return { startJalali: jalali, endJalali: jalali }
+  }
+  if (mode === 'week') {
+    const saturdayOffset = (today.getDay() + 1) % 7
+    const weekStart = shiftLocalDate(today, -saturdayOffset)
+    return {
+      startJalali: formatJalaliParts(getJalaliParts(weekStart)),
+      endJalali: formatJalaliParts(getJalaliParts(today))
+    }
+  }
+  if (mode === 'month') {
+    const todayJalali = getJalaliParts(today)
+    return {
+      startJalali: formatJalaliParts({ y: todayJalali.y, m: todayJalali.m, d: 1 }),
+      endJalali: formatJalaliParts(todayJalali)
+    }
+  }
+  const jalali = formatJalaliParts(getJalaliParts(today))
+  return { startJalali: jalali, endJalali: jalali }
+}
+const datePresetItems = [
+  { key: 'today', label: 'امروز' },
+  { key: 'yesterday', label: 'دیروز' },
+  { key: 'week', label: 'این هفته' },
+  { key: 'month', label: 'این ماه' }
+]
+const activeDateRange = computed(() => (
+  dateRangeMode.value === 'custom' ? customDateRange.value : presetDateRange(dateRangeMode.value)
+))
+const activeDateRangeLabel = computed(() => {
+  const range = activeDateRange.value
+  if (!range.startJalali || !range.endJalali) return ''
+  if (range.startJalali === range.endJalali) return range.startJalali
+  return `${range.startJalali} تا ${range.endJalali}`
+})
+const activeDateRangeParams = computed(() => {
+  const range = activeDateRange.value
+  const start = parseJalaliToIso(range.startJalali)
+  const end = parseJalaliToIso(range.endJalali)
+  return {
+    date_start: start || undefined,
+    date_end: end || undefined
+  }
+})
+const fetchVehiclesForActiveRange = () => vehicleStore.fetchVehicles(activeDateRangeParams.value)
+const selectDatePreset = (mode) => {
+  dateRangeMode.value = mode
+}
+const openDateRangeModal = () => {
+  const range = activeDateRange.value
+  dateRangeDraft.value = {
+    startJalali: range.startJalali || getTodayJalaliString(),
+    endJalali: range.endJalali || getTodayJalaliString()
+  }
+  showDateRangeModal.value = true
+}
+const closeDateRangeModal = () => {
+  showDateRangeModal.value = false
+}
+const applyCustomDateRange = () => {
+  const startDate = jalaliToLocalDate(dateRangeDraft.value.startJalali)
+  const endDate = jalaliToLocalDate(dateRangeDraft.value.endJalali)
+  if (!startDate || !endDate) {
+    notifyWarning('تاریخ شروع و پایان را کامل انتخاب کنید.', { title: 'بازه تاریخی' })
+    return
+  }
+  if (startDate.getTime() > endDate.getTime()) {
+    notifyWarning('تاریخ شروع نباید بعد از تاریخ پایان باشد.', { title: 'بازه تاریخی' })
+    return
+  }
+  customDateRange.value = {
+    startJalali: dateRangeDraft.value.startJalali,
+    endJalali: dateRangeDraft.value.endJalali
+  }
+  dateRangeMode.value = 'custom'
+  closeDateRangeModal()
 }
 const paymentMethodLabel = (value) => ({
   pos: 'دستگاه پوز',
@@ -2767,12 +2948,12 @@ const saveVehicle = async (payload, status) => {
     return data
   }
   const { data } = await api.post('/vehicles/', body, { meta: { trackLoading: false } })
-  vehicleStore.vehicles.unshift(data)
+  await fetchVehiclesForActiveRange()
   return data
 }
 
 const refreshVehicleBoard = async () => {
-  await vehicleStore.fetchVehicles()
+  await fetchVehiclesForActiveRange()
   if (selectedVehicle.value?.id) {
     await vehicleStore.fetchVehicleDetail(selectedVehicle.value.id)
   }
@@ -2939,9 +3120,15 @@ const loadVehicleSmsSettings = async () => {
 }
 
 onMounted(() => {
-  vehicleStore.fetchVehicles()
+  fetchVehiclesForActiveRange()
   loadVehicleSmsSettings()
 })
+watch(
+  () => [dateRangeMode.value, customDateRange.value.startJalali, customDateRange.value.endJalali],
+  () => {
+    fetchVehiclesForActiveRange()
+  }
+)
 watch(hasOperatorModalOpen, (isOpen) => {
   if (isOpen) lockBodyScrollForModal()
   else unlockBodyScrollForModal()
@@ -2967,11 +3154,28 @@ onBeforeUnmount(() => {
 <style scoped>
 .dashboard-content { min-width: 0; width: 100%; max-width: 100%; overflow-x: hidden; }
 .primary-btn { height: 40px; border: none; border-radius: 12px; color: #fff; font-weight: 700; padding: 0 16px; background: linear-gradient(135deg, #0058be 0%, #57dffe 100%); cursor: pointer;margin-right: 3%; }
+.vehicle-toolbar { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; }
+.vehicle-toolbar > * { flex: 0 0 auto; }
+.vehicle-toolbar > .primary-btn { margin-right: 0; }
+.date-range-chips { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.date-chip { height: 36px; border: 1px solid #d8e2ee; border-radius: 999px; padding: 0 14px; background: #f8fafc; color: #64748b; font-size: 12px; font-weight: 900; white-space: nowrap; cursor: pointer; }
+.date-chip.active { border-color: #0ea5e9; background: #e0f2fe; color: #075985; }
+.custom-range-chip { background: #fff; color: #334155; }
+.active-range-label { height: 30px; display: inline-flex; align-items: center; padding: 0 10px; border-radius: 999px; background: #eef2f7; color: #475569; font-size: 11px; font-weight: 800; white-space: nowrap; }
 .filters { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; flex-wrap: nowrap; align-items: center; }
 .filters > * { flex: 0 0 auto; }
 .filters > .primary-btn { width: auto; margin-right: 0; }
 .chip { border: none; border-radius: 999px; padding: 11px 18px; background: #e6e8ea; color: #4b5563;font-size:13px; font-weight: 800; white-space: nowrap; }
 .chip.active { background: #0058be; color: #fff; }
+.date-range-overlay { align-items: flex-start; padding-top: 88px; }
+.date-range-panel { width: min(440px, 100%); overflow: visible; }
+.date-range-modal-body { display: grid; gap: 12px; padding: 18px; background: #f8fbff; }
+.date-range-field { display: grid; gap: 7px; padding: 12px; border: 1px solid #d8e6f7; border-radius: 16px; background: #fff; }
+.date-range-field span { color: #475569; font-size: 12px; font-weight: 900; }
+.date-range-field :deep(.base-date-picker) { width: 100%; }
+.date-range-field :deep(.picker-input) { width: 100%; justify-content: space-between; }
+.date-range-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px 18px; background: #fff; }
+.date-range-actions .primary-btn { margin-right: 0; }
 .cards-grid { margin-top: 18px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; width: 100%; max-width: 100%; }
 .car-card { min-width: 0; background: #fff; border-right: 4px solid #0058be; border-radius: 16px; padding: 14px; box-shadow: 0 6px 18px -14px rgba(15,23,42,.28); display: flex; flex-direction: column; gap: 10px; transition: border-color .12s ease; contain: content; content-visibility: auto; contain-intrinsic-size: 220px; }
 .car-card:hover { box-shadow: 0 8px 20px -16px rgba(15,23,42,.32); }

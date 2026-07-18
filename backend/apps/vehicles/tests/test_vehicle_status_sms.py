@@ -1,9 +1,11 @@
 from unittest.mock import patch
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase
 
 from apps.auth.models import CarWash
@@ -132,6 +134,38 @@ class VehicleStatusSmsTests(APITestCase):
         )
 
         self.assertEqual(second_vehicle.admission_number, 1001)
+
+    def test_vehicle_list_filters_by_check_in_date_range(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        yesterday_start = timezone.make_aware(
+            datetime.combine(yesterday, datetime.min.time()),
+            timezone.get_current_timezone(),
+        )
+        old_vehicle = VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='44 د 555 66',
+            plate_left='44',
+            plate_letter='د',
+            plate_mid='555',
+            plate_right='66',
+            plate_type=VehicleEntry.PlateType.CAR,
+            car_model='سمند',
+            car_color='نقره‌ای',
+            driver_name='مشتری دیروز',
+            driver_phone='09123334444',
+            status=VehicleEntry.Status.ENTERED,
+            entered_by=self.manager,
+            updated_by=self.manager,
+        )
+        VehicleEntry.objects.filter(pk=old_vehicle.pk).update(check_in_at=yesterday_start)
+
+        today = timezone.localdate().isoformat()
+        response = self.client.get(reverse('vehicle-list-create'), {'date_start': today, 'date_end': today})
+
+        self.assertEqual(response.status_code, 200)
+        returned_ids = {item['id'] for item in response.data}
+        self.assertIn(self.vehicle.id, returned_ids)
+        self.assertNotIn(old_vehicle.id, returned_ids)
 
     @patch('apps.notifications.services.send_provider_sms')
     def test_status_update_sends_release_sms_when_marked_released(self, mock_send_provider_sms):

@@ -11,11 +11,11 @@ export const useVehicleStore = defineStore('vehicle', {
     async ensureCsrf() {
       await api.get('/auth/csrf/')
     },
-    async fetchVehicles() {
+    async fetchVehicles(params = {}) {
       this.loading = true
       try {
         await this.ensureCsrf()
-        const { data } = await api.get('/vehicles/')
+        const { data } = await api.get('/vehicles/', { params })
         this.vehicles = Array.isArray(data) ? data : []
       } finally {
         this.loading = false
