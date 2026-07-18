@@ -430,15 +430,17 @@ const isPlateBlocked = computed(() => Boolean(props.vehicleInfo?.is_plate_blocke
 
 const isWorkerPresent = (worker) => String(worker?.current_status || '').toLowerCase() === 'in'
 const isQueueSelectableWorker = (worker) => isWorkerPresent(worker) && worker?.is_available !== false
+const isWashAssignableWorker = (worker) => String(worker?.role_key || worker?.user?.role || worker?.role || '').trim().toLowerCase() === 'worker'
 const queueFrontWorkerId = computed(() => {
-  const preferred = workers.value.find(isQueueSelectableWorker) || workers.value.find(isWorkerPresent) || workers.value[0]
+  const assignableWorkers = workers.value.filter(isWashAssignableWorker)
+  const preferred = assignableWorkers.find(isQueueSelectableWorker) || assignableWorkers.find(isWorkerPresent) || assignableWorkers[0]
   return preferred ? Number(preferred.id) : null
 })
 
 const filteredWorkers = computed(() => {
   const query = workerSearch.value.trim().toLowerCase()
   return workers.value.filter((item) => {
-    if (String(item.role || 'worker').trim().toLowerCase() !== 'worker') return false
+    if (!isWashAssignableWorker(item)) return false
     if (!query) return true
     return `${item.full_name || ''} ${item.phone || ''}`.toLowerCase().includes(query)
   })
@@ -848,7 +850,7 @@ const loadInitialData = async () => {
       .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
 
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
-      .filter((item) => String(item.role || 'worker').trim().toLowerCase() === 'worker')
+      .filter(isWashAssignableWorker)
 
     const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
     selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))

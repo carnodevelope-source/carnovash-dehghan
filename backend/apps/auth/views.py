@@ -28,6 +28,7 @@ from .sms import (
     send_registration_credentials_sms as send_system_registration_credentials_sms,
     send_user_credentials_sms as send_system_user_credentials_sms,
 )
+from .support_tickets import close_stale_support_tickets
 from .serializers import (
     CarWashCreateSerializer,
     CarWashListSerializer,
@@ -651,6 +652,7 @@ class SupportTicketListCreateView(APIView):
         tenant = getattr(request.user, 'tenant', None)
         if not tenant:
             return Response([], status=status.HTTP_200_OK)
+        close_stale_support_tickets()
         tickets = _tenant_ticket_queryset().filter(tenant=tenant).order_by('-last_message_at', '-created_at')
         return Response(SupportTicketListSerializer(tickets, many=True).data, status=status.HTTP_200_OK)
 
@@ -693,6 +695,7 @@ class SupportTicketDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk):
+        close_stale_support_tickets()
         ticket = _tenant_ticket_queryset().filter(pk=pk, tenant=request.user.tenant).first()
         if not ticket:
             return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
@@ -769,6 +772,7 @@ class HqOverviewView(HqBaseView):
         if forbidden:
             return forbidden
 
+        close_stale_support_tickets()
         open_statuses = [SupportTicket.Status.OPEN, SupportTicket.Status.PENDING, SupportTicket.Status.ANSWERED]
         summary = {
             'active_carwashes': CarWash.objects.filter(is_active=True).count(),
@@ -1199,6 +1203,7 @@ class HqTicketListView(HqBaseView):
         if forbidden:
             return forbidden
 
+        close_stale_support_tickets()
         q = str(request.query_params.get('q', '')).strip()
         status_filter = str(request.query_params.get('status', 'all')).strip().lower()
         priority_filter = str(request.query_params.get('priority', 'all')).strip().lower()
@@ -1244,6 +1249,7 @@ class HqTicketDetailView(HqBaseView):
         if forbidden:
             return forbidden
 
+        close_stale_support_tickets()
         queryset = (
             SupportTicket.objects.filter(pk=pk)
             .select_related('tenant', 'created_by', 'responded_by', 'assigned_to')

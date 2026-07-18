@@ -301,7 +301,7 @@ class AttendanceDashboardView(APIView):
         start, end, now = _today_bounds()
         workers = list(
             WorkerProfile.objects.select_related('user')
-            .filter(tenant=tenant, is_deleted=False, user__is_deleted=False, user__role='worker')
+            .filter(tenant=tenant, is_deleted=False, user__is_deleted=False)
             .order_by('user__full_name', 'user__username')
         )
         events = list(

@@ -1236,7 +1236,7 @@ const normalizeReleaseAssignedWorkers = (workers) => {
 }
 const normalizeAvailableReleaseWorkers = (workers) => (
   (Array.isArray(workers) ? workers : [])
-    .filter((item) => String(item?.role || item?.user?.role || 'worker').trim().toLowerCase() === 'worker')
+    .filter((item) => String(item?.role_key || item?.user?.role || item?.role || '').trim().toLowerCase() === 'worker')
     .map((item) => ({
       id: Number(item?.id || 0),
       name: normalizeWorkerName(item?.full_name || item?.name || item?.user?.full_name || item?.username || ''),

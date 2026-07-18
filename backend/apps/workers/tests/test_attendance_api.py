@@ -49,6 +49,26 @@ class AttendanceApiTests(APITestCase):
         self.assertEqual(response.data['workers'][0]['full_name'], 'Ali Worker')
         self.assertEqual(response.data['workers'][0]['current_status'], 'in')
 
+    def test_attendance_dashboard_includes_operator_profiles(self):
+        user_model = get_user_model()
+        operator_user = user_model.objects.create_user(
+            username='operator-profile',
+            password='pass12345',
+            phone='09120000998',
+            role='operator',
+            tenant=self.tenant,
+            full_name='Ops User',
+        )
+        operator_profile = WorkerProfile.objects.create(user=operator_user, tenant=self.tenant)
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.get(reverse('worker-attendance-dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        worker_ids = {item['id'] for item in response.data['workers']}
+        self.assertIn(self.worker.id, worker_ids)
+        self.assertIn(operator_profile.id, worker_ids)
+
     def test_public_attendance_link_registers_in_and_out(self):
         token = ensure_attendance_token(self.worker)
         endpoint = reverse('worker-attendance-public', args=[token])
@@ -282,3 +302,48 @@ class AttendanceApiTests(APITestCase):
         second_worker.refresh_from_db()
         self.assertIsNotNone(self.worker.last_assigned_at)
         self.assertIsNotNone(second_worker.last_assigned_at)
+
+    def test_vehicle_assignment_ignores_operator_profiles(self):
+        user_model = get_user_model()
+        operator_user = user_model.objects.create_user(
+            username='wash-operator',
+            password='pass12345',
+            phone='09120000006',
+            role='operator',
+            tenant=self.tenant,
+            full_name='Wash Operator',
+        )
+        operator_profile = WorkerProfile.objects.create(user=operator_user, tenant=self.tenant)
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.post(
+            reverse('vehicle-list-create'),
+            {
+                'plate_number': '13 ب 345 67',
+                'plate_left': '13',
+                'plate_letter': 'ب',
+                'plate_mid': '345',
+                'plate_right': '67',
+                'car_model': 'Test Car',
+                'car_color': 'White',
+                'driver_name': 'Test Driver',
+                'driver_phone': '09120000112',
+                'status': 'ready_to_settle',
+                'worker_id': self.worker.id,
+                'staff_members': [
+                    {'id': self.worker.id, 'name': 'Ali Worker', 'worker_share_percent': 50},
+                    {'id': operator_profile.id, 'name': 'Wash Operator', 'worker_share_percent': 50},
+                ],
+                'services': [
+                    {'title': 'Wash', 'price': 1000, 'discount_amount': 0},
+                ],
+                'share': {'type': 'percent', 'value': 40},
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        snapshot = response.data['job']['assigned_workers_snapshot']
+        self.assertEqual([item['id'] for item in snapshot], [self.worker.id])
+        operator_profile.refresh_from_db()
+        self.assertIsNone(operator_profile.last_assigned_at)

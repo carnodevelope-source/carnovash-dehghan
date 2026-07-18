@@ -359,7 +359,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if not worker_ids:
             return
         assigned_at = timezone.now()
-        WorkerProfile.objects.filter(tenant=tenant, id__in=worker_ids).update(
+        WorkerProfile.objects.filter(tenant=tenant, id__in=worker_ids, user__role='worker').update(
             last_assigned_at=assigned_at,
             updated_at=assigned_at,
         )
@@ -652,7 +652,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             vehicle=vehicle_entry,
             tenant=tenant,
             assigned_worker=assigned_worker,
-            assigned_workers_snapshot=self._normalize_staff_members_payload(staff_members_payload, assigned_worker),
+            assigned_workers_snapshot=self._normalize_staff_members_payload(
+                staff_members_payload,
+                assigned_worker,
+                tenant=tenant,
+            ),
             worker_payment_type=payment_type
             if payment_type in dict(VehicleJob.WorkerPaymentType.choices)
             else VehicleJob.WorkerPaymentType.PERCENT,
@@ -852,6 +856,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             vehicle_job.assigned_workers_snapshot = self._normalize_staff_members_payload(
                 staff_members_payload or [],
                 assigned_worker,
+                tenant=tenant,
             )
 
         if services_provided:
@@ -1109,7 +1114,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('شماره تماس باید دقیقا 11 رقم و با 09 شروع شود.')
         return phone
 
-    def _normalize_staff_members_payload(self, payload, assigned_worker=None):
+    def _normalize_staff_members_payload(self, payload, assigned_worker=None, tenant=None):
         def _normalized_percent(value):
             try:
                 numeric = Decimal(str(value or 0))
@@ -1133,6 +1138,28 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         result = []
         seen_ids = set()
 
+        allowed_worker_ids = None
+        if tenant is not None:
+            raw_ids = []
+            if isinstance(payload, list):
+                for item in payload:
+                    worker_id = item.get('id') if isinstance(item, dict) else item
+                    try:
+                        normalized_id = int(worker_id)
+                    except (TypeError, ValueError):
+                        continue
+                    if normalized_id > 0:
+                        raw_ids.append(normalized_id)
+            if assigned_worker:
+                raw_ids.append(int(assigned_worker.id))
+            allowed_worker_ids = set(
+                WorkerProfile.objects.filter(
+                    tenant=tenant,
+                    id__in=list(dict.fromkeys(raw_ids)),
+                    user__role='worker',
+                ).values_list('id', flat=True)
+            )
+
         if isinstance(payload, list):
             for item in payload:
                 if isinstance(item, dict):
@@ -1152,6 +1179,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 try:
                     normalized_id = int(worker_id)
                 except (TypeError, ValueError):
+                    continue
+                if allowed_worker_ids is not None and normalized_id not in allowed_worker_ids:
                     continue
                 if normalized_id in seen_ids:
                     continue

@@ -18,15 +18,17 @@ def _should_start_scheduler():
     return True
 
 
-def _nightly_sms_loop():
+def _background_jobs_loop():
     from django.db import close_old_connections
 
     from .nightly_sms import dispatch_due_nightly_manager_summaries
+    from .support_tickets import close_stale_support_tickets
 
     while True:
         try:
             close_old_connections()
             dispatch_due_nightly_manager_summaries()
+            close_stale_support_tickets()
         except Exception:
             pass
         time.sleep(300)
@@ -39,6 +41,6 @@ def start_internal_scheduler():
     with _scheduler_lock:
         if _scheduler_started:
             return
-        worker = threading.Thread(target=_nightly_sms_loop, name='nightly-sms-loop', daemon=True)
+        worker = threading.Thread(target=_background_jobs_loop, name='auth-background-jobs-loop', daemon=True)
         worker.start()
         _scheduler_started = True
