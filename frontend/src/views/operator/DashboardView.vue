@@ -117,9 +117,48 @@
       @close="closeVehicleDetails"
       @cancel="cancelVehicle"
       @block-plate="blockSelectedVehiclePlate"
+      @edit-plate="openPlateEditModal"
       @edit-workers="editSelectedVehicleWorkers"
       @edit-tip="editSelectedVehicleTip"
     />
+    <div v-if="showPlateEditModal" class="modal-overlay plate-edit-overlay" @click.self="closePlateEditModal">
+      <section class="modal-panel plate-edit-panel">
+        <header class="modal-head plate-edit-head">
+          <div>
+            <p class="modal-step">ویرایش پلاک</p>
+            <h2>اصلاح پلاک خودرو</h2>
+          </div>
+          <button class="close-btn" type="button" :disabled="plateEditSubmitting" @click="closePlateEditModal">✕</button>
+        </header>
+        <div class="plate-edit-body">
+          <PlateEditor
+            v-model:plate-left="plateEditForm.plateLeft"
+            v-model:plate-letter="plateEditForm.plateLetter"
+            v-model:plate-mid="plateEditForm.plateMid"
+            v-model:plate-right="plateEditForm.plateRight"
+            v-model:plate-type="plateEditForm.plateType"
+            :disabled="plateEditSubmitting"
+          />
+          <div class="plate-edit-preview">
+            <span>نمای نهایی</span>
+            <PlateBadge
+              :plate-number="plateEditPreview"
+              :plate-left="plateEditForm.plateLeft"
+              :plate-letter="plateEditForm.plateLetter"
+              :plate-mid="plateEditForm.plateMid"
+              :plate-right="plateEditForm.plateRight"
+              :plate-type="plateEditForm.plateType"
+            />
+          </div>
+        </div>
+        <footer class="plate-edit-actions">
+          <button type="button" class="secondary-btn" :disabled="plateEditSubmitting" @click="closePlateEditModal">انصراف</button>
+          <button type="button" class="primary-btn plate-edit-submit" :disabled="plateEditSubmitting" @click="submitPlateEdit">
+            {{ plateEditSubmitting ? 'در حال ثبت...' : 'ثبت پلاک' }}
+          </button>
+        </footer>
+      </section>
+    </div>
     <div v-if="showReleaseModal" class="modal-overlay" @click.self="closeReleaseModal">
       <section class="modal-panel release-panel">
         <header class="modal-head release-modal-head">
@@ -805,13 +844,14 @@ import BaseSpinner from '../../components/base/BaseSpinner.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import AppShell from '../../components/layout/AppShell.vue'
 import PlateBadge from '../../components/vehicles/PlateBadge.vue'
+import PlateEditor from '../../components/vehicles/PlateEditor.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
 import { useAuthStore } from '../../store/auth.store'
 import { useVehicleStore } from '../../store/vehicle.store'
 import api from '../../services/api'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
-import { notifyError, notifyWarning } from '../../utils/notify'
+import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
 import { buildPlateNumber, isAnonymousPlate, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
 
 const search = ref('')
@@ -819,6 +859,7 @@ const debouncedSearch = ref('')
 const activeFilter = ref('entered')
 const showVehicleModal = ref(false)
 const showVehicleDetailsModal = ref(false)
+const showPlateEditModal = ref(false)
 const showReleaseModal = ref(false)
 const showChequeDetailsModal = ref(false)
 const showInvoicePreviewModal = ref(false)
@@ -826,6 +867,7 @@ const showReleaseServicePicker = ref(false)
 const showReleaseWorkerEditor = ref(false)
 const releaseCheckoutLoading = ref(false)
 const releaseSubmitting = ref(false)
+const plateEditSubmitting = ref(false)
 const stepSubmitting = ref(false)
 const invoiceGenerating = ref(false)
 const invoicePdfUrl = ref('')
@@ -833,6 +875,14 @@ const invoiceErrorMessage = ref('')
 const modalStep = ref(1)
 const vehicleDraft = ref(null)
 const releaseCandidate = ref(null)
+const plateEditForm = ref({
+  id: null,
+  plateLeft: '',
+  plateLetter: '',
+  plateMid: '',
+  plateRight: '',
+  plateType: 'car'
+})
 const invoiceTemplateRef = ref(null)
 const invoicePreviewFrameRef = ref(null)
 const tempReleaseServiceIds = ref([])
@@ -892,6 +942,7 @@ const { vehicles, selectedVehicle } = storeToRefs(vehicleStore)
 const hasOperatorModalOpen = computed(() => (
   showVehicleModal.value
   || showVehicleDetailsModal.value
+  || showPlateEditModal.value
   || showReleaseModal.value
   || showChequeDetailsModal.value
   || showInvoicePreviewModal.value
@@ -925,6 +976,113 @@ const openVehicleDetails = async (vehicleId) => {
 }
 const closeVehicleDetails = () => {
   showVehicleDetailsModal.value = false
+}
+const emptyPlateEditForm = () => ({
+  id: null,
+  plateLeft: '',
+  plateLetter: '',
+  plateMid: '',
+  plateRight: '',
+  plateType: 'car'
+})
+const plateDigits = (value, limit) => normalizeDigits(value).replace(/\D/g, '').slice(0, limit)
+const normalizedPlateEditParts = () => {
+  const plateType = plateEditForm.value.plateType === 'motorcycle' ? 'motorcycle' : 'car'
+  const resolved = resolvePlateParts({
+    plate_left: plateEditForm.value.plateLeft,
+    plate_letter: plateEditForm.value.plateLetter,
+    plate_mid: plateEditForm.value.plateMid,
+    plate_right: plateEditForm.value.plateRight,
+    plate_type: plateType
+  })
+  if (plateType === 'motorcycle') {
+    return {
+      left: '',
+      letter: plateDigits(resolved.letter, 5),
+      mid: plateDigits(resolved.mid, 3),
+      right: ''
+    }
+  }
+  return {
+    left: plateDigits(resolved.left, 2),
+    letter: String(resolved.letter || '').trim(),
+    mid: plateDigits(resolved.mid, 3),
+    right: plateDigits(resolved.right, 2)
+  }
+}
+const plateEditPreview = computed(() => buildPlateNumber({
+  ...normalizedPlateEditParts(),
+  plateType: plateEditForm.value.plateType
+}))
+const syncVehicleSnapshot = (vehicle) => {
+  if (!vehicle?.id) return
+  const idx = vehicleStore.vehicles.findIndex((item) => Number(item.id) === Number(vehicle.id))
+  if (idx >= 0) vehicleStore.vehicles[idx] = vehicle
+  if (Number(selectedVehicle.value?.id || 0) === Number(vehicle.id)) {
+    vehicleStore.selectedVehicle = vehicle
+  }
+}
+const openPlateEditModal = () => {
+  const source = selectedVehicle.value
+  if (!source?.id || source.is_piece_wash) return
+  const plateType = source.plate_type === 'motorcycle' ? 'motorcycle' : 'car'
+  const parts = isAnonymousPlate(source)
+    ? { left: '', letter: '', mid: '', right: '' }
+    : resolvePlateParts({
+      raw: source.plate_number || '',
+      plate_left: source.plate_left || '',
+      plate_letter: source.plate_letter || '',
+      plate_mid: source.plate_mid || '',
+      plate_right: source.plate_right || '',
+      plate_type: plateType
+    })
+  plateEditForm.value = {
+    id: source.id,
+    plateLeft: plateType === 'motorcycle' ? '' : plateDigits(parts.left, 2),
+    plateLetter: plateType === 'motorcycle' ? plateDigits(parts.letter, 5) : String(parts.letter || ''),
+    plateMid: plateDigits(parts.mid, 3),
+    plateRight: plateType === 'motorcycle' ? '' : plateDigits(parts.right, 2),
+    plateType
+  }
+  showPlateEditModal.value = true
+}
+const closePlateEditModal = (options = {}) => {
+  const force = options?.force === true
+  if (plateEditSubmitting.value && !force) return
+  showPlateEditModal.value = false
+  plateEditForm.value = emptyPlateEditForm()
+}
+const submitPlateEdit = async () => {
+  if (!plateEditForm.value.id || plateEditSubmitting.value) return
+  const plateType = plateEditForm.value.plateType === 'motorcycle' ? 'motorcycle' : 'car'
+  const parts = normalizedPlateEditParts()
+  const isComplete = plateType === 'motorcycle'
+    ? parts.mid.length === 3 && parts.letter.length === 5
+    : parts.left.length === 2 && parts.mid.length === 3 && parts.right.length === 2 && Boolean(parts.letter)
+  if (!isComplete) {
+    notifyWarning('پلاک را کامل وارد کنید.', { title: 'ویرایش پلاک' })
+    return
+  }
+  const plateNumber = buildPlateNumber({ ...parts, plateType })
+  try {
+    plateEditSubmitting.value = true
+    const { data } = await api.patch(`/vehicles/${plateEditForm.value.id}/`, {
+      plate_number: plateNumber,
+      plate_left: plateType === 'motorcycle' ? '' : parts.left,
+      plate_letter: parts.letter,
+      plate_mid: parts.mid,
+      plate_right: plateType === 'motorcycle' ? '' : parts.right,
+      plate_type: plateType
+    }, { meta: { trackLoading: false } })
+    syncVehicleSnapshot(data)
+    closePlateEditModal({ force: true })
+    notifySuccess('پلاک خودرو به‌روزرسانی شد.', { title: 'ویرایش پلاک' })
+  } catch (error) {
+    console.error('submitPlateEdit error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'ویرایش پلاک ناموفق بود.'), { title: 'خطا در ویرایش پلاک' })
+  } finally {
+    plateEditSubmitting.value = false
+  }
 }
 const lockBodyScrollForModal = () => {
   if (typeof document === 'undefined') return
@@ -3140,6 +3298,14 @@ onBeforeUnmount(() => {
 .thermal-sheet-footer strong{display:block;margin-top:8px;text-align:center;font-size:14px;font-weight:900;line-height:1.7}
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .modal-panel { width: min(1280px, 100%); max-width: 100%; max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 16px 42px -24px rgba(15,23,42,.45); contain: content; }
+.plate-edit-overlay { z-index: 120; }
+.plate-edit-panel { width: min(720px, 100%); overflow: hidden; background: linear-gradient(180deg,#ffffff,#f5f9ff); }
+.plate-edit-head { background: #fff; }
+.plate-edit-body { display: grid; gap: 16px; padding: 20px; }
+.plate-edit-preview { display: grid; gap: 10px; padding: 14px; border: 1px solid #d6e6ff; border-radius: 18px; background: rgba(255,255,255,.82); }
+.plate-edit-preview > span { color: #64748b; font-size: 12px; font-weight: 800; }
+.plate-edit-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 20px 20px; }
+.plate-edit-submit { margin-right: 0; min-width: 130px; }
 .vehicle-entry-overlay { align-items: center; justify-content: center; }
 .vehicle-entry-panel { width: min(980px, 100%); max-width: 100%; }
 .vehicle-entry-head { background: #fff; }
@@ -3229,6 +3395,21 @@ onBeforeUnmount(() => {
     overflow-y: auto;
     overflow-x: hidden;
     border-radius: 18px;
+  }
+  .plate-edit-overlay {
+    align-items: center;
+    overflow-y: auto;
+  }
+  .plate-edit-panel {
+    height: auto;
+    max-height: calc(100dvh - 16px);
+  }
+  .plate-edit-body {
+    padding: 14px;
+  }
+  .plate-edit-actions {
+    padding: 0 14px 14px;
+    flex-direction: column;
   }
   .vehicle-entry-overlay {
     align-items: center !important;
