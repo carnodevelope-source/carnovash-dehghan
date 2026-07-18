@@ -243,6 +243,7 @@
       <aside class="col summary-col">
         <div class="summary-head">
           <h4>خلاصه تخصیص</h4>
+          <button type="button" class="summary-invoice-btn" :disabled="!selectedServices.length" @click="openPreInvoiceModal">پیش‌فاکتور</button>
         </div>
 
         <div class="summary-body">
@@ -303,12 +304,16 @@
               <span>تخفیف مجموعه</span>
               <strong>{{ formatMoney(facilityDiscountTotal) }}</strong>
             </div>
-            <div class="summary-row">
+            <div class="loyalty-discount-card" :class="{ active: applyLoyaltyDiscount }">
+              <div class="loyalty-discount-copy">
+                <span>تخفیف امتیاز مشتری</span>
+                <strong>{{ toFaNumber(customerLoyaltyDiscountPercent) }}٪</strong>
+              </div>
               <label class="loyalty-discount-toggle">
                 <input v-model="applyLoyaltyDiscount" type="checkbox" />
-                <span>لحاظ تخفیف امتیاز مشتری: {{ toFaNumber(customerLoyaltyDiscountPercent) }}٪</span>
+                <span></span>
               </label>
-              <strong>{{ formatMoney(effectiveLoyaltyDiscountAmount) }}</strong>
+              <b>{{ formatMoney(effectiveLoyaltyDiscountAmount) }}</b>
             </div>
             <div v-if="manualServiceIncreaseTotal > 0" class="summary-row service-adjust-summary increase-row">
               <span>جمع افزایش دستی</span>
@@ -361,7 +366,6 @@
           </label>
           <div class="summary-foot-actions">
             <button type="button" class="secondary-foot-btn" @click="emit('back')">بازگشت</button>
-            <button type="button" class="secondary-foot-btn" :disabled="!selectedServices.length" @click="openPreInvoiceModal">پیش‌فاکتور</button>
             <button type="button" class="primary-btn" :disabled="!canAssign || submitting || actionLocked" @click="onAssign">
               تایید و تخصیص کار
             </button>
@@ -908,17 +912,17 @@ const printPreInvoice = () => {
   <title>پیش‌فاکتور خدمات</title>
   <style>
     @page { size: ${width} auto; margin: 3mm; }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: #fff; color: #111827; font-family: Vazirmatn, Tahoma, Arial, sans-serif; direction: rtl; }
+    * { box-sizing: border-box; color: #000 !important; font-weight: 800; }
+    body { margin: 0; background: #fff; color: #000; font-family: Vazirmatn, Tahoma, Arial, sans-serif; direction: rtl; }
     .receipt { width: ${width}; max-width: ${width}; padding: 3mm; font-size: 10px; line-height: 1.7; }
     header, footer { text-align: center; display: grid; gap: 2px; padding-bottom: 6px; border-bottom: 1px dashed #111827; }
     footer { margin-top: 8px; padding-top: 6px; padding-bottom: 0; border-top: 1px dashed #111827; border-bottom: 0; }
-    header strong { font-size: 13px; }
-    header span { font-weight: 800; }
+    header strong { font-size: 13px; font-weight: 900; }
+    header span { font-weight: 900; }
     .info, .totals { display: grid; gap: 3px; padding: 7px 0; border-bottom: 1px dashed #111827; }
     p { margin: 0; display: flex; justify-content: space-between; gap: 8px; }
     table { width: 100%; border-collapse: collapse; margin: 7px 0; }
-    th, td { padding: 4px 0; border-bottom: 1px solid #e5e7eb; text-align: right; vertical-align: top; }
+    th, td { padding: 4px 0; border-bottom: 1px solid #111827; text-align: right; vertical-align: top; }
     th:last-child, td:last-child { text-align: left; white-space: nowrap; }
     .final { font-size: 12px; font-weight: 900; border-top: 1px solid #111827; padding-top: 5px; margin-top: 4px; }
   </style>
@@ -1345,11 +1349,17 @@ onMounted(loadInitialData)
 .pre-invoice-receipt {
   max-width: 100%;
   background: #fff;
-  color: #111827;
+  color: #000;
   padding: 12px;
   font-size: 10px;
   line-height: 1.75;
+  font-weight: 800;
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+}
+
+.pre-invoice-receipt * {
+  color: #000 !important;
+  font-weight: 800;
 }
 
 .pre-invoice-receipt header,
@@ -1371,6 +1381,7 @@ onMounted(loadInitialData)
 
 .pre-invoice-receipt header strong {
   font-size: 13px;
+  font-weight: 900;
 }
 
 .pre-invoice-receipt header span {
@@ -1402,7 +1413,7 @@ onMounted(loadInitialData)
 .pre-invoice-table th,
 .pre-invoice-table td {
   padding: 4px 0;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #111827;
   vertical-align: top;
 }
 
@@ -1420,20 +1431,86 @@ onMounted(loadInitialData)
   margin-top: 3px !important;
 }
 
+.loyalty-discount-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe7f3;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.loyalty-discount-card.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.loyalty-discount-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.loyalty-discount-copy span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.loyalty-discount-copy strong,
+.loyalty-discount-card b {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.loyalty-discount-card b {
+  white-space: nowrap;
+}
+
 .loyalty-discount-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-  color: inherit;
-  font-weight: 700;
+  cursor: pointer;
 }
 
 .loyalty-discount-toggle input {
-  width: 16px;
-  height: 16px;
-  accent-color: #2563eb;
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loyalty-discount-toggle span {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  position: relative;
   flex: 0 0 auto;
+  transition: background 0.18s ease;
+}
+
+.loyalty-discount-toggle span::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.22);
+  transition: transform 0.18s ease;
+}
+
+.loyalty-discount-toggle input:checked + span {
+  background: #2563eb;
+}
+
+.loyalty-discount-toggle input:checked + span::after {
+  transform: translateX(-18px);
 }
 
 .service-picker-head,
@@ -2040,6 +2117,26 @@ onMounted(loadInitialData)
 .summary-head {
   padding: 20px 20px 16px;
   border-bottom: 1px solid rgba(212, 228, 255, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.summary-invoice-btn {
+  height: 38px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 900;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.summary-invoice-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .summary-body {
@@ -2545,11 +2642,15 @@ onMounted(loadInitialData)
     align-items: stretch;
   }
 
-  .summary-foot-actions,
   .staff-title-row,
   .worker-top {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .summary-foot-actions {
+    display: grid;
+    grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr);
   }
 
   .worker-ident,
@@ -2664,9 +2765,6 @@ onMounted(loadInitialData)
     font-size: 12px;
   }
 
-  .summary-foot-actions {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 480px) {

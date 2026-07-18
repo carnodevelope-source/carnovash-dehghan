@@ -244,23 +244,21 @@ class VehicleStatusSmsTests(APITestCase):
                 recipient='09121112222',
             ).exists()
         )
-        self.assertTrue(
-            NotificationLog.objects.filter(
-                tenant=self.tenant,
-                vehicle_entry=vehicle,
-                template_code='vehicle_assigned_invoice',
-                status=NotificationLog.Status.SENT,
-                recipient='09121112222',
-            ).exists()
-        )
         log = NotificationLog.objects.get(
             tenant=self.tenant,
             vehicle_entry=vehicle,
-            template_code='vehicle_assigned_invoice',
+            template_code='vehicle_assigned',
             status=NotificationLog.Status.SENT,
         )
         self.assertIn('شست‌وشو', log.payload.get('text', ''))
         self.assertIn('۵۰۰', log.payload.get('text', ''))
+        self.assertFalse(
+            NotificationLog.objects.filter(
+                tenant=self.tenant,
+                vehicle_entry=vehicle,
+                template_code='vehicle_assigned_invoice',
+            ).exists()
+        )
 
     @patch('apps.notifications.services.send_provider_sms')
     def test_assignment_modal_can_disable_assignment_and_release_sms_for_vehicle(self, mock_send_provider_sms):
@@ -403,7 +401,7 @@ class VehicleStatusSmsTests(APITestCase):
         log = NotificationLog.objects.get(
             tenant=self.tenant,
             vehicle_entry=self.vehicle,
-            template_code='vehicle_assigned_invoice',
+            template_code='vehicle_assigned',
             status=NotificationLog.Status.SENT,
         )
         self.assertIn('تمیزکاری', log.payload.get('text', ''))

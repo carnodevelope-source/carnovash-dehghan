@@ -58,7 +58,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
 
         message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
 
-        self.assertIn('علی رضایی عزیز', message)
+        self.assertIn('علی رضایی', message)
         self.assertNotIn('[خطاب مشتری]', message)
         self.assertIn('شماره پذیرش: ۱۰۰۰', message)
         self.assertIn('شست‌وشوی ویژه: ۷۵۰،۰۰۰ تومان', message)
@@ -133,7 +133,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
 
         message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
 
-        self.assertIn('مشتری عزیز', message)
+        self.assertIn('مشتری', message)
         self.assertIn('شماره پذیرش: ۱۰۰۰', message)
         self.assertIn('در مجموعه کارواش میلان برای انجام خدمات، پذیرش شد.', message)
         self.assertIn('پیش فاکتور خدمات:', message)

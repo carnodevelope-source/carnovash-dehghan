@@ -391,16 +391,16 @@
                     <span class="template-title-row">
                       <span>پیام تخصیص</span>
                       <label class="row-check inline-check">
-                        <input v-model="generalSettings.sms_vehicle_assigned_enabled" type="checkbox" />
+                        <input v-model="generalSettings.sms_vehicle_assigned_enabled" type="checkbox" :disabled="!generalSettings.sms_vehicle_auto_send_enabled" />
                         <span>فعال</span>
                       </label>
                     </span>
-                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="10" />
+                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="14" />
                   </label>
                   <div class="sms-preview-panel">
                     <div class="sms-preview-head">
                       <small>نمونه خروجی</small>
-                      <span>پیام پذیرش</span>
+                      <span>پیام پذیرش و پیش‌فاکتور</span>
                     </div>
                     <pre class="sms-preview-box">{{ smsAssignedPreview }}</pre>
                   </div>
@@ -408,28 +408,9 @@
                 <article class="sms-template-card">
                   <label class="general-setting-label sms-template-editor">
                     <span class="template-title-row">
-                      <span>پیش‌فاکتور خدمات</span>
-                      <label class="row-check inline-check">
-                        <input v-model="generalSettings.sms_vehicle_assigned_invoice_enabled" type="checkbox" />
-                        <span>فعال</span>
-                      </label>
-                    </span>
-                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_invoice_template" rows="9" />
-                  </label>
-                  <div class="sms-preview-panel">
-                    <div class="sms-preview-head">
-                      <small>نمونه خروجی</small>
-                      <span>پیام پیش‌فاکتور</span>
-                    </div>
-                    <pre class="sms-preview-box">{{ smsAssignedInvoicePreview }}</pre>
-                  </div>
-                </article>
-                <article class="sms-template-card">
-                  <label class="general-setting-label sms-template-editor">
-                    <span class="template-title-row">
                       <span>پیام بعد از ترخیص</span>
                       <label class="row-check inline-check">
-                        <input v-model="generalSettings.sms_vehicle_released_enabled" type="checkbox" />
+                        <input v-model="generalSettings.sms_vehicle_released_enabled" type="checkbox" :disabled="!generalSettings.sms_vehicle_auto_send_enabled" />
                         <span>فعال</span>
                       </label>
                     </span>
@@ -1065,7 +1046,7 @@ const smsTemplateTokens = [
 ]
 const ensureReleasedSmsTemplateDetails = (template) => {
   const text = String(template || '')
-    .replaceAll('[خطاب مشتری]', '[نام مشتری] عزیز')
+    .replaceAll('[خطاب مشتری]', '[نام مشتری]')
     .replaceAll('سفارش بعد', 'مراجعه بعد')
     .replaceAll('از کارواش', 'از مجموعه کارواش')
     .trim()
@@ -1098,13 +1079,27 @@ const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true }
   const lines = text.split('\n')
   const insertions = []
   if (!text.includes('[شماره پذیرش]')) lines.splice(1, 0, 'شماره پذیرش: [شماره پذیرش]')
+  if (includeFinancials && !text.includes('[خلاصه خدمات]')) {
+    insertions.push('پیش فاکتور خدمات:')
+    insertions.push('[خلاصه خدمات]')
+  }
+  if (includeFinancials && !text.includes('[جمع کل]') && !text.includes('[جمع نرخ نامه]')) insertions.push('جمع کل: [جمع کل]')
   if (includeFinancials && !text.includes('[جمع تخفیف]')) insertions.push('تخفیف این سفارش: [جمع تخفیف]')
   if (includeFinancials && !text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
+  if (!text.includes('آماده ترخیص')) insertions.push('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
+  if (!text.includes('از اعتماد شما سپاسگزاریم')) insertions.push('از اعتماد شما سپاسگزاریم')
   if (!insertions.length) return text
   const anchorIndex = lines.findIndex((line) => line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]'))
   const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : lines.length
   lines.splice(insertAt, 0, ...insertions)
   return lines.join('\n')
+}
+
+const mergeAssignedSmsTemplate = (assignedTemplate, invoiceTemplate) => {
+  const assignedText = String(assignedTemplate || '').trim()
+  const invoiceText = String(invoiceTemplate || '').trim()
+  if (!invoiceText || assignedText.includes('پیش فاکتور خدمات:')) return ensureAssignedSmsTemplateDetails(assignedText)
+  return ensureAssignedSmsTemplateDetails([assignedText, invoiceText].filter(Boolean).join('\n'))
 }
 const smsPreviewContext = computed(() => ({
   '[خطاب مشتری]': 'آقای رضایی عزیز',
@@ -1139,8 +1134,7 @@ const renderSmsPreview = (template) => {
   })
   return message
 }
-const smsAssignedPreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template, { includeFinancials: false })))
-const smsAssignedInvoicePreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_invoice_template)))
+const smsAssignedPreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template)))
 const smsReleasedPreview = computed(() => renderSmsPreview(ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template)))
 
 watch(() => forms.purchase.product_id, (newProductId) => {
@@ -1208,8 +1202,11 @@ const loadAll = async () => {
       generalSettings.sms_vehicle_assigned_enabled = gs.data?.sms_vehicle_assigned_enabled !== false
       generalSettings.sms_vehicle_assigned_invoice_enabled = gs.data?.sms_vehicle_assigned_invoice_enabled !== false
       generalSettings.sms_vehicle_released_enabled = gs.data?.sms_vehicle_released_enabled !== false
-      generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(gs.data?.sms_vehicle_assigned_template || '', { includeFinancials: false })
-      generalSettings.sms_vehicle_assigned_invoice_template = ensureAssignedSmsTemplateDetails(gs.data?.sms_vehicle_assigned_invoice_template || '')
+      generalSettings.sms_vehicle_assigned_template = mergeAssignedSmsTemplate(
+        gs.data?.sms_vehicle_assigned_template || '',
+        gs.data?.sms_vehicle_assigned_invoice_template || ''
+      )
+      generalSettings.sms_vehicle_assigned_invoice_template = ''
       generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(gs.data?.sms_vehicle_released_template || '')
     } catch {
       generalSettings.discount_percent_per_half_star = 0
@@ -1272,10 +1269,10 @@ const saveGeneralSettings = async () => {
       receipt_header_note: generalSettings.receipt_header_note || '',
       receipt_footer_note: generalSettings.receipt_footer_note || '',
       sms_vehicle_assigned_enabled: Boolean(generalSettings.sms_vehicle_assigned_enabled),
-      sms_vehicle_assigned_invoice_enabled: Boolean(generalSettings.sms_vehicle_assigned_invoice_enabled),
+      sms_vehicle_assigned_invoice_enabled: false,
       sms_vehicle_released_enabled: Boolean(generalSettings.sms_vehicle_released_enabled),
-      sms_vehicle_assigned_template: ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template || '', { includeFinancials: false }),
-      sms_vehicle_assigned_invoice_template: ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_invoice_template || ''),
+      sms_vehicle_assigned_template: ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template || ''),
+      sms_vehicle_assigned_invoice_template: '',
       sms_vehicle_auto_send_enabled: Boolean(generalSettings.sms_vehicle_auto_send_enabled),
       sms_vehicle_released_template: ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template || '')
     }
@@ -1307,8 +1304,8 @@ const saveGeneralSettings = async () => {
     generalSettings.sms_vehicle_assigned_enabled = response.data?.sms_vehicle_assigned_enabled !== false
     generalSettings.sms_vehicle_assigned_invoice_enabled = response.data?.sms_vehicle_assigned_invoice_enabled !== false
     generalSettings.sms_vehicle_released_enabled = response.data?.sms_vehicle_released_enabled !== false
-    generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(response.data?.sms_vehicle_assigned_template || '', { includeFinancials: false })
-    generalSettings.sms_vehicle_assigned_invoice_template = ensureAssignedSmsTemplateDetails(response.data?.sms_vehicle_assigned_invoice_template || '')
+    generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(response.data?.sms_vehicle_assigned_template || '')
+    generalSettings.sms_vehicle_assigned_invoice_template = ''
     generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(response.data?.sms_vehicle_released_template || '')
     t('تنظیمات عمومی ذخیره شد')
   } catch (e) {

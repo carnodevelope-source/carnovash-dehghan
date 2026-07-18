@@ -282,7 +282,7 @@ def build_services_sms_summary(job):
 
 
 def normalize_assignment_sms_wording(template):
-    text = str(template or '').replace('[خطاب مشتری]', '[نام مشتری] عزیز')
+    text = str(template or '').replace('[خطاب مشتری]', '[نام مشتری]')
     replacements = {
         'شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]،': 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]،',
         'شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]': 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]',
@@ -309,10 +309,19 @@ def normalize_vehicle_assignment_sms_template(template):
         lines.insert(1 if lines else 0, 'شماره پذیرش: [شماره پذیرش]')
         text = '\n'.join(lines)
     insertions = []
+    if '[خلاصه خدمات]' not in text:
+        insertions.append('پیش فاکتور خدمات:')
+        insertions.append('[خلاصه خدمات]')
+    if '[جمع کل]' not in text and '[جمع نرخ نامه]' not in text:
+        insertions.append('جمع کل: [جمع کل]')
     if '[جمع تخفیف]' not in text:
         insertions.append('تخفیف این سفارش: [جمع تخفیف]')
     if '[مبلغ نهایی]' not in text:
         insertions.append('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
+    if 'آماده ترخیص' not in text:
+        insertions.append('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
+    if 'از اعتماد شما سپاسگزاریم' not in text:
+        insertions.append('از اعتماد شما سپاسگزاریم')
     if not insertions:
         return text
     anchor_index = next((index for index, line in enumerate(lines) if '[جمع کل]' in line or '[جمع نرخ نامه]' in line), -1)
@@ -382,41 +391,32 @@ def build_vehicle_assignment_sms_messages(settings_obj, vehicle, *, assigned_at=
         '[جمع تخفیف]': format_toman(assignment_discount_total(job)),
         '[مبلغ نهایی]': format_toman(assignment_invoice_final_total(job)),
     }
-    intro_enabled = getattr(settings_obj, 'sms_vehicle_assigned_enabled', True) if settings_obj is not None else True
-    invoice_enabled = getattr(settings_obj, 'sms_vehicle_assigned_invoice_enabled', True) if settings_obj is not None else True
-    intro_template = str(
+    assigned_enabled = getattr(settings_obj, 'sms_vehicle_assigned_enabled', True) if settings_obj is not None else True
+    assigned_template = str(
         getattr(settings_obj, 'sms_vehicle_assigned_template', '')
         or DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
     ).strip()
     invoice_template = str(
         getattr(settings_obj, 'sms_vehicle_assigned_invoice_template', '')
-        or DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE
     ).strip()
     messages = []
-    if intro_enabled:
-        normalized_intro_template = normalize_assignment_sms_wording(intro_template).strip()
-        if '[شماره پذیرش]' not in normalized_intro_template:
-            lines = normalized_intro_template.splitlines()
+    if assigned_enabled:
+        template_parts = [assigned_template]
+        if invoice_template and 'پیش فاکتور خدمات:' not in assigned_template:
+            template_parts.append(invoice_template)
+        normalized_template = normalize_vehicle_assignment_sms_template('\n'.join(template_parts)).strip()
+        if '[شماره پذیرش]' not in normalized_template:
+            lines = normalized_template.splitlines()
             lines.insert(1 if lines else 0, 'شماره پذیرش: [شماره پذیرش]')
-            normalized_intro_template = '\n'.join(lines)
-        intro_text = render_template_tokens(normalized_intro_template, context).strip()
-        if intro_text:
+            normalized_template = '\n'.join(lines)
+        assignment_text = render_template_tokens(normalized_template, context).strip()
+        if assignment_text:
             messages.append({
-                'text': intro_text,
+                'text': assignment_text,
                 'context': context,
                 'template_code': 'vehicle_assigned',
                 'reference_type': 'vehicle_assigned_sms',
                 'description': 'ارسال پیامک تخصیص خودرو',
-            })
-    if invoice_enabled:
-        invoice_text = render_template_tokens(normalize_vehicle_assignment_sms_template(invoice_template), context).strip()
-        if invoice_text:
-            messages.append({
-                'text': invoice_text,
-                'context': context,
-                'template_code': 'vehicle_assigned_invoice',
-                'reference_type': 'vehicle_assigned_invoice_sms',
-                'description': 'ارسال پیامک پیش‌فاکتور خودرو',
             })
     return messages
 
