@@ -6,8 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase
 
-from apps.auth.models import CarWash
-from apps.auth.models import CarWashFeaturePurchase
+from apps.auth.models import CarWash, CarWashFeaturePurchase, SupportTicket
 from apps.payments.models import CashflowTransaction, Wallet, WalletGatewayRequest
 
 
@@ -129,15 +128,23 @@ class WalletApiTests(APITestCase):
                 'source_wallet_id': sms_wallet.id,
                 'destination_type': 'bank',
                 'amount': 100000,
+                'bank_account_iban': 'IR820540102680020817909002',
             },
             format='json',
         )
 
         self.assertEqual(response.status_code, 201)
         sms_wallet.refresh_from_db()
-        self.assertEqual(int(sms_wallet.balance), 200000)
+        self.assertEqual(int(sms_wallet.balance), 300000)
+        self.assertTrue(
+            SupportTicket.objects.filter(
+                tenant=self.tenant,
+                subject='درخواست برداشت از کیف پول به حساب بانکی',
+                status=SupportTicket.Status.OPEN,
+            ).exists()
+        )
 
-    def test_accounting_feature_option_purchase_is_available(self):
+    def test_accounting_feature_option_purchase_is_unavailable_until_page_is_ready(self):
         self.wallet.balance = 10000000
         self.wallet.save(update_fields=['balance'])
 
@@ -151,16 +158,16 @@ class WalletApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 400)
         self.wallet.refresh_from_db()
-        self.assertTrue(
+        self.assertFalse(
             CarWashFeaturePurchase.objects.filter(
                 tenant=self.tenant,
                 feature_key=CarWashFeaturePurchase.FeatureKey.ACCOUNTING,
                 is_active=True,
             ).exists()
         )
-        self.assertEqual(int(self.wallet.balance), 4000000)
+        self.assertEqual(int(self.wallet.balance), 10000000)
 
     def test_installment_feature_option_purchase_debits_upfront_and_tracks_installments(self):
         self.wallet.balance = 10000000
@@ -270,15 +277,23 @@ class WalletApiTests(APITestCase):
         self.assertTrue(option['auto_charge_enabled'])
         self.assertGreater(option['progress_percent'], 0)
 
-    def test_wallet_options_payload_marks_accounting_as_available(self):
+    def test_wallet_options_payload_marks_accounting_as_coming_soon(self):
+        CarWashFeaturePurchase.objects.create(
+            tenant=self.tenant,
+            feature_key=CarWashFeaturePurchase.FeatureKey.ACCOUNTING,
+            is_active=True,
+            payment_plan=CarWashFeaturePurchase.PaymentPlan.MANUAL,
+        )
+
         response = self.client.get(reverse('wallet-options'))
 
         self.assertEqual(response.status_code, 200)
         option = next(item for item in response.data['options'] if item['feature_key'] == CarWashFeaturePurchase.FeatureKey.ACCOUNTING)
-        self.assertTrue(option['is_available'])
-        self.assertEqual(int(option['cash_amount']), 6000000)
-        self.assertEqual(int(option['installment_upfront_amount']), 1000000)
-        self.assertEqual(option['installment_months'], 10)
+        self.assertFalse(option['is_available'])
+        self.assertFalse(option['is_active'])
+        self.assertFalse(option['has_purchase'])
+        self.assertEqual(option['status_label'], 'به‌زودی')
+        self.assertIn('در حال توسعه', option['unavailable_message'])
 
     def test_excel_import_is_not_a_purchasable_wallet_option(self):
         response = self.client.get(reverse('wallet-options'))

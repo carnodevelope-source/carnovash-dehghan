@@ -135,7 +135,7 @@
           </div>
           <p>{{ option.description }}</p>
           <div v-if="option.is_available === false" class="option-unavailable-box">
-            <strong>در دسترس نمی‌باشد</strong>
+            <strong>{{ option.status_label || 'در دسترس نمی‌باشد' }}</strong>
             <small>{{ option.unavailable_message || 'این آپشن هنوز ارائه نمی‌شود.' }}</small>
           </div>
           <div v-if="option.is_active && option.is_available !== false" class="option-live-grid">

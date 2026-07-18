@@ -63,13 +63,16 @@ FEATURE_OPTION_CATALOG = {
     },
     CarWashFeaturePurchase.FeatureKey.ACCOUNTING: {
         'title': 'حسابداری',
-        'subtitle': 'کنترل دقیق درآمد، هزینه و سهم‌ها',
-        'description': 'گزارش مالی، سهم کارواش و نیرو، جریان نقدی، تخفیف‌ها و پایش دریافت‌ها.',
+        'subtitle': 'خدمات حسابداری و حسابرسی پیشرفته',
+        'description': 'ثبت اسناد، هزینه‌ها، خرید و فروش، بدهکار و بستانکار و حسابرسی پیشرفته.',
         'base_price': Decimal('6000000'),
         'upfront_amount': Decimal('1000000'),
         'installment_months': 10,
         'monthly_installment_amount': Decimal('500000'),
-        'accent': '#315f9f',
+        'accent': '#94a3b8',
+        'is_available': False,
+        'status_label': 'به‌زودی',
+        'unavailable_message': 'صفحه حسابداری پیشرفته هنوز در حال توسعه است و فعلا قابل خرید یا فعال‌سازی نیست.',
     },
     CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE: {
         'title': 'فضای ابری',
@@ -161,6 +164,8 @@ def license_status_for_tenant(tenant, now=None):
 def _feature_option_payload(tenant, feature_key, purchase=None):
     config = FEATURE_OPTION_CATALOG[feature_key]
     is_available = config.get('is_available', True)
+    if not is_available:
+        purchase = None
     base_total_amount = _feature_option_price(feature_key)
     purchased_total_amount = _money(purchase.total_amount) if purchase else Decimal('0')
     total_amount = purchased_total_amount if purchased_total_amount > 0 else base_total_amount
@@ -205,7 +210,7 @@ def _feature_option_payload(tenant, feature_key, purchase=None):
         'is_active': is_active,
         'is_available': is_available,
         'has_purchase': bool(purchase),
-        'status_label': 'در دسترس نمی‌باشد' if not is_available else ('فعال شده' if is_active else 'قابل خرید'),
+        'status_label': config.get('status_label') if not is_available else ('فعال شده' if is_active else 'قابل خرید'),
         'unavailable_message': config.get('unavailable_message', ''),
         'payment_plan': payment_plan,
         'payment_plan_label': _feature_payment_plan_label(payment_plan),

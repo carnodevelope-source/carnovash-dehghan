@@ -123,10 +123,12 @@
             :key="item.key"
             type="button"
             class="menu-item menu-button locked-menu-item"
+            :class="{ soon: item.soon }"
             @click="handleLockedFeatureClick(item)"
           >
             <span class="menu-item-icon-wrap locked-menu-icon-wrap"><IconlyIcon :name="item.iconName" size="sm" /></span>
             <span class="menu-item-label">{{ item.label }}</span>
+            <span v-if="item.soon" class="locked-soon-badge">به‌زودی</span>
           </button>
         </div>
       </aside>
@@ -165,7 +167,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
 import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
-import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
+import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
 import { notifyWarning } from '../../utils/notify'
 import IconlyIcon from '../base/IconlyIcon.vue'
 
@@ -197,7 +199,6 @@ let supportCountPollingInFlight = false
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))
-const canAccessAccounting = computed(() => hasFeatureAccess(authStore.user, 'accounting'))
 const navItems = computed(() => (
   (navigationByRole[authStore.role] || [])
     .flatMap((group) => group.items || [])
@@ -209,9 +210,7 @@ const lockedFeatureItems = computed(() => {
   if (needsAttendanceUpgrade.value) {
     items.push({ key: 'attendance', label: 'ورود و خروج', iconName: 'calendar' })
   }
-  if (!canAccessAccounting.value) {
-    items.push({ key: 'accounting', label: 'حسابداری', iconName: 'graph' })
-  }
+  items.push({ key: 'accounting', label: 'حسابداری', iconName: 'graph', soon: true })
   return items
 })
 const mobileShellStyle = computed(() => ({
@@ -799,15 +798,42 @@ onBeforeUnmount(() => {
   opacity: 0.92;
 }
 
+.locked-menu-item.soon {
+  min-height: 34px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  color: #8b96a8;
+  background: rgba(241, 245, 249, 0.58);
+  border: 1px solid #e2e8f0;
+}
+
 .locked-menu-item:hover {
   background: rgba(255, 255, 255, 0.55);
   color: #5b6778;
+}
+
+.locked-menu-item.soon:hover {
+  background: rgba(241, 245, 249, 0.78);
+  color: #64748b;
 }
 
 .locked-menu-icon-wrap {
   background: rgba(255, 255, 255, 0.72);
   border-color: #dbe3ec;
   --iconly-filter: brightness(0) saturate(100%) invert(56%) sepia(10%) saturate(481%) hue-rotate(176deg) brightness(91%) contrast(87%);
+}
+
+.locked-soon-badge {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .content {
