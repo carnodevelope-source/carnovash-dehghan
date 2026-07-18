@@ -6,13 +6,22 @@ const ATTENDANCE_UPGRADE_MESSAGE = 'ورود و خروج تا ۵ نیرو رای
 export const hasFeatureAccess = (user, featureKey) => {
   const normalizedFeatureKey = String(featureKey || '').trim()
   if (!normalizedFeatureKey) return false
+  if (Object.prototype.hasOwnProperty.call(user?.menu_access || {}, normalizedFeatureKey)) {
+    return user.menu_access[normalizedFeatureKey] === true
+  }
   if (user?.menu_access?.[normalizedFeatureKey] === true) return true
   return Array.isArray(user?.purchased_menu_access) && user.purchased_menu_access.includes(normalizedFeatureKey)
 }
 
 export const hasAttendanceAccess = (user) => {
   const role = String(user?.role || '').trim().toLowerCase()
-  return ATTENDANCE_ALLOWED_ROLES.includes(role)
+  return ATTENDANCE_ALLOWED_ROLES.includes(role) && user?.menu_access?.attendance !== false
+}
+
+export const getFeatureLockNotice = (user, featureKey) => {
+  const normalizedFeatureKey = String(featureKey || '').trim()
+  if (!normalizedFeatureKey) return ''
+  return String(user?.locked_feature_statuses?.[normalizedFeatureKey]?.notice || '').trim()
 }
 
 export const requiresAttendanceUpgrade = (user) => {

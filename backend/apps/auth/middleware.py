@@ -9,9 +9,17 @@ LICENSE_EXEMPT_PREFIXES = (
     '/api/auth/support/',
     '/api/auth/hq/',
     '/api/payments/wallet/',
-    '/api/notifications/sms/simple/',
     '/api/workers/attendance/public/',
 )
+
+FEATURE_LOCK_PREFIXES = {
+    'sms_club': (
+        '/api/notifications/',
+    ),
+    'attendance': (
+        '/api/workers/attendance/',
+    ),
+}
 
 
 class TenantLicenseLockMiddleware:
@@ -19,29 +27,48 @@ class TenantLicenseLockMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if self._should_block(request):
+        block_reason = self._block_reason(request)
+        if block_reason:
             return JsonResponse(
                 {
-                    'detail': 'دسترسی نرم‌افزار قفل است. برای ادامه، پرداخت نرم‌افزار یا سررسید را از کیف پول تکمیل کنید.',
-                    'code': 'tenant_license_locked',
+                    'detail': block_reason['detail'],
+                    'code': block_reason['code'],
+                    'feature_key': block_reason.get('feature_key', ''),
                 },
                 status=402,
             )
         return self.get_response(request)
 
-    def _should_block(self, request):
+    def _block_reason(self, request):
         path = request.path or ''
         if not path.startswith('/api/'):
-            return False
+            return None
         if any(path.startswith(prefix) for prefix in LICENSE_EXEMPT_PREFIXES):
-            return False
+            return None
         user = getattr(request, 'user', None)
         if not getattr(user, 'is_authenticated', False):
-            return False
+            return None
         if getattr(user, 'platform_role', '') in {'hq_admin', 'hq_support'}:
-            return False
+            return None
         tenant = getattr(user, 'tenant', None)
         if tenant is None:
-            return False
-        from apps.payments.views import license_status_for_tenant
-        return bool(license_status_for_tenant(tenant).get('is_locked'))
+            return None
+        from apps.payments.views import license_status_for_tenant, locked_feature_statuses_for_tenant
+        license_status = license_status_for_tenant(tenant)
+        if license_status.get('is_locked'):
+            return {
+                'detail': 'دسترسی نرم‌افزار قفل است. برای ادامه، پرداخت نرم‌افزار یا سررسید را از کیف پول تکمیل کنید.',
+                'code': 'tenant_license_locked',
+                'feature_key': 'core_software',
+            }
+        locked_features = locked_feature_statuses_for_tenant(tenant)
+        for feature_key, prefixes in FEATURE_LOCK_PREFIXES.items():
+            if feature_key not in locked_features:
+                continue
+            if any(path.startswith(prefix) for prefix in prefixes):
+                return {
+                    'detail': 'دسترسی این بخش به دلیل پرداخت نشدن قسط قفل است. برای ادامه، قسط را از کیف پول پرداخت کنید.',
+                    'code': 'tenant_feature_locked',
+                    'feature_key': feature_key,
+                }
+        return None

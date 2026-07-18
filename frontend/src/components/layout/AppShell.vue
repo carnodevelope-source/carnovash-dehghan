@@ -167,7 +167,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
 import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
-import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
+import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, getFeatureLockNotice, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
 import { notifyWarning } from '../../utils/notify'
 import IconlyIcon from '../base/IconlyIcon.vue'
 
@@ -199,6 +199,8 @@ let supportCountPollingInFlight = false
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))
+const attendanceLockNotice = computed(() => getFeatureLockNotice(authStore.user, 'attendance'))
+const smsClubLocked = computed(() => !hasFeatureAccess(authStore.user, 'sms_club') && Boolean(getFeatureLockNotice(authStore.user, 'sms_club')))
 const navItems = computed(() => (
   (navigationByRole[authStore.role] || [])
     .flatMap((group) => group.items || [])
@@ -209,6 +211,12 @@ const lockedFeatureItems = computed(() => {
   const items = []
   if (needsAttendanceUpgrade.value) {
     items.push({ key: 'attendance', label: 'ورود و خروج', iconName: 'calendar' })
+  }
+  if (attendanceLockNotice.value && !items.some((item) => item.key === 'attendance')) {
+    items.push({ key: 'attendance', label: 'ورود و خروج', iconName: 'calendar' })
+  }
+  if (smsClubLocked.value) {
+    items.push({ key: 'sms_club', label: 'باشگاه مشتریان', iconName: 'users3' })
   }
   items.push({ key: 'accounting', label: 'حسابداری', iconName: 'graph', soon: true })
   return items
@@ -258,8 +266,8 @@ const showPremiumFeatureMessage = () => {
 }
 
 const showAttendanceAccessMessage = () => {
-  notifyWarning(getAttendanceUpgradeMessage(), {
-    title: 'دسترسی حضور و غیاب'
+  notifyWarning(attendanceLockNotice.value || getAttendanceUpgradeMessage(), {
+    title: attendanceLockNotice.value ? 'حضور و غیاب قفل است' : 'دسترسی حضور و غیاب'
   })
 }
 
@@ -284,6 +292,12 @@ const goToAttendance = () => {
 const handleLockedFeatureClick = (item) => {
   if (item?.key === 'attendance') {
     showAttendanceAccessMessage()
+    return
+  }
+  const lockNotice = getFeatureLockNotice(authStore.user, item?.key)
+  if (lockNotice) {
+    notifyWarning(lockNotice, { title: 'آپشن قفل است' })
+    router.push('/manager/wallet')
     return
   }
   showPremiumFeatureMessage()

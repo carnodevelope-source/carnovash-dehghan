@@ -209,9 +209,11 @@ def _auth_payload(user):
     attendance_worker_count = tenant_worker_count(tenant) if getattr(user, 'tenant_id', None) else 0
     attendance_feature_purchased = 'attendance' in feature_keys
     license_status = {}
+    locked_feature_statuses = {}
     if getattr(user, 'tenant_id', None) and not _is_hq_user(user):
-        from apps.payments.views import license_status_for_tenant
+        from apps.payments.views import license_status_for_tenant, locked_feature_statuses_for_tenant
         license_status = license_status_for_tenant(user.tenant)
+        locked_feature_statuses = locked_feature_statuses_for_tenant(user.tenant)
     return {
         'id': user.id,
         'username': user.username,
@@ -225,6 +227,8 @@ def _auth_payload(user):
         'tenant_name': user.tenant.name if user.tenant_id else '',
         'purchased_menu_access': sorted(feature_keys),
         'menu_access': feature_access_map_for_tenant(tenant) if getattr(user, 'tenant_id', None) else feature_access_map(feature_keys),
+        'locked_feature_statuses': locked_feature_statuses,
+        'locked_feature_keys': sorted(locked_feature_statuses.keys()),
         'attendance_free_workers_limit': ATTENDANCE_FREE_WORKERS_LIMIT,
         'attendance_worker_count': attendance_worker_count,
         'attendance_feature_purchased': attendance_feature_purchased,

@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth.store'
 import { defaultRouteByRole } from '../config/navigation'
-import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, hasAttendanceAccess, hasFeatureAccess } from '../utils/attendanceAccess'
+import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, getFeatureLockNotice, hasAttendanceAccess, hasFeatureAccess } from '../utils/attendanceAccess'
 import { notifyWarning } from '../utils/notify'
 import { applyRouteSeo } from '../utils/seo'
 
@@ -56,7 +56,10 @@ const router = createRouter({
 })
 
 const licenseSafeRoutes = new Set(['manager-wallet', 'support', 'login', 'hq-panel'])
-const paidFeatureRoutes = {}
+const paidFeatureRoutes = {
+  '/manager/customer-club': 'sms_club',
+  '/manager/attendance': 'attendance'
+}
 
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
@@ -98,15 +101,18 @@ router.beforeEach(async (to) => {
     }
   }
 
+  const requiredFeature = paidFeatureRoutes[to.path]
+  if (requiredFeature && !hasFeatureAccess(authStore.user, requiredFeature)) {
+    notifyWarning(
+      getFeatureLockNotice(authStore.user, requiredFeature) || 'برای استفاده از این بخش باید آپشن مربوطه را از کیف پول خریداری یا قسط سررسید آن را پرداخت کنید.',
+      { title: getFeatureLockNotice(authStore.user, requiredFeature) ? 'آپشن قفل است' : 'آپشن فعال نیست' }
+    )
+    return '/manager/wallet'
+  }
+
   if (to.path === ATTENDANCE_ROUTE && !hasAttendanceAccess(authStore.user)) {
     notifyWarning(getAttendanceUpgradeMessage(), { title: 'دسترسی محدود' })
     return defaultRouteByRole[authStore.role] || '/'
-  }
-
-  const requiredFeature = paidFeatureRoutes[to.path]
-  if (requiredFeature && !hasFeatureAccess(authStore.user, requiredFeature)) {
-    notifyWarning('برای استفاده از این بخش باید آپشن مربوطه را از کیف پول خریداری کنید.', { title: 'آپشن فعال نیست' })
-    return '/manager/wallet'
   }
 
   if (to.path === '/' && authStore.isHq) return '/hq'

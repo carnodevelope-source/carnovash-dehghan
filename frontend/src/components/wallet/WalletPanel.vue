@@ -121,7 +121,7 @@
           v-for="option in state.options"
           :key="option.feature_key"
           class="option-card"
-          :class="{ active: option.is_active, unavailable: option.is_available === false }"
+          :class="{ active: option.is_active, unavailable: option.is_available === false, locked: option.installment_is_locked }"
           :style="{ '--option-accent': option.accent || '#315f9f' }"
         >
           <div class="option-card-head">
@@ -177,6 +177,10 @@
               <strong>{{ moneyWithUnit(option.monthly_installment_amount) }}</strong>
               <small>پیش‌پرداخت: {{ moneyWithUnit(option.installment_upfront_amount) }}</small>
             </div>
+          </div>
+          <div v-if="option.installment_is_locked" class="option-lock-note">
+            <strong>این بخش قفل شده است</strong>
+            <small>{{ option.installment_lock_notice || 'قسط سررسید این آپشن پرداخت نشده است. برای باز شدن دسترسی، قسط را پرداخت کنید.' }}</small>
           </div>
           <div v-if="option.is_active && option.is_available !== false" class="option-progress-block">
             <div class="option-progress-head">
@@ -1209,10 +1213,14 @@ onMounted(async () => {
 .option-card p{margin:0;color:#64748b;font-size:12px;line-height:1.9}
 .option-status{display:inline-flex;align-items:center;height:30px;padding:0 11px;border-radius:999px;background:#eef2f7;color:#475569;font-size:11px;font-weight:900;white-space:nowrap}
 .option-status.enabled{background:#dcfce7;color:#166534}
+.option-card.locked .option-status{background:#fee2e2;color:#991b1b}
 .option-card.unavailable .option-status{background:#e2e8f0;color:#475569}
 .option-unavailable-box{display:grid;gap:7px;padding:13px 14px;border:1px dashed #cbd5e1;border-radius:16px;background:linear-gradient(180deg,#ffffff,#f8fafc)}
 .option-unavailable-box strong{color:#334155;font-size:14px}
 .option-unavailable-box small{color:#64748b;font-size:12px;line-height:1.9}
+.option-lock-note{display:grid;gap:6px;padding:12px 13px;border:1px solid #fecaca;border-radius:16px;background:linear-gradient(180deg,#fff7f7,#fff1f2)}
+.option-lock-note strong{color:#991b1b;font-size:13px}
+.option-lock-note small{color:#7f1d1d;font-size:12px;font-weight:800;line-height:1.8}
 .option-price-row,.option-installment-row{display:grid;gap:5px;padding:12px 13px;border:1px solid #e1e8f0;border-radius:16px;background:#fff}
 .option-price-row span,.option-installment-row span,.option-installment-row small{color:#64748b;font-size:12px}
 .option-price-row strong,.option-installment-row strong{color:#0f172a;font-size:17px}

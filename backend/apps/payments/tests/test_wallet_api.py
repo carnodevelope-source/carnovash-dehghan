@@ -251,6 +251,51 @@ class WalletApiTests(APITestCase):
         self.assertEqual(int(purchase.remaining_amount), 1200000)
         self.assertLessEqual(purchase.next_installment_due_at, timezone.now())
 
+    def test_overdue_option_installment_locks_only_that_feature(self):
+        self.wallet.balance = 50000
+        self.wallet.save(update_fields=['balance'])
+        CarWashFeaturePurchase.objects.create(
+            tenant=self.tenant,
+            feature_key=CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
+            is_active=True,
+            payment_plan=CarWashFeaturePurchase.PaymentPlan.CASH,
+            total_amount=7000000,
+            paid_amount=7000000,
+            remaining_amount=0,
+        )
+        purchase = CarWashFeaturePurchase.objects.create(
+            tenant=self.tenant,
+            feature_key=CarWashFeaturePurchase.FeatureKey.SMS_CLUB,
+            is_active=True,
+            payment_plan=CarWashFeaturePurchase.PaymentPlan.INSTALLMENT,
+            total_amount=3000000,
+            paid_amount=1000000,
+            remaining_amount=1000000,
+            installment_months=4,
+            monthly_installment_amount=500000,
+            next_installment_due_at=timezone.now() - timedelta(days=8),
+        )
+
+        wallet_response = self.client.get(reverse('wallet-options'))
+        me_response = self.client.get(reverse('me'))
+        session_client = APIClient()
+        self.assertTrue(session_client.login(username='wallet-manager', password='pass12345'))
+        locked_feature_response = session_client.get(reverse('notifications-customer-club'))
+        safe_response = session_client.get(reverse('wallet-dashboard'))
+
+        self.assertEqual(wallet_response.status_code, 200)
+        option = next(item for item in wallet_response.data['options'] if item['feature_key'] == purchase.feature_key)
+        self.assertTrue(option['installment_is_locked'])
+        self.assertEqual(wallet_response.data['license_status']['is_locked'], False)
+        self.assertEqual(me_response.status_code, 200)
+        self.assertEqual(me_response.data['menu_access'][CarWashFeaturePurchase.FeatureKey.SMS_CLUB], False)
+        self.assertIn(CarWashFeaturePurchase.FeatureKey.SMS_CLUB, me_response.data['locked_feature_keys'])
+        self.assertEqual(locked_feature_response.status_code, 402)
+        locked_payload = locked_feature_response.json()
+        self.assertEqual(locked_payload['code'], 'tenant_feature_locked')
+        self.assertEqual(locked_payload['feature_key'], CarWashFeaturePurchase.FeatureKey.SMS_CLUB)
+        self.assertEqual(safe_response.status_code, 200)
+
     def test_wallet_options_payload_reports_dynamic_feature_state(self):
         purchase = CarWashFeaturePurchase.objects.create(
             tenant=self.tenant,

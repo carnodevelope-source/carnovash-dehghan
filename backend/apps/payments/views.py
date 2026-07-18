@@ -161,6 +161,64 @@ def license_status_for_tenant(tenant, now=None):
     }
 
 
+def feature_installment_status(purchase, now=None):
+    now = now or timezone.now()
+    if (
+        purchase is None
+        or not purchase.is_active
+        or purchase.payment_plan != CarWashFeaturePurchase.PaymentPlan.INSTALLMENT
+        or purchase.remaining_amount <= 0
+        or not purchase.next_installment_due_at
+    ):
+        return {
+            'is_due': False,
+            'is_locked': False,
+            'overdue_days': 0,
+            'grace_days': LICENSE_GRACE_DAYS,
+        }
+    next_due_at = purchase.next_installment_due_at
+    if next_due_at > now:
+        return {
+            'is_due': False,
+            'is_locked': False,
+            'overdue_days': 0,
+            'grace_days': LICENSE_GRACE_DAYS,
+            'next_due_at': next_due_at,
+            'amount_due': purchase.monthly_installment_amount,
+        }
+    overdue_days = max(0, (now.date() - timezone.localtime(next_due_at).date()).days)
+    feature_title = FEATURE_OPTION_CATALOG.get(purchase.feature_key, {}).get('title', 'آپشن نرم‌افزار')
+    return {
+        'is_due': True,
+        'is_locked': overdue_days > LICENSE_GRACE_DAYS,
+        'reason': 'installment_overdue',
+        'notice': f'سررسید پرداخت {feature_title} گذشته است. پس از {LICENSE_GRACE_DAYS} روز عدم پرداخت، دسترسی این بخش قفل می‌شود.',
+        'overdue_days': overdue_days,
+        'grace_days': LICENSE_GRACE_DAYS,
+        'next_due_at': next_due_at,
+        'amount_due': purchase.monthly_installment_amount,
+    }
+
+
+def locked_feature_statuses_for_tenant(tenant, now=None):
+    if tenant is None:
+        return {}
+    now = now or timezone.now()
+    statuses = {}
+    purchases = CarWashFeaturePurchase.objects.filter(
+        tenant=tenant,
+        is_active=True,
+        payment_plan=CarWashFeaturePurchase.PaymentPlan.INSTALLMENT,
+        remaining_amount__gt=0,
+        next_installment_due_at__isnull=False,
+    )
+    for purchase in purchases:
+        status_info = feature_installment_status(purchase, now)
+        if status_info.get('is_locked'):
+            statuses[purchase.feature_key] = status_info
+    return statuses
+
+
 def _feature_option_payload(tenant, feature_key, purchase=None):
     config = FEATURE_OPTION_CATALOG[feature_key]
     is_available = config.get('is_available', True)
@@ -197,6 +255,7 @@ def _feature_option_payload(tenant, feature_key, purchase=None):
         progress_percent = int((paid_amount / total_for_progress) * 100) if purchase and total_amount > 0 else 0
     progress_percent = max(0, min(progress_percent, 100))
     next_due_at = purchase.next_installment_due_at if purchase else None
+    installment_status = feature_installment_status(purchase) if purchase else {}
     return {
         'feature_key': feature_key,
         'title': config['title'],
@@ -210,7 +269,11 @@ def _feature_option_payload(tenant, feature_key, purchase=None):
         'is_active': is_active,
         'is_available': is_available,
         'has_purchase': bool(purchase),
-        'status_label': config.get('status_label') if not is_available else ('فعال شده' if is_active else 'قابل خرید'),
+        'status_label': (
+            config.get('status_label')
+            if not is_available
+            else ('قفل شده' if installment_status.get('is_locked') else ('فعال شده' if is_active else 'قابل خرید'))
+        ),
         'unavailable_message': config.get('unavailable_message', ''),
         'payment_plan': payment_plan,
         'payment_plan_label': _feature_payment_plan_label(payment_plan),
@@ -232,6 +295,10 @@ def _feature_option_payload(tenant, feature_key, purchase=None):
         'progress_percent': progress_percent,
         'next_installment_due_at': next_due_at,
         'next_installment_amount': monthly_installment if next_due_at and live_remaining_amount > 0 else Decimal('0'),
+        'installment_is_due': bool(installment_status.get('is_due')),
+        'installment_is_locked': bool(installment_status.get('is_locked')),
+        'installment_overdue_days': installment_status.get('overdue_days', 0),
+        'installment_lock_notice': installment_status.get('notice', ''),
         'can_pay_next_installment': bool(
             purchase
             and purchase.is_active
