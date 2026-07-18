@@ -306,13 +306,18 @@
             </div>
             <div class="loyalty-discount-card" :class="{ active: applyLoyaltyDiscount }">
               <div class="loyalty-discount-copy">
-                <span>تخفیف امتیاز مشتری</span>
+                <span>اعمال تخفیف امتیاز مشتری</span>
                 <strong>{{ toFaNumber(customerLoyaltyDiscountPercent) }}٪</strong>
               </div>
-              <label class="loyalty-discount-toggle">
-                <input v-model="applyLoyaltyDiscount" type="checkbox" />
+              <button
+                type="button"
+                class="loyalty-discount-toggle"
+                role="switch"
+                :aria-checked="applyLoyaltyDiscount"
+                @click="toggleLoyaltyDiscount"
+              >
                 <span></span>
-              </label>
+              </button>
               <b>{{ formatMoney(effectiveLoyaltyDiscountAmount) }}</b>
             </div>
             <div v-if="manualServiceIncreaseTotal > 0" class="summary-row service-adjust-summary increase-row">
@@ -403,6 +408,10 @@ const shareValueInput = ref('40')
 const workerSearch = ref('')
 const manualDiscountTotal = ref(0)
 const applyLoyaltyDiscount = ref(true)
+const toggleLoyaltyDiscount = (event) => {
+  applyLoyaltyDiscount.value = !applyLoyaltyDiscount.value
+  event?.currentTarget?.blur?.()
+}
 const workerSharePercents = ref({})
 const servicePriceAdjustments = ref({})
 const blockedPlatePaymentConfirmed = ref(false)
@@ -1436,10 +1445,13 @@ onMounted(loadInitialData)
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
+  min-height: 58px;
   padding: 10px;
   border: 1px solid #dbe7f3;
   border-radius: 14px;
   background: #ffffff;
+  contain: layout;
+  overflow-anchor: none;
 }
 
 .loyalty-discount-card.active {
@@ -1455,14 +1467,18 @@ onMounted(loadInitialData)
 
 .loyalty-discount-copy span {
   color: #475569;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .loyalty-discount-copy strong,
 .loyalty-discount-card b {
   color: #0f172a;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
 }
 
@@ -1471,15 +1487,17 @@ onMounted(loadInitialData)
 }
 
 .loyalty-discount-toggle {
+  width: 42px;
+  height: 24px;
+  border: 0;
+  padding: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   cursor: pointer;
-}
-
-.loyalty-discount-toggle input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .loyalty-discount-toggle span {
@@ -1505,11 +1523,11 @@ onMounted(loadInitialData)
   transition: transform 0.18s ease;
 }
 
-.loyalty-discount-toggle input:checked + span {
+.loyalty-discount-toggle[aria-checked="true"] span {
   background: #2563eb;
 }
 
-.loyalty-discount-toggle input:checked + span::after {
+.loyalty-discount-toggle[aria-checked="true"] span::after {
   transform: translateX(-18px);
 }
 
@@ -2683,6 +2701,43 @@ onMounted(loadInitialData)
     grid-column: 1 / -1;
   }
 
+  .loyalty-discount-card {
+    min-height: 50px;
+    gap: 8px;
+    padding: 8px;
+    grid-template-columns: minmax(0, 1fr) 38px auto;
+  }
+
+  .loyalty-discount-copy span {
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .loyalty-discount-copy strong,
+  .loyalty-discount-card b {
+    font-size: 11px;
+  }
+
+  .loyalty-discount-toggle {
+    width: 38px;
+    height: 22px;
+  }
+
+  .loyalty-discount-toggle span {
+    width: 38px;
+    height: 22px;
+  }
+
+  .loyalty-discount-toggle span::after {
+    width: 16px;
+    height: 16px;
+  }
+
+  .loyalty-discount-toggle[aria-checked="true"] span::after {
+    transform: translateX(-16px);
+  }
+
   .col-head h4,
   .summary-head h4 {
     font-size: 16px;
@@ -2859,6 +2914,31 @@ onMounted(loadInitialData)
 
   .textarea-row textarea {
     min-height: 72px;
+  }
+
+  .loyalty-discount-card {
+    grid-template-columns: minmax(0, 1fr) 36px auto;
+    gap: 6px;
+  }
+
+  .loyalty-discount-copy span {
+    font-size: 9px;
+    font-weight: 500;
+  }
+
+  .loyalty-discount-toggle,
+  .loyalty-discount-toggle span {
+    width: 36px;
+    height: 21px;
+  }
+
+  .loyalty-discount-toggle span::after {
+    width: 15px;
+    height: 15px;
+  }
+
+  .loyalty-discount-toggle[aria-checked="true"] span::after {
+    transform: translateX(-15px);
   }
 }
 </style>
