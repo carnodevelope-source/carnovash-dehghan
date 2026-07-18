@@ -19,8 +19,8 @@ def _money(value):
 def _resolve_target_day(now, force=False):
     local_now = timezone.localtime(now or timezone.now())
     if force:
-        return local_now.date() - timedelta(days=1)
-    if local_now.hour >= 23:
+        return local_now.date()
+    if local_now.hour == 23 and local_now.minute >= 59:
         return local_now.date()
     if local_now.hour < 6:
         return local_now.date() - timedelta(days=1)
@@ -35,10 +35,13 @@ def _day_bounds(day):
 def _build_summary_text(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, wallet_in_total, wallet_out_total):
     day_label = format_jalali_date(timezone.make_aware(datetime.combine(day, time.min)))
     return (
-        f'خلاصه روز {day_label} - {tenant.name}\n'
-        f'درآمد: {format_toman(paid_total)}\n'
-        f'ورود: {to_persian_digits(vehicle_in_count)} | خروج: {to_persian_digits(vehicle_out_count)}\n'
-        f'واریز: {format_toman(wallet_in_total)} | برداشت: {format_toman(wallet_out_total)}'
+        f'گزارش شبانه {tenant.name}\n'
+        f'تاریخ: {day_label}\n'
+        f'درآمد وصول‌شده: {format_toman(paid_total)}\n'
+        f'خودروهای پذیرش‌شده: {to_persian_digits(vehicle_in_count)}\n'
+        f'خودروهای ترخیص‌شده: {to_persian_digits(vehicle_out_count)}\n'
+        f'واریز صندوق: {format_toman(wallet_in_total)}\n'
+        f'برداشت صندوق: {format_toman(wallet_out_total)}'
     )
 
 

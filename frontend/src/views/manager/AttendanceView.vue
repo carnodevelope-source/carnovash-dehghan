@@ -26,10 +26,6 @@
             <span>خارج از شیفت</span>
             <strong>{{ toFa(summary.absent_count || 0) }}</strong>
           </article>
-          <article class="hero-stat">
-            <span>ساعت کار امروز</span>
-            <strong>{{ toFa(summary.today_worked_hours || 0) }}</strong>
-          </article>
         </div>
       </section>
       </template>
@@ -192,10 +188,6 @@
                   <div class="meta-chip">
                     <span>ثبت‌ها</span>
                     <strong>{{ toFa(worker.today_events_count || 0) }}</strong>
-                  </div>
-                  <div class="meta-chip">
-                    <span>سفارش فعال</span>
-                    <strong>{{ toFa(worker.active_jobs_count || 0) }}</strong>
                   </div>
                   <div class="meta-chip">
                     <span>بار کاری</span>
@@ -578,6 +570,7 @@ watch(activeTab, async (value) => {
 .hero-copy h2{margin:14px 0 10px;font-size:32px}
 .hero-copy p{margin:0;max-width:560px;color:#d9ecff;line-height:1.9}
 .hero-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.hero-panel .hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 .hero-stat{padding:18px 20px;border-radius:22px;background:#ffffff14;border:1px solid #ffffff24;backdrop-filter:blur(8px)}
 .hero-stat span{display:block;color:#dbeafe;font-size:12px}
 .hero-stat strong{display:block;margin-top:10px;font-size:26px}
@@ -645,7 +638,7 @@ watch(activeTab, async (value) => {
 .feed-copy strong{display:block}
 .feed-copy p{margin:4px 0 0;color:#64748b;font-size:12px}
 .error-box{padding:12px 14px;border-radius:18px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
-@media (max-width:1280px){.content-grid,.reports-hero{grid-template-columns:1fr}.hero-panel{grid-template-columns:1fr}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.reports-filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-wide{grid-column:1/-1}}
+@media (max-width:1280px){.content-grid,.reports-hero{grid-template-columns:1fr}.hero-panel{grid-template-columns:1fr}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.hero-panel .hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.reports-filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-wide{grid-column:1/-1}}
 @media (max-width:900px){.toolbar-card{grid-template-columns:1fr 1fr}.search-field{grid-column:1/-1}.worker-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.qr-row{grid-template-columns:1fr}.qr-frame{justify-self:center}}
-@media (max-width:640px){.section-card,.hero-panel,.reports-hero{border-radius:24px}.toolbar-card,.kpi-grid,.reports-filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.worker-head,.feed-item{grid-template-columns:1fr}.status-pill{justify-self:start}.trend-item{grid-template-columns:1fr}.section-head{flex-direction:column;align-items:stretch}.hero-copy h2,.reports-hero h2{font-size:26px}.hero-panel,.section-card,.reports-hero{padding:16px}.qr-frame{width:100%;height:auto;aspect-ratio:1/1;max-width:180px}.meta-chip strong{font-size:14px}.hero-stat{padding:12px 10px;border-radius:16px}.hero-stat strong{font-size:18px}.worker-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.primary-btn,.secondary-btn,.ghost-inline-btn,.danger-inline-btn{padding:0 10px;font-size:12px}.search-wide{grid-column:1/-1}.report-table th,.report-table td{font-size:11px}}
+@media (max-width:640px){.section-card,.hero-panel,.reports-hero{border-radius:24px}.toolbar-card,.kpi-grid,.reports-filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.hero-panel .hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.worker-head,.feed-item{grid-template-columns:1fr}.status-pill{justify-self:start}.trend-item{grid-template-columns:1fr}.section-head{flex-direction:column;align-items:stretch}.hero-copy h2,.reports-hero h2{font-size:26px}.hero-panel,.section-card,.reports-hero{padding:16px}.qr-frame{width:100%;height:auto;aspect-ratio:1/1;max-width:180px}.meta-chip strong{font-size:14px}.hero-stat{padding:12px 10px;border-radius:16px}.hero-stat strong{font-size:18px}.worker-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.primary-btn,.secondary-btn,.ghost-inline-btn,.danger-inline-btn{padding:0 10px;font-size:12px}.search-wide{grid-column:1/-1}.report-table th,.report-table td{font-size:11px}}
 </style>

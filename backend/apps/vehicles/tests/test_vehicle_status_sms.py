@@ -244,10 +244,19 @@ class VehicleStatusSmsTests(APITestCase):
                 recipient='09121112222',
             ).exists()
         )
+        self.assertTrue(
+            NotificationLog.objects.filter(
+                tenant=self.tenant,
+                vehicle_entry=vehicle,
+                template_code='vehicle_assigned_invoice',
+                status=NotificationLog.Status.SENT,
+                recipient='09121112222',
+            ).exists()
+        )
         log = NotificationLog.objects.get(
             tenant=self.tenant,
             vehicle_entry=vehicle,
-            template_code='vehicle_assigned',
+            template_code='vehicle_assigned_invoice',
             status=NotificationLog.Status.SENT,
         )
         self.assertIn('شست‌وشو', log.payload.get('text', ''))
@@ -394,7 +403,7 @@ class VehicleStatusSmsTests(APITestCase):
         log = NotificationLog.objects.get(
             tenant=self.tenant,
             vehicle_entry=self.vehicle,
-            template_code='vehicle_assigned',
+            template_code='vehicle_assigned_invoice',
             status=NotificationLog.Status.SENT,
         )
         self.assertIn('تمیزکاری', log.payload.get('text', ''))

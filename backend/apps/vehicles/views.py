@@ -958,11 +958,14 @@ class VehicleReleaseCheckoutView(APIView):
         manual_discount_total = vehicle.job.manual_discount_total or Decimal('0')
         customer_score = Decimal(str(loyalty.get('score', 0) or 0))
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
-        customer_discount_percent, loyalty_discount_total = self._compute_discount(
-            base_amount=service_list_subtotal,
-            customer_score=customer_score,
-            percent_per_half_star=discount_percent_per_half_star,
-        )
+        if getattr(vehicle.job, 'apply_loyalty_discount', True):
+            customer_discount_percent, loyalty_discount_total = self._compute_discount(
+                base_amount=service_list_subtotal,
+                customer_score=customer_score,
+                percent_per_half_star=discount_percent_per_half_star,
+            )
+        else:
+            customer_discount_percent, loyalty_discount_total = Decimal('0'), Decimal('0')
         facility_discount_total = sum(
             (
                 max(
@@ -1029,6 +1032,7 @@ class VehicleReleaseCheckoutView(APIView):
                     'discount_percent_per_half_star': float(discount_percent_per_half_star),
                     'customer_discount_percent': float(customer_discount_percent),
                     'facility_discount_total': facility_discount_total,
+                    'apply_loyalty_discount': getattr(vehicle.job, 'apply_loyalty_discount', True),
                     'loyalty_discount_total': loyalty_discount_total,
                     'discount_total': discount_total,
                     'manual_discount_total': manual_discount_total,
@@ -1323,11 +1327,14 @@ class VehicleReleaseCheckoutView(APIView):
         loyalty = loyalty_snapshot(self._loyalty_profile(vehicle))
         customer_score = Decimal(str(loyalty.get('score', 0) or 0))
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
-        customer_discount_percent, loyalty_discount_total = self._compute_discount(
-            base_amount=completed_service_list_subtotal,
-            customer_score=customer_score,
-            percent_per_half_star=discount_percent_per_half_star,
-        )
+        if getattr(vehicle.job, 'apply_loyalty_discount', True):
+            customer_discount_percent, loyalty_discount_total = self._compute_discount(
+                base_amount=completed_service_list_subtotal,
+                customer_score=customer_score,
+                percent_per_half_star=discount_percent_per_half_star,
+            )
+        else:
+            customer_discount_percent, loyalty_discount_total = Decimal('0'), Decimal('0')
         facility_discount_total = sum(
             (
                 max(

@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.auth.models import CarWash
-from apps.auth.nightly_sms import dispatch_due_nightly_manager_summaries
+from apps.auth.nightly_sms import _resolve_target_day, dispatch_due_nightly_manager_summaries
 from apps.notifications.models import NotificationLog
 from apps.payments.models import CashflowTransaction, Payment, Wallet
 from apps.vehicles.models import VehicleEntry
@@ -121,8 +121,10 @@ class NightlyManagerSmsTests(APITestCase):
         self.assertEqual(log.payload['vehicle_out_count'], 1)
         self.assertEqual(log.payload['wallet_in_total'], 300000.0)
         self.assertEqual(log.payload['wallet_out_total'], 120000.0)
-        self.assertIn('درآمد: ۸۵۰،۰۰۰ تومان', log.payload['text'])
-        self.assertIn('ورود: ۱ | خروج: ۱', log.payload['text'])
+        self.assertIn('گزارش شبانه کارواش تست', log.payload['text'])
+        self.assertIn('درآمد وصول‌شده: ۸۵۰،۰۰۰ تومان', log.payload['text'])
+        self.assertIn('خودروهای پذیرش‌شده: ۱', log.payload['text'])
+        self.assertIn('خودروهای ترخیص‌شده: ۱', log.payload['text'])
 
     @patch('apps.auth.sms.send_provider_sms')
     def test_nightly_summary_respects_existing_legacy_log_for_same_day(self, mock_send_provider_sms):
@@ -142,3 +144,10 @@ class NightlyManagerSmsTests(APITestCase):
 
         self.assertEqual(sent_count, 0)
         mock_send_provider_sms.assert_not_called()
+
+    def test_nightly_summary_becomes_due_at_2359(self):
+        day = date(2026, 7, 16)
+
+        self.assertIsNone(_resolve_target_day(self._at(day, 23).replace(minute=58)))
+        self.assertEqual(_resolve_target_day(self._at(day, 23).replace(minute=59)), day)
+        self.assertEqual(_resolve_target_day(self._at(day + timedelta(days=1), 1)), day)

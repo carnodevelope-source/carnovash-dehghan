@@ -72,13 +72,17 @@
               v-for="ticket in filteredTickets"
               :key="ticket.id"
               class="ticket-row"
-              :class="{ selected: detailState.ticket?.id === ticket.id }"
+              :class="[statusClass(ticket.status), { selected: detailState.ticket?.id === ticket.id }]"
               role="button"
               tabindex="0"
               @click="openTicketDetail(ticket.id)"
               @keydown.enter.prevent="openTicketDetail(ticket.id)"
               @keydown.space.prevent="openTicketDetail(ticket.id)"
             >
+              <div class="ticket-row-meta ticket-row-meta-top">
+                <span class="meta-pill mono">#{{ ticket.id }}</span>
+                <span>{{ formatDateTime(ticket.updated_at) }}</span>
+              </div>
               <div class="ticket-row-top">
                 <strong>{{ ticket.subject }}</strong>
                 <span class="status-pill" :class="statusClass(ticket.status)">{{ clientStatusLabel(ticket) }}</span>
@@ -87,12 +91,10 @@
               <div class="ticket-row-tags">
                 <span class="meta-pill">{{ categoryLabel(ticket.category) }}</span>
                 <span class="meta-pill">{{ priorityLabel(ticket.priority) }}</span>
-                <span class="meta-pill mono">#{{ ticket.id }}</span>
+                <span>{{ toFa(ticket.messages_count || 0) }} پیام</span>
               </div>
               <div class="ticket-row-meta">
-                <span>{{ formatDateTime(ticket.updated_at) }}</span>
                 <span>{{ ticketLastResponder(ticket) }}</span>
-                <span>{{ toFa(ticket.messages_count || 0) }} پیام</span>
               </div>
             </article>
           </div>
@@ -1873,14 +1875,38 @@ onBeforeUnmount(() => {
 }
 
 .ticket-row {
-  min-height: 132px;
-  border-radius: 16px;
-  padding: 15px;
+  min-height: 0;
+  border-radius: 18px;
+  padding: 16px;
   touch-action: manipulation;
+  position: relative;
+  overflow: hidden;
 }
+
+.ticket-row::before {
+  content: "";
+  position: absolute;
+  inset-block: 14px;
+  inset-inline-start: 0;
+  width: 4px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+.ticket-row.pending::before,
+.ticket-row.in-progress::before { background: #d97706; }
+.ticket-row.resolved::before { background: #16a34a; }
+.ticket-row.closed::before { background: #64748b; }
 
 .ticket-row.selected {
   border-color: rgba(37, 99, 235, 0.42);
+}
+
+.ticket-row-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
 }
 
 .ticket-row-top strong,
@@ -1888,8 +1914,44 @@ onBeforeUnmount(() => {
   line-height: 1.55;
 }
 
+.ticket-row-top strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.ticket-row-tags {
+  align-items: center;
+}
+
+.ticket-row-tags > span:not(.meta-pill) {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .ticket-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
   row-gap: 6px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ticket-row-meta-top {
+  align-items: center;
+  color: #475569;
+}
+
+.ticket-row p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 
 .conversation-card {
@@ -2075,8 +2137,16 @@ onBeforeUnmount(() => {
   }
 
   .ticket-row {
-    min-height: 128px;
+    min-height: 0;
     padding: 14px;
+  }
+
+  .ticket-row-top {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-row-top .status-pill {
+    justify-self: start;
   }
 
   .conversation-card {

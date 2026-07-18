@@ -9,6 +9,8 @@ _scheduler_lock = threading.Lock()
 
 
 def _should_start_scheduler():
+    if os.environ.get('CARWASH_INTERNAL_SCHEDULER', '').strip().lower() in {'1', 'true', 'yes', 'on'}:
+        return True
     command = ' '.join(sys.argv[1:]).lower()
     if 'runserver' not in command:
         return False

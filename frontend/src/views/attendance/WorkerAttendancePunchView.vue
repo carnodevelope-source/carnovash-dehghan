@@ -55,10 +55,6 @@
           </div>
           <div class="stats-grid">
             <div class="stat-chip">
-              <span>ساعت کار امروز</span>
-              <strong>{{ workedHoursLabel }}</strong>
-            </div>
-            <div class="stat-chip">
               <span>تعداد ثبت‌ها</span>
               <strong>{{ toFa(workerState.today_events_count || 0) }}</strong>
             </div>

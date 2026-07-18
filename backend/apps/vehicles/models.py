@@ -312,6 +312,7 @@ class VehicleJob(TimestampedModel):
     products_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     facility_discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    apply_loyalty_discount = models.BooleanField(default=True)
     loyalty_discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     manual_discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)

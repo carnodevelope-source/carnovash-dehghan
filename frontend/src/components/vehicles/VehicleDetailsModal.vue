@@ -77,6 +77,7 @@
             <p><span>تخفیف امتیاز مشتری</span><strong>{{ formatMoney(vehicle.job?.loyalty_discount_total) }}</strong></p>
             <p><span>تخفیف دستی</span><strong>{{ formatMoney(vehicle.job?.manual_discount_total) }}</strong></p>
             <p><span>جمع تخفیف</span><strong>{{ formatMoney(vehicle.job?.total_discount || vehicle.job?.discount_total) }}</strong></p>
+            <p><span>انعام</span><strong>{{ formatMoney(vehicle.job?.tip_amount) }}</strong></p>
             <p><span>مالیات</span><strong>{{ formatMoney(vehicle.job?.tax_total) }}</strong></p>
           </div>
         </section>

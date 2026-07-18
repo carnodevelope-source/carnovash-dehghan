@@ -12,9 +12,11 @@ class TimestampedModel(models.Model):
 
 DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
     '[نام مشتری] عزیز\n'
-    'شماره پذیرش: [شماره پذیرش]\n'
-    'خودروی شما با پلاک [پلاک]، در ساعت [ساعت تخصیص]، روز [تاریخ تخصیص] در مجموعه کارواش [نام کارواش] '
-    'برای انجام خدمات، پذیرش شد.\n\n'
+    'خودروی شما با\n'
+    'شماره پذیرش: [شماره پذیرش] با پلاک [پلاک]، در ساعت [ساعت تخصیص]، روز [تاریخ تخصیص] در مجموعه کارواش [نام کارواش] '
+    'برای انجام خدمات، پذیرش شد.'
+)
+DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = (
     'پیش فاکتور خدمات:\n'
     '[خلاصه خدمات]\n'
     'جمع کل: [جمع کل]\n'
@@ -23,7 +25,6 @@ DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
     'خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.\n'
     'از اعتماد شما سپاسگزاریم.'
 )
-DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE = ''
 
 DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
     '[نام مشتری] عزیز\n'
@@ -44,6 +45,8 @@ def normalize_vehicle_assigned_sms_template(template):
         return DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
     text = text.replace('[خطاب مشتری]', '[نام مشتری] عزیز')
     replacements = {
+        'شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]،': 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]،',
+        'شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]': 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]',
         'با پلاک [پلاک] در ساعت': 'با پلاک [پلاک]، در ساعت',
         '[ساعت تخصیص] روز': '[ساعت تخصیص]، روز',
         '[تاریخ تخصیص]، در کارواش': '[تاریخ تخصیص] در مجموعه کارواش',
@@ -302,6 +305,9 @@ class GeneralSettings(TimestampedModel):
     sms_provider_api_key = models.CharField(max_length=255, blank=True)
     sms_provider_line_number = models.CharField(max_length=50, blank=True)
     sms_vehicle_auto_send_enabled = models.BooleanField(default=True)
+    sms_vehicle_assigned_enabled = models.BooleanField(default=True)
+    sms_vehicle_assigned_invoice_enabled = models.BooleanField(default=True)
+    sms_vehicle_released_enabled = models.BooleanField(default=True)
     sms_vehicle_assigned_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE)
     sms_vehicle_assigned_invoice_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE)
     sms_vehicle_released_template = models.TextField(blank=True, default=DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE)

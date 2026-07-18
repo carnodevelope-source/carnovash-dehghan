@@ -284,6 +284,8 @@ def build_services_sms_summary(job):
 def normalize_assignment_sms_wording(template):
     text = str(template or '').replace('[خطاب مشتری]', '[نام مشتری] عزیز')
     replacements = {
+        'شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]،': 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]،',
+        'شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]': 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]',
         'با پلاک [پلاک] در ساعت': 'با پلاک [پلاک]، در ساعت',
         '[ساعت تخصیص] روز': '[ساعت تخصیص]، روز',
         '[تاریخ تخصیص]، در کارواش': '[تاریخ تخصیص] در مجموعه کارواش',
@@ -351,9 +353,72 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
         getattr(settings_obj, 'sms_vehicle_assigned_template', '')
         or DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
     ).strip()
-    invoice_template = str(getattr(settings_obj, 'sms_vehicle_assigned_invoice_template', '') or '').strip()
+    invoice_template = str(
+        getattr(settings_obj, 'sms_vehicle_assigned_invoice_template', '')
+        or DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE
+    ).strip()
     template = normalize_vehicle_assignment_sms_template('\n\n'.join(part for part in [intro_template, invoice_template] if part))
     return render_template_tokens(template, context), context
+
+
+def build_vehicle_assignment_sms_messages(settings_obj, vehicle, *, assigned_at=None):
+    vehicle = refresh_vehicle_for_sms(vehicle)
+    assigned_at = assigned_at or getattr(vehicle, 'ready_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
+    job = getattr(vehicle, 'job', None)
+    plate_label = format_plate_for_sms(vehicle)
+    driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
+    context = {
+        '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
+        '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', ''), driver_gender),
+        '[جنسیت مشتری]': customer_title(driver_gender),
+        '[نام کارواش]': getattr(getattr(vehicle, 'tenant', None), 'name', '') or 'کارواش',
+        '[شماره پذیرش]': to_persian_digits(getattr(vehicle, 'admission_number', None) or getattr(vehicle, 'id', '') or ''),
+        '[پلاک]': plate_label,
+        '[ساعت تخصیص]': format_local_time(assigned_at),
+        '[تاریخ تخصیص]': format_jalali_date(assigned_at),
+        '[خلاصه خدمات]': build_services_sms_summary(job),
+        '[جمع کل]': format_toman(assignment_invoice_total(job)),
+        '[جمع نرخ نامه]': format_toman(assignment_invoice_total(job)),
+        '[جمع تخفیف]': format_toman(assignment_discount_total(job)),
+        '[مبلغ نهایی]': format_toman(assignment_invoice_final_total(job)),
+    }
+    intro_enabled = getattr(settings_obj, 'sms_vehicle_assigned_enabled', True) if settings_obj is not None else True
+    invoice_enabled = getattr(settings_obj, 'sms_vehicle_assigned_invoice_enabled', True) if settings_obj is not None else True
+    intro_template = str(
+        getattr(settings_obj, 'sms_vehicle_assigned_template', '')
+        or DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
+    ).strip()
+    invoice_template = str(
+        getattr(settings_obj, 'sms_vehicle_assigned_invoice_template', '')
+        or DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE
+    ).strip()
+    messages = []
+    if intro_enabled:
+        normalized_intro_template = normalize_assignment_sms_wording(intro_template).strip()
+        if '[شماره پذیرش]' not in normalized_intro_template:
+            lines = normalized_intro_template.splitlines()
+            lines.insert(1 if lines else 0, 'شماره پذیرش: [شماره پذیرش]')
+            normalized_intro_template = '\n'.join(lines)
+        intro_text = render_template_tokens(normalized_intro_template, context).strip()
+        if intro_text:
+            messages.append({
+                'text': intro_text,
+                'context': context,
+                'template_code': 'vehicle_assigned',
+                'reference_type': 'vehicle_assigned_sms',
+                'description': 'ارسال پیامک تخصیص خودرو',
+            })
+    if invoice_enabled:
+        invoice_text = render_template_tokens(normalize_vehicle_assignment_sms_template(invoice_template), context).strip()
+        if invoice_text:
+            messages.append({
+                'text': invoice_text,
+                'context': context,
+                'template_code': 'vehicle_assigned_invoice',
+                'reference_type': 'vehicle_assigned_invoice_sms',
+                'description': 'ارسال پیامک پیش‌فاکتور خودرو',
+            })
+    return messages
 
 
 def build_vehicle_released_sms(
@@ -607,14 +672,18 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
         }
 
     if event_code == 'vehicle_assigned':
-        text, context = build_vehicle_assignment_sms(
+        message_items = build_vehicle_assignment_sms_messages(
             settings_obj,
             vehicle,
             assigned_at=extra_context.get('assigned_at'),
         )
-        reference_type = 'vehicle_assigned_sms'
-        description = 'ارسال پیامک تخصیص خودرو'
     elif event_code == 'vehicle_released':
+        if settings_obj is not None and getattr(settings_obj, 'sms_vehicle_released_enabled', True) is False:
+            return {
+                'ok': False,
+                'skipped': True,
+                'reason': 'vehicle_released_sms_disabled',
+            }
         text, context = build_vehicle_released_sms(
             settings_obj,
             vehicle,
@@ -629,26 +698,33 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
             loyalty_discount_total=extra_context.get('loyalty_discount_total', 0),
             manual_discount_total=extra_context.get('manual_discount_total', 0),
         )
-        reference_type = 'vehicle_released_sms'
-        description = 'ارسال پیامک ترخیص خودرو'
+        message_items = [{
+            'text': text,
+            'context': context,
+            'template_code': event_code,
+            'reference_type': 'vehicle_released_sms',
+            'description': 'ارسال پیامک ترخیص خودرو',
+        }]
     else:
         return {'ok': False, 'reason': 'unsupported_event'}
 
-    text = str(text or '').strip()
-    if not text:
+    message_items = [
+        {**item, 'text': str(item.get('text') or '').strip()}
+        for item in message_items
+        if str(item.get('text') or '').strip()
+    ]
+    if not message_items:
         return {'ok': False, 'reason': 'empty_template'}
 
     sms_price = Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 400) or 400))
-    estimated_cost = sms_price
+    estimated_cost = sms_price * len(message_items)
     balance = sms_wallet_balance(tenant)
 
     payload = make_json_safe({
         'event_code': event_code,
-        'text': text,
         'customer_name': customer_display_name(getattr(vehicle, 'driver_name', '')),
         'plate_number': getattr(vehicle, 'plate_number', ''),
         'estimated_cost': float(estimated_cost),
-        **{key.strip('[]'): value for key, value in context.items()},
         **extra_context,
     })
 
@@ -666,43 +742,53 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
         )
         return {'ok': False, 'reason': 'insufficient_balance'}
 
-    provider_result = send_provider_sms(tenant, text, [phone])
-    payload['provider_request'] = make_json_safe(provider_result.get('payload', {}))
-    if not provider_result.get('ok'):
+    sent_count = 0
+    for item in message_items:
+        item_cost = sms_price
+        item_payload = make_json_safe({
+            **payload,
+            'text': item['text'],
+            'estimated_cost': float(item_cost),
+            **{key.strip('[]'): value for key, value in item.get('context', {}).items()},
+        })
+        provider_result = send_provider_sms(tenant, item['text'], [phone])
+        item_payload['provider_request'] = make_json_safe(provider_result.get('payload', {}))
+        if not provider_result.get('ok'):
+            NotificationLog.objects.create(
+                tenant=tenant,
+                vehicle_entry=vehicle,
+                channel=NotificationLog.Channel.SMS,
+                recipient=phone,
+                template_code=item.get('template_code') or event_code,
+                payload=item_payload,
+                status=NotificationLog.Status.FAILED,
+                provider_response=provider_result.get('raw_body') or provider_result.get('message', ''),
+                created_by=created_by if getattr(created_by, 'is_authenticated', False) else None,
+            )
+            return {'ok': False, 'reason': 'provider_failed', 'sent_count': sent_count}
+
+        debit_sms_wallets(
+            tenant,
+            item_cost,
+            description=item.get('description') or 'ارسال پیامک خودرو',
+            reference_type=item.get('reference_type') or 'vehicle_sms',
+            created_by=created_by,
+        )
         NotificationLog.objects.create(
             tenant=tenant,
             vehicle_entry=vehicle,
             channel=NotificationLog.Channel.SMS,
             recipient=phone,
-            template_code=event_code,
-            payload=payload,
-            status=NotificationLog.Status.FAILED,
+            template_code=item.get('template_code') or event_code,
+            payload=item_payload,
+            status=NotificationLog.Status.SENT,
+            sent_at=timezone.now(),
+            provider_message_id=provider_result.get('provider_id', ''),
             provider_response=provider_result.get('raw_body') or provider_result.get('message', ''),
             created_by=created_by if getattr(created_by, 'is_authenticated', False) else None,
         )
-        return {'ok': False, 'reason': 'provider_failed'}
-
-    debit_sms_wallets(
-        tenant,
-        estimated_cost,
-        description=description,
-        reference_type=reference_type,
-        created_by=created_by,
-    )
-    NotificationLog.objects.create(
-        tenant=tenant,
-        vehicle_entry=vehicle,
-        channel=NotificationLog.Channel.SMS,
-        recipient=phone,
-        template_code=event_code,
-        payload=payload,
-        status=NotificationLog.Status.SENT,
-        sent_at=timezone.now(),
-        provider_message_id=provider_result.get('provider_id', ''),
-        provider_response=provider_result.get('raw_body') or provider_result.get('message', ''),
-        created_by=created_by if getattr(created_by, 'is_authenticated', False) else None,
-    )
-    return {'ok': True}
+        sent_count += 1
+    return {'ok': True, 'sent_count': sent_count}
 
 
 def customer_key_for(customer_id=None, phone='', name=''):

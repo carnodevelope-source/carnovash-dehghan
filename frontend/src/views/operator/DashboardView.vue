@@ -970,6 +970,7 @@ const releaseForm = ref({
   availableWorkers: [],
   workerShareAmount: 0,
   customerScore: 0,
+  applyLoyaltyDiscount: true,
   discountPercentPerHalfStar: 0,
   taxEnabled: false,
   taxPercent: 0,
@@ -1394,6 +1395,8 @@ const mapVehicleToDraft = (source = {}) => ({
   customerScore: Number(source.customer_score || source.customerScore || 0),
   customerLoyaltyVisitCount: Number(source.customer_loyalty_visit_count || source.customerLoyaltyVisitCount || 0),
   customerLoyaltyDiscountPercent: Number(source.customer_loyalty_discount_percent || source.customerLoyaltyDiscountPercent || 0),
+  applyLoyaltyDiscount: source.job?.apply_loyalty_discount !== false,
+  apply_loyalty_discount: source.job?.apply_loyalty_discount !== false,
   note: source.notes,
   tariffType: source.tariff_type || source.tariffType || 'type_1',
   isPieceWash: Boolean(source.is_piece_wash),
@@ -1484,7 +1487,8 @@ const closeReleaseModal = (options = {}) => {
       assignedWorkers: [],
       availableWorkers: [],
       workerShareAmount: 0,
-    customerScore: 0,
+      customerScore: 0,
+      applyLoyaltyDiscount: true,
     discountPercentPerHalfStar: 0,
     taxEnabled: false,
     taxPercent: 0,
@@ -2091,6 +2095,7 @@ const openReleaseModal = async (car) => {
       customerScore: Math.max(0, Number(data?.vehicle?.customer_score || releaseCandidate.value?.customerScore || 0)),
       customerLoyaltyVisitCount: Math.max(0, Number(data?.vehicle?.customer_loyalty_visit_count || 0)),
       customerLoyaltyDiscountPercent: Math.max(0, Number(data?.vehicle?.customer_loyalty_discount_percent || 0)),
+      applyLoyaltyDiscount: data?.job?.apply_loyalty_discount !== false,
       discountPercentPerHalfStar,
       facilityDiscountTotal: Math.max(0, Number(data?.job?.facility_discount_total || 0)),
       loyaltyDiscountTotal: Math.max(0, Number(data?.job?.loyalty_discount_total || 0)),
@@ -2443,8 +2448,9 @@ const releaseSummary = computed(() => {
   )
   const customerDiscountAmount = Number(
     (
-      releaseForm.value.loyaltyDiscountTotal
-      || ((serviceListSubtotal * customerDiscountPercent) / 100)
+      releaseForm.value.applyLoyaltyDiscount === false
+        ? 0
+        : (releaseForm.value.loyaltyDiscountTotal || ((serviceListSubtotal * customerDiscountPercent) / 100))
     ).toFixed(2)
   )
   const manualDiscountAmount = Math.max(0, Number(releaseForm.value.manualDiscountTotal || 0))
@@ -2902,6 +2908,7 @@ const buildCreateOrUpdatePayload = (payload, status) => {
       : [],
     services: payload?.services || [],
     manual_discount_total: Number(payload?.manual_discount_total || 0),
+    apply_loyalty_discount: payload?.apply_loyalty_discount !== false,
     share: payload?.share || {},
     intake_source: payload?.vehicle?.aiImageBase64 ? 'ai' : undefined,
     ai_confidence: payload?.vehicle?.aiImageBase64 ? aiConfidence : undefined,

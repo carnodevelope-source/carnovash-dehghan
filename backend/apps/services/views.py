@@ -179,6 +179,9 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
                 'sms_provider_api_key': '',
                 'sms_provider_line_number': '',
                 'sms_vehicle_auto_send_enabled': True,
+                'sms_vehicle_assigned_enabled': True,
+                'sms_vehicle_assigned_invoice_enabled': True,
+                'sms_vehicle_released_enabled': True,
                 'sms_vehicle_assigned_template': DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE,
                 'sms_vehicle_assigned_invoice_template': DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE,
                 'sms_vehicle_released_template': DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE,
@@ -191,6 +194,13 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
         if not str(settings_obj.sms_vehicle_assigned_template or '').strip():
             settings_obj.sms_vehicle_assigned_template = DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
             changed_fields.append('sms_vehicle_assigned_template')
+        assigned_text = str(settings_obj.sms_vehicle_assigned_template or '').strip()
+        invoice_text = str(settings_obj.sms_vehicle_assigned_invoice_template or '').strip()
+        if 'پیش فاکتور خدمات:' in assigned_text and not invoice_text:
+            intro_text, _separator, split_invoice_text = assigned_text.partition('پیش فاکتور خدمات:')
+            settings_obj.sms_vehicle_assigned_template = intro_text.strip()
+            settings_obj.sms_vehicle_assigned_invoice_template = f'پیش فاکتور خدمات:{split_invoice_text}'.strip()
+            changed_fields.extend(['sms_vehicle_assigned_template', 'sms_vehicle_assigned_invoice_template'])
         normalized_assigned_template = normalize_vehicle_assigned_sms_template(
             settings_obj.sms_vehicle_assigned_template
         )

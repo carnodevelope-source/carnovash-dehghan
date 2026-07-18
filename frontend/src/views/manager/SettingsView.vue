@@ -364,18 +364,13 @@
                   <input v-model.number="generalSettings.receipt_print_copies" type="number" min="1" max="5" />
                 </label>
                 <label class="general-setting-label full-width">
-                  <span>متن هدر فیش</span>
+                  <span>متن بالای فیش</span>
                   <textarea v-model.trim="generalSettings.receipt_header_note" rows="3" placeholder="متنی که زیر آدرس مجموعه در فیش چاپ می‌شود." />
                 </label>
                 <label class="general-setting-label full-width">
                   <span>متن پایین فیش</span>
                   <textarea v-model.trim="generalSettings.receipt_footer_note" rows="4" placeholder="متنی که قبل از «از اعتماد شما سپاسگزاریم» در فیش و فاکتور چاپ می‌شود." />
                 </label>
-                <div class="printer-checks full-width">
-                  <label class="row-check"><input v-model="generalSettings.receipt_auto_print" type="checkbox" /><span>چاپ خودکار بعد از ترخیص</span></label>
-                  <label class="row-check"><input v-model="generalSettings.receipt_show_logo" type="checkbox" /><span>نمایش لوگو</span></label>
-                  <label class="row-check"><input v-model="generalSettings.receipt_show_qr" type="checkbox" /><span>نمایش QR</span></label>
-                </div>
               </div>
             </section>
             <section class="general-settings-card sms-settings-card">
@@ -393,20 +388,51 @@
               <div class="sms-template-grid">
                 <article class="sms-template-card">
                   <label class="general-setting-label sms-template-editor">
-                    <span>پیام تخصیص و پیش‌فاکتور</span>
+                    <span class="template-title-row">
+                      <span>پیام تخصیص</span>
+                      <label class="row-check inline-check">
+                        <input v-model="generalSettings.sms_vehicle_assigned_enabled" type="checkbox" />
+                        <span>فعال</span>
+                      </label>
+                    </span>
                     <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="10" />
                   </label>
                   <div class="sms-preview-panel">
                     <div class="sms-preview-head">
                       <small>نمونه خروجی</small>
-                      <span>یک پیام واحد</span>
+                      <span>پیام پذیرش</span>
                     </div>
                     <pre class="sms-preview-box">{{ smsAssignedPreview }}</pre>
                   </div>
                 </article>
                 <article class="sms-template-card">
                   <label class="general-setting-label sms-template-editor">
-                    <span>پیام بعد از ترخیص</span>
+                    <span class="template-title-row">
+                      <span>پیش‌فاکتور خدمات</span>
+                      <label class="row-check inline-check">
+                        <input v-model="generalSettings.sms_vehicle_assigned_invoice_enabled" type="checkbox" />
+                        <span>فعال</span>
+                      </label>
+                    </span>
+                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_invoice_template" rows="9" />
+                  </label>
+                  <div class="sms-preview-panel">
+                    <div class="sms-preview-head">
+                      <small>نمونه خروجی</small>
+                      <span>پیام پیش‌فاکتور</span>
+                    </div>
+                    <pre class="sms-preview-box">{{ smsAssignedInvoicePreview }}</pre>
+                  </div>
+                </article>
+                <article class="sms-template-card">
+                  <label class="general-setting-label sms-template-editor">
+                    <span class="template-title-row">
+                      <span>پیام بعد از ترخیص</span>
+                      <label class="row-check inline-check">
+                        <input v-model="generalSettings.sms_vehicle_released_enabled" type="checkbox" />
+                        <span>فعال</span>
+                      </label>
+                    </span>
                     <textarea v-model.trim="generalSettings.sms_vehicle_released_template" rows="7" />
                   </label>
                   <div class="sms-preview-panel">
@@ -813,6 +839,9 @@ const generalSettings = reactive({
   sms_provider_api_key_configured: false,
   sms_provider_source: 'env',
   sms_vehicle_auto_send_enabled: true,
+  sms_vehicle_assigned_enabled: true,
+  sms_vehicle_assigned_invoice_enabled: true,
+  sms_vehicle_released_enabled: true,
   sms_vehicle_assigned_template: '',
   sms_vehicle_assigned_invoice_template: '',
   sms_vehicle_released_template: ''
@@ -999,7 +1028,12 @@ const productsWithStock = computed(() => products.value.map((item) => ({
   stock_qty: stockByProductId.value[Number(item.id)] ?? 0
 })))
 
-const filteredWorkers = computed(() => workers.value.filter((i) => (`${i.full_name} ${i.username || ''} ${i.phone || ''} ${i.role || ''}`).includes(search.value)))
+const workerRoleOrder = (worker) => (worker?.role_key || worker?.role) === 'operator' ? 0 : 1
+const filteredWorkers = computed(() => workers.value
+  .filter((i) => (`${i.full_name} ${i.username || ''} ${i.phone || ''} ${i.role || ''}`).includes(search.value))
+  .slice()
+  .sort((a, b) => workerRoleOrder(a) - workerRoleOrder(b) || String(a.full_name || '').localeCompare(String(b.full_name || ''), 'fa'))
+)
 const filteredProducts = computed(() => productsWithStock.value.filter((i) => (`${i.name} ${i.description || ''} ${i.unit || ''}`).includes(search.value)))
 const filteredExpenses = computed(() => expenses.value.filter((i) => (`${i.title || ''} ${i.details || ''} ${i.source_label || ''}`).includes(search.value)))
 const filteredServices = computed(() => services.value.filter((i) => (`${i.name} ${i.description || ''}`).includes(search.value)))
@@ -1046,9 +1080,11 @@ const ensureReleasedSmsTemplateDetails = (template) => {
   lines.splice(insertAt, 0, ...insertions)
   return lines.join('\n')
 }
-const ensureAssignedSmsTemplateDetails = (template) => {
+const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true } = {}) => {
   const text = String(template || '')
     .replaceAll('[خطاب مشتری]', '[نام مشتری] عزیز')
+    .replaceAll('شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]،', 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]،')
+    .replaceAll('شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]', 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]')
     .replaceAll('با پلاک [پلاک] در ساعت', 'با پلاک [پلاک]، در ساعت')
     .replaceAll('[ساعت تخصیص] روز', '[ساعت تخصیص]، روز')
     .replaceAll('[تاریخ تخصیص]، در کارواش', '[تاریخ تخصیص] در مجموعه کارواش')
@@ -1062,8 +1098,8 @@ const ensureAssignedSmsTemplateDetails = (template) => {
   const lines = text.split('\n')
   const insertions = []
   if (!text.includes('[شماره پذیرش]')) lines.splice(1, 0, 'شماره پذیرش: [شماره پذیرش]')
-  if (!text.includes('[جمع تخفیف]')) insertions.push('تخفیف این سفارش: [جمع تخفیف]')
-  if (!text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
+  if (includeFinancials && !text.includes('[جمع تخفیف]')) insertions.push('تخفیف این سفارش: [جمع تخفیف]')
+  if (includeFinancials && !text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
   if (!insertions.length) return text
   const anchorIndex = lines.findIndex((line) => line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]'))
   const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : lines.length
@@ -1103,10 +1139,8 @@ const renderSmsPreview = (template) => {
   })
   return message
 }
-const smsAssignedPreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails([
-  generalSettings.sms_vehicle_assigned_template,
-  generalSettings.sms_vehicle_assigned_invoice_template
-].map((item) => String(item || '').trim()).filter(Boolean).join('\n\n'))))
+const smsAssignedPreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template, { includeFinancials: false })))
+const smsAssignedInvoicePreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_invoice_template)))
 const smsReleasedPreview = computed(() => renderSmsPreview(ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template)))
 
 watch(() => forms.purchase.product_id, (newProductId) => {
@@ -1171,8 +1205,11 @@ const loadAll = async () => {
       generalSettings.sms_provider_api_key_configured = Boolean(gs.data?.sms_provider_api_key_configured)
       generalSettings.sms_provider_source = gs.data?.sms_provider_source || 'env'
       generalSettings.sms_vehicle_auto_send_enabled = gs.data?.sms_vehicle_auto_send_enabled !== false
-      generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(gs.data?.sms_vehicle_assigned_template || '')
-      generalSettings.sms_vehicle_assigned_invoice_template = gs.data?.sms_vehicle_assigned_invoice_template || ''
+      generalSettings.sms_vehicle_assigned_enabled = gs.data?.sms_vehicle_assigned_enabled !== false
+      generalSettings.sms_vehicle_assigned_invoice_enabled = gs.data?.sms_vehicle_assigned_invoice_enabled !== false
+      generalSettings.sms_vehicle_released_enabled = gs.data?.sms_vehicle_released_enabled !== false
+      generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(gs.data?.sms_vehicle_assigned_template || '', { includeFinancials: false })
+      generalSettings.sms_vehicle_assigned_invoice_template = ensureAssignedSmsTemplateDetails(gs.data?.sms_vehicle_assigned_invoice_template || '')
       generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(gs.data?.sms_vehicle_released_template || '')
     } catch {
       generalSettings.discount_percent_per_half_star = 0
@@ -1199,6 +1236,9 @@ const loadAll = async () => {
       generalSettings.sms_provider_api_key_configured = false
       generalSettings.sms_provider_source = 'env'
       generalSettings.sms_vehicle_auto_send_enabled = true
+      generalSettings.sms_vehicle_assigned_enabled = true
+      generalSettings.sms_vehicle_assigned_invoice_enabled = true
+      generalSettings.sms_vehicle_released_enabled = true
       generalSettings.sms_vehicle_assigned_template = ''
       generalSettings.sms_vehicle_assigned_invoice_template = ''
       generalSettings.sms_vehicle_released_template = ''
@@ -1231,8 +1271,11 @@ const saveGeneralSettings = async () => {
       receipt_show_qr: Boolean(generalSettings.receipt_show_qr),
       receipt_header_note: generalSettings.receipt_header_note || '',
       receipt_footer_note: generalSettings.receipt_footer_note || '',
-      sms_vehicle_assigned_template: ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template || ''),
-      sms_vehicle_assigned_invoice_template: generalSettings.sms_vehicle_assigned_invoice_template || '',
+      sms_vehicle_assigned_enabled: Boolean(generalSettings.sms_vehicle_assigned_enabled),
+      sms_vehicle_assigned_invoice_enabled: Boolean(generalSettings.sms_vehicle_assigned_invoice_enabled),
+      sms_vehicle_released_enabled: Boolean(generalSettings.sms_vehicle_released_enabled),
+      sms_vehicle_assigned_template: ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template || '', { includeFinancials: false }),
+      sms_vehicle_assigned_invoice_template: ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_invoice_template || ''),
       sms_vehicle_auto_send_enabled: Boolean(generalSettings.sms_vehicle_auto_send_enabled),
       sms_vehicle_released_template: ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template || '')
     }
@@ -1261,8 +1304,11 @@ const saveGeneralSettings = async () => {
     generalSettings.sms_provider_api_key_configured = Boolean(response.data?.sms_provider_api_key_configured)
     generalSettings.sms_provider_source = response.data?.sms_provider_source || 'env'
     generalSettings.sms_vehicle_auto_send_enabled = response.data?.sms_vehicle_auto_send_enabled !== false
-    generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(response.data?.sms_vehicle_assigned_template || '')
-    generalSettings.sms_vehicle_assigned_invoice_template = response.data?.sms_vehicle_assigned_invoice_template || ''
+    generalSettings.sms_vehicle_assigned_enabled = response.data?.sms_vehicle_assigned_enabled !== false
+    generalSettings.sms_vehicle_assigned_invoice_enabled = response.data?.sms_vehicle_assigned_invoice_enabled !== false
+    generalSettings.sms_vehicle_released_enabled = response.data?.sms_vehicle_released_enabled !== false
+    generalSettings.sms_vehicle_assigned_template = ensureAssignedSmsTemplateDetails(response.data?.sms_vehicle_assigned_template || '', { includeFinancials: false })
+    generalSettings.sms_vehicle_assigned_invoice_template = ensureAssignedSmsTemplateDetails(response.data?.sms_vehicle_assigned_invoice_template || '')
     generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(response.data?.sms_vehicle_released_template || '')
     t('تنظیمات عمومی ذخیره شد')
   } catch (e) {
@@ -1954,6 +2000,8 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   gap: 10px;
 }
 .full-width { grid-column: 1 / -1; }
+.template-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.inline-check { width: auto; white-space: nowrap; font-size: 12px; }
 .helper-text { margin: 0; color: #475569; font-size: 13px; }
 .modal-helper-text { padding: 10px 12px; border-radius: 12px; background: #eff6ff; color: #1d4ed8; }
 .field-file-note { display: block; margin-top: 8px; color: #475569; font-size: 12px; }
@@ -1987,5 +2035,9 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .discount-editor-grid,
   .settings-hero-stats,
   .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .settings-hero { display: none; }
+  .template-title-row { align-items: flex-start; }
 }
 </style>

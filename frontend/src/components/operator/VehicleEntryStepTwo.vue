@@ -57,6 +57,72 @@
       </section>
     </div>
 
+    <div v-if="preInvoiceModalOpen" class="service-picker-overlay" role="dialog" aria-modal="true" @click.self="closePreInvoiceModal">
+      <section class="pre-invoice-panel">
+        <header class="service-picker-head">
+          <div>
+            <h4>پیش‌فاکتور فیش</h4>
+            <p>پیش‌نمایش مخصوص فیش پرینتر {{ preInvoicePaperWidthLabel }}</p>
+          </div>
+          <button type="button" class="icon-btn" aria-label="بستن" @click="closePreInvoiceModal">×</button>
+        </header>
+        <div class="pre-invoice-toolbar">
+          <button type="button" class="invoice-format-chip" :class="{ active: preInvoicePaperWidth === '58mm' }" @click="preInvoicePaperWidth = '58mm'">
+            <strong>58mm</strong>
+            <span>فیش باریک</span>
+          </button>
+          <button type="button" class="invoice-format-chip" :class="{ active: preInvoicePaperWidth === '80mm' }" @click="preInvoicePaperWidth = '80mm'">
+            <strong>80mm</strong>
+            <span>فیش استاندارد</span>
+          </button>
+          <button type="button" class="primary-btn" @click="printPreInvoice">چاپ پیش‌فاکتور</button>
+        </div>
+        <div class="pre-invoice-preview-shell">
+          <article class="pre-invoice-receipt" :style="preInvoiceReceiptStyle">
+            <header>
+              <strong>{{ preInvoiceCarwashTitle }}</strong>
+              <small v-if="receiptHeaderNote">{{ receiptHeaderNote }}</small>
+              <span>پیش‌فاکتور خدمات</span>
+            </header>
+            <section class="receipt-info-grid">
+              <p><span>شماره پذیرش</span><strong>{{ preInvoiceAdmissionNumber }}</strong></p>
+              <p><span>زمان</span><strong>{{ preInvoiceIssuedAt }}</strong></p>
+              <p><span>مشتری</span><strong>{{ vehicleDriver || 'مشتری حضوری' }}</strong></p>
+              <p><span>تلفن</span><strong>{{ vehiclePhone || '-' }}</strong></p>
+              <p><span>خودرو</span><strong>{{ vehicleTitle }}</strong></p>
+              <p><span>پلاک</span><strong>{{ preInvoicePlateLabel }}</strong></p>
+            </section>
+            <table class="pre-invoice-table">
+              <thead>
+                <tr>
+                  <th>شرح</th>
+                  <th>مبلغ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(service, index) in selectedServices" :key="`pre-invoice-${service.id || index}`">
+                  <td>{{ toFaNumber(index + 1) }}. {{ service.name }}</td>
+                  <td>{{ toThousandsInput(service.list_price || service.base_price || 0) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <section class="receipt-total-block">
+              <p><span>جمع کل خدمات</span><strong>{{ formatMoney(serviceListSubtotal) }}</strong></p>
+              <p v-if="facilityDiscountTotal > 0"><span>تخفیف مجموعه</span><strong>{{ formatMoney(facilityDiscountTotal) }}</strong></p>
+              <p v-if="effectiveLoyaltyDiscountAmount > 0"><span>تخفیف امتیاز مشتری</span><strong>{{ formatMoney(effectiveLoyaltyDiscountAmount) }}</strong></p>
+              <p v-if="effectiveManualDiscountTotal > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(effectiveManualDiscountTotal) }}</strong></p>
+              <p><span>جمع تخفیف</span><strong>{{ formatMoney(totalDiscountAmount) }}</strong></p>
+              <p class="receipt-final"><span>مبلغ قابل پرداخت</span><strong>{{ formatMoney(discountedServicesTotal) }}</strong></p>
+            </section>
+            <footer>
+              <p v-if="receiptFooterNote">{{ receiptFooterNote }}</p>
+              <strong>از اعتماد شما سپاسگزاریم</strong>
+            </footer>
+          </article>
+        </div>
+      </section>
+    </div>
+
     <div class="step-two-grid">
       <section class="col services-col">
         <div class="col-head">
@@ -238,8 +304,11 @@
               <strong>{{ formatMoney(facilityDiscountTotal) }}</strong>
             </div>
             <div class="summary-row">
-              <span>امتیاز مشتری: {{ toFaNumber(customerLoyaltyDiscountPercent) }}٪ تخفیف</span>
-              <strong>{{ formatMoney(loyaltyDiscountAmount) }}</strong>
+              <label class="loyalty-discount-toggle">
+                <input v-model="applyLoyaltyDiscount" type="checkbox" />
+                <span>لحاظ تخفیف امتیاز مشتری: {{ toFaNumber(customerLoyaltyDiscountPercent) }}٪</span>
+              </label>
+              <strong>{{ formatMoney(effectiveLoyaltyDiscountAmount) }}</strong>
             </div>
             <div v-if="manualServiceIncreaseTotal > 0" class="summary-row service-adjust-summary increase-row">
               <span>جمع افزایش دستی</span>
@@ -292,6 +361,7 @@
           </label>
           <div class="summary-foot-actions">
             <button type="button" class="secondary-foot-btn" @click="emit('back')">بازگشت</button>
+            <button type="button" class="secondary-foot-btn" :disabled="!selectedServices.length" @click="openPreInvoiceModal">پیش‌فاکتور</button>
             <button type="button" class="primary-btn" :disabled="!canAssign || submitting || actionLocked" @click="onAssign">
               تایید و تخصیص کار
             </button>
@@ -328,6 +398,7 @@ const shareType = ref('percent')
 const shareValueInput = ref('40')
 const workerSearch = ref('')
 const manualDiscountTotal = ref(0)
+const applyLoyaltyDiscount = ref(true)
 const workerSharePercents = ref({})
 const servicePriceAdjustments = ref({})
 const blockedPlatePaymentConfirmed = ref(false)
@@ -338,6 +409,11 @@ const isServicePickerOpen = ref(false)
 const hasOpenedInitialServicePicker = ref(false)
 const activeVehicleKey = ref('')
 const actionLocked = ref(false)
+const preInvoiceModalOpen = ref(false)
+const preInvoicePaperWidth = ref('80mm')
+const receiptHeaderNote = ref('')
+const receiptFooterNote = ref('')
+const carwashName = ref('کارواش')
 
 const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -492,12 +568,13 @@ const customerLoyaltyDiscountPercent = computed(() => Math.max(0, Number(
   ?? 0
 )))
 const loyaltyDiscountAmount = computed(() => Number(((servicesTotal.value * customerLoyaltyDiscountPercent.value) / 100).toFixed(2)))
+const effectiveLoyaltyDiscountAmount = computed(() => (applyLoyaltyDiscount.value ? loyaltyDiscountAmount.value : 0))
 const effectiveManualDiscountTotal = computed(() => Math.min(
-  Math.max(0, servicesTotal.value - loyaltyDiscountAmount.value),
+  Math.max(0, servicesTotal.value - effectiveLoyaltyDiscountAmount.value),
   Math.max(0, Number(manualDiscountTotal.value || 0))
 ))
-const totalDiscountAmount = computed(() => Number((facilityDiscountTotal.value + loyaltyDiscountAmount.value + effectiveManualDiscountTotal.value).toFixed(2)))
-const discountedServicesTotal = computed(() => Math.max(0, servicesTotal.value - loyaltyDiscountAmount.value - effectiveManualDiscountTotal.value))
+const totalDiscountAmount = computed(() => Number((facilityDiscountTotal.value + effectiveLoyaltyDiscountAmount.value + effectiveManualDiscountTotal.value).toFixed(2)))
+const discountedServicesTotal = computed(() => Math.max(0, servicesTotal.value - effectiveLoyaltyDiscountAmount.value - effectiveManualDiscountTotal.value))
 const manualDiscountPercent = computed(() => (
   servicesTotal.value > 0
     ? Number(((effectiveManualDiscountTotal.value / servicesTotal.value) * 100).toFixed(1))
@@ -777,8 +854,111 @@ const buildPayload = () => {
       value: shareType.value === 'percent' ? clampedPercent.value : Math.max(0, shareValueNumeric.value)
     },
     manual_discount_total: effectiveManualDiscountTotal.value,
+    apply_loyalty_discount: applyLoyaltyDiscount.value,
     blocked_plate_payment_confirmed: blockedPlatePaymentConfirmed.value
   }
+}
+
+const preInvoiceCarwashTitle = computed(() => {
+  const name = String(carwashName.value || '').trim() || 'کارواش'
+  return name.startsWith('کارواش') ? name : `کارواش ${name}`
+})
+const preInvoicePaperWidthLabel = computed(() => (preInvoicePaperWidth.value === '58mm' ? '۵۸ میلی‌متر' : '۸۰ میلی‌متر'))
+const preInvoiceReceiptStyle = computed(() => ({ width: preInvoicePaperWidth.value === '58mm' ? '58mm' : '80mm' }))
+const preInvoiceAdmissionNumber = computed(() => {
+  const raw = props.vehicleInfo?.admission_number || props.vehicleInfo?.admissionNumber || props.vehicleInfo?.id || ''
+  return raw ? Number(raw).toLocaleString('fa-IR') : 'بعد از ثبت'
+})
+const preInvoiceIssuedAt = computed(() => new Intl.DateTimeFormat('fa-IR', {
+  dateStyle: 'short',
+  timeStyle: 'short'
+}).format(new Date()))
+const preInvoicePlateLabel = computed(() => {
+  if (isPieceWash.value) return 'قطعه‌شویی'
+  const parts = plateParts.value
+  if (typeof parts === 'string') return parts
+  return `${parts.right} ${parts.letter} ${parts.mid} - ${parts.left}`
+})
+const openPreInvoiceModal = () => {
+  preInvoiceModalOpen.value = true
+}
+const closePreInvoiceModal = () => {
+  preInvoiceModalOpen.value = false
+}
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;')
+const preInvoiceRowsHtml = computed(() => selectedServices.value.map((service, index) => `
+  <tr>
+    <td>${escapeHtml(toFaNumber(index + 1))}. ${escapeHtml(service.name)}</td>
+    <td>${escapeHtml(toThousandsInput(service.list_price || service.base_price || 0))}</td>
+  </tr>
+`).join(''))
+const printPreInvoice = () => {
+  const width = preInvoicePaperWidth.value === '58mm' ? '58mm' : '80mm'
+  const popup = window.open('', '_blank', 'width=420,height=720')
+  if (!popup) return
+  popup.document.write(`<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>پیش‌فاکتور خدمات</title>
+  <style>
+    @page { size: ${width} auto; margin: 3mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; color: #111827; font-family: Vazirmatn, Tahoma, Arial, sans-serif; direction: rtl; }
+    .receipt { width: ${width}; max-width: ${width}; padding: 3mm; font-size: 10px; line-height: 1.7; }
+    header, footer { text-align: center; display: grid; gap: 2px; padding-bottom: 6px; border-bottom: 1px dashed #111827; }
+    footer { margin-top: 8px; padding-top: 6px; padding-bottom: 0; border-top: 1px dashed #111827; border-bottom: 0; }
+    header strong { font-size: 13px; }
+    header span { font-weight: 800; }
+    .info, .totals { display: grid; gap: 3px; padding: 7px 0; border-bottom: 1px dashed #111827; }
+    p { margin: 0; display: flex; justify-content: space-between; gap: 8px; }
+    table { width: 100%; border-collapse: collapse; margin: 7px 0; }
+    th, td { padding: 4px 0; border-bottom: 1px solid #e5e7eb; text-align: right; vertical-align: top; }
+    th:last-child, td:last-child { text-align: left; white-space: nowrap; }
+    .final { font-size: 12px; font-weight: 900; border-top: 1px solid #111827; padding-top: 5px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <article class="receipt">
+    <header>
+      <strong>${escapeHtml(preInvoiceCarwashTitle.value)}</strong>
+      ${receiptHeaderNote.value ? `<small>${escapeHtml(receiptHeaderNote.value)}</small>` : ''}
+      <span>پیش‌فاکتور خدمات</span>
+    </header>
+    <section class="info">
+      <p><span>شماره پذیرش</span><strong>${escapeHtml(preInvoiceAdmissionNumber.value)}</strong></p>
+      <p><span>زمان</span><strong>${escapeHtml(preInvoiceIssuedAt.value)}</strong></p>
+      <p><span>مشتری</span><strong>${escapeHtml(vehicleDriver.value || 'مشتری حضوری')}</strong></p>
+      <p><span>تلفن</span><strong>${escapeHtml(vehiclePhone.value || '-')}</strong></p>
+      <p><span>خودرو</span><strong>${escapeHtml(vehicleTitle.value)}</strong></p>
+      <p><span>پلاک</span><strong>${escapeHtml(preInvoicePlateLabel.value)}</strong></p>
+    </section>
+    <table>
+      <thead><tr><th>شرح</th><th>مبلغ</th></tr></thead>
+      <tbody>${preInvoiceRowsHtml.value}</tbody>
+    </table>
+    <section class="totals">
+      <p><span>جمع کل خدمات</span><strong>${escapeHtml(formatMoney(serviceListSubtotal.value))}</strong></p>
+      ${facilityDiscountTotal.value > 0 ? `<p><span>تخفیف مجموعه</span><strong>${escapeHtml(formatMoney(facilityDiscountTotal.value))}</strong></p>` : ''}
+      ${effectiveLoyaltyDiscountAmount.value > 0 ? `<p><span>تخفیف امتیاز مشتری</span><strong>${escapeHtml(formatMoney(effectiveLoyaltyDiscountAmount.value))}</strong></p>` : ''}
+      ${effectiveManualDiscountTotal.value > 0 ? `<p><span>تخفیف دستی</span><strong>${escapeHtml(formatMoney(effectiveManualDiscountTotal.value))}</strong></p>` : ''}
+      <p><span>جمع تخفیف</span><strong>${escapeHtml(formatMoney(totalDiscountAmount.value))}</strong></p>
+      <p class="final"><span>مبلغ قابل پرداخت</span><strong>${escapeHtml(formatMoney(discountedServicesTotal.value))}</strong></p>
+    </section>
+    <footer>
+      ${receiptFooterNote.value ? `<p>${escapeHtml(receiptFooterNote.value)}</p>` : ''}
+      <strong>از اعتماد شما سپاسگزاریم</strong>
+    </footer>
+  </article>
+  <script>window.onload = () => { window.focus(); window.print(); }<\/script>
+</body>
+</html>`)
+  popup.document.close()
 }
 
 const onAssign = () => {
@@ -808,6 +988,7 @@ const hydrateFromVehicleInfo = () => {
   selectedWorkerIds.value = [...new Set((vehicle.staffIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
   blockedPlatePaymentConfirmed.value = false
   smsNotificationsEnabled.value = vehicle.smsAutoSendEnabled !== false && vehicle.smsNotificationsEnabled !== false
+  applyLoyaltyDiscount.value = props.vehicleInfo?.apply_loyalty_discount !== false && props.vehicleInfo?.applyLoyaltyDiscount !== false
   pieceDetails.value = vehicle.pieceDetails || ''
   pieceWashPrice.value = isPieceWash.value ? Math.max(0, Number(vehicle.pieceWashPrice || 0)) : 0
   const existingWorkerSharePercents = (vehicle.staffMembers || []).reduce((accumulator, item) => {
@@ -851,6 +1032,17 @@ const loadInitialData = async () => {
 
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
       .filter(isWashAssignableWorker)
+    try {
+      const settingsResp = await api.get('/services/general-settings/')
+      receiptHeaderNote.value = settingsResp.data?.receipt_header_note || ''
+      receiptFooterNote.value = settingsResp.data?.receipt_footer_note || ''
+      carwashName.value = settingsResp.data?.tenant_name || settingsResp.data?.carwash_name || ''
+      const paperWidth = String(settingsResp.data?.receipt_printer_paper_width || '80mm').toLowerCase()
+      preInvoicePaperWidth.value = paperWidth === '58mm' ? '58mm' : '80mm'
+    } catch {
+      receiptHeaderNote.value = ''
+      receiptFooterNote.value = ''
+    }
 
     const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
     selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
@@ -1092,6 +1284,156 @@ onMounted(loadInitialData)
     #ffffff;
   box-shadow: 0 16px 42px -28px rgba(15, 23, 42, 0.7);
   overflow: hidden;
+}
+
+.pre-invoice-panel {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 32px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(191, 215, 255, 0.92);
+  border-radius: 24px;
+  background: #f8fafc;
+  box-shadow: 0 16px 42px -28px rgba(15, 23, 42, 0.7);
+  overflow: hidden;
+}
+
+.pre-invoice-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.invoice-format-chip {
+  min-height: 48px;
+  border: 1px solid #dbe7f3;
+  border-radius: 14px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  padding: 8px 12px;
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.invoice-format-chip.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.invoice-format-chip span {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.pre-invoice-preview-shell {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  justify-items: center;
+  padding: 14px;
+  border-radius: 18px;
+  background: #e5e7eb;
+}
+
+.pre-invoice-receipt {
+  max-width: 100%;
+  background: #fff;
+  color: #111827;
+  padding: 12px;
+  font-size: 10px;
+  line-height: 1.75;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+}
+
+.pre-invoice-receipt header,
+.pre-invoice-receipt footer {
+  display: grid;
+  gap: 3px;
+  text-align: center;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #111827;
+}
+
+.pre-invoice-receipt footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  padding-bottom: 0;
+  border-top: 1px dashed #111827;
+  border-bottom: 0;
+}
+
+.pre-invoice-receipt header strong {
+  font-size: 13px;
+}
+
+.pre-invoice-receipt header span {
+  font-weight: 900;
+}
+
+.receipt-info-grid,
+.receipt-total-block {
+  display: grid;
+  gap: 3px;
+  padding: 8px 0;
+  border-bottom: 1px dashed #111827;
+}
+
+.receipt-info-grid p,
+.receipt-total-block p {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pre-invoice-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+
+.pre-invoice-table th,
+.pre-invoice-table td {
+  padding: 4px 0;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+}
+
+.pre-invoice-table th:last-child,
+.pre-invoice-table td:last-child {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.receipt-final {
+  font-size: 12px;
+  font-weight: 900;
+  border-top: 1px solid #111827;
+  padding-top: 5px;
+  margin-top: 3px !important;
+}
+
+.loyalty-discount-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+  font-weight: 700;
+}
+
+.loyalty-discount-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+  flex: 0 0 auto;
 }
 
 .service-picker-head,
