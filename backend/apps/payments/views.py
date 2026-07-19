@@ -12,7 +12,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -316,6 +316,17 @@ def _feature_option_payload(tenant, feature_key, purchase=None):
 
 
 class WalletBaseMixin:
+    wallet_deposit_roles = {'accountant', 'admin', 'owner', 'manager', 'operator'}
+    wallet_withdraw_roles = {'admin', 'owner', 'manager'}
+
+    def _require_wallet_deposit_access(self, user):
+        if getattr(user, 'role', '') not in self.wallet_deposit_roles:
+            raise PermissionDenied('شما دسترسی ثبت واریز کیف پول را ندارید.')
+
+    def _require_wallet_withdraw_access(self, user):
+        if getattr(user, 'role', '') not in self.wallet_withdraw_roles:
+            raise PermissionDenied('برداشت از کیف پول فقط برای مدیران مجاز است.')
+
     def _get_or_create_wallet(self, tenant, wallet_type=Wallet.WalletType.BANK, default_name='کیف پول اصلی'):
         wallet = Wallet.objects.filter(
             tenant=tenant,
@@ -746,6 +757,7 @@ class WalletOptionsView(WalletBaseMixin, APIView):
 
 class WalletDepositView(WalletBaseMixin, APIView):
     def post(self, request):
+        self._require_wallet_deposit_access(request.user)
         serializer = WalletDepositSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -782,6 +794,7 @@ class WalletDepositView(WalletBaseMixin, APIView):
 
 class WalletDepositStartView(WalletBaseMixin, APIView):
     def post(self, request):
+        self._require_wallet_deposit_access(request.user)
         serializer = WalletDepositSerializer(
             data={
                 'wallet_id': request.data.get('wallet_id'),
@@ -949,6 +962,7 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
         return ticket
 
     def post(self, request):
+        self._require_wallet_withdraw_access(request.user)
         serializer = WalletWithdrawSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data

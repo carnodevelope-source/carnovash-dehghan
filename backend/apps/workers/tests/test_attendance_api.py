@@ -83,6 +83,27 @@ class AttendanceApiTests(APITestCase):
         self.assertEqual(third.data['worker']['today_events_count'], 2)
         self.assertEqual(third.data['worker']['current_status'], 'out')
 
+    def test_stale_open_shift_does_not_block_new_day_check_in(self):
+        WorkerAttendance.objects.create(
+            worker=self.worker,
+            tenant=self.tenant,
+            event_type=WorkerAttendance.EventType.IN,
+            event_at=timezone.now() - timedelta(days=1),
+            source='link',
+        )
+        token = ensure_attendance_token(self.worker)
+        endpoint = reverse('worker-attendance-public', args=[token])
+
+        first = self.client.post(endpoint, {'event_type': 'in'}, format='json')
+        second = self.client.post(endpoint, {'event_type': 'in'}, format='json')
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 400)
+        self.assertEqual(
+            WorkerAttendance.objects.filter(worker=self.worker, event_type=WorkerAttendance.EventType.IN).count(),
+            2,
+        )
+
     def test_attendance_allows_free_tier_up_to_five_workers(self):
         self.client.force_authenticate(self.manager)
 

@@ -17,7 +17,14 @@ from apps.workers.models import WorkerProfile
 from apps.products.models import Product
 from apps.inventory.models import InventoryItem, StockMovement
 from apps.notifications.services import send_vehicle_event_sms
-from .loyalty import apply_loyalty_visit, compute_loyalty_discount, get_or_create_plate_loyalty, loyalty_snapshot
+from .loyalty import (
+    apply_loyalty_visit,
+    compute_loyalty_discount,
+    get_or_create_plate_loyalty,
+    loyalty_snapshot,
+    rebuild_customer_score,
+    rebuild_plate_loyalty,
+)
 
 
 VALID_IRAN_MOBILE_PATTERN = r'^0\d{10}$'
@@ -548,7 +555,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             phone=driver_phone,
             full_name=driver_name,
             gender=validated_data.get('driver_gender', ''),
-            increment_visit=True,
+            increment_visit=requested_status != VehicleEntry.Status.CANCELLED,
             tenant=tenant,
         )
         if requested_status == VehicleEntry.Status.READY_TO_SETTLE and not validated_data.get('ready_at'):
@@ -567,10 +574,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 plate_mid=vehicle_entry.plate_mid,
                 plate_right=vehicle_entry.plate_right,
             )
-            loyalty_profile = apply_loyalty_visit(
-                loyalty_profile,
-                discount_percent_per_half_star=discount_percent_per_half_star,
-            )
+            if requested_status != VehicleEntry.Status.CANCELLED:
+                loyalty_profile = apply_loyalty_visit(
+                    loyalty_profile,
+                    discount_percent_per_half_star=discount_percent_per_half_star,
+                )
 
         payment_type = share_payload.get('type', VehicleJob.WorkerPaymentType.PERCENT)
         share_value = share_payload.get('value', 0) or 0
@@ -810,6 +818,13 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             )
 
         instance.save()
+        if incoming_status == VehicleEntry.Status.CANCELLED and previous_status != VehicleEntry.Status.CANCELLED:
+            rebuild_customer_score(instance.customer)
+            if not instance.is_piece_wash:
+                rebuild_plate_loyalty(
+                    self._plate_loyalty(instance),
+                    discount_percent_per_half_star=self._discount_percent_per_half_star(tenant),
+                )
 
         should_sync_job = any([
             services_provided,

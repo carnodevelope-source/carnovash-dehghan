@@ -81,14 +81,13 @@
           <article class="pre-invoice-receipt" :style="preInvoiceReceiptStyle">
             <header>
               <strong>{{ preInvoiceCarwashTitle }}</strong>
-              <small v-if="receiptHeaderNote">{{ receiptHeaderNote }}</small>
+              <small v-if="preInvoiceHeaderNote">{{ preInvoiceHeaderNote }}</small>
               <span>خدمات</span>
             </header>
             <section class="receipt-info-grid">
               <p><span>شماره پذیرش</span><strong>{{ preInvoiceAdmissionNumber }}</strong></p>
               <p><span>زمان</span><strong>{{ preInvoiceIssuedAt }}</strong></p>
               <p><span>مشتری</span><strong>{{ vehicleDriver || 'مشتری حضوری' }}</strong></p>
-              <p><span>تلفن</span><strong>{{ vehiclePhone || '-' }}</strong></p>
               <p><span>خودرو</span><strong>{{ vehicleTitle }}</strong></p>
               <p><span>پلاک</span><strong>{{ preInvoicePlateLabel }}</strong></p>
             </section>
@@ -871,6 +870,14 @@ const preInvoiceCarwashTitle = computed(() => {
   const name = String(carwashName.value || '').trim() || 'کارواش'
   return name.startsWith('کارواش') ? name : `کارواش ${name}`
 })
+const preInvoiceHeaderNote = computed(() => {
+  const phonePattern = /(?:\+?98|0)?9[\d۰-۹٠-٩\s\-()]{8,}|0[1-8][\d۰-۹٠-٩\s\-()]{7,}/
+  return String(receiptHeaderNote.value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !phonePattern.test(line) && !/(تلفن|تماس|موبایل)/.test(line))
+    .join('\n')
+})
 const preInvoicePaperWidthLabel = computed(() => (preInvoicePaperWidth.value === '58mm' ? '۵۸ میلی‌متر' : '۸۰ میلی‌متر'))
 const preInvoiceReceiptStyle = computed(() => ({ width: preInvoicePaperWidth.value === '58mm' ? '58mm' : '80mm' }))
 const preInvoiceAdmissionNumber = computed(() => {
@@ -915,12 +922,12 @@ const printPreInvoice = () => {
   <title>خدمات</title>
   <style>
     @page { size: ${width} auto; margin: 3mm; }
-    * { box-sizing: border-box; color: #000 !important; font-weight: 800; }
+    * { box-sizing: border-box; color: #000 !important; font-weight: 900; }
     body { margin: 0; background: #fff; color: #000; font-family: Vazirmatn, Tahoma, Arial, sans-serif; direction: rtl; }
-    .receipt { width: ${width}; max-width: ${width}; padding: 3mm; font-size: 10px; line-height: 1.7; }
+    .receipt { width: ${width}; max-width: ${width}; padding: 3mm; font-size: 11px; line-height: 1.75; }
     header, footer { text-align: center; display: grid; gap: 2px; padding-bottom: 6px; border-bottom: 1px dashed #111827; }
     footer { margin-top: 8px; padding-top: 6px; padding-bottom: 0; border-top: 1px dashed #111827; border-bottom: 0; }
-    header strong { font-size: 13px; font-weight: 900; }
+    header strong { font-size: 14px; font-weight: 900; }
     header span { font-weight: 900; }
     .info, .totals { display: grid; gap: 3px; padding: 7px 0; border-bottom: 1px dashed #111827; }
     p { margin: 0; display: flex; justify-content: space-between; gap: 8px; }
@@ -932,14 +939,13 @@ const printPreInvoice = () => {
   <article class="receipt">
     <header>
       <strong>${escapeHtml(preInvoiceCarwashTitle.value)}</strong>
-      ${receiptHeaderNote.value ? `<small>${escapeHtml(receiptHeaderNote.value)}</small>` : ''}
+      ${preInvoiceHeaderNote.value ? `<small>${escapeHtml(preInvoiceHeaderNote.value)}</small>` : ''}
       <span>خدمات</span>
     </header>
     <section class="info">
       <p><span>شماره پذیرش</span><strong>${escapeHtml(preInvoiceAdmissionNumber.value)}</strong></p>
       <p><span>زمان</span><strong>${escapeHtml(preInvoiceIssuedAt.value)}</strong></p>
       <p><span>مشتری</span><strong>${escapeHtml(vehicleDriver.value || 'مشتری حضوری')}</strong></p>
-      <p><span>تلفن</span><strong>${escapeHtml(vehiclePhone.value || '-')}</strong></p>
       <p><span>خودرو</span><strong>${escapeHtml(vehicleTitle.value)}</strong></p>
       <p><span>پلاک</span><strong>${escapeHtml(preInvoicePlateLabel.value)}</strong></p>
     </section>
@@ -1354,15 +1360,15 @@ onMounted(loadInitialData)
   background: #fff;
   color: #000;
   padding: 12px;
-  font-size: 10px;
-  line-height: 1.75;
-  font-weight: 800;
+  font-size: 11px;
+  line-height: 1.8;
+  font-weight: 900;
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
 }
 
 .pre-invoice-receipt * {
   color: #000 !important;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .pre-invoice-receipt header,
@@ -1383,7 +1389,7 @@ onMounted(loadInitialData)
 }
 
 .pre-invoice-receipt header strong {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -1418,6 +1424,7 @@ onMounted(loadInitialData)
   padding: 4px 0;
   border-bottom: 1px solid #111827;
   vertical-align: top;
+  font-weight: 900;
 }
 
 .pre-invoice-table th:last-child,

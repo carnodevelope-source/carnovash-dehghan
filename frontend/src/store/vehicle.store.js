@@ -8,17 +8,47 @@ export const useVehicleStore = defineStore('vehicle', {
     loading: false
   }),
   actions: {
-    async ensureCsrf() {
-      await api.get('/auth/csrf/')
+    async ensureCsrf(options = {}) {
+      const trackLoading = options.trackLoading === true
+      await api.get('/auth/csrf/', {
+        meta: { trackLoading, showErrorToast: options.showErrorToast }
+      })
     },
-    async fetchVehicles(params = {}) {
-      this.loading = true
+    applyVehicleList(nextVehicles = []) {
+      const nextItems = Array.isArray(nextVehicles) ? nextVehicles : []
+      const currentById = new Map(this.vehicles.map((item) => [Number(item.id), item]))
+      const nextIds = new Set(nextItems.map((item) => Number(item.id)))
+
+      for (let index = this.vehicles.length - 1; index >= 0; index -= 1) {
+        if (!nextIds.has(Number(this.vehicles[index]?.id))) {
+          this.vehicles.splice(index, 1)
+        }
+      }
+
+      nextItems.forEach((nextItem, index) => {
+        const existing = currentById.get(Number(nextItem.id))
+        if (existing) {
+          Object.assign(existing, nextItem)
+          const currentIndex = this.vehicles.findIndex((item) => Number(item.id) === Number(nextItem.id))
+          if (currentIndex !== index && currentIndex >= 0) {
+            this.vehicles.splice(index, 0, this.vehicles.splice(currentIndex, 1)[0])
+          }
+          return
+        }
+        this.vehicles.splice(index, 0, nextItem)
+      })
+    },
+    async fetchVehicles(params = {}, options = {}) {
+      const trackLoading = options.trackLoading === true
+      if (trackLoading) this.loading = true
       try {
-        await this.ensureCsrf()
-        const { data } = await api.get('/vehicles/', { params })
-        this.vehicles = Array.isArray(data) ? data : []
+        const { data } = await api.get('/vehicles/', {
+          params,
+          meta: { trackLoading, showErrorToast: options.showErrorToast }
+        })
+        this.applyVehicleList(data)
       } finally {
-        this.loading = false
+        if (trackLoading) this.loading = false
       }
     },
     async createVehicle(payload) {

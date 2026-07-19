@@ -163,6 +163,64 @@ def apply_loyalty_visit(profile, *, discount_percent_per_half_star=0, now=None):
     return profile
 
 
+def rebuild_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None):
+    if not profile:
+        return None
+    from .models import VehicleEntry
+
+    now = timezone.localtime(now or timezone.now())
+    vehicles = list(
+        VehicleEntry.objects.filter(
+            tenant=profile.tenant,
+            plate_number=profile.plate_number,
+            is_piece_wash=False,
+        )
+        .exclude(status=VehicleEntry.Status.CANCELLED)
+        .order_by('check_in_at', 'id')
+    )
+
+    profile.visit_count = 0
+    profile.cycle_visit_count = 0
+    profile.score = Decimal('0')
+    profile.next_discount_percent = Decimal('0')
+    profile.first_order_at = vehicles[0].check_in_at if vehicles else now
+    profile.last_cycle_started_at = vehicles[0].check_in_at if vehicles else now
+    profile.save(
+        update_fields=[
+            'visit_count',
+            'cycle_visit_count',
+            'score',
+            'next_discount_percent',
+            'first_order_at',
+            'last_cycle_started_at',
+            'updated_at',
+        ]
+    )
+    for vehicle in vehicles:
+        profile = apply_loyalty_visit(
+            profile,
+            discount_percent_per_half_star=discount_percent_per_half_star,
+            now=vehicle.check_in_at,
+        )
+    return profile
+
+
+def rebuild_customer_score(customer, *, now=None):
+    if not customer:
+        return None
+    from .models import VehicleEntry
+
+    current_year = timezone.localtime(now or timezone.now()).year
+    visits_count = VehicleEntry.objects.filter(
+        customer=customer,
+        check_in_at__year=current_year,
+    ).exclude(status=VehicleEntry.Status.CANCELLED).count()
+    customer.score_year = current_year
+    customer.yearly_score = min(MAX_STARS, HALF_STAR * Decimal(str(visits_count)))
+    customer.save(update_fields=['score_year', 'yearly_score', 'updated_at'])
+    return customer
+
+
 def compute_loyalty_discount(base_amount, score, percent_per_half_star):
     normalized_score = Decimal(str(score or 0))
     if normalized_score < 0:

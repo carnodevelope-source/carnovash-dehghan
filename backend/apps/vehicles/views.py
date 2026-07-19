@@ -17,7 +17,13 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from .models import BlockedPlate, VehicleEntry, VehicleStatusLog
-from .loyalty import compute_loyalty_discount, get_or_create_plate_loyalty, loyalty_snapshot
+from .loyalty import (
+    compute_loyalty_discount,
+    get_or_create_plate_loyalty,
+    loyalty_snapshot,
+    rebuild_customer_score,
+    rebuild_plate_loyalty,
+)
 from .serializers import VehicleEntrySerializer
 from apps.inventory.models import InventoryItem
 from apps.inventory.models import StockMovement
@@ -239,6 +245,21 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
         elif new_status == VehicleEntry.Status.RELEASED:
             instance.released_at = timezone.now()
         instance.save(update_fields=['status', 'ready_at', 'released_at', 'updated_at'])
+
+        if new_status == VehicleEntry.Status.CANCELLED and previous_status != VehicleEntry.Status.CANCELLED:
+            rebuild_customer_score(instance.customer)
+            if not instance.is_piece_wash:
+                rebuild_plate_loyalty(
+                    get_or_create_plate_loyalty(
+                        tenant=instance.tenant,
+                        plate_number=instance.plate_number,
+                        plate_left=instance.plate_left,
+                        plate_letter=instance.plate_letter,
+                        plate_mid=instance.plate_mid,
+                        plate_right=instance.plate_right,
+                    ),
+                    discount_percent_per_half_star=self.get_serializer()._discount_percent_per_half_star(instance.tenant),
+                )
 
         VehicleStatusLog.objects.create(
             tenant=instance.tenant,

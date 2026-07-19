@@ -21,6 +21,13 @@ class WalletApiTests(APITestCase):
             role='manager',
             tenant=self.tenant,
         )
+        self.operator = user_model.objects.create_user(
+            username='wallet-operator',
+            password='pass12345',
+            phone='09129990002',
+            role='operator',
+            tenant=self.tenant,
+        )
         self.wallet = Wallet.objects.create(
             tenant=self.tenant,
             name='Main Wallet',
@@ -30,6 +37,46 @@ class WalletApiTests(APITestCase):
         )
         self.client = APIClient()
         self.client.force_authenticate(self.manager)
+
+    def test_operator_can_start_wallet_deposit(self):
+        self.client.force_authenticate(self.operator)
+
+        response = self.client.post(
+            reverse('wallet-deposit-start'),
+            {
+                'wallet_id': self.wallet.id,
+                'amount': 250000,
+                'description': 'Operator top-up',
+                'return_url': '/manager/wallet',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(
+            WalletGatewayRequest.objects.filter(
+                wallet=self.wallet,
+                amount=250000,
+                created_by=self.operator,
+            ).exists()
+        )
+
+    def test_operator_cannot_withdraw_from_wallet(self):
+        self.client.force_authenticate(self.operator)
+
+        response = self.client.post(
+            reverse('wallet-withdraw'),
+            {
+                'wallet_id': self.wallet.id,
+                'amount': 100000,
+                'description': 'Operator withdraw',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.wallet.refresh_from_db()
+        self.assertEqual(int(self.wallet.balance), 500000)
 
     def test_deposit_start_accepts_dynamic_amount(self):
         response = self.client.post(

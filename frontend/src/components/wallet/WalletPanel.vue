@@ -15,7 +15,7 @@
           <p>مدیریت سریع عملیات مالی</p>
         </div>
         <div class="shortcut-grid">
-          <button class="shortcut-card shortcut-primary" type="button" :disabled="!hasDepositWallet" @click="openActionModal('deposit')">
+          <button class="shortcut-card shortcut-primary" type="button" :disabled="!canDepositWalletAction || !hasDepositWallet" @click="openActionModal('deposit')">
             <span class="shortcut-icon">+</span>
             <strong>شارژ حساب</strong>
             <small>{{ depositShortcutCaption }}</small>
@@ -61,7 +61,7 @@
         </div>
 
         <div class="hero-actions">
-          <button class="hero-action hero-action-light" type="button" @click="openActionModal('deposit')">
+          <button class="hero-action hero-action-light" type="button" :disabled="!canDepositWalletAction || !hasDepositWallet" @click="openActionModal('deposit')">
             شارژ حساب / واریز
           </button>
           <button
@@ -694,15 +694,23 @@ const activeWalletIsSms = computed(() => activeWallet.value?.wallet_type === 'sm
 const activeWalletBalance = computed(() => Math.max(0, Number(activeWallet.value?.balance || 0)))
 const selectedWalletIsSms = computed(() => selectedWallet.value?.wallet_type === 'sms')
 const selectedWalletBalance = computed(() => Math.max(0, Number(selectedWallet.value?.balance || 0)))
+const walletUserRole = computed(() => authStore.role || authStore.user?.role || '')
+const canDepositWalletAction = computed(() => ['accountant', 'admin', 'owner', 'manager', 'operator'].includes(walletUserRole.value))
+const canWithdrawWalletAction = computed(() => ['admin', 'owner', 'manager'].includes(walletUserRole.value))
 const hasDepositWallet = computed(() => state.wallets.length > 0)
 const hasWithdrawableBalance = computed(() => state.wallets.some((wallet) => Number(wallet.balance || 0) > 0))
 const withdrawButtonDisabled = computed(() => {
+  if (!canWithdrawWalletAction.value) return true
   if (!hasWithdrawableBalance.value) return true
   if (!selectedWallet.value) return false
   return selectedWalletBalance.value <= 0
 })
-const withdrawButtonTitle = computed(() => withdrawButtonDisabled.value ? 'برداشت غیرفعال' : 'برداشت وجه')
+const withdrawButtonTitle = computed(() => {
+  if (!canWithdrawWalletAction.value) return 'برداشت فقط برای مدیر'
+  return withdrawButtonDisabled.value ? 'برداشت غیرفعال' : 'برداشت وجه'
+})
 const withdrawButtonCaption = computed(() => {
+  if (!canWithdrawWalletAction.value) return 'واریز فعال است، برداشت فقط برای مدیران است'
   if (selectedWallet.value && selectedWalletBalance.value <= 0) return 'موجودی این کیف پول صفر است'
   if (!hasWithdrawableBalance.value) return 'موجودی قابل برداشت ندارید'
   const balance = selectedWallet.value ? selectedWalletBalance.value : Number(state.summary.regular_balance || 0)
@@ -903,6 +911,14 @@ const setFilter = async (type) => {
 
 const openActionModal = (type) => {
   clearMessages()
+  if (type === 'deposit' && !canDepositWalletAction.value) {
+    state.error = 'شما دسترسی ثبت واریز کیف پول را ندارید.'
+    return
+  }
+  if (type === 'withdraw' && !canWithdrawWalletAction.value) {
+    state.error = 'برداشت از کیف پول فقط برای مدیران مجاز است.'
+    return
+  }
   if (type === 'withdraw' && withdrawButtonDisabled.value) {
     state.error = withdrawButtonCaption.value
     return
@@ -997,6 +1013,14 @@ const openPaymentSupportTicket = () => {
 
 const submitAction = async () => {
   clearMessages()
+  if (actionModal.type === 'deposit' && !canDepositWalletAction.value) {
+    state.error = 'شما دسترسی ثبت واریز کیف پول را ندارید.'
+    return
+  }
+  if (actionModal.type === 'withdraw' && !canWithdrawWalletAction.value) {
+    state.error = 'برداشت از کیف پول فقط برای مدیران مجاز است.'
+    return
+  }
   if (actionAmountError.value) {
     state.error = actionAmountError.value
     return

@@ -711,7 +711,6 @@
           <template v-if="invoiceIsThermal">
             <header class="thermal-sheet-head">
               <strong>{{ invoiceCarwashTitle }}</strong>
-              <small v-if="invoiceCarwashContactLine">{{ invoiceCarwashContactLine }}</small>
               <small v-if="invoiceReceiptHeaderNote" class="receipt-custom-note">{{ invoiceReceiptHeaderNote }}</small>
             </header>
 
@@ -724,7 +723,6 @@
               <p><span>مدل خودرو:</span><strong>{{ invoiceVehicleTitle }}</strong></p>
               <p><span>پلاک:</span><strong>{{ invoicePlateLabel }}</strong></p>
               <p><span>مشتری:</span><strong>{{ invoiceCustomerDisplayName }}</strong></p>
-              <p><span>تلفن:</span><strong>{{ invoiceCustomerPhone }}</strong></p>
             </section>
 
             <section class="thermal-items-section">
@@ -1003,6 +1001,8 @@ const releaseForm = ref({
 const vehicleStore = useVehicleStore()
 const authStore = useAuthStore()
 const { vehicles, selectedVehicle } = storeToRefs(vehicleStore)
+const vehicleCardsRefreshTimer = ref(null)
+const vehicleCardsRefreshInFlight = ref(false)
 const hasOperatorModalOpen = computed(() => (
   showVehicleModal.value
   || showVehicleDetailsModal.value
@@ -1311,7 +1311,25 @@ const activeDateRangeParams = computed(() => {
     date_end: end || undefined
   }
 })
-const fetchVehiclesForActiveRange = () => vehicleStore.fetchVehicles(activeDateRangeParams.value)
+const fetchVehiclesForActiveRange = (options = {}) => vehicleStore.fetchVehicles(activeDateRangeParams.value, {
+  trackLoading: false,
+  ...options
+})
+const refreshVehicleCardsFromDatabase = async () => {
+  if (vehicleCardsRefreshInFlight.value) return
+  vehicleCardsRefreshInFlight.value = true
+  try {
+    await fetchVehiclesForActiveRange({ showErrorToast: false })
+  } catch (error) {
+    console.error('vehicle cards auto refresh error:', error?.response?.data || error)
+  } finally {
+    vehicleCardsRefreshInFlight.value = false
+  }
+}
+const startVehicleCardsAutoRefresh = () => {
+  if (vehicleCardsRefreshTimer.value) window.clearInterval(vehicleCardsRefreshTimer.value)
+  vehicleCardsRefreshTimer.value = window.setInterval(refreshVehicleCardsFromDatabase, 10000)
+}
 const selectDatePreset = (mode) => {
   dateRangeMode.value = mode
 }
@@ -3139,6 +3157,7 @@ const loadVehicleSmsSettings = async () => {
 
 onMounted(() => {
   fetchVehiclesForActiveRange()
+  startVehicleCardsAutoRefresh()
   loadVehicleSmsSettings()
 })
 watch(
@@ -3163,6 +3182,7 @@ watch(
 )
 onBeforeUnmount(() => {
   unlockBodyScrollForModal()
+  if (vehicleCardsRefreshTimer.value) window.clearInterval(vehicleCardsRefreshTimer.value)
   if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
   if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
   revokeInvoicePdfUrl()

@@ -147,7 +147,13 @@ def _queue_sort_key(worker):
 
 
 def _create_attendance_event(worker, event_type, source='manager', note='', request=None):
-    last_event = worker.attendance_events.order_by('-event_at', '-id').first()
+    start, end, _now = _today_bounds()
+    last_event = (
+        worker.attendance_events
+        .filter(event_at__gte=start, event_at__lte=end)
+        .order_by('-event_at', '-id')
+        .first()
+    )
     if last_event and last_event.event_type == event_type:
         raise ValueError('این وضعیت قبلاً ثبت شده است.')
     return WorkerAttendance.objects.create(
