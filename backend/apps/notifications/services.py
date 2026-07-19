@@ -276,8 +276,7 @@ def build_services_sms_summary(job):
             or getattr(line, 'service_name', '')
             or 'خدمت'
         ).strip()
-        line_total = _service_line_list_total(line)
-        lines.append(f'{title}: {format_toman(line_total)}')
+        lines.append(title)
     return '\n'.join(lines) if lines else 'خدمات ثبت شده است: مبلغ هنگام نهایی‌سازی اعلام می‌شود'
 
 
@@ -293,10 +292,15 @@ def normalize_assignment_sms_wording(template):
         'برای انجام خدمات ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
         'برای انجام خدمات، ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
         'تخصیص داده شد': 'پذیرش شد',
+        'پیش فاکتور خدمات:': 'خدمات:',
+        'پیش‌فاکتور خدمات:': 'خدمات:',
+        'مبلغ نهایی بعد از تخفیف:': 'مبلغ نهایی:',
         '1 ساعت کاری': '30 دقیقه',
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
+    if '[خلاصه خدمات]' in text and '---------------' not in text:
+        text = text.replace('[خلاصه خدمات]\n', '[خلاصه خدمات]\n---------------\n')
     return text
 
 
@@ -310,14 +314,15 @@ def normalize_vehicle_assignment_sms_template(template):
         text = '\n'.join(lines)
     insertions = []
     if '[خلاصه خدمات]' not in text:
-        insertions.append('پیش فاکتور خدمات:')
+        insertions.append('خدمات:')
         insertions.append('[خلاصه خدمات]')
+        insertions.append('---------------')
     if '[جمع کل]' not in text and '[جمع نرخ نامه]' not in text:
         insertions.append('جمع کل: [جمع کل]')
     if '[جمع تخفیف]' not in text:
         insertions.append('تخفیف این سفارش: [جمع تخفیف]')
     if '[مبلغ نهایی]' not in text:
-        insertions.append('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
+        insertions.append('مبلغ نهایی: [مبلغ نهایی]')
     if 'آماده ترخیص' not in text:
         insertions.append('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
     if 'از اعتماد شما سپاسگزاریم' not in text:
@@ -402,7 +407,7 @@ def build_vehicle_assignment_sms_messages(settings_obj, vehicle, *, assigned_at=
     messages = []
     if assigned_enabled:
         template_parts = [assigned_template]
-        if invoice_template and 'پیش فاکتور خدمات:' not in assigned_template:
+        if invoice_template and '[خلاصه خدمات]' not in assigned_template:
             template_parts.append(invoice_template)
         normalized_template = normalize_vehicle_assignment_sms_template('\n'.join(template_parts)).strip()
         if '[شماره پذیرش]' not in normalized_template:

@@ -61,8 +61,10 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('علی رضایی', message)
         self.assertNotIn('[خطاب مشتری]', message)
         self.assertIn('شماره پذیرش: ۱۰۰۰', message)
-        self.assertIn('شست‌وشوی ویژه: ۷۵۰،۰۰۰ تومان', message)
-        self.assertIn('واکس بدنه: ۵۰۰،۰۰۰ تومان', message)
+        self.assertIn('شست‌وشوی ویژه', message)
+        self.assertIn('واکس بدنه', message)
+        self.assertNotIn('شست‌وشوی ویژه: ۷۵۰،۰۰۰ تومان', message)
+        self.assertNotIn('واکس بدنه: ۵۰۰،۰۰۰ تومان', message)
         self.assertIn('۱،۲۵۰،۰۰۰ تومان', message)
         self.assertLess(message.index('پلاک: 67 - 345 ب 22'), message.index('شست‌وشوی ویژه'))
 
@@ -100,10 +102,11 @@ class VehicleSmsTemplateTests(SimpleTestCase):
 
         self.assertIn('پلاک: 54 - 377 ص 22', message)
         self.assertIn('شماره پذیرش: ۱۰۰۰', message)
-        self.assertIn('شست‌وشوی کامل: ۴۰۰،۰۰۰ تومان', message)
+        self.assertIn('شست‌وشوی کامل', message)
+        self.assertNotIn('شست‌وشوی کامل: ۴۰۰،۰۰۰ تومان', message)
         self.assertIn('جمع کل: ۴۰۰،۰۰۰ تومان', message)
         self.assertIn('تخفیف این سفارش: ۱۰۰،۰۰۰ تومان', message)
-        self.assertIn('مبلغ نهایی بعد از تخفیف: ۳۰۰،۰۰۰ تومان', message)
+        self.assertIn('مبلغ نهایی: ۳۰۰،۰۰۰ تومان', message)
 
     def test_default_assignment_sms_is_single_admission_and_invoice_message(self):
         tenant = SimpleNamespace(name='میلان')
@@ -136,11 +139,14 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('مشتری', message)
         self.assertIn('شماره پذیرش: ۱۰۰۰', message)
         self.assertIn('در مجموعه کارواش میلان برای انجام خدمات، پذیرش شد.', message)
-        self.assertIn('پیش فاکتور خدمات:', message)
-        self.assertIn('شست‌وشوی کامل: ۳۵۰،۰۰۰ تومان', message)
+        self.assertIn('خدمات:', message)
+        self.assertNotIn('پیش فاکتور خدمات:', message)
+        self.assertIn('شست‌وشوی کامل', message)
+        self.assertNotIn('شست‌وشوی کامل: ۳۵۰،۰۰۰ تومان', message)
+        self.assertIn('---------------', message)
         self.assertIn('جمع کل: ۳۵۰،۰۰۰ تومان', message)
         self.assertIn('تخفیف این سفارش: ۸۵،۰۰۰ تومان', message)
-        self.assertIn('مبلغ نهایی بعد از تخفیف: ۲۶۵،۰۰۰ تومان', message)
+        self.assertIn('مبلغ نهایی: ۲۶۵،۰۰۰ تومان', message)
         self.assertIn('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.', message)
 
     def test_released_sms_uses_fallback_greeting_for_anonymous_customer(self):

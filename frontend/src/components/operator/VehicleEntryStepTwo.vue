@@ -82,7 +82,7 @@
             <header>
               <strong>{{ preInvoiceCarwashTitle }}</strong>
               <small v-if="receiptHeaderNote">{{ receiptHeaderNote }}</small>
-              <span>پیش‌فاکتور خدمات</span>
+              <span>خدمات</span>
             </header>
             <section class="receipt-info-grid">
               <p><span>شماره پذیرش</span><strong>{{ preInvoiceAdmissionNumber }}</strong></p>
@@ -96,24 +96,14 @@
               <thead>
                 <tr>
                   <th>شرح</th>
-                  <th>مبلغ</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="(service, index) in selectedServices" :key="`pre-invoice-${service.id || index}`">
                   <td>{{ toFaNumber(index + 1) }}. {{ service.name }}</td>
-                  <td>{{ toThousandsInput(service.list_price || service.base_price || 0) }}</td>
                 </tr>
               </tbody>
             </table>
-            <section class="receipt-total-block">
-              <p><span>جمع کل خدمات</span><strong>{{ formatMoney(serviceListSubtotal) }}</strong></p>
-              <p v-if="facilityDiscountTotal > 0"><span>تخفیف مجموعه</span><strong>{{ formatMoney(facilityDiscountTotal) }}</strong></p>
-              <p v-if="effectiveLoyaltyDiscountAmount > 0"><span>تخفیف امتیاز مشتری</span><strong>{{ formatMoney(effectiveLoyaltyDiscountAmount) }}</strong></p>
-              <p v-if="effectiveManualDiscountTotal > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(effectiveManualDiscountTotal) }}</strong></p>
-              <p><span>جمع تخفیف</span><strong>{{ formatMoney(totalDiscountAmount) }}</strong></p>
-              <p class="receipt-final"><span>مبلغ قابل پرداخت</span><strong>{{ formatMoney(discountedServicesTotal) }}</strong></p>
-            </section>
             <footer>
               <p v-if="receiptFooterNote">{{ receiptFooterNote }}</p>
               <strong>از اعتماد شما سپاسگزاریم</strong>
@@ -912,7 +902,6 @@ const escapeHtml = (value) => String(value ?? '')
 const preInvoiceRowsHtml = computed(() => selectedServices.value.map((service, index) => `
   <tr>
     <td>${escapeHtml(toFaNumber(index + 1))}. ${escapeHtml(service.name)}</td>
-    <td>${escapeHtml(toThousandsInput(service.list_price || service.base_price || 0))}</td>
   </tr>
 `).join(''))
 const printPreInvoice = () => {
@@ -923,7 +912,7 @@ const printPreInvoice = () => {
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8" />
-  <title>پیش‌فاکتور خدمات</title>
+  <title>خدمات</title>
   <style>
     @page { size: ${width} auto; margin: 3mm; }
     * { box-sizing: border-box; color: #000 !important; font-weight: 800; }
@@ -937,8 +926,6 @@ const printPreInvoice = () => {
     p { margin: 0; display: flex; justify-content: space-between; gap: 8px; }
     table { width: 100%; border-collapse: collapse; margin: 7px 0; }
     th, td { padding: 4px 0; border-bottom: 1px solid #111827; text-align: right; vertical-align: top; }
-    th:last-child, td:last-child { text-align: left; white-space: nowrap; }
-    .final { font-size: 12px; font-weight: 900; border-top: 1px solid #111827; padding-top: 5px; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -946,7 +933,7 @@ const printPreInvoice = () => {
     <header>
       <strong>${escapeHtml(preInvoiceCarwashTitle.value)}</strong>
       ${receiptHeaderNote.value ? `<small>${escapeHtml(receiptHeaderNote.value)}</small>` : ''}
-      <span>پیش‌فاکتور خدمات</span>
+      <span>خدمات</span>
     </header>
     <section class="info">
       <p><span>شماره پذیرش</span><strong>${escapeHtml(preInvoiceAdmissionNumber.value)}</strong></p>
@@ -957,17 +944,9 @@ const printPreInvoice = () => {
       <p><span>پلاک</span><strong>${escapeHtml(preInvoicePlateLabel.value)}</strong></p>
     </section>
     <table>
-      <thead><tr><th>شرح</th><th>مبلغ</th></tr></thead>
+      <thead><tr><th>شرح</th></tr></thead>
       <tbody>${preInvoiceRowsHtml.value}</tbody>
     </table>
-    <section class="totals">
-      <p><span>جمع کل خدمات</span><strong>${escapeHtml(formatMoney(serviceListSubtotal.value))}</strong></p>
-      ${facilityDiscountTotal.value > 0 ? `<p><span>تخفیف مجموعه</span><strong>${escapeHtml(formatMoney(facilityDiscountTotal.value))}</strong></p>` : ''}
-      ${effectiveLoyaltyDiscountAmount.value > 0 ? `<p><span>تخفیف امتیاز مشتری</span><strong>${escapeHtml(formatMoney(effectiveLoyaltyDiscountAmount.value))}</strong></p>` : ''}
-      ${effectiveManualDiscountTotal.value > 0 ? `<p><span>تخفیف دستی</span><strong>${escapeHtml(formatMoney(effectiveManualDiscountTotal.value))}</strong></p>` : ''}
-      <p><span>جمع تخفیف</span><strong>${escapeHtml(formatMoney(totalDiscountAmount.value))}</strong></p>
-      <p class="final"><span>مبلغ قابل پرداخت</span><strong>${escapeHtml(formatMoney(discountedServicesTotal.value))}</strong></p>
-    </section>
     <footer>
       ${receiptFooterNote.value ? `<p>${escapeHtml(receiptFooterNote.value)}</p>` : ''}
       <strong>از اعتماد شما سپاسگزاریم</strong>

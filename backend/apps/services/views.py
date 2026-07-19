@@ -196,7 +196,7 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
             changed_fields.append('sms_vehicle_assigned_template')
         assigned_text = str(settings_obj.sms_vehicle_assigned_template or '').strip()
         invoice_text = str(settings_obj.sms_vehicle_assigned_invoice_template or '').strip()
-        if invoice_text and 'پیش فاکتور خدمات:' not in assigned_text:
+        if invoice_text and '[خلاصه خدمات]' not in assigned_text:
             settings_obj.sms_vehicle_assigned_template = '\n'.join(
                 part for part in [assigned_text, invoice_text] if part
             ).strip()

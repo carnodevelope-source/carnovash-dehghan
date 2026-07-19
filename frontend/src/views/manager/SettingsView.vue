@@ -1073,19 +1073,27 @@ const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true }
     .replaceAll('برای انجام خدمات ثبت و تخصیص داده شد', 'برای انجام خدمات، پذیرش شد')
     .replaceAll('برای انجام خدمات، ثبت و تخصیص داده شد', 'برای انجام خدمات، پذیرش شد')
     .replaceAll('تخصیص داده شد', 'پذیرش شد')
+    .replaceAll('پیش فاکتور خدمات:', 'خدمات:')
+    .replaceAll('پیش‌فاکتور خدمات:', 'خدمات:')
+    .replaceAll('مبلغ نهایی بعد از تخفیف:', 'مبلغ نهایی:')
     .replaceAll('1 ساعت کاری', '30 دقیقه')
     .trim()
   if (!text) return text
   const lines = text.split('\n')
   const insertions = []
   if (!text.includes('[شماره پذیرش]')) lines.splice(1, 0, 'شماره پذیرش: [شماره پذیرش]')
+  if (includeFinancials && text.includes('[خلاصه خدمات]') && !text.includes('---------------')) {
+    const servicesIndex = lines.findIndex((line) => line.includes('[خلاصه خدمات]'))
+    if (servicesIndex >= 0) lines.splice(servicesIndex + 1, 0, '---------------')
+  }
   if (includeFinancials && !text.includes('[خلاصه خدمات]')) {
-    insertions.push('پیش فاکتور خدمات:')
+    insertions.push('خدمات:')
     insertions.push('[خلاصه خدمات]')
+    insertions.push('---------------')
   }
   if (includeFinancials && !text.includes('[جمع کل]') && !text.includes('[جمع نرخ نامه]')) insertions.push('جمع کل: [جمع کل]')
   if (includeFinancials && !text.includes('[جمع تخفیف]')) insertions.push('تخفیف این سفارش: [جمع تخفیف]')
-  if (includeFinancials && !text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
+  if (includeFinancials && !text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی: [مبلغ نهایی]')
   if (!text.includes('آماده ترخیص')) insertions.push('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
   if (!text.includes('از اعتماد شما سپاسگزاریم')) insertions.push('از اعتماد شما سپاسگزاریم')
   if (!insertions.length) return text
@@ -1098,7 +1106,7 @@ const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true }
 const mergeAssignedSmsTemplate = (assignedTemplate, invoiceTemplate) => {
   const assignedText = String(assignedTemplate || '').trim()
   const invoiceText = String(invoiceTemplate || '').trim()
-  if (!invoiceText || assignedText.includes('پیش فاکتور خدمات:')) return ensureAssignedSmsTemplateDetails(assignedText)
+  if (!invoiceText || assignedText.includes('[خلاصه خدمات]')) return ensureAssignedSmsTemplateDetails(assignedText)
   return ensureAssignedSmsTemplateDetails([assignedText, invoiceText].filter(Boolean).join('\n'))
 }
 const smsPreviewContext = computed(() => ({
@@ -1110,7 +1118,7 @@ const smsPreviewContext = computed(() => ({
   '[پلاک]': '67 - 345 ب 22',
   '[ساعت تخصیص]': '10:30',
   '[تاریخ تخصیص]': '1405/04/22',
-  '[خلاصه خدمات]': 'شست‌وشوی کامل: 350،000 تومان',
+  '[خلاصه خدمات]': 'شست‌وشوی کامل',
   '[جمع کل]': '350،000 تومان',
   '[جمع نرخ نامه]': '350،000 تومان',
   '[ساعت ترخیص]': '12:15',

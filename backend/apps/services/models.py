@@ -15,11 +15,12 @@ DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
     'خودروی شما با\n'
     'شماره پذیرش: [شماره پذیرش] با پلاک [پلاک]، در ساعت [ساعت تخصیص]، روز [تاریخ تخصیص] در مجموعه کارواش [نام کارواش] '
     'برای انجام خدمات، پذیرش شد.\n'
-    'پیش فاکتور خدمات:\n'
+    'خدمات:\n'
     '[خلاصه خدمات]\n'
+    '---------------\n'
     'جمع کل: [جمع کل]\n'
     'تخفیف این سفارش: [جمع تخفیف]\n'
-    'مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]\n'
+    'مبلغ نهایی: [مبلغ نهایی]\n'
     'خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.\n'
     'از اعتماد شما سپاسگزاریم'
 )
@@ -53,10 +54,15 @@ def normalize_vehicle_assigned_sms_template(template):
         'برای انجام خدمات ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
         'برای انجام خدمات، ثبت و تخصیص داده شد': 'برای انجام خدمات، پذیرش شد',
         'تخصیص داده شد': 'پذیرش شد',
+        'پیش فاکتور خدمات:': 'خدمات:',
+        'پیش‌فاکتور خدمات:': 'خدمات:',
+        'مبلغ نهایی بعد از تخفیف:': 'مبلغ نهایی:',
         '1 ساعت کاری': '30 دقیقه',
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
+    if '[خلاصه خدمات]' in text and '---------------' not in text:
+        text = text.replace('[خلاصه خدمات]\n', '[خلاصه خدمات]\n---------------\n')
     if '[شماره پذیرش]' not in text:
         lines = text.splitlines()
         lines.insert(1 if lines else 0, 'شماره پذیرش: [شماره پذیرش]')
@@ -64,14 +70,15 @@ def normalize_vehicle_assigned_sms_template(template):
     lines = text.splitlines()
     insertions = []
     if '[خلاصه خدمات]' not in text:
-        insertions.append('پیش فاکتور خدمات:')
+        insertions.append('خدمات:')
         insertions.append('[خلاصه خدمات]')
+        insertions.append('---------------')
     if '[جمع کل]' not in text and '[جمع نرخ نامه]' not in text:
         insertions.append('جمع کل: [جمع کل]')
     if '[جمع تخفیف]' not in text:
         insertions.append('تخفیف این سفارش: [جمع تخفیف]')
     if '[مبلغ نهایی]' not in text:
-        insertions.append('مبلغ نهایی بعد از تخفیف: [مبلغ نهایی]')
+        insertions.append('مبلغ نهایی: [مبلغ نهایی]')
     if 'آماده ترخیص' not in text:
         insertions.append('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
     if 'از اعتماد شما سپاسگزاریم' not in text:
