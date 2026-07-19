@@ -157,7 +157,6 @@
               v-if="vehicle.status !== 'cancelled'"
               type="button"
               class="vehicle-details-danger-btn"
-              :disabled="vehicle.status === 'released'"
               @click="$emit('cancel')"
             >
               لغو سفارش

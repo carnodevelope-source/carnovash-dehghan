@@ -231,6 +231,69 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
     def get_queryset(self):
         return VehicleEntry.objects.select_related('job').filter(tenant=self.request.user.tenant)
 
+    def _restore_released_inventory(self, instance, request_user):
+        release_movements = list(
+            StockMovement.objects.select_related('inventory_item')
+            .filter(
+                tenant=instance.tenant,
+                reference_type='vehicle_release',
+                reference_id=instance.id,
+                movement_type=StockMovement.MovementType.OUT,
+            )
+        )
+        if not release_movements:
+            return
+
+        reversed_totals = {
+            item['inventory_item_id']: Decimal(str(item['total'] or 0))
+            for item in (
+                StockMovement.objects.filter(
+                    tenant=instance.tenant,
+                    reference_type='vehicle_release_cancel',
+                    reference_id=instance.id,
+                    movement_type=StockMovement.MovementType.IN,
+                )
+                .values('inventory_item_id')
+                .annotate(total=Sum('quantity'))
+            )
+        }
+        released_totals = {}
+        for movement in release_movements:
+            item_id = movement.inventory_item_id
+            if item_id not in released_totals:
+                released_totals[item_id] = {'quantity': Decimal('0'), 'movement': movement}
+            released_totals[item_id]['quantity'] += Decimal(str(movement.quantity or 0))
+
+        for item_id, payload in released_totals.items():
+            restore_quantity = payload['quantity'] - reversed_totals.get(item_id, Decimal('0'))
+            if restore_quantity <= 0:
+                continue
+            inventory_item = InventoryItem.objects.select_for_update().filter(pk=item_id).first()
+            if not inventory_item:
+                continue
+            inventory_item.quantity_on_hand = Decimal(str(inventory_item.quantity_on_hand or 0)) + restore_quantity
+            inventory_item.save(update_fields=['quantity_on_hand', 'updated_at'])
+            sample_movement = payload['movement']
+            StockMovement.objects.create(
+                tenant=instance.tenant,
+                inventory_item=inventory_item,
+                movement_type=StockMovement.MovementType.IN,
+                quantity=restore_quantity,
+                unit_cost=sample_movement.unit_cost or Decimal('0'),
+                sale_price_snapshot=sample_movement.sale_price_snapshot or Decimal('0'),
+                note='بازگشت موجودی پس از لغو ترخیص خودرو',
+                reference_type='vehicle_release_cancel',
+                reference_id=instance.id,
+                created_by=request_user if getattr(request_user, 'is_authenticated', False) else None,
+            )
+
+    def _neutralize_cancelled_vehicle_effects(self, instance, request_user):
+        Payment.objects.filter(vehicle_entry=instance).exclude(
+            status=Payment.Status.REFUNDED
+        ).update(status=Payment.Status.REFUNDED, updated_at=timezone.now())
+        self._restore_released_inventory(instance, request_user)
+
+    @transaction.atomic
     def patch(self, request, *args, **kwargs):
         instance = self.get_object()
         new_status = request.data.get('status')
@@ -239,14 +302,32 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
             return Response({'status': ['Invalid status value.']}, status=status.HTTP_400_BAD_REQUEST)
 
         previous_status = instance.status
+        is_new_cancellation = (
+            new_status == VehicleEntry.Status.CANCELLED
+            and previous_status != VehicleEntry.Status.CANCELLED
+        )
+        has_payments = Payment.objects.filter(vehicle_entry=instance).exists()
         instance.status = new_status
+        update_fields = ['status', 'updated_at']
         if new_status == VehicleEntry.Status.READY_TO_SETTLE:
             instance.ready_at = timezone.now()
+            update_fields.append('ready_at')
         elif new_status == VehicleEntry.Status.RELEASED:
             instance.released_at = timezone.now()
-        instance.save(update_fields=['status', 'ready_at', 'released_at', 'updated_at'])
+            update_fields.append('released_at')
+        elif new_status == VehicleEntry.Status.CANCELLED:
+            instance.released_at = None
+            instance.payment_status = (
+                VehicleEntry.PaymentStatus.REFUNDED
+                if has_payments
+                else VehicleEntry.PaymentStatus.UNPAID
+            )
+            instance.payment_method = ''
+            update_fields.extend(['released_at', 'payment_status', 'payment_method'])
+        instance.save(update_fields=update_fields)
 
-        if new_status == VehicleEntry.Status.CANCELLED and previous_status != VehicleEntry.Status.CANCELLED:
+        if is_new_cancellation:
+            self._neutralize_cancelled_vehicle_effects(instance, request.user)
             rebuild_customer_score(instance.customer)
             if not instance.is_piece_wash:
                 rebuild_plate_loyalty(
@@ -276,6 +357,9 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
                 instance.job.save(update_fields=['completed_at', 'updated_at'])
             elif new_status == VehicleEntry.Status.RELEASED:
                 instance.job.released_at = timezone.now()
+                instance.job.save(update_fields=['released_at', 'updated_at'])
+            elif new_status == VehicleEntry.Status.CANCELLED:
+                instance.job.released_at = None
                 instance.job.save(update_fields=['released_at', 'updated_at'])
 
         if previous_status != new_status:

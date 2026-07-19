@@ -303,7 +303,11 @@ def _job_worker_tip_for(job, worker_id):
 
 
 def _get_worker_jobs(tenant, worker_id):
-    jobs = list(VehicleJob.objects.select_related('vehicle').filter(tenant=tenant))
+    jobs = list(
+        VehicleJob.objects.select_related('vehicle')
+        .filter(tenant=tenant)
+        .exclude(vehicle__status=VehicleEntry.Status.CANCELLED)
+    )
     return [job for job in jobs if _job_has_worker(job, worker_id)]
 
 
@@ -486,7 +490,9 @@ class ReportsDashboardView(APIView):
             'job__assigned_worker',
             'job__assigned_worker__user',
             'customer',
-        ).prefetch_related('job__product_lines__product', 'job__service_lines__service', 'payments').filter(tenant=tenant)
+        ).prefetch_related('job__product_lines__product', 'job__service_lines__service', 'payments').filter(
+            tenant=tenant
+        ).exclude(status=VehicleEntry.Status.CANCELLED)
 
     @classmethod
     def _build_filtered_vehicles(cls, start, end, query, tenant, worker_id=None, plate_number='', plate_type=''):
