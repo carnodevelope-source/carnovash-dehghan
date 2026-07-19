@@ -200,7 +200,6 @@ let supportCountPollingInFlight = false
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))
 const attendanceLockNotice = computed(() => getFeatureLockNotice(authStore.user, 'attendance'))
-const smsClubLocked = computed(() => !hasFeatureAccess(authStore.user, 'sms_club') && Boolean(getFeatureLockNotice(authStore.user, 'sms_club')))
 const navItems = computed(() => (
   (navigationByRole[authStore.role] || [])
     .flatMap((group) => group.items || [])
@@ -214,9 +213,6 @@ const lockedFeatureItems = computed(() => {
   }
   if (attendanceLockNotice.value && !items.some((item) => item.key === 'attendance')) {
     items.push({ key: 'attendance', label: 'ورود و خروج', iconName: 'calendar' })
-  }
-  if (smsClubLocked.value) {
-    items.push({ key: 'sms_club', label: 'باشگاه مشتریان', iconName: 'users3' })
   }
   items.push({ key: 'accounting', label: 'حسابداری', iconName: 'graph', soon: true })
   return items

@@ -274,6 +274,13 @@ const normalizeAiConfidence = (value) => {
   if (!Number.isFinite(numericValue)) return null
   return Math.round(Math.min(999.99, Math.max(0, numericValue)) * 100) / 100
 }
+const isAnonymousVisit = (data = {}) => {
+  if (Boolean(data.isPieceWash || data.is_piece_wash)) return false
+  const model = String(data.model || data.car_model || '').trim()
+  const color = String(data.color || data.car_color || '').trim()
+  const plateNumber = String(data.plate || data.plate_number || '').trim()
+  return Boolean(data.isAnonymous || data.is_anonymous) || (model === '1111' && color === '1111') || plateNumber === '1111'
+}
 const OCR_LETTER_CONFUSIONS = {
   ب: ['ب', 'س', 'ص'],
   س: ['س', 'ب', 'ص'],
@@ -291,7 +298,7 @@ const OCR_LETTER_CONFUSIONS = {
   ع: ['ع', 'غ'],
   غ: ['غ', 'ع']
 }
-const showAiPanel = computed(() => !isMobileViewport.value || !isAiPanelCollapsed.value)
+const showAiPanel = computed(() => !props.vehicleInfo?.hideAiPanel && (!isMobileViewport.value || !isAiPanelCollapsed.value))
 const availableTariffTypeOptions = computed(() => (
   form.plateType === 'motorcycle' ? motorcycleTariffTypeOptions : carTariffTypeOptions
 ))
@@ -345,7 +352,7 @@ const hydrateForm = (data = {}) => {
   form.note = String(data.note || data.notes || '')
   form.tariffType = String(data.tariffType || data.tariff_type || 'type_1').trim() || 'type_1'
   form.plateType = plateType
-  form.isAnonymous = Boolean(data.isAnonymous)
+  form.isAnonymous = isAnonymousVisit(data)
   form.isPieceWash = Boolean(data.isPieceWash || data.is_piece_wash)
   detectedPlateSnapshot.value = {
     left: String(data.detectedPlateLeft || '').trim(),

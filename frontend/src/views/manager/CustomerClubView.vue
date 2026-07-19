@@ -1263,7 +1263,7 @@ const highlightGroup = (groupId) => {
 
 const openAdvancedPlan = () => {
   if (!canAccessAdvancedSmsClub.value) {
-    notifyWarning('آپشن پیامک پیشرفته فقط برای بخش پیشرفته باشگاه مشتریان است.', { title: 'آپشن فعال نیست' })
+    notifyWarning('پنل پیشرفته باشگاه مشتریان باید از کیف پول خریداری شود.', { title: 'پنل پیشرفته فعال نیست' })
     activePlan.value = 'simple'
     return
   }

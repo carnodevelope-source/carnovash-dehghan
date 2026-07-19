@@ -19,6 +19,7 @@ from apps.services.models import (
     normalize_vehicle_released_sms_template,
 )
 from apps.vehicles.models import VehicleEntry
+from apps.vehicles.loyalty import next_fixed_discount_notice
 
 
 PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹'
@@ -476,6 +477,8 @@ def build_vehicle_released_sms(
     released_at = released_at or getattr(vehicle, 'released_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
     plate_label = format_plate_for_sms(vehicle)
     next_discount_label = f"{to_persian_digits(str(round(float(next_discount_percent or 0), 2)).replace('.0', ''))}٪"
+    fixed_discount_notice = next_fixed_discount_notice(settings_obj, visit_count)
+    next_discount_sms_value = to_persian_digits(fixed_discount_notice.get('text')) if fixed_discount_notice else next_discount_label
     driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
     context = {
         '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
@@ -487,10 +490,12 @@ def build_vehicle_released_sms(
         '[ساعت ترخیص]': format_local_time(released_at),
         '[تاریخ ترخیص]': format_jalali_date(released_at),
         '[امتیاز مشتری]': to_persian_digits(str(round(float(customer_score or 0), 1)).replace('.0', '')),
-        '[درصد تخفیف سفارش بعد]': next_discount_label,
-        '[درصد تخفیف مراجعه بعد]': next_discount_label,
+        '[درصد تخفیف سفارش بعد]': next_discount_sms_value,
+        '[درصد تخفیف مراجعه بعد]': next_discount_sms_value,
         '[درصد تخفیف امتیاز مشتری]': next_discount_label,
         '[تعداد مراجعات]': to_persian_digits(str(int(visit_count or 0))),
+        '[تعداد مراجعه مانده تا تخفیف]': to_persian_digits(str(fixed_discount_notice.get('remaining_visits', 0))) if fixed_discount_notice else '۰',
+        '[درصد تخفیف هدف]': f"{to_persian_digits(str(round(float(fixed_discount_notice.get('discount_percent', 0)), 2)).replace('.0', ''))}٪" if fixed_discount_notice else next_discount_label,
         '[انعام]': format_toman(tip_amount),
         '[جمع تخفیف]': format_toman(discount_total),
         '[تخفیف مجموعه]': format_toman(facility_discount_total),

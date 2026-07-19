@@ -57,7 +57,6 @@ const router = createRouter({
 
 const licenseSafeRoutes = new Set(['manager-wallet', 'support', 'login', 'hq-panel'])
 const paidFeatureRoutes = {
-  '/manager/customer-club': 'sms_club',
   '/manager/attendance': 'attendance'
 }
 

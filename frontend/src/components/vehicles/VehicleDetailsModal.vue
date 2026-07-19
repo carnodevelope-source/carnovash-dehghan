@@ -114,28 +114,11 @@
         <section v-if="showActions" class="vehicle-details-card vehicle-details-full">
           <div class="vehicle-details-actions">
             <button
-              v-if="!vehicle.is_piece_wash"
               type="button"
               class="vehicle-details-secondary-btn"
-              @click="$emit('edit-plate')"
+              @click="$emit('edit-vehicle')"
             >
-              ویرایش پلاک
-            </button>
-            <button
-              v-if="vehicle.job"
-              type="button"
-              class="vehicle-details-secondary-btn"
-              @click="$emit('edit-workers')"
-            >
-              ویرایش نیرو
-            </button>
-            <button
-              v-if="vehicle.job"
-              type="button"
-              class="vehicle-details-secondary-btn"
-              @click="$emit('edit-tip')"
-            >
-              ویرایش انعام
+              ویرایش اطلاعات مراجعه
             </button>
             <button
               v-if="vehicle.status !== 'released' && !vehicle.is_plate_blocked"
@@ -180,7 +163,7 @@ defineProps({
   showActions: { type: Boolean, default: true }
 })
 
-defineEmits(['close', 'cancel', 'block-plate', 'edit-plate', 'edit-workers', 'edit-tip'])
+defineEmits(['close', 'cancel', 'block-plate', 'edit-vehicle'])
 
 const formatStatus = (value) => ({
   entered: 'وارد شده',

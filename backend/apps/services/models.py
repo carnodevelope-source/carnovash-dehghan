@@ -331,6 +331,10 @@ class ServiceChangeLog(TimestampedModel):
 
 
 class GeneralSettings(TimestampedModel):
+    class DiscountCalculationMode(models.TextChoices):
+        STEP = 'step', 'Step'
+        FIXED = 'fixed', 'Fixed'
+
     tenant = models.OneToOneField(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,
@@ -338,7 +342,13 @@ class GeneralSettings(TimestampedModel):
         null=True,
         blank=True,
     )
+    discount_calculation_mode = models.CharField(
+        max_length=20,
+        choices=DiscountCalculationMode.choices,
+        default=DiscountCalculationMode.STEP,
+    )
     discount_percent_per_half_star = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    fixed_visit_discounts = models.JSONField(default=dict, blank=True)
     tax_enabled = models.BooleanField(default=False)
     tax_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     preferred_bank_name = models.CharField(max_length=120, blank=True)

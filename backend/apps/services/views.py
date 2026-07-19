@@ -157,6 +157,8 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
             tenant=self.request.user.tenant,
             defaults={
                 'discount_percent_per_half_star': 0,
+                'discount_calculation_mode': GeneralSettings.DiscountCalculationMode.STEP,
+                'fixed_visit_discounts': {'2': 0, '5': 0, '10': 0},
                 'tax_enabled': False,
                 'tax_percent': 0,
                 'preferred_bank_name': '',

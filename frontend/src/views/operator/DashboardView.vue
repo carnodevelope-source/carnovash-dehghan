@@ -152,6 +152,7 @@
           v-else
           :vehicle-info="vehicleDraft"
           :submitting="stepSubmitting"
+          :submit-label="stepTwoSubmitLabel"
           @back="modalStep = 1"
           @close="closeVehicleModal"
           @assign="handleStepTwoAssign"
@@ -166,9 +167,7 @@
       @close="closeVehicleDetails"
       @cancel="cancelVehicle"
       @block-plate="blockSelectedVehiclePlate"
-      @edit-plate="openPlateEditModal"
-      @edit-workers="editSelectedVehicleWorkers"
-      @edit-tip="editSelectedVehicleTip"
+      @edit-vehicle="editSelectedVehicleVisit"
     />
     <div v-if="showPlateEditModal" class="modal-overlay plate-edit-overlay" @click.self="closePlateEditModal">
       <section class="modal-panel plate-edit-panel">
@@ -935,6 +934,7 @@ const invoicePdfUrl = ref('')
 const invoiceErrorMessage = ref('')
 const modalStep = ref(1)
 const vehicleDraft = ref(null)
+const vehicleEditFlow = ref('')
 const releaseCandidate = ref(null)
 const plateEditForm = ref({
   id: null,
@@ -1013,9 +1013,15 @@ const hasOperatorModalOpen = computed(() => (
   || showReleaseWorkerEditor.value
   || showDateRangeModal.value
 ))
+const stepTwoSubmitLabel = computed(() => {
+  if (vehicleEditFlow.value === 'released') return 'ادامه'
+  if (vehicleEditFlow.value) return 'ثبت'
+  return 'تایید و تخصیص کار'
+})
 
 const openVehicleModal = () => {
   modalStep.value = 1
+  vehicleEditFlow.value = ''
   vehicleDraft.value = {
     smsNotificationsEnabled: vehicleAutoSmsEnabled.value,
     smsAutoSendEnabled: vehicleAutoSmsEnabled.value
@@ -1028,6 +1034,7 @@ const closeVehicleModal = (options = {}) => {
   showVehicleModal.value = false
   modalStep.value = 1
   vehicleDraft.value = null
+  vehicleEditFlow.value = ''
 }
 const openVehicleDetails = async (vehicleId) => {
   try {
@@ -1041,6 +1048,24 @@ const openVehicleDetails = async (vehicleId) => {
 }
 const closeVehicleDetails = () => {
   showVehicleDetailsModal.value = false
+}
+const editSelectedVehicleVisit = async () => {
+  if (!selectedVehicle.value?.id) return
+  try {
+    const { data } = await api.get(`/vehicles/${selectedVehicle.value.id}/`)
+    vehicleStore.selectedVehicle = data
+    vehicleDraft.value = {
+      ...mapVehicleToDraft(data),
+      hideAiPanel: true
+    }
+    vehicleEditFlow.value = data.status === 'released' ? 'released' : 'active'
+    modalStep.value = 1
+    showVehicleDetailsModal.value = false
+    showVehicleModal.value = true
+  } catch (error) {
+    console.error('editSelectedVehicleVisit error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'بارگذاری اطلاعات ویرایش ناموفق بود.'), { title: 'ویرایش مراجعه' })
+  }
 }
 const emptyPlateEditForm = () => ({
   id: null,
@@ -1395,8 +1420,16 @@ const releaseVehiclePlateLabel = computed(() => {
   if (rawPlate) return rawPlate
   return buildPlateNumber(resolvePlateParts(source))
 })
+const isAnonymousVisitFromDatabase = (source = {}) => {
+  if (Boolean(source.is_piece_wash || source.isPieceWash)) return false
+  const model = String(source.car_model || source.model || '').trim()
+  const color = String(source.car_color || source.color || '').trim()
+  const plateNumber = String(source.plate_number || source.plate || '').trim()
+  return Boolean(source.is_anonymous || source.isAnonymous) || isAnonymousPlate(source) || (model === '1111' && color === '1111') || (plateNumber === '1111')
+}
 const mapVehicleToDraft = (source = {}) => ({
   id: source.id,
+  status: source.status,
   plate: source.plate_number,
   plate_left: source.plate_left,
   plate_letter: source.plate_letter,
@@ -1416,14 +1449,29 @@ const mapVehicleToDraft = (source = {}) => ({
   customerLoyaltyDiscountPercent: Number(source.customer_loyalty_discount_percent || source.customerLoyaltyDiscountPercent || 0),
   applyLoyaltyDiscount: source.job?.apply_loyalty_discount !== false,
   apply_loyalty_discount: source.job?.apply_loyalty_discount !== false,
+  manualDiscountTotal: Number(source.job?.manual_discount_total || 0),
+  manual_discount_total: Number(source.job?.manual_discount_total || 0),
   note: source.notes,
   tariffType: source.tariff_type || source.tariffType || 'type_1',
   isPieceWash: Boolean(source.is_piece_wash),
   pieceDetails: source.piece_details || '',
   pieceWashPrice: Number(source.job?.services_total || 0),
-  isAnonymous: isAnonymousPlate(source),
+  isAnonymous: isAnonymousVisitFromDatabase(source),
   is_plate_blocked: Boolean(source.is_plate_blocked),
-  serviceIds: Array.isArray(source.job?.service_lines) ? source.job.service_lines.map((s) => s.service) : [],
+  serviceIds: Array.isArray(source.job?.service_lines) ? source.job.service_lines.map((s) => s.service).filter(Boolean) : [],
+  services: Array.isArray(source.job?.service_lines)
+    ? source.job.service_lines.map((line) => ({
+      id: line.service,
+      service_id: line.service,
+      title: line.service_name,
+      name: line.service_name,
+      price: Number(line.line_total || line.unit_price || 0),
+      base_price: Number(line.line_total || line.unit_price || 0),
+      list_price: Number(line.list_unit_price || line.line_total || line.unit_price || 0),
+      adjusted_price: Number(line.line_total || line.unit_price || 0),
+      discount_amount: Number(line.discount_amount || 0)
+    }))
+    : [],
   staffId: source.job?.assigned_worker || null,
   staffMembers: Array.isArray(source.job?.assigned_workers_snapshot)
     ? source.job.assigned_workers_snapshot
@@ -2834,6 +2882,16 @@ const handleStepOneContinue = async (payload) => {
       smsNotificationsEnabled: payload?.smsNotificationsEnabled ?? payload?.sms_notifications_enabled ?? vehicleAutoSmsEnabled.value,
       smsAutoSendEnabled: vehicleAutoSmsEnabled.value
     }
+    if (vehicleEditFlow.value) {
+      const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || 'ready_to_settle'
+      const savedVehicle = await saveVehicle({ vehicle: { ...payloadWithSmsDefault, id: vehicleDraft.value?.id } }, currentStatus)
+      vehicleDraft.value = {
+        ...mapVehicleToDraft(savedVehicle),
+        hideAiPanel: true
+      }
+      modalStep.value = 2
+      return
+    }
     const plateStatus = await fetchPlateBlockedStatus(payload)
     if (plateStatus.is_blocked) {
       vehicleDraft.value = { ...payloadWithSmsDefault, is_plate_blocked: true }
@@ -3019,6 +3077,27 @@ const handleStepTwoAssign = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
   try {
+    if (vehicleEditFlow.value) {
+      const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || 'ready_to_settle'
+      const savedVehicle = await saveVehicle(payload, currentStatus)
+      await refreshVehicleBoard()
+      if (vehicleEditFlow.value === 'released') {
+        closeVehicleModal({ force: true })
+        await openReleaseModal({
+          ...savedVehicle,
+          statusKey: savedVehicle.status,
+          plateDisplay: savedVehicle.plate_number,
+          plateLeft: savedVehicle.plate_left,
+          plateLetter: savedVehicle.plate_letter,
+          plateMid: savedVehicle.plate_mid,
+          plateRight: savedVehicle.plate_right,
+          plateType: savedVehicle.plate_type
+        })
+      } else {
+        closeVehicleModal({ force: true })
+      }
+      return
+    }
     await saveVehicle(payload, 'ready_to_settle')
     await refreshVehicleBoard()
     closeVehicleModal({ force: true })

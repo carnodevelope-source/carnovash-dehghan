@@ -19,7 +19,7 @@ from apps.inventory.models import InventoryItem, StockMovement
 from apps.notifications.services import send_vehicle_event_sms
 from .loyalty import (
     apply_loyalty_visit,
-    compute_loyalty_discount,
+    compute_configured_loyalty_discount,
     get_or_create_plate_loyalty,
     loyalty_snapshot,
     rebuild_customer_score,
@@ -331,10 +331,13 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
     def get_customer_loyalty_discount_percent(self, obj):
         loyalty = loyalty_snapshot(self._plate_loyalty(obj))
-        discount_percent, _discount_amount = compute_loyalty_discount(
+        settings_obj = self._general_settings(getattr(obj, 'tenant', None))
+        discount_percent, _discount_amount = compute_configured_loyalty_discount(
             base_amount=0,
+            profile=self._plate_loyalty(obj),
+            settings_obj=settings_obj,
+            visit_count=loyalty.get('visit_count', 0),
             score=loyalty.get('score', 0),
-            percent_per_half_star=self._discount_percent_per_half_star(getattr(obj, 'tenant', None)),
         )
         return float(discount_percent or 0)
 
@@ -429,6 +432,9 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
         return Decimal(str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0))
 
+    def _general_settings(self, tenant):
+        return GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+
     def _tax_percent(self, tenant):
         settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
         if not getattr(settings_obj, 'tax_enabled', False):
@@ -454,6 +460,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         tip_amount,
         loyalty_score,
         discount_percent_per_half_star,
+        loyalty_profile=None,
+        settings_obj=None,
         apply_loyalty_discount=True,
         tax_percent=Decimal('0'),
     ):
@@ -476,10 +484,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             facility_discount_total += max(Decimal('0'), list_line_total - line_total)
 
         if apply_loyalty_discount:
-            loyalty_discount_percent, loyalty_discount_total = compute_loyalty_discount(
+            loyalty_discount_percent, loyalty_discount_total = compute_configured_loyalty_discount(
                 base_amount=service_list_subtotal,
+                profile=loyalty_profile,
+                settings_obj=settings_obj,
                 score=loyalty_score,
-                percent_per_half_star=discount_percent_per_half_star,
             )
         else:
             loyalty_discount_percent, loyalty_discount_total = Decimal('0'), Decimal('0')
@@ -563,7 +572,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if requested_status == VehicleEntry.Status.RELEASED and not validated_data.get('released_at'):
             validated_data['released_at'] = timezone.now()
         vehicle_entry = VehicleEntry.objects.create(customer=customer, tenant=tenant, **validated_data)
-        discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
+        settings_obj = self._general_settings(tenant)
+        discount_percent_per_half_star = Decimal(str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0))
         loyalty_profile = None
         if not vehicle_entry.is_piece_wash:
             loyalty_profile = get_or_create_plate_loyalty(
@@ -652,6 +662,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             tip_amount=max(Decimal('0'), tip_amount),
             loyalty_score=getattr(loyalty_profile, 'score', Decimal('0')),
             discount_percent_per_half_star=discount_percent_per_half_star,
+            loyalty_profile=loyalty_profile,
+            settings_obj=settings_obj,
             apply_loyalty_discount=apply_loyalty_discount,
             tax_percent=self._tax_percent(tenant),
         )
@@ -976,7 +988,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             else Decimal(str(vehicle_job.tip_amount or 0))
         )
         loyalty_profile = None if instance.is_piece_wash else self._plate_loyalty(instance)
-        discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
+        settings_obj = self._general_settings(tenant)
+        discount_percent_per_half_star = Decimal(str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0))
         financials = self._compute_job_financials(
             service_lines=[
                 {
@@ -992,6 +1005,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             tip_amount=tip_amount,
             loyalty_score=getattr(loyalty_profile, 'score', Decimal('0')),
             discount_percent_per_half_star=discount_percent_per_half_star,
+            loyalty_profile=loyalty_profile,
+            settings_obj=settings_obj,
             apply_loyalty_discount=apply_loyalty_discount,
             tax_percent=self._tax_percent(tenant),
         )

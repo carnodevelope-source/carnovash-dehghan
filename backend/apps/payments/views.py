@@ -52,7 +52,7 @@ FEATURE_OPTION_CATALOG = {
         'accent': '#0f766e',
     },
     CarWashFeaturePurchase.FeatureKey.SMS_CLUB: {
-        'title': 'پنل پیامک پیشرفته',
+        'title': 'پنل باشگاه مشتریان پیشرفته',
         'subtitle': 'باشگاه مشتریان و پیامک حرفه‌ای',
         'description': 'پنل پیشرفته باشگاه مشتریان، قالب‌ها و امکانات پیامکی توسعه‌یافته.',
         'base_price': Decimal('3000000'),

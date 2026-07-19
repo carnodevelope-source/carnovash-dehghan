@@ -9,6 +9,7 @@ from .models import PlateLoyaltyProfile
 HALF_STAR = Decimal('0.5')
 MAX_STARS = Decimal('5.0')
 CYCLE_VISIT_LIMIT = 10
+FIXED_VISIT_MILESTONES = (2, 5, 10)
 
 
 def money(value):
@@ -231,6 +232,69 @@ def compute_loyalty_discount(base_amount, score, percent_per_half_star):
     discount_percent = Decimal(str(percent_per_half_star or 0)) * half_stars
     discount_amount = money((Decimal(str(base_amount or 0)) * discount_percent) / Decimal('100'))
     return discount_percent, discount_amount
+
+
+def normalize_fixed_visit_discounts(raw_value):
+    source = raw_value if isinstance(raw_value, dict) else {}
+    normalized = {}
+    for visit_number in FIXED_VISIT_MILESTONES:
+        value = source.get(str(visit_number), source.get(visit_number, 0))
+        try:
+            percent = Decimal(str(value or 0))
+        except Exception:
+            percent = Decimal('0')
+        if percent < 0:
+            percent = Decimal('0')
+        if percent > 100:
+            percent = Decimal('100')
+        normalized[str(visit_number)] = float(percent)
+    return normalized
+
+
+def loyalty_discount_mode(settings_obj):
+    mode = str(getattr(settings_obj, 'discount_calculation_mode', '') or '').strip().lower()
+    return 'fixed' if mode == 'fixed' else 'step'
+
+
+def compute_configured_loyalty_discount(base_amount, profile, settings_obj, *, visit_count=None, score=None):
+    mode = loyalty_discount_mode(settings_obj)
+    normalized_base = Decimal(str(base_amount or 0))
+    if mode == 'fixed':
+        current_visit = int(visit_count if visit_count is not None else getattr(profile, 'visit_count', 0) or 0)
+        fixed_discounts = normalize_fixed_visit_discounts(getattr(settings_obj, 'fixed_visit_discounts', {}))
+        discount_percent = Decimal(str(fixed_discounts.get(str(current_visit), 0) or 0))
+        discount_amount = money((normalized_base * discount_percent) / Decimal('100'))
+        return discount_percent, discount_amount
+
+    return compute_loyalty_discount(
+        base_amount=normalized_base,
+        score=score if score is not None else getattr(profile, 'score', 0),
+        percent_per_half_star=getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0,
+    )
+
+
+def next_fixed_discount_notice(settings_obj, visit_count):
+    if loyalty_discount_mode(settings_obj) != 'fixed':
+        return ''
+    fixed_discounts = normalize_fixed_visit_discounts(getattr(settings_obj, 'fixed_visit_discounts', {}))
+    current_visit = int(visit_count or 0)
+    for visit_number in FIXED_VISIT_MILESTONES:
+        percent = Decimal(str(fixed_discounts.get(str(visit_number), 0) or 0))
+        if percent <= 0 or visit_number <= current_visit:
+            continue
+        remaining = visit_number - current_visit
+        return {
+            'remaining_visits': remaining,
+            'target_visit': visit_number,
+            'discount_percent': float(percent),
+            'text': f'{remaining} مراجعه مانده تا تخفیف {float(percent):g}٪',
+        }
+    return {
+        'remaining_visits': 0,
+        'target_visit': 0,
+        'discount_percent': 0,
+        'text': 'تخفیف ثابتی برای مراجعات بعدی ثبت نشده است.',
+    }
 
 
 def loyalty_snapshot(profile):

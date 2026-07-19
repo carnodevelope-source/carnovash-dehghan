@@ -361,7 +361,7 @@
           <div class="summary-foot-actions">
             <button type="button" class="secondary-foot-btn" @click="emit('back')">بازگشت</button>
             <button type="button" class="primary-btn" :disabled="!canAssign || submitting || actionLocked" @click="onAssign">
-              تایید و تخصیص کار
+              {{ submitLabel }}
             </button>
           </div>
         </footer>
@@ -380,7 +380,8 @@ import { resolvePlateParts } from '../../utils/plate'
 
 const props = defineProps({
   vehicleInfo: { type: Object, default: () => ({}) },
-  submitting: { type: Boolean, default: false }
+  submitting: { type: Boolean, default: false },
+  submitLabel: { type: String, default: 'تایید و تخصیص کار' }
 })
 
 const emit = defineEmits(['back', 'assign', 'close'])
@@ -446,6 +447,9 @@ const normalizedVehicle = computed(() => {
     model: String(data.model || data.car_model || '').trim(),
     color: String(data.color || data.car_color || '').trim(),
     driver: String(data.driver || data.driver_name || '').trim(),
+    driverGender: ['male', 'female'].includes(String(data.driverGender || data.driver_gender || '').trim())
+      ? String(data.driverGender || data.driver_gender).trim()
+      : '',
     mobile: String(data.mobile || data.driver_phone || '').trim(),
     smsNotificationsEnabled: data.smsNotificationsEnabled ?? data.sms_notifications_enabled ?? true,
     smsAutoSendEnabled: (
@@ -471,6 +475,8 @@ const normalizedVehicle = computed(() => {
     aiConfidence: data.aiConfidence ?? null,
     aiLatencyMs: data.aiLatencyMs ?? null,
     serviceIds: Array.isArray(data.serviceIds) ? data.serviceIds.map((id) => Number(id)) : [],
+    services: Array.isArray(data.services) ? data.services : [],
+    manualDiscountTotal: Number(data.manualDiscountTotal ?? data.manual_discount_total ?? 0),
     staffMembers: Array.isArray(data.staffMembers || data.staff_members)
       ? (data.staffMembers || data.staff_members)
         .map((item) => ({
@@ -815,6 +821,7 @@ const buildPayload = () => {
       model: vehicle.model,
       color: vehicle.color,
       driver: vehicle.driver,
+      driverGender: vehicle.driverGender,
       mobile: vehicle.mobile,
       smsNotificationsEnabled: normalizedVehicle.value.smsAutoSendEnabled !== false && smsNotificationsEnabled.value,
       note: vehicle.note,
@@ -987,7 +994,16 @@ const hydrateFromVehicleInfo = () => {
   }
   selectedServiceIds.value = [...new Set(vehicle.serviceIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id)))]
   tempSelectedServiceIds.value = [...selectedServiceIds.value]
-  servicePriceAdjustments.value = {}
+  const existingServices = Array.isArray(vehicle.services) ? vehicle.services : []
+  servicePriceAdjustments.value = existingServices.reduce((accumulator, item) => {
+    const serviceId = Number(item?.id || item?.service_id || 0)
+    if (!serviceId) return accumulator
+    const listPrice = Number(item?.list_price || item?.base_price || 0)
+    const finalPrice = Number(item?.adjusted_price ?? item?.price ?? item?.base_price ?? 0)
+    accumulator[serviceId] = Number((finalPrice - listPrice).toFixed(2))
+    return accumulator
+  }, {})
+  manualDiscountTotal.value = Math.max(0, Number(vehicle.manualDiscountTotal || 0))
   selectedWorkerIds.value = [...new Set((vehicle.staffIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
   blockedPlatePaymentConfirmed.value = false
   smsNotificationsEnabled.value = vehicle.smsAutoSendEnabled !== false && vehicle.smsNotificationsEnabled !== false

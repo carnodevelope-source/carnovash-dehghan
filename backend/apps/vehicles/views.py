@@ -18,8 +18,10 @@ from rest_framework.response import Response
 
 from .models import BlockedPlate, VehicleEntry, VehicleStatusLog
 from .loyalty import (
+    compute_configured_loyalty_discount,
     compute_loyalty_discount,
     get_or_create_plate_loyalty,
+    next_fixed_discount_notice,
     loyalty_snapshot,
     rebuild_customer_score,
     rebuild_plate_loyalty,
@@ -461,10 +463,20 @@ class VehiclePlateLookupView(APIView):
             plate_right=latest_vehicle.plate_right,
         ))
         settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
-        discount_percent, _discount_amount = compute_loyalty_discount(
+        loyalty_profile = get_or_create_plate_loyalty(
+            tenant=tenant,
+            plate_number=latest_vehicle.plate_number,
+            plate_left=latest_vehicle.plate_left,
+            plate_letter=latest_vehicle.plate_letter,
+            plate_mid=latest_vehicle.plate_mid,
+            plate_right=latest_vehicle.plate_right,
+        )
+        discount_percent, _discount_amount = compute_configured_loyalty_discount(
             base_amount=0,
+            profile=loyalty_profile,
+            settings_obj=settings_obj,
+            visit_count=int(loyalty.get('visit_count', 0) or 0) + 1,
             score=loyalty.get('score', 0),
-            percent_per_half_star=getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0,
         )
         return Response(
             {
@@ -484,6 +496,8 @@ class VehiclePlateLookupView(APIView):
                 'customer_score': loyalty.get('score', 0),
                 'customer_loyalty_visit_count': loyalty.get('visit_count', 0),
                 'customer_loyalty_discount_percent': float(discount_percent or 0),
+                'discount_calculation_mode': getattr(settings_obj, 'discount_calculation_mode', 'step') if settings_obj else 'step',
+                'fixed_discount_notice': next_fixed_discount_notice(settings_obj, loyalty.get('visit_count', 0)),
             },
             status=status.HTTP_200_OK,
         )
@@ -644,6 +658,14 @@ class VehicleReleaseCheckoutView(APIView):
             base_amount=base_amount,
             score=customer_score,
             percent_per_half_star=percent_per_half_star,
+        )
+        return self._clamp_percent(discount_percent), self._money(discount_amount)
+
+    def _compute_configured_discount(self, base_amount, loyalty_profile, settings_obj):
+        discount_percent, discount_amount = compute_configured_loyalty_discount(
+            base_amount=base_amount,
+            profile=loyalty_profile,
+            settings_obj=settings_obj,
         )
         return self._clamp_percent(discount_percent), self._money(discount_amount)
 
@@ -1059,15 +1081,17 @@ class VehicleReleaseCheckoutView(APIView):
         )
         products_total = vehicle.job.products_total or Decimal('0')
         tip_amount = vehicle.job.tip_amount or Decimal('0')
-        loyalty = loyalty_snapshot(self._loyalty_profile(vehicle))
+        loyalty_profile = self._loyalty_profile(vehicle)
+        loyalty = loyalty_snapshot(loyalty_profile)
+        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
         manual_discount_total = vehicle.job.manual_discount_total or Decimal('0')
         customer_score = Decimal(str(loyalty.get('score', 0) or 0))
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
         if getattr(vehicle.job, 'apply_loyalty_discount', True):
-            customer_discount_percent, loyalty_discount_total = self._compute_discount(
+            customer_discount_percent, loyalty_discount_total = self._compute_configured_discount(
                 base_amount=service_list_subtotal,
-                customer_score=customer_score,
-                percent_per_half_star=discount_percent_per_half_star,
+                loyalty_profile=loyalty_profile,
+                settings_obj=settings_obj,
             )
         else:
             customer_discount_percent, loyalty_discount_total = Decimal('0'), Decimal('0')
@@ -1123,7 +1147,9 @@ class VehicleReleaseCheckoutView(APIView):
                     'tariff_type': vehicle.tariff_type,
                     'customer_score': float(customer_score),
                     'customer_loyalty_visit_count': loyalty.get('visit_count', 0),
-                    'customer_loyalty_discount_percent': loyalty.get('discount_percent', 0),
+                    'customer_loyalty_discount_percent': float(customer_discount_percent or 0),
+                    'discount_calculation_mode': getattr(settings_obj, 'discount_calculation_mode', 'step') if settings_obj else 'step',
+                    'fixed_discount_notice': next_fixed_discount_notice(settings_obj, loyalty.get('visit_count', 0)),
                 },
                 'job': {
                     'id': vehicle.job.id,
@@ -1135,6 +1161,8 @@ class VehicleReleaseCheckoutView(APIView):
                     'services_total': services_total,
                     'products_total': products_total,
                     'discount_percent_per_half_star': float(discount_percent_per_half_star),
+                    'discount_calculation_mode': getattr(settings_obj, 'discount_calculation_mode', 'step') if settings_obj else 'step',
+                    'fixed_visit_discounts': getattr(settings_obj, 'fixed_visit_discounts', {}) if settings_obj else {},
                     'customer_discount_percent': float(customer_discount_percent),
                     'facility_discount_total': facility_discount_total,
                     'apply_loyalty_discount': getattr(vehicle.job, 'apply_loyalty_discount', True),
@@ -1179,9 +1207,8 @@ class VehicleReleaseCheckoutView(APIView):
             return Response({'detail': 'Vehicle not found.'}, status=status.HTTP_404_NOT_FOUND)
         if not getattr(vehicle, 'job', None):
             return Response({'detail': 'Vehicle job not found.'}, status=status.HTTP_400_BAD_REQUEST)
-        if vehicle.status == VehicleEntry.Status.RELEASED:
-            return Response({'detail': 'Vehicle already released.'}, status=status.HTTP_400_BAD_REQUEST)
         previous_status = vehicle.status
+        is_existing_release = previous_status == VehicleEntry.Status.RELEASED
 
         service_lines_payload = request.data.get('service_lines', [])
         new_service_lines_payload = request.data.get('new_service_lines', [])
@@ -1429,14 +1456,16 @@ class VehicleReleaseCheckoutView(APIView):
             Decimal('0'),
         )
         manual_discount_total = vehicle.job.manual_discount_total or Decimal('0')
-        loyalty = loyalty_snapshot(self._loyalty_profile(vehicle))
+        loyalty_profile = self._loyalty_profile(vehicle)
+        loyalty = loyalty_snapshot(loyalty_profile)
+        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
         customer_score = Decimal(str(loyalty.get('score', 0) or 0))
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
         if getattr(vehicle.job, 'apply_loyalty_discount', True):
-            customer_discount_percent, loyalty_discount_total = self._compute_discount(
+            customer_discount_percent, loyalty_discount_total = self._compute_configured_discount(
                 base_amount=completed_service_list_subtotal,
-                customer_score=customer_score,
-                percent_per_half_star=discount_percent_per_half_star,
+                loyalty_profile=loyalty_profile,
+                settings_obj=settings_obj,
             )
         else:
             customer_discount_percent, loyalty_discount_total = Decimal('0'), Decimal('0')
@@ -1583,6 +1612,8 @@ class VehicleReleaseCheckoutView(APIView):
         )
 
         for line in vehicle.job.product_lines.select_related('product').all():
+            if is_existing_release:
+                continue
             if line.quantity <= 0:
                 continue
             inventory_item, _created = InventoryItem.objects.select_for_update().get_or_create(
@@ -1622,30 +1653,39 @@ class VehicleReleaseCheckoutView(APIView):
             payment_record_status = Payment.Status.PENDING
             paid_at = None
 
-        Payment.objects.create(
-            tenant=tenant,
-            vehicle_entry=vehicle,
-            method=payment_method,
-            status=payment_record_status,
-            amount=final_total,
-            tip_amount=tip_amount,
-            service_amount=completed_service_totals,
-            product_amount=product_totals,
-            discount_amount=discount_total,
-            tax_amount=Decimal('0'),
-            gateway_payload={'payment_breakdown': normalized_payment_breakdown} if normalized_payment_breakdown else {},
-            paid_at=paid_at,
-            payer_name=vehicle.driver_name or '',
-            payer_phone=vehicle.driver_phone or '',
-            cheque_number=cheque_number,
-            cheque_serial_number=cheque_serial_number,
-            cheque_sayadi_number=cheque_sayadi_number,
-            cheque_bank=cheque_bank,
-            cheque_shaba=cheque_shaba,
-            cheque_amount=cheque_amount if payment_method == Payment.Method.CHEQUE or manual_uses_cheque else Decimal('0'),
-            reminder_due_at=reminder_due_at,
-            created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
-        )
+        payment_defaults = {
+            'method': payment_method,
+            'status': payment_record_status,
+            'amount': final_total,
+            'tip_amount': tip_amount,
+            'service_amount': completed_service_totals,
+            'product_amount': product_totals,
+            'discount_amount': discount_total,
+            'tax_amount': Decimal('0'),
+            'gateway_payload': {'payment_breakdown': normalized_payment_breakdown} if normalized_payment_breakdown else {},
+            'paid_at': paid_at,
+            'payer_name': vehicle.driver_name or '',
+            'payer_phone': vehicle.driver_phone or '',
+            'cheque_number': cheque_number,
+            'cheque_serial_number': cheque_serial_number,
+            'cheque_sayadi_number': cheque_sayadi_number,
+            'cheque_bank': cheque_bank,
+            'cheque_shaba': cheque_shaba,
+            'cheque_amount': cheque_amount if payment_method == Payment.Method.CHEQUE or manual_uses_cheque else Decimal('0'),
+            'reminder_due_at': reminder_due_at,
+        }
+        latest_payment = vehicle.payments.order_by('-created_at', '-id').first() if is_existing_release else None
+        if latest_payment:
+            for field_name, field_value in payment_defaults.items():
+                setattr(latest_payment, field_name, field_value)
+            latest_payment.save(update_fields=[*payment_defaults.keys(), 'updated_at'])
+        else:
+            Payment.objects.create(
+                tenant=tenant,
+                vehicle_entry=vehicle,
+                created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                **payment_defaults,
+            )
 
         if payment_method == Payment.Method.CREDIT and vehicle.driver_phone:
             NotificationLog.objects.create(
@@ -1668,7 +1708,8 @@ class VehicleReleaseCheckoutView(APIView):
         vehicle.payment_method = payment_method
         vehicle.status = VehicleEntry.Status.RELEASED
         vehicle.sms_notifications_enabled = bool(sms_notifications_enabled)
-        vehicle.released_at = timezone.now()
+        if not vehicle.released_at:
+            vehicle.released_at = timezone.now()
         vehicle.save(update_fields=['status', 'payment_status', 'payment_method', 'sms_notifications_enabled', 'released_at', 'updated_at'])
 
         if normalized_adjustments:
@@ -1704,14 +1745,15 @@ class VehicleReleaseCheckoutView(APIView):
                         created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
                     )
 
-        VehicleStatusLog.objects.create(
-            tenant=vehicle.tenant,
-            vehicle=vehicle,
-            from_status=previous_status,
-            to_status=VehicleEntry.Status.RELEASED,
-            changed_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
-            note='ترخیص خودرو',
-        )
+        if previous_status != VehicleEntry.Status.RELEASED:
+            VehicleStatusLog.objects.create(
+                tenant=vehicle.tenant,
+                vehicle=vehicle,
+                from_status=previous_status,
+                to_status=VehicleEntry.Status.RELEASED,
+                changed_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                note='ترخیص خودرو',
+            )
 
         serializer = VehicleEntrySerializer(vehicle)
         send_vehicle_event_sms(

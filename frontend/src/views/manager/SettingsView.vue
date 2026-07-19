@@ -246,10 +246,28 @@
               <div class="general-settings-head">
                 <div>
                   <strong>تنظیمات تخفیف مشتری</strong>
-                  <p class="helper-text">مبنای تخفیف ستاره‌ای مشتری را از اینجا تنظیم کنید.</p>
+                  <p class="helper-text">امتیاز و ستاره‌دهی ثابت می‌ماند؛ فقط مدل محاسبه تخفیف سفارش از اینجا کنترل می‌شود.</p>
                 </div>
               </div>
-              <div class="discount-editor-grid">
+              <div class="discount-mode-tabs">
+                <button
+                  type="button"
+                  class="discount-mode-tab"
+                  :class="{ active: generalSettings.discount_calculation_mode === 'step' }"
+                  @click="generalSettings.discount_calculation_mode = 'step'"
+                >
+                  پلکانی
+                </button>
+                <button
+                  type="button"
+                  class="discount-mode-tab"
+                  :class="{ active: generalSettings.discount_calculation_mode === 'fixed' }"
+                  @click="generalSettings.discount_calculation_mode = 'fixed'"
+                >
+                  ثابت
+                </button>
+              </div>
+              <div v-if="generalSettings.discount_calculation_mode === 'step'" class="discount-editor-grid">
                 <label class="general-setting-label">
                   <span>درصد تخفیف به‌ازای هر نیم‌ستاره</span>
                   <input
@@ -263,7 +281,28 @@
                 <article class="discount-preview-card">
                   <small>پیش‌نمایش سریع</small>
                   <strong>{{ fullStarDiscountLabel }}</strong>
-                  <p>اگر مقدار هر نیم‌ستاره {{ generalSettings.discount_percent_per_half_star || 0 }}٪ باشد، هر یک ستاره کامل {{ fullStarDiscountLabel }} تخفیف می‌دهد.</p>
+                  <p>در حالت پلکانی، مقدار تخفیف از امتیاز ستاره‌ای پلاک و درصد هر نیم‌ستاره محاسبه می‌شود.</p>
+                </article>
+              </div>
+              <div v-else class="fixed-discount-grid">
+                <label
+                  v-for="item in fixedDiscountVisitItems"
+                  :key="item.key"
+                  class="general-setting-label fixed-discount-field"
+                >
+                  <span>{{ item.label }}</span>
+                  <input
+                    v-model.number="generalSettings.fixed_visit_discounts[item.key]"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                  />
+                </label>
+                <article class="discount-preview-card fixed-preview-card">
+                  <small>قوانین فعال</small>
+                  <strong>{{ fixedDiscountPreviewLabel }}</strong>
+                  <p>در مراجعه‌های ثبت‌شده، اگر شماره مراجعه پلاک با یکی از این ردیف‌ها برابر باشد همان درصد روی سفارش اعمال می‌شود.</p>
                 </article>
               </div>
             </section>
@@ -796,7 +835,9 @@ const expenses = ref([])
 const services = ref([])
 const inventoryItems = ref([])
 const generalSettings = reactive({
+  discount_calculation_mode: 'step',
   discount_percent_per_half_star: 0,
+  fixed_visit_discounts: { 2: 0, 5: 0, 10: 0 },
   tax_enabled: false,
   tax_percent: 0,
   preferred_bank_name: '',
@@ -828,6 +869,11 @@ const generalSettings = reactive({
   sms_vehicle_released_template: ''
 })
 const generalSettingsSaving = ref(false)
+const fixedDiscountVisitItems = [
+  { key: '2', label: 'مراجعه دوم' },
+  { key: '5', label: 'مراجعه پنجم' },
+  { key: '10', label: 'مراجعه دهم' }
+]
 
 const modal = reactive({ open: false, type: '', id: null, title: '' })
 const productHistoryModal = reactive({ open: false, loading: false, product: null, history: [] })
@@ -1019,6 +1065,17 @@ const filteredProducts = computed(() => productsWithStock.value.filter((i) => (`
 const filteredExpenses = computed(() => expenses.value.filter((i) => (`${i.title || ''} ${i.details || ''} ${i.source_label || ''}`).includes(search.value)))
 const filteredServices = computed(() => services.value.filter((i) => (`${i.name} ${i.description || ''}`).includes(search.value)))
 const fullStarDiscountLabel = computed(() => `${Number((Number(generalSettings.discount_percent_per_half_star || 0) * 2).toFixed(2)).toLocaleString('fa-IR')}٪`)
+const normalizeFixedVisitDiscounts = (value = {}) => {
+  const source = value && typeof value === 'object' ? value : {}
+  return fixedDiscountVisitItems.reduce((acc, item) => {
+    const numericValue = Math.max(0, Math.min(100, Number(source[item.key] ?? source[Number(item.key)] ?? 0) || 0))
+    acc[item.key] = Number(numericValue.toFixed(2))
+    return acc
+  }, {})
+}
+const fixedDiscountPreviewLabel = computed(() => fixedDiscountVisitItems
+  .map((item) => `${item.label}: ${Number(generalSettings.fixed_visit_discounts?.[item.key] || 0).toLocaleString('fa-IR')}٪`)
+  .join('، '))
 const expensesTotal = computed(() => filteredExpenses.value.reduce((sum, item) => sum + Number(item.amount || 0), 0))
 const smsTemplateTokens = [
   '[نام مشتری]',
@@ -1201,7 +1258,9 @@ const loadAll = async () => {
     inventoryItems.value = Array.isArray(inv.data) ? inv.data : []
     try {
       const gs = await api.get('/services/general-settings/')
+      generalSettings.discount_calculation_mode = gs.data?.discount_calculation_mode === 'fixed' ? 'fixed' : 'step'
       generalSettings.discount_percent_per_half_star = Number(gs.data?.discount_percent_per_half_star || 0)
+      generalSettings.fixed_visit_discounts = normalizeFixedVisitDiscounts(gs.data?.fixed_visit_discounts)
       generalSettings.tax_enabled = Boolean(gs.data?.tax_enabled)
       generalSettings.tax_percent = Number(gs.data?.tax_percent || 0)
       generalSettings.preferred_bank_name = gs.data?.preferred_bank_name || ''
@@ -1235,7 +1294,9 @@ const loadAll = async () => {
       generalSettings.sms_vehicle_assigned_invoice_template = ''
       generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(gs.data?.sms_vehicle_released_template || '')
     } catch {
+      generalSettings.discount_calculation_mode = 'step'
       generalSettings.discount_percent_per_half_star = 0
+      generalSettings.fixed_visit_discounts = normalizeFixedVisitDiscounts()
       generalSettings.tax_enabled = false
       generalSettings.tax_percent = 0
       generalSettings.preferred_bank_name = ''
@@ -1275,7 +1336,9 @@ const saveGeneralSettings = async () => {
   generalSettingsSaving.value = true
   try {
     const payload = {
+      discount_calculation_mode: generalSettings.discount_calculation_mode === 'fixed' ? 'fixed' : 'step',
       discount_percent_per_half_star: Number(generalSettings.discount_percent_per_half_star || 0),
+      fixed_visit_discounts: normalizeFixedVisitDiscounts(generalSettings.fixed_visit_discounts),
       tax_enabled: Boolean(generalSettings.tax_enabled),
       tax_percent: Number(generalSettings.tax_percent || 0),
       preferred_bank_name: generalSettings.preferred_bank_name || '',
@@ -1303,7 +1366,9 @@ const saveGeneralSettings = async () => {
       sms_vehicle_released_template: ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template || '')
     }
     const response = await api.patch('/services/general-settings/', payload)
+    generalSettings.discount_calculation_mode = response.data?.discount_calculation_mode === 'fixed' ? 'fixed' : 'step'
     generalSettings.discount_percent_per_half_star = Number(response.data?.discount_percent_per_half_star || 0)
+    generalSettings.fixed_visit_discounts = normalizeFixedVisitDiscounts(response.data?.fixed_visit_discounts)
     generalSettings.tax_enabled = Boolean(response.data?.tax_enabled)
     generalSettings.tax_percent = Number(response.data?.tax_percent || 0)
     generalSettings.preferred_bank_name = response.data?.preferred_bank_name || ''
@@ -1978,6 +2043,39 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   gap: 14px;
   align-items: stretch;
 }
+.discount-mode-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid #d8e6ee;
+  border-radius: 14px;
+  background: #f8fbff;
+  width: min(360px, 100%);
+}
+.discount-mode-tab {
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+.discount-mode-tab.active {
+  background: #0f766e;
+  color: #ffffff;
+}
+.fixed-discount-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(260px, .9fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.fixed-discount-field input {
+  direction: ltr;
+}
 .discount-preview-card {
   border-radius: 22px;
   padding: 18px;
@@ -1989,6 +2087,7 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .discount-preview-card small { font-size: 12px; opacity: .82; }
 .discount-preview-card strong { font-size: 28px; line-height: 1.2; }
 .discount-preview-card p { margin: 0; line-height: 1.9; font-size: 13px; color: rgba(255,255,255,.86); }
+.fixed-preview-card { background: linear-gradient(135deg, #0f4c81 0%, #0f766e 100%); }
 .payment-settings-card {
   background: linear-gradient(180deg, #f9fcff 0%, #f3f8fd 100%);
 }
@@ -2056,11 +2155,13 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .sms-template-card { grid-template-columns: 1fr; }
   .sms-preview-panel { min-height: 220px; }
   .discount-editor-grid,
+  .fixed-discount-grid,
   .settings-hero-stats,
   .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .settings-hero { display: none; }
   .template-title-row { align-items: flex-start; }
+  .fixed-discount-grid { grid-template-columns: 1fr; }
 }
 </style>

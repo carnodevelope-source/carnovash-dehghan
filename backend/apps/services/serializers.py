@@ -13,6 +13,7 @@ from .models import (
     normalize_vehicle_assigned_sms_template,
     normalize_vehicle_released_sms_template,
 )
+from apps.vehicles.loyalty import normalize_fixed_visit_discounts
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -158,6 +159,15 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('درصد تخفیف باید بین ۰ تا ۱۰۰ باشد.')
         return value
 
+    def validate_discount_calculation_mode(self, value):
+        normalized = str(value or GeneralSettings.DiscountCalculationMode.STEP).strip().lower()
+        if normalized not in {choice[0] for choice in GeneralSettings.DiscountCalculationMode.choices}:
+            raise serializers.ValidationError('شیوه محاسبه تخفیف معتبر نیست.')
+        return normalized
+
+    def validate_fixed_visit_discounts(self, value):
+        return normalize_fixed_visit_discounts(value)
+
     def validate_tax_percent(self, value):
         if value < Decimal('0') or value > Decimal('100'):
             raise serializers.ValidationError('درصد مالیات باید بین ۰ تا ۱۰۰ باشد.')
@@ -236,6 +246,8 @@ class GeneralSettingsSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'discount_percent_per_half_star',
+            'discount_calculation_mode',
+            'fixed_visit_discounts',
             'tax_enabled',
             'tax_percent',
             'preferred_bank_name',

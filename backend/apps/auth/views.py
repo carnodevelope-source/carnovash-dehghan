@@ -61,8 +61,8 @@ KARNO_FEATURE_KEYS = {
 
 HQ_FEATURE_META = {
     CarWashFeaturePurchase.FeatureKey.SMS_CLUB: {
-        'label': 'پنل پیامک پیشرفته',
-        'tab_label': 'پنل پیامک',
+        'label': 'پنل باشگاه مشتریان پیشرفته',
+        'tab_label': 'باشگاه پیشرفته',
         'description': 'درآمد و پرداخت‌های مربوط به باشگاه مشتریان و ارسال پیامک.',
     },
     CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT: {
