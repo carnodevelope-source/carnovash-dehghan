@@ -304,6 +304,38 @@ def normalize_assignment_sms_wording(template):
     return text
 
 
+def order_assignment_financial_lines(text):
+    lines = str(text or '').splitlines()
+    services_index = next((index for index, line in enumerate(lines) if '[خلاصه خدمات]' in line), -1)
+    if services_index < 0:
+        return '\n'.join(lines)
+
+    financial_lines = {'total': None, 'discount': None, 'final': None}
+    remaining = []
+    for line in lines:
+        if '[جمع کل]' in line or '[جمع نرخ نامه]' in line:
+            financial_lines['total'] = line
+        elif '[جمع تخفیف]' in line:
+            financial_lines['discount'] = line
+        elif '[مبلغ نهایی]' in line:
+            financial_lines['final'] = line
+        else:
+            remaining.append(line)
+
+    services_index = next((index for index, line in enumerate(remaining) if '[خلاصه خدمات]' in line), -1)
+    insert_at = services_index + 1
+    if insert_at < len(remaining) and remaining[insert_at].strip() == '---------------':
+        insert_at += 1
+
+    ordered_financials = [line for line in (
+        financial_lines['total'],
+        financial_lines['discount'],
+        financial_lines['final'],
+    ) if line]
+    remaining[insert_at:insert_at] = ordered_financials
+    return '\n'.join(remaining)
+
+
 def normalize_vehicle_assignment_sms_template(template):
     text = normalize_assignment_sms_wording(template).strip()
     if not text:
@@ -328,11 +360,11 @@ def normalize_vehicle_assignment_sms_template(template):
     if 'از اعتماد شما سپاسگزاریم' not in text:
         insertions.append('از اعتماد شما سپاسگزاریم')
     if not insertions:
-        return text
+        return order_assignment_financial_lines(text)
     anchor_index = next((index for index, line in enumerate(lines) if '[جمع کل]' in line or '[جمع نرخ نامه]' in line), -1)
     insert_at = anchor_index + 1 if anchor_index >= 0 else len(lines)
     lines[insert_at:insert_at] = insertions
-    return '\n'.join(lines)
+    return order_assignment_financial_lines('\n'.join(lines))
 
 
 def render_template_tokens(template_text, context):

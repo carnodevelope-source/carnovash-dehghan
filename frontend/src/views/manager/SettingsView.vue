@@ -1055,11 +1055,29 @@ const ensureReleasedSmsTemplateDetails = (template) => {
   const insertions = []
   if (!text.includes('[تعداد مراجعات]')) insertions.push('تعداد دفعات مراجعه: [تعداد مراجعات]')
   if (!text.includes('[انعام]')) insertions.push('انعام: [انعام]')
-  if (!insertions.length) return text
+  if (!insertions.length) return orderAssignedFinancialLines(lines.join('\n'))
   const anchorIndex = lines.findIndex((line) => line.includes('[درصد تخفیف مراجعه بعد]') || line.includes('[درصد تخفیف سفارش بعد]'))
   const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : Math.max(1, lines.length - 3)
   lines.splice(insertAt, 0, ...insertions)
   return lines.join('\n')
+}
+const orderAssignedFinancialLines = (template) => {
+  const lines = String(template || '').split('\n')
+  const servicesIndex = lines.findIndex((line) => line.includes('[خلاصه خدمات]'))
+  if (servicesIndex < 0) return lines.join('\n')
+  const financialLines = { total: null, discount: null, final: null }
+  const remaining = []
+  lines.forEach((line) => {
+    if (line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]')) financialLines.total = line
+    else if (line.includes('[جمع تخفیف]')) financialLines.discount = line
+    else if (line.includes('[مبلغ نهایی]')) financialLines.final = line
+    else remaining.push(line)
+  })
+  const nextServicesIndex = remaining.findIndex((line) => line.includes('[خلاصه خدمات]'))
+  let insertAt = nextServicesIndex + 1
+  if (remaining[insertAt]?.trim() === '---------------') insertAt += 1
+  remaining.splice(insertAt, 0, ...[financialLines.total, financialLines.discount, financialLines.final].filter(Boolean))
+  return remaining.join('\n')
 }
 const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true } = {}) => {
   const text = String(template || '')
@@ -1100,7 +1118,7 @@ const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true }
   const anchorIndex = lines.findIndex((line) => line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]'))
   const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : lines.length
   lines.splice(insertAt, 0, ...insertions)
-  return lines.join('\n')
+  return orderAssignedFinancialLines(lines.join('\n'))
 }
 
 const mergeAssignedSmsTemplate = (assignedTemplate, invoiceTemplate) => {

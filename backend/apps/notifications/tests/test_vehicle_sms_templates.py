@@ -108,6 +108,45 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('تخفیف این سفارش: ۱۰۰،۰۰۰ تومان', message)
         self.assertIn('مبلغ نهایی: ۳۰۰،۰۰۰ تومان', message)
 
+    def test_assignment_sms_moves_financial_lines_below_services(self):
+        tenant = SimpleNamespace(name='میلان')
+        job = SimpleNamespace(
+            final_total=265000,
+            services_total=265000,
+            service_list_subtotal=350000,
+            products_total=0,
+            total_discount=85000,
+            service_lines=[
+                SimpleNamespace(custom_service_name='شست‌وشوی کامل', list_unit_price=350000, line_total=265000),
+            ],
+        )
+        vehicle = SimpleNamespace(
+            admission_number=1000,
+            tenant=tenant,
+            job=job,
+            driver_name='علی رضایی',
+            plate_number='22 ب 345 67',
+            ready_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        settings_obj = SimpleNamespace(
+            sms_vehicle_assigned_template=(
+                '[نام مشتری]\n'
+                'جمع کل: [جمع کل]\n'
+                'تخفیف این سفارش: [جمع تخفیف]\n'
+                'مبلغ نهایی: [مبلغ نهایی]\n'
+                'خدمات:\n'
+                '[خلاصه خدمات]\n'
+            ),
+            sms_vehicle_assigned_invoice_template='',
+        )
+
+        message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
+
+        self.assertLess(message.index('خدمات:'), message.index('جمع کل: ۳۵۰،۰۰۰ تومان'))
+        self.assertLess(message.index('شست‌وشوی کامل'), message.index('تخفیف این سفارش: ۸۵،۰۰۰ تومان'))
+        self.assertLess(message.index('تخفیف این سفارش: ۸۵،۰۰۰ تومان'), message.index('مبلغ نهایی: ۲۶۵،۰۰۰ تومان'))
+
     def test_default_assignment_sms_is_single_admission_and_invoice_message(self):
         tenant = SimpleNamespace(name='میلان')
         job = SimpleNamespace(

@@ -39,6 +39,38 @@ DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
 )
 
 
+def order_assignment_financial_lines(text):
+    lines = str(text or '').splitlines()
+    services_index = next((index for index, line in enumerate(lines) if '[خلاصه خدمات]' in line), -1)
+    if services_index < 0:
+        return '\n'.join(lines)
+
+    financial_lines = {'total': None, 'discount': None, 'final': None}
+    remaining = []
+    for line in lines:
+        if '[جمع کل]' in line or '[جمع نرخ نامه]' in line:
+            financial_lines['total'] = line
+        elif '[جمع تخفیف]' in line:
+            financial_lines['discount'] = line
+        elif '[مبلغ نهایی]' in line:
+            financial_lines['final'] = line
+        else:
+            remaining.append(line)
+
+    services_index = next((index for index, line in enumerate(remaining) if '[خلاصه خدمات]' in line), -1)
+    insert_at = services_index + 1
+    if insert_at < len(remaining) and remaining[insert_at].strip() == '---------------':
+        insert_at += 1
+
+    ordered_financials = [line for line in (
+        financial_lines['total'],
+        financial_lines['discount'],
+        financial_lines['final'],
+    ) if line]
+    remaining[insert_at:insert_at] = ordered_financials
+    return '\n'.join(remaining)
+
+
 def normalize_vehicle_assigned_sms_template(template):
     text = str(template or '').strip()
     if not text:
@@ -86,7 +118,7 @@ def normalize_vehicle_assigned_sms_template(template):
     if insertions:
         lines.extend(insertions)
         text = '\n'.join(lines)
-    return text
+    return order_assignment_financial_lines(text)
 
 
 def normalize_vehicle_released_sms_template(template):
