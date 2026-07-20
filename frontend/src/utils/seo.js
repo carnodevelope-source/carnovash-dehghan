@@ -2,8 +2,8 @@ const SITE_URL = 'https://carnowash.ir'
 const SITE_NAME = 'CarnoWash'
 
 const DEFAULT_META = {
-  title: 'CarnoWash | سامانه مدیریت کارواش',
-  description: 'سامانه عملیاتی CarnoWash برای مدیریت پذیرش خودرو، خدمات، گزارش‌ها، کیف پول و ارتباط با مشتریان.',
+  title: 'کارنواش | کارنوواش | سامانه مدیریت کارواش',
+  description: 'کارنواش یا کارنوواش، سامانه مدیریت عملیات کارواش برای پذیرش خودرو، خدمات، گزارش‌ها، کیف پول و ارتباط با مشتریان.',
   robots: 'noindex, nofollow',
   canonicalPath: '/login'
 }
