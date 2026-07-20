@@ -40,7 +40,9 @@ def tenant_worker_count(tenant):
         return 0
     return WorkerProfile.objects.filter(
         tenant=tenant,
+        is_available=True,
         is_deleted=False,
+        user__is_active=True,
         user__is_deleted=False,
     ).count()
 
@@ -51,7 +53,9 @@ def free_attendance_worker_ids(tenant):
     return set(
         WorkerProfile.objects.filter(
             tenant=tenant,
+            is_available=True,
             is_deleted=False,
+            user__is_active=True,
             user__is_deleted=False,
         )
         .order_by('created_at', 'id')
@@ -62,6 +66,11 @@ def free_attendance_worker_ids(tenant):
 def worker_has_attendance_access(worker, purchased=None, allowed_ids=None):
     tenant = getattr(worker, 'tenant', None)
     if not tenant:
+        return False
+    if getattr(worker, 'is_available', False) is not True:
+        return False
+    user = getattr(worker, 'user', None)
+    if getattr(worker, 'is_deleted', False) or getattr(user, 'is_active', False) is not True or getattr(user, 'is_deleted', False):
         return False
     from apps.payments.views import locked_feature_statuses_for_tenant
     if CarWashFeaturePurchase.FeatureKey.ATTENDANCE in locked_feature_statuses_for_tenant(tenant):

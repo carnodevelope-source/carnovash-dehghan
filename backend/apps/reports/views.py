@@ -723,7 +723,13 @@ class ReportsDashboardView(APIView):
                 'created_at': payment.created_at,
             })
 
-        attendances = WorkerAttendance.objects.select_related('worker', 'worker__user').filter(tenant=tenant)
+        attendances = WorkerAttendance.objects.select_related('worker', 'worker__user').filter(
+            tenant=tenant,
+            worker__is_available=True,
+            worker__is_deleted=False,
+            worker__user__is_active=True,
+            worker__user__is_deleted=False,
+        )
         if start:
             attendances = attendances.filter(event_at__gte=start)
         if end:

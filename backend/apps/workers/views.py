@@ -307,12 +307,20 @@ class AttendanceDashboardView(APIView):
         start, end, now = _today_bounds()
         workers = list(
             WorkerProfile.objects.select_related('user')
-            .filter(tenant=tenant, is_deleted=False, user__is_deleted=False)
+            .filter(tenant=tenant, is_available=True, is_deleted=False, user__is_active=True, user__is_deleted=False)
             .order_by('user__full_name', 'user__username')
         )
         events = list(
             WorkerAttendance.objects.select_related('worker', 'worker__user')
-            .filter(tenant=tenant, event_at__gte=start, event_at__lte=end)
+            .filter(
+                tenant=tenant,
+                event_at__gte=start,
+                event_at__lte=end,
+                worker__is_available=True,
+                worker__is_deleted=False,
+                worker__user__is_active=True,
+                worker__user__is_deleted=False,
+            )
             .order_by('event_at', 'id')
         )
 
@@ -346,16 +354,34 @@ class AttendanceDashboardView(APIView):
                     event_type=WorkerAttendance.EventType.IN,
                     event_at__gte=day_start,
                     event_at__lte=day_end,
+                    worker__is_available=True,
+                    worker__is_deleted=False,
+                    worker__user__is_active=True,
+                    worker__user__is_deleted=False,
                 ).count(),
                 'checkouts': WorkerAttendance.objects.filter(
                     tenant=tenant,
                     event_type=WorkerAttendance.EventType.OUT,
                     event_at__gte=day_start,
                     event_at__lte=day_end,
+                    worker__is_available=True,
+                    worker__is_deleted=False,
+                    worker__user__is_active=True,
+                    worker__user__is_deleted=False,
                 ).count(),
             })
 
-        recent_events = WorkerAttendance.objects.select_related('worker', 'worker__user').filter(tenant=tenant).order_by('-event_at', '-id')[:80]
+        recent_events = (
+            WorkerAttendance.objects.select_related('worker', 'worker__user')
+            .filter(
+                tenant=tenant,
+                worker__is_available=True,
+                worker__is_deleted=False,
+                worker__user__is_active=True,
+                worker__user__is_deleted=False,
+            )
+            .order_by('-event_at', '-id')[:80]
+        )
 
         return Response({
             'summary': {
@@ -395,7 +421,14 @@ class AttendanceManagerEventCreateView(APIView):
         if event_type not in {WorkerAttendance.EventType.IN, WorkerAttendance.EventType.OUT}:
             return Response({'event_type': ['نوع رویداد نامعتبر است.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        worker = WorkerProfile.objects.select_related('user').filter(id=worker_id, tenant=tenant).first()
+        worker = WorkerProfile.objects.select_related('user').filter(
+            id=worker_id,
+            tenant=tenant,
+            is_available=True,
+            is_deleted=False,
+            user__is_active=True,
+            user__is_deleted=False,
+        ).first()
         if not worker:
             return Response({'worker_id': ['پرسنل پیدا نشد.']}, status=status.HTTP_404_NOT_FOUND)
         if not worker_has_attendance_access(worker):
@@ -420,7 +453,14 @@ class AttendanceTokenRefreshView(APIView):
             return Response({'detail': 'دسترسی مجاز نیست.'}, status=status.HTTP_403_FORBIDDEN)
 
         tenant = _resolve_request_tenant(request)
-        worker = WorkerProfile.objects.filter(id=pk, tenant=tenant).first()
+        worker = WorkerProfile.objects.filter(
+            id=pk,
+            tenant=tenant,
+            is_available=True,
+            is_deleted=False,
+            user__is_active=True,
+            user__is_deleted=False,
+        ).first()
         if not worker:
             return Response({'detail': 'پرسنل پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
         if not worker_has_attendance_access(worker):
@@ -442,7 +482,13 @@ class AttendancePublicView(APIView):
     throttle_scope = 'attendance_public'
 
     def get_worker(self, token):
-        return WorkerProfile.objects.select_related('user', 'tenant').filter(attendance_token=token).first()
+        return WorkerProfile.objects.select_related('user', 'tenant').filter(
+            attendance_token=token,
+            is_available=True,
+            is_deleted=False,
+            user__is_active=True,
+            user__is_deleted=False,
+        ).first()
 
     def get(self, request, token):
         worker = self.get_worker(token)

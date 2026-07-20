@@ -49,6 +49,38 @@ class AttendanceApiTests(APITestCase):
         self.assertEqual(response.data['workers'][0]['full_name'], 'Ali Worker')
         self.assertEqual(response.data['workers'][0]['current_status'], 'in')
 
+    def test_inactive_worker_is_excluded_from_attendance(self):
+        self.worker.is_available = False
+        self.worker.save(update_fields=['is_available', 'updated_at'])
+        self.worker_user.is_active = False
+        self.worker_user.save(update_fields=['is_active'])
+        WorkerAttendance.objects.create(
+            worker=self.worker,
+            tenant=self.tenant,
+            event_type=WorkerAttendance.EventType.IN,
+            event_at=timezone.now(),
+            source='manager',
+        )
+        token = ensure_attendance_token(self.worker)
+        self.client.force_authenticate(self.manager)
+
+        dashboard = self.client.get(reverse('worker-attendance-dashboard'))
+        create_event = self.client.post(
+            reverse('worker-attendance-event-create'),
+            {'worker_id': self.worker.id, 'event_type': 'out'},
+            format='json',
+        )
+        self.client.force_authenticate(user=None)
+        public = self.client.get(reverse('worker-attendance-public', args=[token]))
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.data['workers'], [])
+        self.assertEqual(dashboard.data['recent_events'], [])
+        self.assertEqual(dashboard.data['summary']['workers_count'], 0)
+        self.assertEqual(dashboard.data['summary']['attendance_worker_count'], 0)
+        self.assertEqual(create_event.status_code, 404)
+        self.assertEqual(public.status_code, 404)
+
     def test_attendance_dashboard_includes_operator_profiles(self):
         user_model = get_user_model()
         operator_user = user_model.objects.create_user(
