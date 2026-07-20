@@ -225,6 +225,7 @@ def _auth_payload(user):
         'phone': user.phone,
         'tenant_id': user.tenant_id,
         'tenant_name': user.tenant.name if user.tenant_id else '',
+        'tenant_address': user.tenant.address if user.tenant_id else '',
         'purchased_menu_access': sorted(feature_keys),
         'menu_access': feature_access_map_for_tenant(tenant) if getattr(user, 'tenant_id', None) else feature_access_map(feature_keys),
         'locked_feature_statuses': locked_feature_statuses,

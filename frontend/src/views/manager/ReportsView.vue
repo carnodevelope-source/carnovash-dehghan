@@ -259,21 +259,42 @@
       </div>
     </section>
   </div>
+
+  <div v-if="pdfFormatModal.open" class="modal-overlay" @click.self="closePdfFormatModal">
+    <section class="modal-panel pdf-format-panel">
+      <header class="modal-head">
+        <h3>انتخاب قالب PDF</h3>
+        <button class="close-btn" @click="closePdfFormatModal">✕</button>
+      </header>
+      <div class="pdf-format-body">
+        <button class="pdf-format-option" @click="selectPdfFormat('a4')">
+          <strong>A4</strong>
+          <span>خروجی گزارش فعلی</span>
+        </button>
+        <button class="pdf-format-option receipt" :disabled="!selectedWorkerSummary?.worker_id" @click="selectPdfFormat('receipt')">
+          <strong>فیش</strong>
+          <span>{{ selectedWorkerSummary?.worker_id ? 'مخصوص پرینتر حرارتی' : 'اول نیرو را انتخاب کنید' }}</span>
+        </button>
+      </div>
+    </section>
+  </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
+import { useAuthStore } from '../../store/auth.store'
 import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
-import { formatJalaliDate } from '../../utils/date'
+import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const activeTab = ref('overall')
+const authStore = useAuthStore()
 const workers = ref([])
 const errorMessage = ref('')
 const rangeOptions = [
@@ -313,6 +334,7 @@ const vehicleModal = reactive({ open: false, loading: false, data: null })
 const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '' })
 const payoutSubmitError = ref('')
 const adjustmentModal = reactive({ open: false, submitting: false, kind: 'bonus', amount: 0, note: '' })
+const pdfFormatModal = reactive({ open: false })
 const reportExportRef = ref(null)
 const exportState = reactive({ csvLoading: false, pdfLoading: false })
 
@@ -346,6 +368,8 @@ const insuranceMonthOptions = [
 const money = (v) => formatThousandsToman(v)
 const dateTime = (v) => formatJalaliDate(v)
 const dateOnly = (v) => formatJalaliDate(v)
+const receiptDateTime = (v) => formatJalaliDateTime(v)
+const faNumber = (value) => Number(value || 0).toLocaleString('fa-IR')
 const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assigned: 'در انتظار تکمیل', in_progress: 'در حال انجام', ready_to_settle: 'در انتظار تکمیل', released: 'ترخیص شده', cancelled: 'لغو' }[value] || '-')
 const workerPaymentTypeLabel = (value) => ({ hourly: 'ساعتی', fixed: 'ثابت', percent: 'درصدی' }[value] || '-')
 const workHoursLabel = (value) => `${Number(value || 0).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ساعت`
@@ -465,6 +489,17 @@ const resolveRangeDates = (rangeKey) => {
 const setRange = (rangeKey) => {
   filters.rangeKey = rangeKey
 }
+
+const reportPeriodLabel = computed(() => {
+  if (filters.startJalali && filters.endJalali) return `از ${filters.startJalali} تا ${filters.endJalali}`
+  const params = buildReportParams()
+  const start = params.start ? formatJalaliDate(params.start) : ''
+  const end = params.end ? formatJalaliDate(params.end) : ''
+  if (start && end) return `از ${start} تا ${end}`
+  if (start) return `از ${start}`
+  if (end) return `تا ${end}`
+  return 'کل دوره'
+})
 
 const buildReportParams = () => {
   const manualStart = parseJalaliToIso(filters.startJalali)
@@ -706,6 +741,159 @@ const downloadBlob = (blob, filename) => {
   URL.revokeObjectURL(url)
 }
 
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;')
+
+const workerReceiptRows = computed(() => (
+  Array.isArray(data.worker_report) ? data.worker_report : []
+).map((row, index) => ({
+  row: index + 1,
+  date: receiptDateTime(row.created_at),
+  car: row.car_model || '-',
+  price: Number(row.worker_share || 0),
+  tip: Number(row.tip_amount || 0)
+})))
+
+const workerReceiptTotalShare = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.price, 0))
+const workerReceiptTotalTip = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.tip, 0))
+const workerReceiptGrandTotal = computed(() => workerReceiptTotalShare.value + workerReceiptTotalTip.value)
+
+const buildWorkerReceiptElement = () => {
+  const rowsHtml = workerReceiptRows.value.map((row) => `
+    <tr>
+      <td>${escapeHtml(faNumber(row.row))}</td>
+      <td>${escapeHtml(row.date)}</td>
+      <td>${escapeHtml(row.car)}</td>
+      <td>${escapeHtml(money(row.price))}</td>
+      <td>${escapeHtml(money(row.tip))}</td>
+    </tr>
+  `).join('')
+  const element = document.createElement('div')
+  element.innerHTML = `
+    <article class="worker-receipt-pdf" dir="rtl">
+      <header>
+        <strong>${escapeHtml(authStore.user?.tenant_address || authStore.user?.tenant_name || '-')}</strong>
+        <span>صورت‌حساب: ${escapeHtml(selectedWorkerSummary.value?.worker_name || '-')}</span>
+        <span>دوره گزارش: ${escapeHtml(reportPeriodLabel.value)}</span>
+      </header>
+      <table>
+        <thead>
+          <tr><th>#</th><th>تاریخ</th><th>ماشین</th><th>قیمت</th><th>انعام</th></tr>
+        </thead>
+        <tbody>${rowsHtml || '<tr><td colspan="5">رکوردی ثبت نشده است.</td></tr>'}</tbody>
+      </table>
+      <footer>
+        <p><span>جمع کل سهم</span><strong>${escapeHtml(money(workerReceiptTotalShare.value))}</strong></p>
+        <p><span>جمع کل انعام</span><strong>${escapeHtml(money(workerReceiptTotalTip.value))}</strong></p>
+        <p class="grand"><span>جمع کل سهم و انعام</span><strong>${escapeHtml(money(workerReceiptGrandTotal.value))}</strong></p>
+      </footer>
+    </article>
+  `
+  const style = document.createElement('style')
+  style.textContent = `
+    .worker-receipt-pdf,.worker-receipt-pdf *{box-sizing:border-box;color:#000!important;background:#fff!important;background-color:#fff!important;box-shadow:none!important;text-shadow:none!important;border-color:#000!important;font-family:Tahoma,Arial,sans-serif!important;font-weight:900!important;letter-spacing:0!important}
+    .worker-receipt-pdf{width:80mm;max-width:80mm;min-width:0;padding:3mm;direction:rtl;line-height:1.45;font-size:11px;overflow:hidden}
+    .worker-receipt-pdf header{display:grid;gap:4px;text-align:center;padding-bottom:7px;border-bottom:2px solid #000}
+    .worker-receipt-pdf header strong{font-size:13px;line-height:1.6}
+    .worker-receipt-pdf header span{font-size:11px;line-height:1.6}
+    .worker-receipt-pdf table{width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px;border:2px solid #000}
+    .worker-receipt-pdf th,.worker-receipt-pdf td{border:1.5px solid #000;padding:4px 2px;text-align:center;vertical-align:middle;font-size:8px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+    .worker-receipt-pdf th:first-child,.worker-receipt-pdf td:first-child{width:8%}
+    .worker-receipt-pdf th:nth-child(2),.worker-receipt-pdf td:nth-child(2){width:25%}
+    .worker-receipt-pdf th:nth-child(3),.worker-receipt-pdf td:nth-child(3){width:27%}
+    .worker-receipt-pdf th:nth-child(4),.worker-receipt-pdf td:nth-child(4){width:20%}
+    .worker-receipt-pdf th:nth-child(5),.worker-receipt-pdf td:nth-child(5){width:20%}
+    .worker-receipt-pdf footer{display:grid;gap:4px;margin-top:8px;padding-top:7px;border-top:2px solid #000}
+    .worker-receipt-pdf footer p{margin:0;display:flex;justify-content:space-between;gap:8px;font-size:12px;line-height:1.6}
+    .worker-receipt-pdf footer .grand{padding-top:5px;border-top:2px solid #000;font-size:13px}
+  `
+  const wrapper = document.createElement('div')
+  wrapper.style.position = 'fixed'
+  wrapper.style.top = '0'
+  wrapper.style.left = '0'
+  wrapper.style.width = '80mm'
+  wrapper.style.maxWidth = '80mm'
+  wrapper.style.background = '#fff'
+  wrapper.style.zIndex = '-1'
+  wrapper.style.pointerEvents = 'none'
+  wrapper.appendChild(style)
+  wrapper.appendChild(element.firstElementChild)
+  document.body.appendChild(wrapper)
+  return wrapper
+}
+
+const exportPdfAsA4 = async () => {
+  if (!reportExportRef.value) return
+  await nextTick()
+  const html2pdfModule = await import('html2pdf.js')
+  const html2pdf = html2pdfModule.default || html2pdfModule
+  const worker = html2pdf()
+    .set({
+      margin: 8,
+      filename: `reports-${activeTab.value}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+      pagebreak: { mode: ['css', 'legacy'] }
+    })
+    .from(reportExportRef.value)
+    .toPdf()
+  const pdf = await worker.get('pdf')
+  downloadBlob(pdf.output('blob'), `reports-${activeTab.value}.pdf`)
+}
+
+const exportWorkerReceiptPdf = async () => {
+  if (activeTab.value !== 'worker' || !selectedWorkerSummary.value?.worker_id) {
+    errorMessage.value = 'برای ساخت فیش، اول یک نیرو را از فیلتر انتخاب کنید.'
+    return
+  }
+  const receiptElement = buildWorkerReceiptElement()
+  try {
+    const html2pdfModule = await import('html2pdf.js')
+    const html2pdf = html2pdfModule.default || html2pdfModule
+    const pageHeight = Math.max(120, Math.min(600, 78 + (workerReceiptRows.value.length * 12)))
+    await nextTick()
+    const worker = html2pdf()
+      .set({
+        margin: 0,
+        filename: `worker-receipt-${selectedWorkerSummary.value.worker_id}.pdf`,
+        image: { type: 'jpeg', quality: 1 },
+        html2canvas: { scale: 3, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: [80, pageHeight], orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      })
+      .from(receiptElement.querySelector('.worker-receipt-pdf'))
+      .toPdf()
+    const pdf = await worker.get('pdf')
+    downloadBlob(pdf.output('blob'), `worker-receipt-${selectedWorkerSummary.value.worker_id}.pdf`)
+  } finally {
+    receiptElement.remove()
+  }
+}
+
+const closePdfFormatModal = () => {
+  pdfFormatModal.open = false
+}
+
+const selectPdfFormat = async (format) => {
+  closePdfFormatModal()
+  exportState.pdfLoading = true
+  errorMessage.value = ''
+  try {
+    if (format === 'receipt') await exportWorkerReceiptPdf()
+    else await exportPdfAsA4()
+  } catch (error) {
+    console.error('exportPdf error:', error)
+    errorMessage.value = 'ساخت خروجی PDF ناموفق بود.'
+  } finally {
+    exportState.pdfLoading = false
+  }
+}
+
 const exportCsv = async () => {
   exportState.csvLoading = true
   errorMessage.value = ''
@@ -727,27 +915,14 @@ const exportCsv = async () => {
 }
 
 const exportPdf = async () => {
-  if (!reportExportRef.value) return
+  if (activeTab.value === 'worker') {
+    pdfFormatModal.open = true
+    return
+  }
   exportState.pdfLoading = true
   errorMessage.value = ''
   try {
-    await nextTick()
-    const html2pdfModule = await import('html2pdf.js')
-    const html2pdf = html2pdfModule.default || html2pdfModule
-    const worker = html2pdf()
-      .set({
-        margin: 8,
-        filename: `reports-${activeTab.value}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
-        pagebreak: { mode: ['css', 'legacy'] }
-      })
-      .from(reportExportRef.value)
-      .toPdf()
-    const pdf = await worker.get('pdf')
-    const blob = pdf.output('blob')
-    downloadBlob(blob, `reports-${activeTab.value}.pdf`)
+    await exportPdfAsA4()
   } catch (error) {
     console.error('exportPdf error:', error)
     errorMessage.value = 'ساخت خروجی PDF ناموفق بود.'
@@ -1059,6 +1234,13 @@ th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-spa
 }
 
 .modal-body input,.modal-body select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px}
+.pdf-format-panel{width:min(460px,100%)}
+.pdf-format-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px}
+.pdf-format-option{border:1px solid #cbd5e1;border-radius:14px;background:#fff;color:#0f172a;padding:16px;display:grid;gap:6px;text-align:right;cursor:pointer}
+.pdf-format-option strong{font-size:18px}
+.pdf-format-option span{font-size:12px;color:#475569}
+.pdf-format-option.receipt{border-color:#0f172a;background:#f8fafc}
+.pdf-format-option:disabled{opacity:.56;cursor:not-allowed}
 @media (max-width:1400px){.summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (max-width:1200px){.filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-field,.plate-field,.filters-actions{grid-column:span 2}.worker-summary-grid{grid-template-columns:repeat(2,1fr)}.filters-actions{justify-content:space-between}.export-studio-actions{grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch}}
 @media (max-width:760px){.reports-content{font-size:11px}.range-chip,.chip,.field,.field input,.field select,.modal-step{font-size:10px}.table-wrap{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}.table-wrap table{width:max-content;min-width:100%;table-layout:auto}.table-wrap th,.table-wrap td{white-space:nowrap;word-break:normal;overflow-wrap:normal}.primary-btn,.secondary-btn,.close-btn{font-size:10px;padding:7px 10px}.filters-card,.summary-grid,.worker-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.plate-filter-row{grid-template-columns:42px 32px 56px 24px 42px;gap:6px}.search-field{grid-column:span 1}.plate-field{grid-column:span 2}.filters-card>.field:nth-child(4){grid-column:span 1}.worker-head,.action-row,.services-preview-cell,.filters-actions{flex-direction:column;align-items:stretch}.kpi-card p,.services-expanded-box strong,.payout-card p{font-size:10px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:12px}.field input,.field select,.modal-body input,.modal-body select{height:34px}.range-bar,.tabs-bar{gap:5px}.modal-overlay{padding:10px}.modal-panel{max-height:calc(100vh - 20px);overflow:auto}.modal-body{grid-template-columns:repeat(2,minmax(0,1fr))}.report-plate{min-width:52px}.report-plate:deep(.plate-white-wrap){gap:3px;padding:2px 4px}.report-plate:deep(.plate-two),.report-plate:deep(.plate-three){height:14px;font-size:9px;padding-top:2px;padding-bottom:1px}.report-plate:deep(.plate-letter){min-width:8px;font-size:9px}.report-plate:deep(.plate-blue){min-width:18px;font-size:8px;padding-top:2px;padding-bottom:1px}.export-studio-actions{grid-template-columns:1fr}.export-action-btn,.clear-btn{width:100%}}
