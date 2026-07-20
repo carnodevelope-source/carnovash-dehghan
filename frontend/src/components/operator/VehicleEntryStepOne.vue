@@ -167,6 +167,22 @@
           </div>
         </section>
 
+        <section v-if="!form.isPieceWash && !isMobileViewport && !showAiPanel" class="tariff-type-row" aria-label="تیپ نرخنامه">
+          <span>تیپ نرخنامه</span>
+          <div class="tariff-bubbles">
+            <button
+              v-for="option in availableTariffTypeOptions"
+              :key="option.value"
+              type="button"
+              class="tariff-bubble"
+              :class="{ active: form.tariffType === option.value }"
+              @click="form.tariffType = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </section>
+
         <label v-if="!form.isPieceWash" class="field">
           <span>توضیحات</span>
           <textarea v-model="form.note" rows="3" placeholder="نکات تکمیلی"></textarea>

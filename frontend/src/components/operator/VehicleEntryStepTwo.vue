@@ -41,7 +41,8 @@
             :title="service.name"
             @click="toggleTempService(service.id)"
           >
-            {{ service.name }}
+            <span class="service-bubble-name">{{ service.name }}</span>
+            <span class="service-bubble-price">{{ formatMoney(service.base_price) }}</span>
           </button>
         </div>
 
@@ -1581,9 +1582,12 @@ onMounted(loadInitialData)
 
 .service-bubble {
   flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  gap: 1px;
   min-width: fit-content;
   max-width: 100%;
-  min-height: 36px;
+  min-height: 44px;
   border: 1px solid rgba(148, 163, 184, 0.34);
   border-radius: 999px;
   background: linear-gradient(180deg, #ffffff, #f8fbff);
@@ -1597,11 +1601,30 @@ onMounted(loadInitialData)
   white-space: normal;
 }
 
+.service-bubble-name,
+.service-bubble-price {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.service-bubble-price {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
 .service-bubble.selected {
   border-color: #0058be;
   background: linear-gradient(180deg, #0b6bdc, #0058be);
   color: #ffffff;
   box-shadow: 0 10px 22px -16px rgba(0, 88, 190, 0.65);
+}
+
+.service-bubble.selected .service-bubble-price {
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .edit-services-btn {
@@ -2503,9 +2526,13 @@ onMounted(loadInitialData)
   }
 
   .service-bubble {
-    min-height: 30px;
+    min-height: 40px;
     padding: 4px 10px;
     font-size: 10px;
+  }
+
+  .service-bubble-price {
+    font-size: 9px;
   }
 
   .step-two {
@@ -2845,8 +2872,12 @@ onMounted(loadInitialData)
   }
 
   .service-bubble {
-    min-height: 28px;
+    min-height: 38px;
     font-size: 9px;
+  }
+
+  .service-bubble-price {
+    font-size: 8px;
   }
 
   .service-picker-foot {

@@ -243,7 +243,8 @@
                   :class="{ selected: tempReleaseServiceIds.includes(Number(service.id)) }"
                   @click="toggleTempReleaseService(service.id)"
                 >
-                  {{ service.name }}
+                  <span class="service-bubble-name">{{ service.name }}</span>
+                  <span class="service-bubble-price">{{ formatMoney(service.base_price) }}</span>
                 </button>
               </div>
 
@@ -1054,10 +1055,7 @@ const editSelectedVehicleVisit = async () => {
   try {
     const { data } = await api.get(`/vehicles/${selectedVehicle.value.id}/`)
     vehicleStore.selectedVehicle = data
-    vehicleDraft.value = {
-      ...mapVehicleToDraft(data),
-      hideAiPanel: true
-    }
+    vehicleDraft.value = mapVehicleToDraft(data)
     vehicleEditFlow.value = data.status === 'released' ? 'released' : 'active'
     modalStep.value = 1
     showVehicleDetailsModal.value = false
@@ -1453,6 +1451,24 @@ const mapVehicleToDraft = (source = {}) => ({
   manual_discount_total: Number(source.job?.manual_discount_total || 0),
   note: source.notes,
   tariffType: source.tariff_type || source.tariffType || 'type_1',
+  detectedPlate: source.ai_converted_plate || source.plate_number || '',
+  detectedPlateLeft: source.ai_converted_plate_left || source.plate_left || '',
+  detectedPlateLetter: source.ai_converted_plate_letter || source.plate_letter || '',
+  detectedPlateMid: source.ai_converted_plate_mid || source.plate_mid || '',
+  detectedPlateRight: source.ai_converted_plate_right || source.plate_right || '',
+  detectedPlateType: source.ai_converted_plate_type || source.plate_type || 'car',
+  aiSessionId: source.ai_session_id || '',
+  aiRawText: source.ai_raw_text || '',
+  aiPersianText: source.ai_persian_text || '',
+  aiConvertedPlate: source.ai_converted_plate || '',
+  aiConvertedPlateLeft: source.ai_converted_plate_left || '',
+  aiConvertedPlateLetter: source.ai_converted_plate_letter || '',
+  aiConvertedPlateMid: source.ai_converted_plate_mid || '',
+  aiConvertedPlateRight: source.ai_converted_plate_right || '',
+  aiConvertedPlateType: source.ai_converted_plate_type || source.plate_type || 'car',
+  aiImageBase64: source.ai_image_base64 || '',
+  aiConfidence: source.ai_confidence ?? null,
+  aiLatencyMs: source.ai_latency_ms ?? null,
   isPieceWash: Boolean(source.is_piece_wash),
   pieceDetails: source.piece_details || '',
   pieceWashPrice: Number(source.job?.services_total || 0),
@@ -1651,9 +1667,15 @@ const normalizeReleaseAssignedWorkers = (workers) => {
     isSelected: true
   }))
 }
+const isReleaseAssignableWorker = (worker) => {
+  const roleKey = String(worker?.role_key || worker?.user?.role || '').trim().toLowerCase()
+  if (roleKey) return roleKey === 'worker'
+  const roleLabel = String(worker?.role || '').trim().toLowerCase()
+  return roleLabel.includes('worker') || roleLabel.includes('نیرو') || roleLabel.includes('پرسنل')
+}
 const normalizeAvailableReleaseWorkers = (workers) => (
   (Array.isArray(workers) ? workers : [])
-    .filter((item) => String(item?.role_key || item?.user?.role || item?.role || '').trim().toLowerCase() === 'worker')
+    .filter(isReleaseAssignableWorker)
     .map((item) => ({
       id: Number(item?.id || 0),
       name: normalizeWorkerName(item?.full_name || item?.name || item?.user?.full_name || item?.username || ''),
@@ -2887,7 +2909,19 @@ const handleStepOneContinue = async (payload) => {
       const savedVehicle = await saveVehicle({ vehicle: { ...payloadWithSmsDefault, id: vehicleDraft.value?.id } }, currentStatus)
       vehicleDraft.value = {
         ...mapVehicleToDraft(savedVehicle),
-        hideAiPanel: true
+        aiSessionId: payload.aiSessionId,
+        aiRawText: payload.aiRawText,
+        aiPersianText: payload.aiPersianText,
+        aiConvertedPlate: payload.aiConvertedPlate,
+        aiConvertedPlateLeft: payload.aiConvertedPlateLeft,
+        aiConvertedPlateLetter: payload.aiConvertedPlateLetter,
+        aiConvertedPlateMid: payload.aiConvertedPlateMid,
+        aiConvertedPlateRight: payload.aiConvertedPlateRight,
+        aiConvertedPlateType: payload.aiConvertedPlateType,
+        aiImageBase64: payload.aiImageBase64,
+        aiConfidence: payload.aiConfidence,
+        aiLatencyMs: payload.aiLatencyMs,
+        tariffType: payload.tariffType
       }
       modalStep.value = 2
       return
@@ -3353,8 +3387,11 @@ onBeforeUnmount(() => {
 .service-picker-head p{margin:6px 0 0;color:#64748b;font-size:12px}
 .service-picker-grid{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start}
 .release-service-picker-grid{max-height:420px;overflow:auto;padding-inline-end:4px}
-.service-bubble{border:1px solid #cfe1ff;border-radius:999px;padding:10px 16px;background:linear-gradient(180deg,#ffffff,#f3f8ff);color:#0f4c81;font-size:13px;font-weight:700;line-height:1.7;cursor:pointer;transition:.18s ease;white-space:nowrap}
+.service-bubble{display:grid;place-items:center;gap:1px;min-height:48px;border:1px solid #cfe1ff;border-radius:999px;padding:8px 16px;background:linear-gradient(180deg,#ffffff,#f3f8ff);color:#0f4c81;font-size:13px;font-weight:700;line-height:1.35;cursor:pointer;transition:.18s ease;white-space:normal}
+.service-bubble-name,.service-bubble-price{display:block;max-width:100%;overflow-wrap:anywhere;text-align:center}
+.service-bubble-price{color:#64748b;font-size:10px;font-weight:800;line-height:1.2}
 .service-bubble.selected{border-color:#0ea5e9;background:linear-gradient(135deg,#0f4c81,#0ea5e9);color:#fff;box-shadow:0 18px 28px -22px rgba(14,165,233,.78)}
+.service-bubble.selected .service-bubble-price{color:rgba(255,255,255,.82)}
 .service-picker-foot{display:flex;justify-content:flex-end;gap:10px}
 .secondary-foot-btn{height:44px;padding:0 18px;border:1px solid #cbd5e1;border-radius:14px;background:#fff;color:#334155;font-weight:700;cursor:pointer}
 .release-service-bubbles{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;min-width:0}
