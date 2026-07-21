@@ -748,19 +748,50 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#039;')
 
+const workerReceiptOrderPrice = (row) => {
+  if (row?.service_total !== undefined && row?.service_total !== null) {
+    const serviceTotal = Number(row.service_total || 0)
+    if (serviceTotal > 0) return serviceTotal
+  }
+  if (row?.services_total !== undefined && row?.services_total !== null) {
+    const servicesTotal = Number(row.services_total || 0)
+    if (servicesTotal > 0) return servicesTotal
+  }
+  if (row?.service_amount !== undefined && row?.service_amount !== null) {
+    const serviceAmount = Number(row.service_amount || 0)
+    if (serviceAmount > 0) return serviceAmount
+  }
+  if (row?.final_total_without_tip !== undefined && row?.final_total_without_tip !== null) {
+    const finalWithoutTip = Number(row.final_total_without_tip || 0)
+    if (finalWithoutTip > 0) return finalWithoutTip
+  }
+  if (row?.final_total !== undefined && row?.final_total !== null) {
+    const finalBase = Math.max(0, Number(row.final_total || 0) - Number(row.tip_amount || 0))
+    if (finalBase > 0) return finalBase
+  }
+  const commissionPercent = Number(row?.worker_commission_percent || selectedWorkerSummary.value?.default_commission_percent || 0)
+  const workerShare = Number(row?.worker_share || 0)
+  if (workerShare > 0 && commissionPercent > 0) {
+    return (workerShare * 100) / commissionPercent
+  }
+  return 0
+}
+
 const workerReceiptRows = computed(() => (
   Array.isArray(data.worker_report) ? data.worker_report : []
 ).map((row, index) => ({
   row: index + 1,
   date: receiptDateTime(row.created_at),
   car: row.car_model || '-',
-  price: Number(row.worker_share || 0),
-  tip: Number(row.tip_amount || 0)
+  price: workerReceiptOrderPrice(row),
+  tip: Number(row.tip_amount || 0),
+  share: Number(row.worker_share || 0)
 })))
 
-const workerReceiptTotalShare = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.price, 0))
+const workerReceiptTotalServices = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.price, 0))
 const workerReceiptTotalTip = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.tip, 0))
-const workerReceiptGrandTotal = computed(() => workerReceiptTotalShare.value + workerReceiptTotalTip.value)
+const workerReceiptStaffShare = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.share, 0))
+const workerReceiptGrandTotal = computed(() => workerReceiptStaffShare.value + workerReceiptTotalTip.value)
 
 const buildWorkerReceiptElement = () => {
   const rowsHtml = workerReceiptRows.value.map((row) => `
@@ -787,9 +818,10 @@ const buildWorkerReceiptElement = () => {
         <tbody>${rowsHtml || '<tr><td colspan="5">رکوردی ثبت نشده است.</td></tr>'}</tbody>
       </table>
       <footer>
-        <p><span>جمع کل سهم</span><strong>${escapeHtml(money(workerReceiptTotalShare.value))}</strong></p>
+        <p><span>جمع کل قیمت خدمات</span><strong>${escapeHtml(money(workerReceiptTotalServices.value))}</strong></p>
         <p><span>جمع کل انعام</span><strong>${escapeHtml(money(workerReceiptTotalTip.value))}</strong></p>
-        <p class="grand"><span>جمع کل سهم و انعام</span><strong>${escapeHtml(money(workerReceiptGrandTotal.value))}</strong></p>
+        <p><span>سهم پرسنل</span><strong>${escapeHtml(money(workerReceiptStaffShare.value))}</strong></p>
+        <p class="grand"><span>سهم پرسنل + انعام</span><strong>${escapeHtml(money(workerReceiptGrandTotal.value))}</strong></p>
       </footer>
     </article>
   `
@@ -851,6 +883,8 @@ const exportWorkerReceiptPdf = async () => {
     errorMessage.value = 'برای ساخت فیش، اول یک نیرو را از فیلتر انتخاب کنید.'
     return
   }
+  await fetchReports()
+  await nextTick()
   const receiptElement = buildWorkerReceiptElement()
   try {
     const html2pdfModule = await import('html2pdf.js')

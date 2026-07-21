@@ -148,14 +148,22 @@
               <div class="service-body">
                 <div class="service-head">
                   <h5>{{ service.name }}</h5>
-                  <strong>{{ formatMoney(service.adjusted_price ?? service.base_price) }}</strong>
+                  <label class="service-price-editor" @click.stop>
+                    <input
+                      :value="toThousandsInput(service.adjusted_price ?? service.base_price)"
+                      type="text"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
+                      autocomplete="off"
+                      aria-label="قیمت خدمت"
+                      @focus="selectMoneyInput"
+                      @input="setServicePrice(service.id, $event.target.value)"
+                    />
+                    <span>تومان</span>
+                  </label>
                 </div>
                 <div class="service-meta-row">
                   <p>{{ service.description || 'بدون توضیحات' }}</p>
-                  <div class="service-adjuster">
-                    <button type="button" class="service-adjust-btn" @click="adjustServicePrice(service.id, 'decrease')">-</button>
-                    <button type="button" class="service-adjust-btn" @click="adjustServicePrice(service.id, 'increase')">+</button>
-                  </div>
                 </div>
               </div>
             </article>
@@ -309,14 +317,6 @@
                 <span></span>
               </button>
               <b>{{ formatMoney(effectiveLoyaltyDiscountAmount) }}</b>
-            </div>
-            <div v-if="manualServiceIncreaseTotal > 0" class="summary-row service-adjust-summary increase-row">
-              <span>جمع افزایش دستی</span>
-              <strong>{{ formatMoney(manualServiceIncreaseTotal) }}</strong>
-            </div>
-            <div v-if="manualServiceDecreaseTotal > 0" class="summary-row service-adjust-summary decrease-row">
-              <span>جمع کاهش دستی</span>
-              <strong>{{ formatMoney(manualServiceDecreaseTotal) }}</strong>
             </div>
             <div class="summary-row discount-row">
               <span>
@@ -563,16 +563,12 @@ const selectedWorkers = computed(() => {
 const primarySelectedWorker = computed(() => selectedWorkers.value[0] || null)
 const selectedWorkerPercentIds = computed(() => selectedWorkers.value.map((worker) => Number(worker.id)))
 
-const manualServiceIncreaseTotal = computed(() => selectedServices.value.reduce((sum, item) => {
-  const adjustment = Number(item.manual_adjustment || 0)
-  return sum + (adjustment > 0 ? adjustment : 0)
-}, 0))
-const manualServiceDecreaseTotal = computed(() => selectedServices.value.reduce((sum, item) => {
-  const adjustment = Number(item.manual_adjustment || 0)
-  return sum + (adjustment < 0 ? Math.abs(adjustment) : 0)
-}, 0))
 const serviceListSubtotal = computed(() => selectedServices.value.reduce((sum, item) => {
-  return sum + Number(item.list_price || item.base_price || 0)
+  if (Number(item.manual_adjustment || 0) !== 0) {
+    return sum + Number((item.adjusted_price ?? item.base_price) || 0)
+  }
+  const facilityDiscount = Math.max(0, Number(item.list_price || 0) - Number(item.base_price || 0))
+  return sum + Number((item.adjusted_price ?? item.base_price) || 0) + facilityDiscount
 }, 0))
 const servicesTotal = computed(() => selectedServices.value.reduce((sum, item) => sum + Number((item.adjusted_price ?? item.base_price) || 0), 0))
 const facilityDiscountTotal = computed(() => Math.max(0, Number((serviceListSubtotal.value - servicesTotal.value).toFixed(2))))
@@ -725,18 +721,21 @@ const toggleWorker = (id) => {
   }
   selectedWorkerIds.value = [...selectedWorkerIds.value, normalizedId]
 }
-const adjustServicePrice = (serviceId, direction) => {
+const selectMoneyInput = (event) => {
+  window.requestAnimationFrame(() => event?.target?.select?.())
+}
+const setServicePrice = (serviceId, rawValue) => {
   const normalizedId = Number(serviceId || 0)
   if (!normalizedId) return
   const service = services.value.find((item) => Number(item.id) === normalizedId)
   if (!service) return
-  const step = 5000
-  const current = Number(servicePriceAdjustments.value[normalizedId] || 0)
-  const next = direction === 'increase' ? current + step : current - step
-  const minAdjustment = -Math.max(0, Number(service.base_price || 0))
+
+  const basePrice = Math.max(0, Number(service.base_price || 0))
+  const finalPrice = Math.max(0, fromThousandsInput(rawValue))
+  const adjustment = finalPrice - basePrice
   servicePriceAdjustments.value = {
     ...servicePriceAdjustments.value,
-    [normalizedId]: Math.max(minAdjustment, next)
+    [normalizedId]: adjustment
   }
 }
 const setWorkerSharePercent = (id, rawValue) => {
@@ -850,8 +849,9 @@ const buildPayload = () => {
       : selectedServices.value.map((item) => ({
           id: item.id,
           title: item.name,
-          price: Number(item.manual_adjustment || 0) < 0 ? Number(item.base_price || 0) : Number((item.adjusted_price ?? item.base_price) || 0),
-          discount_amount: Number(item.manual_adjustment || 0) < 0 ? Math.abs(Number(item.manual_adjustment || 0)) : 0
+          price: Number((item.adjusted_price ?? item.base_price) || 0),
+          manual_price_override: Number(item.manual_adjustment || 0) !== 0,
+          discount_amount: 0
         })),
     staff: primarySelectedWorker.value
       ? {
@@ -999,9 +999,15 @@ const hydrateFromVehicleInfo = () => {
   servicePriceAdjustments.value = existingServices.reduce((accumulator, item) => {
     const serviceId = Number(item?.id || item?.service_id || 0)
     if (!serviceId) return accumulator
-    const listPrice = Number(item?.list_price || item?.base_price || 0)
+    const salePrice = Number(
+      item?.unit_price
+      ?? item?.resolved_sale_price
+      ?? item?.sale_price
+      ?? item?.base_price
+      ?? 0
+    )
     const finalPrice = Number(item?.adjusted_price ?? item?.price ?? item?.base_price ?? 0)
-    accumulator[serviceId] = Number((finalPrice - listPrice).toFixed(2))
+    accumulator[serviceId] = Number((finalPrice - salePrice).toFixed(2))
     return accumulator
   }, {})
   manualDiscountTotal.value = Math.max(0, Number(vehicle.manualDiscountTotal || 0))
@@ -1783,7 +1789,7 @@ onMounted(loadInitialData)
   cursor: default;
 }
 
-.service-card input {
+.service-card > input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
@@ -1820,6 +1826,59 @@ onMounted(loadInitialData)
   font-size: 15px;
 }
 
+.service-price-editor {
+  width: min(156px, 44%);
+  min-width: 118px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 0 9px 0 7px;
+  border: 1px solid rgba(0, 88, 190, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 10px 22px -20px rgba(0, 88, 190, 0.6);
+  cursor: text;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.service-price-editor:focus-within {
+  border-color: rgba(0, 88, 190, 0.52);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(0, 88, 190, 0.09), 0 12px 24px -22px rgba(0, 88, 190, 0.8);
+}
+
+.service-price-editor input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #0058be;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: left;
+  direction: ltr;
+  letter-spacing: 0;
+  appearance: textfield;
+}
+
+.service-price-editor input::-webkit-outer-spin-button,
+.service-price-editor input::-webkit-inner-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.service-price-editor span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .service-meta-row {
   display: flex;
   align-items: center;
@@ -1836,60 +1895,6 @@ onMounted(loadInitialData)
   overflow-wrap: anywhere;
   flex: 1;
   min-width: 0;
-}
-
-.service-adjuster {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.service-adjust-btn {
-  width: 40px;
-  height: 40px;
-  border: 1px solid rgba(59, 130, 246, 0.22);
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #dbeafe 100%);
-  color: #fff;
-  color: #0f3a8a;
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1;
-  cursor: pointer;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.14);
-}
-
-.service-adjust-btn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(29, 78, 216, 0.4);
-  background: linear-gradient(180deg, #eff6ff 0%, #bfdbfe 100%);
-}
-
-.service-adjust-btn:active {
-  transform: translateY(0);
-}
-
-.service-adjust-summary {
-  padding: 8px 10px;
-  border-radius: 12px;
-}
-
-.increase-row {
-  background: rgba(220, 252, 231, 0.9);
-  color: #166534;
-}
-
-.decrease-row {
-  background: rgba(254, 242, 242, 0.92);
-  color: #b91c1c;
-}
-
-.increase-row strong,
-.decrease-row strong {
-  color: inherit;
 }
 
 .service-discount-row {
@@ -2699,6 +2704,12 @@ onMounted(loadInitialData)
     gap: 8px;
   }
 
+  .service-price-editor {
+    width: 132px;
+    min-width: 112px;
+    height: 34px;
+  }
+
   .worker-share {
     flex-direction: column;
     align-items: stretch;
@@ -2938,6 +2949,20 @@ onMounted(loadInitialData)
   .col-head h4,
   .summary-head h4 {
     font-size: 13px;
+  }
+
+  .service-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .service-price-editor {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+  }
+
+  .service-price-editor input {
+    font-size: 12px;
   }
 
   .service-head strong,

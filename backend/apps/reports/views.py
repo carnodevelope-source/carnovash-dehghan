@@ -200,7 +200,7 @@ def _build_export_config(tab_key):
     configs = {
         'overall': {'filename': 'overall-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('status', 'وضعیت'), ('carwash_share', 'حق کارواش'), ('worker_share', 'حق نیرو'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('services', 'خدمات'), ('created_at', 'تاریخ')], 'rows_key': 'overall_report'},
         'carwash': {'filename': 'carwash-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('carwash_share', 'حق کارواش'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'carwash_report'},
-        'worker': {'filename': 'worker-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('worker_share', 'حق نیرو'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'worker_report'},
+        'worker': {'filename': 'worker-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('service_total', 'قیمت خدمات'), ('tip_amount', 'انعام'), ('worker_share', 'حق نیرو'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'worker_report'},
         'tips': {'filename': 'tips-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('products', 'کالا'), ('created_at', 'تاریخ')], 'rows_key': 'tips_report'},
         'revenue': {'filename': 'revenue-report', 'headers': [('row', 'ردیف'), ('created_at', 'تاریخ'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل خودرو'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('payment_method', 'روش پرداخت'), ('payment_status', 'وضعیت پرداخت'), ('service_amount', 'خدمات'), ('product_amount', 'محصولات'), ('discount_amount', 'تخفیف'), ('tip_amount', 'انعام'), ('final_total', 'مبلغ نهایی'), ('received_amount', 'وصول شده'), ('outstanding_amount', 'مانده'), ('cheque_number', 'شماره چک'), ('reminder_due_at', 'سررسید')], 'rows_key': 'revenue_report'},
         'attendance': {'filename': 'attendance-report', 'headers': [('row', 'ردیف'), ('worker_name', 'نام پرسنل'), ('event_type', 'نوع رویداد'), ('source', 'منبع ثبت'), ('event_at', 'زمان')], 'rows_key': 'attendance_report'},
@@ -263,7 +263,61 @@ def _job_worker_ids(job):
     return result
 
 
+def _job_worker_distribution_percent_for(job, worker_id):
+    snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
+    for item in snapshot:
+        try:
+            if int(item.get('id')) != int(worker_id):
+                continue
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if item.get('worker_share_percent') is not None:
+            percent = _normalize_decimal(item.get('worker_share_percent'))
+            return min(Decimal('100'), max(Decimal('0'), percent))
+    worker_ids = _job_worker_ids(job)
+    if not worker_ids or int(worker_id) not in worker_ids:
+        return Decimal('0')
+    return Decimal('100') / Decimal(str(len(worker_ids)))
+
+
+def _job_worker_service_total_for(job, worker_id):
+    service_total = _normalize_decimal(getattr(job, 'services_total', 0))
+    line_total = sum(
+        (
+            _normalize_decimal(getattr(line, 'line_total', 0))
+            for line in job.service_lines.all()
+        ),
+        Decimal('0'),
+    )
+    list_total = sum(
+        (
+            (
+                _normalize_decimal(getattr(line, 'list_unit_price', 0))
+                or _normalize_decimal(getattr(line, 'unit_price', 0))
+            )
+            * _normalize_decimal(getattr(line, 'quantity', 1) or 1)
+            for line in job.service_lines.all()
+        ),
+        Decimal('0'),
+    )
+    service_total = max(service_total, line_total, list_total)
+    if not worker_id:
+        return service_total
+    percent = _job_worker_distribution_percent_for(job, worker_id)
+    return (service_total * percent) / Decimal('100')
+
+
+def _job_worker_commission_percent_for(job):
+    if getattr(job, 'worker_payment_type', '') != VehicleJob.WorkerPaymentType.PERCENT:
+        return Decimal('0')
+    return min(Decimal('100'), max(Decimal('0'), _normalize_decimal(job.worker_payment_percent)))
+
+
 def _job_worker_share_for(job, worker_id):
+    percent = _job_worker_commission_percent_for(job)
+    if percent > 0:
+        service_total = _job_worker_service_total_for(job, worker_id)
+        return (service_total * percent) / Decimal('100')
     snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
     for item in snapshot:
         try:
@@ -603,7 +657,9 @@ class ReportsDashboardView(APIView):
                 'bonus_total': float(job_adjustments['bonus_total']),
                 'penalty_total': float(job_adjustments['penalty_total']),
                 'discount_total': float(job.discount_total) if job else 0,
+                'service_total': float(job.services_total) if job else 0,
                 'final_total': float(job.final_total) if job else 0,
+                'final_total_without_tip': float(max(Decimal('0'), _normalize_decimal(job.final_total) - _normalize_decimal(job.tip_amount))) if job else 0,
                 'before_discount_total': float((job.final_total or 0) + (job.discount_total or 0)) if job else 0,
                 'tip_amount': float(job.tip_amount) if job else 0,
                 'worker_name': _job_worker_names(job),
@@ -646,26 +702,49 @@ class ReportsDashboardView(APIView):
             'created_at': r['created_at'],
         } for i, r in enumerate(rows)]
 
-        worker_report = [{
-            'row': i + 1,
-            'vehicle_id': r['vehicle_id'],
-            'driver_name': r['driver_name'],
-            'driver_phone': r['driver_phone'],
-            'car_model': r['car_model'],
-            'car_color': r['car_color'],
-            'plate_number': r['plate_number'],
-            'plate_left': r['plate_left'],
-            'plate_letter': r['plate_letter'],
-            'plate_mid': r['plate_mid'],
-            'plate_right': r['plate_right'],
-            'plate_type': r['plate_type'],
-            'worker_share': float(_job_worker_share_for(vehicles[i].job, worker_id)) if worker_id and getattr(vehicles[i], 'job', None) else r['worker_share'],
-            'tip_amount': float(_job_worker_tip_for(vehicles[i].job, worker_id)) if worker_id and getattr(vehicles[i], 'job', None) else r['tip_amount'],
-            'bonus_total': r['bonus_total'],
-            'penalty_total': r['penalty_total'],
-            'worker_name': r['worker_name'],
-            'created_at': r['created_at'],
-        } for i, r in enumerate(rows)]
+        worker_report = []
+        for i, r in enumerate(rows):
+            job = getattr(vehicles[i], 'job', None)
+            row_worker_share = (
+                _job_worker_share_for(job, worker_id)
+                if worker_id and job
+                else _normalize_decimal(r['worker_share'])
+            )
+            row_service_total = (
+                _job_worker_service_total_for(job, worker_id)
+                if worker_id and job
+                else _normalize_decimal(r['service_total'])
+            )
+            row_tip_amount = (
+                _job_worker_tip_for(job, worker_id)
+                if worker_id and job
+                else _normalize_decimal(r['tip_amount'])
+            )
+            row_commission_percent = _job_worker_commission_percent_for(job) if job else Decimal('0')
+            worker_report.append({
+                'row': i + 1,
+                'vehicle_id': r['vehicle_id'],
+                'driver_name': r['driver_name'],
+                'driver_phone': r['driver_phone'],
+                'car_model': r['car_model'],
+                'car_color': r['car_color'],
+                'plate_number': r['plate_number'],
+                'plate_left': r['plate_left'],
+                'plate_letter': r['plate_letter'],
+                'plate_mid': r['plate_mid'],
+                'plate_right': r['plate_right'],
+                'plate_type': r['plate_type'],
+                'worker_share': float(row_worker_share),
+                'worker_commission_percent': float(row_commission_percent),
+                'service_total': float(row_service_total),
+                'final_total_without_tip': float(row_service_total),
+                'final_total': r['final_total'],
+                'tip_amount': float(row_tip_amount),
+                'bonus_total': r['bonus_total'],
+                'penalty_total': r['penalty_total'],
+                'worker_name': r['worker_name'],
+                'created_at': r['created_at'],
+            })
 
         tips_report = [{
             'row': i + 1,
@@ -796,6 +875,7 @@ class ReportsDashboardView(APIView):
                     'worker_id': worker.id,
                     'worker_name': _worker_name(worker),
                     'payment_type': worker_state['payment_type'],
+                    'default_commission_percent': float(worker.default_commission_percent or 0),
                     'attendance_minutes': int(worker_state['attendance_minutes']),
                     'attendance_hours': float(worker_state['attendance_hours']),
                     'hourly_wage': float(worker_state['hourly_wage']),

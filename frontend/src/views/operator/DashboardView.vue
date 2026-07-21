@@ -1482,8 +1482,9 @@ const mapVehicleToDraft = (source = {}) => ({
       title: line.service_name,
       name: line.service_name,
       price: Number(line.line_total || line.unit_price || 0),
-      base_price: Number(line.line_total || line.unit_price || 0),
+      base_price: Number(line.unit_price || line.line_total || 0),
       list_price: Number(line.list_unit_price || line.line_total || line.unit_price || 0),
+      unit_price: Number(line.unit_price || line.line_total || 0),
       adjusted_price: Number(line.line_total || line.unit_price || 0),
       discount_amount: Number(line.discount_amount || 0)
     }))
@@ -2389,12 +2390,9 @@ const invoicePaymentStatusLabel = computed(() => (
   releaseSummary.value.finalTotal > 0 ? paymentStatusLabel(releaseCandidate.value?.payment_status) : 'تسویه شده'
 ))
 const invoiceServiceLineListTotal = (line) => {
-  const quantity = Number(line?.quantity || 1) || 1
-  const listUnitPrice = Number(line?.list_unit_price || 0)
-  if (listUnitPrice > 0) return listUnitPrice * quantity
   return Number(line?.line_total || 0) + Number(line?.discount_amount || 0)
 }
-const invoiceSubtotal = computed(() => Number((releaseSummary.value.serviceListSubtotal + releaseSummary.value.productsTotal).toFixed(2)))
+const invoiceSubtotal = computed(() => Number((releaseSummary.value.servicesTotal + releaseSummary.value.productsTotal).toFixed(2)))
 const invoiceDueDateLabel = computed(() => (
   releaseForm.value.creditDueDate && ['credit', 'cheque', 'manual'].includes(releaseForm.value.paymentMethod)
     ? releaseForm.value.creditDueDate

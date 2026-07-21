@@ -612,7 +612,16 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 plate_type=plate_type,
                 fallback_price=item.get('price', 0),
             )
-            discount_amount = max(Decimal('0'), Decimal(str(item.get('discount_amount', 0) or 0)))
+            incoming_price = max(Decimal('0'), Decimal(str(item.get('price') or 0))) if 'price' in item else unit_price
+            incoming_discount_amount = max(Decimal('0'), Decimal(str(item.get('discount_amount', 0) or 0)))
+            manual_price_override = (
+                bool(item.get('manual_price_override') or item.get('is_manual_price_override'))
+                or ('price' in item and incoming_discount_amount == Decimal('0') and incoming_price != unit_price)
+            )
+            if manual_price_override:
+                unit_price = incoming_price
+                list_unit_price = unit_price
+            discount_amount = Decimal('0') if manual_price_override else incoming_discount_amount
             line_total = max(Decimal('0'), unit_price - discount_amount)
             normalized_services.append((item, service_obj, list_unit_price, unit_price, discount_amount, line_total))
         products_total = Decimal('0')
@@ -911,7 +920,16 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                     plate_type=plate_type,
                     fallback_price=item.get('price', 0),
                 )
-                discount_amount = max(Decimal('0'), Decimal(str(item.get('discount_amount', 0) or 0)))
+                incoming_price = max(Decimal('0'), Decimal(str(item.get('price') or 0))) if 'price' in item else unit_price
+                incoming_discount_amount = max(Decimal('0'), Decimal(str(item.get('discount_amount', 0) or 0)))
+                manual_price_override = (
+                    bool(item.get('manual_price_override') or item.get('is_manual_price_override'))
+                    or ('price' in item and incoming_discount_amount == Decimal('0') and incoming_price != unit_price)
+                )
+                if manual_price_override:
+                    unit_price = incoming_price
+                    list_unit_price = unit_price
+                discount_amount = Decimal('0') if manual_price_override else incoming_discount_amount
                 line_total = max(Decimal('0'), unit_price - discount_amount)
                 if not service_obj:
                     service_obj, _ = Service.objects.get_or_create(

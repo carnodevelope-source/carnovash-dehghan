@@ -11,7 +11,7 @@ from rest_framework.test import APIClient, APITestCase
 from apps.auth.models import CarWash
 from apps.notifications.models import NotificationLog
 from apps.payments.models import Wallet
-from apps.services.models import GeneralSettings
+from apps.services.models import GeneralSettings, Service
 from apps.vehicles.models import (
     CustomerProfile,
     PlateLoyaltyProfile,
@@ -511,6 +511,123 @@ class VehicleStatusSmsTests(APITestCase):
         self.assertEqual(log.payload['facility_discount_total'], 50000.0)
         self.assertEqual(log.payload['loyalty_discount_total'], 18000.0)
         self.assertEqual(log.payload['manual_discount_total'], 20000.0)
+
+    @patch('apps.notifications.services.send_provider_sms')
+    def test_manual_service_price_override_is_not_saved_as_discount(self, mock_send_provider_sms):
+        mock_send_provider_sms.return_value = {
+            'ok': True,
+            'message': 'sent',
+            'provider_status': 200,
+            'provider_data': {'status': 'success', 'data': {'id': 'provider-manual-price'}},
+            'provider_id': 'provider-manual-price',
+            'raw_body': '{"status":"success","data":{"id":"provider-manual-price"}}',
+            'payload': {'line_number': '30001234', 'recipients': ['09121114444']},
+        }
+        service = Service.objects.create(
+            tenant=self.tenant,
+            name='Manual priced service',
+            code='MANUAL-PRICE-TEST',
+            base_price=Decimal('400000'),
+            pricing_tiers={
+                'type_1': {
+                    'list_price': 500000,
+                    'sale_price': 400000,
+                    'duration_minutes': 30,
+                },
+            },
+        )
+
+        response = self.client.post(
+            reverse('vehicle-list-create'),
+            {
+                'plate_number': '44 Ø¯ 555 66',
+                'plate_left': '44',
+                'plate_letter': 'Ø¯',
+                'plate_mid': '555',
+                'plate_right': '66',
+                'plate_type': VehicleEntry.PlateType.CAR,
+                'tariff_type': VehicleEntry.TariffType.TYPE_1,
+                'car_model': 'test',
+                'car_color': 'white',
+                'driver_name': 'Manual Price Customer',
+                'driver_phone': '09121114444',
+                'status': VehicleEntry.Status.READY_TO_SETTLE,
+                'services': [{'id': service.id, 'title': service.name, 'price': 350000, 'discount_amount': 0}],
+                'share': {'type': VehicleJob.WorkerPaymentType.PERCENT, 'value': 50},
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        vehicle = VehicleEntry.objects.get(id=response.data['id'])
+        job = vehicle.job
+        line = job.service_lines.get()
+        self.assertEqual(line.unit_price, Decimal('350000.00'))
+        self.assertEqual(line.line_total, Decimal('350000.00'))
+        self.assertEqual(line.discount_amount, Decimal('0.00'))
+        self.assertEqual(line.list_unit_price, Decimal('350000.00'))
+        self.assertEqual(job.service_list_subtotal, Decimal('350000.00'))
+        self.assertEqual(job.services_total, Decimal('350000.00'))
+        self.assertEqual(job.facility_discount_total, Decimal('0.00'))
+        self.assertEqual(job.discount_total, Decimal('0.00'))
+        self.assertEqual(job.final_total, Decimal('350000.00'))
+        self.assertEqual(job.worker_share_amount, Decimal('175000.00'))
+
+    @patch('apps.notifications.services.send_provider_sms')
+    def test_manual_service_price_override_on_update_becomes_base_price(self, mock_send_provider_sms):
+        mock_send_provider_sms.return_value = {
+            'ok': True,
+            'message': 'sent',
+            'provider_status': 200,
+            'provider_data': {'status': 'success', 'data': {'id': 'provider-manual-update'}},
+            'provider_id': 'provider-manual-update',
+            'raw_body': '{"status":"success","data":{"id":"provider-manual-update"}}',
+            'payload': {'line_number': '30001234', 'recipients': ['09120000000']},
+        }
+        service = Service.objects.create(
+            tenant=self.tenant,
+            name='Manual update service',
+            code='MANUAL-UPDATE-TEST',
+            base_price=Decimal('400000'),
+            pricing_tiers={
+                'type_1': {
+                    'list_price': 500000,
+                    'sale_price': 400000,
+                    'duration_minutes': 30,
+                },
+            },
+        )
+
+        response = self.client.patch(
+            reverse('vehicle-detail', args=[self.vehicle.id]),
+            {
+                'status': VehicleEntry.Status.READY_TO_SETTLE,
+                'services': [{
+                    'id': service.id,
+                    'title': service.name,
+                    'price': 360000,
+                    'manual_price_override': True,
+                    'discount_amount': 0,
+                }],
+                'share': {'type': VehicleJob.WorkerPaymentType.PERCENT, 'value': 50},
+                'manual_discount_total': 20000,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.job.refresh_from_db()
+        line = self.job.service_lines.get()
+        self.assertEqual(line.list_unit_price, Decimal('360000.00'))
+        self.assertEqual(line.unit_price, Decimal('360000.00'))
+        self.assertEqual(line.line_total, Decimal('360000.00'))
+        self.assertEqual(line.discount_amount, Decimal('0.00'))
+        self.assertEqual(self.job.service_list_subtotal, Decimal('360000.00'))
+        self.assertEqual(self.job.facility_discount_total, Decimal('0.00'))
+        self.assertEqual(self.job.manual_discount_total, Decimal('20000.00'))
+        self.assertEqual(self.job.discount_total, Decimal('20000.00'))
+        self.assertEqual(self.job.final_total, Decimal('340000.00'))
+        self.assertEqual(self.job.worker_share_amount, Decimal('180000.00'))
 
     @patch('apps.notifications.services.send_provider_sms')
     def test_vehicle_create_reuses_existing_customer_profile_by_phone(self, mock_send_provider_sms):
