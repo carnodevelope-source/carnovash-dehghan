@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
 
 
 class CarWash(models.Model):
@@ -7,6 +8,8 @@ class CarWash(models.Model):
     slug = models.SlugField(max_length=160, unique=True, blank=True)
     address = models.CharField(max_length=300, blank=True, default='')
     is_active = models.BooleanField(default=True)
+    trial_started_at = models.DateTimeField(null=True, blank=True)
+    trial_ends_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -27,6 +30,10 @@ class CarWash(models.Model):
         if not feature_key:
             return False
         return self.feature_purchases.filter(feature_key=feature_key, is_active=True).exists()
+
+    def is_trial_active(self, now=None):
+        now = now or timezone.now()
+        return bool(self.trial_started_at and self.trial_ends_at and self.trial_started_at <= now < self.trial_ends_at)
 
 
 class User(AbstractUser):

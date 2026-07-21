@@ -1,9 +1,11 @@
 from unittest.mock import patch
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.auth.models import CarWash, PendingTenantRegistration, SupportTicket
@@ -122,6 +124,14 @@ class TenantRegisterTests(APITestCase):
         ticket.refresh_from_db()
 
         self.assertTrue(tenant.is_active)
+        self.assertIsNotNone(tenant.trial_started_at)
+        self.assertIsNotNone(tenant.trial_ends_at)
+        self.assertAlmostEqual(
+            tenant.trial_ends_at,
+            tenant.trial_started_at + timedelta(hours=24),
+            delta=timedelta(seconds=2),
+        )
+        self.assertGreater(tenant.trial_ends_at, timezone.now())
         self.assertTrue(manager.is_active)
         self.assertEqual(registration.status, PendingTenantRegistration.Status.APPROVED)
         self.assertEqual(ticket.status, SupportTicket.Status.CLOSED)

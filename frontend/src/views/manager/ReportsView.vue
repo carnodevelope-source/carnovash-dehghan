@@ -99,14 +99,14 @@
           <h3>گزارش کل</h3>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
+              <thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>انعام</th><th>قیمت نهایی سفارش</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
               <tbody>
                 <template v-for="row in data.overall_report" :key="`o-${serviceRowKey(row)}`">
                   <tr class="clickable-row" :class="{ expanded: isServicesExpanded(row) }" @click="openVehicleDetail(row.vehicle_id)">
-                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
+                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
                   </tr>
                   <tr v-if="isServicesExpanded(row)" class="services-expanded-row">
-                    <td colspan="14">
+                    <td colspan="15">
                       <div class="services-expanded-box">
                         <strong>همه خدمات انجام‌شده</strong>
                         <p>{{ normalizeServicesValue(row.services) }}</p>
@@ -122,7 +122,7 @@
         <template v-else-if="activeTab === 'carwash'">
           <h3>گزارش حق کارواش</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>حق کارواش</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.carwash_report" :key="`c-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+            <tr v-for="row in data.carwash_report" :key="`c-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
@@ -150,7 +150,7 @@
             <article class="payout-card"><p>انعام</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
           </div>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.worker_report" :key="`w-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+            <tr v-for="row in data.worker_report" :key="`w-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
           <div v-if="selectedWorkerSummary" class="transactions-shell">
             <div class="worker-head">
@@ -170,14 +170,14 @@
         <template v-else-if="activeTab === 'tips'">
           <h3>گزارش انعام</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>انعام</th><th>نام نیرو</th><th>کالا</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.tips_report" :key="`t-${row.row}`"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+            <tr v-for="row in data.tips_report" :key="`t-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
         <template v-else-if="activeTab === 'revenue'">
           <h3>گزارش درآمد</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>تاریخ</th><th>راننده</th><th>شماره</th><th>مدل خودرو</th><th>رنگ</th><th>پلاک</th><th>روش پرداخت</th><th>وضعیت پرداخت</th><th>خدمات</th><th>محصولات</th><th>تخفیف</th><th>انعام</th><th>مبلغ نهایی</th><th>وصول شده</th><th>مانده</th><th>شماره چک</th><th>سررسید</th></tr></thead><tbody>
-            <tr v-for="row in data.revenue_report" :key="`r-${row.row}`"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
+            <tr v-for="row in data.revenue_report" :key="`r-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
@@ -749,6 +749,14 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#039;')
 
 const workerReceiptOrderPrice = (row) => {
+  if (row?.final_total_without_tip !== undefined && row?.final_total_without_tip !== null) {
+    const finalWithoutTip = Number(row.final_total_without_tip || 0)
+    if (finalWithoutTip > 0) return finalWithoutTip
+  }
+  if (row?.final_total !== undefined && row?.final_total !== null) {
+    const finalBase = Math.max(0, Number(row.final_total || 0) - Number(row.tip_amount || 0))
+    if (finalBase > 0) return finalBase
+  }
   if (row?.service_total !== undefined && row?.service_total !== null) {
     const serviceTotal = Number(row.service_total || 0)
     if (serviceTotal > 0) return serviceTotal
@@ -760,14 +768,6 @@ const workerReceiptOrderPrice = (row) => {
   if (row?.service_amount !== undefined && row?.service_amount !== null) {
     const serviceAmount = Number(row.service_amount || 0)
     if (serviceAmount > 0) return serviceAmount
-  }
-  if (row?.final_total_without_tip !== undefined && row?.final_total_without_tip !== null) {
-    const finalWithoutTip = Number(row.final_total_without_tip || 0)
-    if (finalWithoutTip > 0) return finalWithoutTip
-  }
-  if (row?.final_total !== undefined && row?.final_total !== null) {
-    const finalBase = Math.max(0, Number(row.final_total || 0) - Number(row.tip_amount || 0))
-    if (finalBase > 0) return finalBase
   }
   const commissionPercent = Number(row?.worker_commission_percent || selectedWorkerSummary.value?.default_commission_percent || 0)
   const workerShare = Number(row?.worker_share || 0)
@@ -818,10 +818,10 @@ const buildWorkerReceiptElement = () => {
         <tbody>${rowsHtml || '<tr><td colspan="5">رکوردی ثبت نشده است.</td></tr>'}</tbody>
       </table>
       <footer>
-        <p><span>جمع کل قیمت خدمات</span><strong>${escapeHtml(money(workerReceiptTotalServices.value))}</strong></p>
-        <p><span>جمع کل انعام</span><strong>${escapeHtml(money(workerReceiptTotalTip.value))}</strong></p>
-        <p><span>سهم پرسنل</span><strong>${escapeHtml(money(workerReceiptStaffShare.value))}</strong></p>
-        <p class="grand"><span>سهم پرسنل + انعام</span><strong>${escapeHtml(money(workerReceiptGrandTotal.value))}</strong></p>
+        <p><span>جمع کل خدمات</span><strong>${escapeHtml(money(workerReceiptTotalServices.value))}</strong></p>
+        <p><span>جمع سهم نیرو</span><strong>${escapeHtml(money(workerReceiptStaffShare.value))}</strong></p>
+        <p><span>جمع انعام نیرو</span><strong>${escapeHtml(money(workerReceiptTotalTip.value))}</strong></p>
+        <p class="grand"><span>جمع انعام + سهم نیرو</span><strong>${escapeHtml(money(workerReceiptGrandTotal.value))}</strong></p>
       </footer>
     </article>
   `
@@ -981,6 +981,7 @@ const resetFilters = () => {
 }
 
 const openVehicleDetail = async (vehicleId) => {
+  if (!vehicleId) return
   vehicleModal.open = true
   vehicleModal.loading = true
   vehicleModal.data = null

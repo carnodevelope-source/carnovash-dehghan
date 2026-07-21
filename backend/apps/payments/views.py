@@ -124,6 +124,19 @@ def license_status_for_tenant(tenant, now=None):
     if tenant is None:
         return {'is_locked': False, 'reason': '', 'notice': '', 'core_purchase_required': False}
     now = now or timezone.now()
+    if tenant.is_trial_active(now):
+        remaining_seconds = max(0, int((tenant.trial_ends_at - now).total_seconds()))
+        return {
+            'is_locked': False,
+            'reason': 'trial_active',
+            'notice': 'دسترسی رایگان ۲۴ ساعته به همه امکانات سامانه فعال است.',
+            'core_purchase_required': False,
+            'trial_active': True,
+            'trial_started_at': tenant.trial_started_at,
+            'trial_ends_at': tenant.trial_ends_at,
+            'trial_remaining_seconds': remaining_seconds,
+            'grace_days': LICENSE_GRACE_DAYS,
+        }
     purchase = CarWashFeaturePurchase.objects.filter(
         tenant=tenant,
         feature_key=CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
@@ -204,6 +217,8 @@ def locked_feature_statuses_for_tenant(tenant, now=None):
     if tenant is None:
         return {}
     now = now or timezone.now()
+    if tenant.is_trial_active(now):
+        return {}
     statuses = {}
     purchases = CarWashFeaturePurchase.objects.filter(
         tenant=tenant,
