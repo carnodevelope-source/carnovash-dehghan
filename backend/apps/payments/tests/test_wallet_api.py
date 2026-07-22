@@ -343,6 +343,26 @@ class WalletApiTests(APITestCase):
         self.assertEqual(locked_payload['feature_key'], CarWashFeaturePurchase.FeatureKey.SMS_CLUB)
         self.assertEqual(safe_response.status_code, 200)
 
+    def test_trial_access_unlocks_core_and_options_until_expiry(self):
+        self.tenant.trial_started_at = timezone.now() - timedelta(hours=2)
+        self.tenant.trial_ends_at = timezone.now() + timedelta(hours=22)
+        self.tenant.save(update_fields=['trial_started_at', 'trial_ends_at'])
+
+        trial_response = self.client.get(reverse('me'))
+        self.assertEqual(trial_response.status_code, 200)
+        self.assertFalse(trial_response.data['license_status']['is_locked'])
+        self.assertTrue(trial_response.data['license_status']['trial_active'])
+        self.assertTrue(all(trial_response.data['menu_access'].values()))
+
+        self.tenant.trial_started_at = timezone.now() - timedelta(hours=26)
+        self.tenant.trial_ends_at = timezone.now() - timedelta(hours=2)
+        self.tenant.save(update_fields=['trial_started_at', 'trial_ends_at'])
+
+        expired_response = self.client.get(reverse('me'))
+        self.assertEqual(expired_response.status_code, 200)
+        self.assertTrue(expired_response.data['license_status']['is_locked'])
+        self.assertEqual(expired_response.data['license_status']['reason'], 'core_purchase_required')
+
     def test_wallet_options_payload_reports_dynamic_feature_state(self):
         purchase = CarWashFeaturePurchase.objects.create(
             tenant=self.tenant,

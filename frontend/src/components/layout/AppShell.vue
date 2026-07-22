@@ -1,5 +1,9 @@
 ﻿<template>
   <div class="dashboard-page" dir="rtl">
+    <section v-if="trialBannerVisible" class="trial-access-banner">
+      <span>دسترسی به تمامی امکانات سامانه تا {{ trialCountdownText }} دیگر برای شما فعال است</span>
+    </section>
+
     <header ref="topbarRef" class="topbar">
       <div class="topbar-left">
         <button
@@ -194,18 +198,23 @@ const isMobileMenuOpen = ref(false)
 const topbarRef = ref(null)
 const topbarHeight = ref(64)
 const mobileLoginArtSrc = `${import.meta.env.BASE_URL}Mobile-bg-640.webp`
+const trialRemainingMs = ref(0)
 let supportCountInterval = null
 let supportCountPollingInFlight = false
+let trialCountdownInterval = null
+let trialExpiryHandled = false
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))
 const attendanceLockNotice = computed(() => getFeatureLockNotice(authStore.user, 'attendance'))
+const isTrialActive = computed(() => authStore.licenseStatus?.trial_active === true)
 const navItems = computed(() => (
   (navigationByRole[authStore.role] || [])
     .flatMap((group) => group.items || [])
     .filter((item) => item.route !== ATTENDANCE_ROUTE || canAccessAttendance.value)
 ))
 const lockedFeatureItems = computed(() => {
+  if (isTrialActive.value) return []
   if (!['manager', 'admin'].includes(authStore.role)) return []
   const items = []
   if (needsAttendanceUpgrade.value) {
@@ -220,6 +229,22 @@ const lockedFeatureItems = computed(() => {
 const mobileShellStyle = computed(() => ({
   '--mobile-topbar-offset': `${topbarHeight.value}px`
 }))
+const licenseSafeRouteNames = new Set(['manager-wallet', 'support', 'login', 'hq-panel'])
+const trialEndsAtMs = computed(() => {
+  const raw = authStore.licenseStatus?.trial_ends_at
+  if (!raw) return 0
+  const parsed = new Date(raw).getTime()
+  return Number.isFinite(parsed) ? parsed : 0
+})
+const trialBannerVisible = computed(() => isTrialActive.value && trialRemainingMs.value > 0)
+const trialCountdownText = computed(() => {
+  const totalSeconds = Math.max(0, Math.ceil(trialRemainingMs.value / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const twoDigits = (value) => String(value).padStart(2, '0').replace(/\d/g, (digit) => Number(digit).toLocaleString('fa-IR'))
+  return `${twoDigits(hours)}:${twoDigits(minutes)}:${twoDigits(seconds)}`
+})
 const currentPageIconName = computed(() => {
   const routeKey = Object.keys(navigationRouteMeta)
     .sort((a, b) => b.length - a.length)
@@ -326,6 +351,21 @@ const syncTopbarHeight = () => {
   topbarHeight.value = Math.max(64, Math.round(topbarRef.value?.offsetHeight || 64))
 }
 
+const syncTrialCountdown = async () => {
+  const endsAt = trialEndsAtMs.value
+  trialRemainingMs.value = endsAt ? Math.max(0, endsAt - Date.now()) : 0
+  if (!endsAt || trialRemainingMs.value > 0 || trialExpiryHandled) return
+
+  trialExpiryHandled = true
+  await authStore.fetchMe()
+  if (authStore.isLicenseLocked && !licenseSafeRouteNames.has(route.name)) {
+    notifyWarning(authStore.licenseStatus?.notice || 'برای ادامه استفاده باید پرداخت نرم‌افزار را تکمیل کنید.', {
+      title: 'دسترسی قفل شد'
+    })
+    router.push('/manager/wallet')
+  }
+}
+
 const syncBodyScroll = () => {
   document.body.classList.toggle('mobile-menu-open', isMobileMenuOpen.value)
 }
@@ -403,9 +443,11 @@ onMounted(() => {
   window.addEventListener('keydown', onWindowKeydown)
   syncTopbarHeight()
   syncBodyScroll()
+  syncTrialCountdown()
   loadWalletWarning()
   loadSupportOpenCount()
   supportCountInterval = window.setInterval(loadSupportOpenCount, 10000)
+  trialCountdownInterval = window.setInterval(syncTrialCountdown, 1000)
 })
 
 watch(() => route.fullPath, () => {
@@ -417,11 +459,17 @@ watch(isMobileMenuOpen, () => {
   syncBodyScroll()
 })
 
+watch(trialEndsAtMs, () => {
+  trialExpiryHandled = false
+  syncTrialCountdown()
+})
+
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('resize', onWindowResize)
   window.removeEventListener('keydown', onWindowKeydown)
   if (supportCountInterval) window.clearInterval(supportCountInterval)
+  if (trialCountdownInterval) window.clearInterval(trialCountdownInterval)
   document.body.classList.remove('mobile-menu-open')
 })
 </script>
@@ -434,6 +482,25 @@ onBeforeUnmount(() => {
   background: #f7f9fb;
   color: #191c1e;
   overflow-x: hidden;
+}
+
+.trial-access-banner {
+  position: sticky;
+  top: 0;
+  z-index: 55;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  background: #0f766e;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.16);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.8;
 }
 
 .topbar {

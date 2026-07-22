@@ -208,6 +208,7 @@ def _auth_payload(user):
     tenant = getattr(user, 'tenant', None)
     attendance_worker_count = tenant_worker_count(tenant) if getattr(user, 'tenant_id', None) else 0
     attendance_feature_purchased = 'attendance' in feature_keys
+    trial_active = bool(tenant and tenant.is_trial_active()) if getattr(user, 'tenant_id', None) else False
     license_status = {}
     locked_feature_statuses = {}
     if getattr(user, 'tenant_id', None) and not _is_hq_user(user):
@@ -235,6 +236,7 @@ def _auth_payload(user):
         'attendance_feature_purchased': attendance_feature_purchased,
         'attendance_upgrade_required': bool(
             getattr(user, 'tenant_id', None)
+            and not trial_active
             and not attendance_feature_purchased
             and attendance_worker_count > ATTENDANCE_FREE_WORKERS_LIMIT
         ),
@@ -252,6 +254,15 @@ def _build_unique_carwash_slug(name, explicit_slug=''):
         index += 1
         unique_slug = f'{base_slug}-{index}'
     return unique_slug
+
+
+def _start_trial_access(tenant, started_at=None):
+    if not tenant or tenant.trial_started_at or tenant.trial_ends_at:
+        return
+    started_at = started_at or timezone.now()
+    tenant.trial_started_at = started_at
+    tenant.trial_ends_at = started_at + timedelta(hours=24)
+    tenant.save(update_fields=['trial_started_at', 'trial_ends_at', 'updated_at'])
 
 
 def _send_registration_credentials_sms(*, carwash_name, phone, username, password):
@@ -853,6 +864,7 @@ class HqCarWashListCreateView(HqBaseView):
             address=(data.get('carwash_address') or '').strip(),
             is_active=True,
         )
+        _start_trial_access(tenant)
         _sync_tenant_feature_purchases(tenant, data.get('purchased_menu_access', []))
         first_name = data['manager_first_name'].strip()
         last_name = data['manager_last_name'].strip()
@@ -894,12 +906,15 @@ class HqCarWashUpdateView(HqBaseView):
         if 'carwash_address' in data:
             tenant.address = (data.get('carwash_address') or '').strip()
             changed_fields.append('address')
+        was_active = tenant.is_active
         if 'is_active' in data:
             tenant.is_active = data['is_active']
             changed_fields.append('is_active')
         if changed_fields:
             changed_fields.append('updated_at')
             tenant.save(update_fields=changed_fields)
+            if 'is_active' in data and not was_active and tenant.is_active:
+                _start_trial_access(tenant)
         if 'purchased_menu_access' in data:
             _sync_tenant_feature_purchases(tenant, data.get('purchased_menu_access', []))
 
@@ -1595,6 +1610,7 @@ class HqTicketApproveRegistrationView(HqBaseView):
 
         tenant.is_active = True
         tenant.save(update_fields=['is_active', 'updated_at'])
+        _start_trial_access(tenant, approval_time)
 
         manager.is_active = True
         if registration.temp_password:

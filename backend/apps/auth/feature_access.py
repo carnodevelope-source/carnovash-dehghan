@@ -7,6 +7,11 @@ ATTENDANCE_FREE_WORKERS_LIMIT = 5
 
 
 def feature_access_map_for_tenant(tenant):
+    if tenant and tenant.is_trial_active():
+        return {
+            key: True
+            for key in CarWashFeaturePurchase.FeatureKey.values
+        }
     feature_keys = set(tenant.active_feature_keys()) if tenant else set()
     locked_features = set()
     if tenant:
@@ -26,6 +31,8 @@ def feature_access_map_for_tenant(tenant):
 def tenant_has_attendance_access(tenant, feature_keys=None):
     if not tenant:
         return False
+    if tenant.is_trial_active():
+        return True
     from apps.payments.views import locked_feature_statuses_for_tenant
     if CarWashFeaturePurchase.FeatureKey.ATTENDANCE in locked_feature_statuses_for_tenant(tenant):
         return False
@@ -72,6 +79,8 @@ def worker_has_attendance_access(worker, purchased=None, allowed_ids=None):
     user = getattr(worker, 'user', None)
     if getattr(worker, 'is_deleted', False) or getattr(user, 'is_active', False) is not True or getattr(user, 'is_deleted', False):
         return False
+    if tenant.is_trial_active():
+        return True
     from apps.payments.views import locked_feature_statuses_for_tenant
     if CarWashFeaturePurchase.FeatureKey.ATTENDANCE in locked_feature_statuses_for_tenant(tenant):
         return False
