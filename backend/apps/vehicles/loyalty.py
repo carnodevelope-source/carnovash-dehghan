@@ -30,6 +30,8 @@ def normalize_plate(
     right = str(plate_right or '').strip()
     if left and letter and mid and right:
         return f'{left} {letter} {mid} {right}'
+    if mid and letter and not left and not right:
+        return f'{mid} {letter}'
     return str(plate_number or '').strip()
 
 

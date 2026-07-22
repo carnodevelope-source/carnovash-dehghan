@@ -1924,7 +1924,7 @@ const tenantReportRows = computed(() => {
 })
 const tenantReportColumns = computed(() => ({
   overall: [
-    ['row', 'ردیف'], ['driver_name', 'راننده'], ['driver_phone', 'شماره'], ['plate_number', 'پلاک'], ['status', 'وضعیت'], ['final_total', 'مبلغ نهایی', 'money'], ['before_discount_total', 'قبل از تخفیف', 'money'], ['carwash_share', 'حق کارواش', 'money'], ['worker_share', 'حق نیرو', 'money'], ['discount_total', 'جمع تخفیف', 'money'], ['tip_amount', 'انعام', 'money'], ['worker_name', 'نیرو'], ['services', 'خدمات'], ['created_at', 'تاریخ', 'date']
+    ['row', 'ردیف'], ['driver_name', 'راننده'], ['driver_gender', 'جنسیت'], ['driver_phone', 'شماره'], ['plate_number', 'پلاک'], ['status', 'وضعیت'], ['final_total', 'مبلغ نهایی', 'money'], ['before_discount_total', 'قبل از تخفیف', 'money'], ['carwash_share', 'حق کارواش', 'money'], ['worker_share', 'حق نیرو', 'money'], ['discount_total', 'جمع تخفیف', 'money'], ['tip_amount', 'انعام', 'money'], ['worker_name', 'نیرو'], ['services', 'خدمات'], ['created_at', 'تاریخ', 'date']
   ],
   carwash: [
     ['row', 'ردیف'], ['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['carwash_share', 'حق کارواش', 'money'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ', 'date']
@@ -2085,6 +2085,10 @@ const plateTypeLabel = (value) => ({
   car: 'خودرو',
   motorcycle: 'موتور سیکلت'
 }[value] || value || '-')
+const driverGenderLabel = (value) => ({
+  male: 'مرد',
+  female: 'زن'
+}[value] || value || '-')
 const tenantCellValue = (row, column) => {
   const [key, _label, type] = column
   if (key === 'before_discount_total') {
@@ -2097,6 +2101,7 @@ const tenantCellValue = (row, column) => {
   if (key === 'payment_status') return paymentStatusLabel(value)
   if (key === 'event_type') return attendanceEventLabel(value)
   if (key === 'plate_type') return plateTypeLabel(value)
+  if (key === 'driver_gender') return driverGenderLabel(value)
   if (key === 'status') return statusLabel(value)
   return value || '-'
 }

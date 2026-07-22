@@ -55,7 +55,7 @@
           <h3>راننده و پذیرش</h3>
           <div class="vehicle-details-info-grid">
             <p><span>نام راننده</span><strong>{{ vehicle.driver_name || '-' }}</strong></p>
-            <p><span>جنسیت راننده</span><strong>{{ driverGenderLabel(vehicle.driver_gender) }}</strong></p>
+            <p v-if="canSeeDriverGender"><span>جنسیت راننده</span><strong>{{ driverGenderLabel(vehicle.driver_gender) }}</strong></p>
             <p><span>شماره راننده</span><strong>{{ vehicle.driver_phone || '-' }}</strong></p>
             <p><span>ایجاد</span><strong>{{ formatDateTime(vehicle.created_at) }}</strong></p>
             <p><span>آخرین بروزرسانی</span><strong>{{ formatDateTime(vehicle.updated_at) }}</strong></p>
@@ -152,8 +152,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { formatThousandsToman } from '../../utils/money'
 import PlateBadge from './PlateBadge.vue'
+import { useAuthStore } from '../../store/auth.store'
 
 defineProps({
   open: { type: Boolean, default: false },
@@ -164,6 +166,9 @@ defineProps({
 })
 
 defineEmits(['close', 'cancel', 'block-plate', 'edit-vehicle'])
+
+const authStore = useAuthStore()
+const canSeeDriverGender = computed(() => authStore.role !== 'worker')
 
 const formatStatus = (value) => ({
   entered: 'وارد شده',

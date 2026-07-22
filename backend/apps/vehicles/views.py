@@ -77,7 +77,52 @@ def _normalized_plate_value(plate_number='', plate_left='', plate_letter='', pla
     right = str(plate_right or '').strip()
     if left and letter and mid and right:
         return f'{left} {letter} {mid} {right}'
+    if mid and letter and not left and not right:
+        return f'{mid} {letter}'
     return str(plate_number or '').strip()
+
+
+def _find_blocked_plate(tenant, *, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
+    if not tenant:
+        return None
+    left = str(plate_left or '').strip()
+    letter = str(plate_letter or '').strip()
+    mid = str(plate_mid or '').strip()
+    right = str(plate_right or '').strip()
+    normalized = _normalized_plate_value(
+        plate_number=plate_number,
+        plate_left=left,
+        plate_letter=letter,
+        plate_mid=mid,
+        plate_right=right,
+    )
+    queryset = BlockedPlate.objects.filter(tenant=tenant)
+    if normalized:
+        found = queryset.filter(plate_number=normalized).first()
+        if found:
+            return found
+    if left and letter and mid and right:
+        found = queryset.filter(
+            plate_left=left,
+            plate_letter=letter,
+            plate_mid=mid,
+            plate_right=right,
+        ).first()
+        if found:
+            return found
+    if mid and letter and not left and not right:
+        found = queryset.filter(
+            plate_mid=mid,
+            plate_letter=letter,
+            plate_left='',
+            plate_right='',
+        ).first()
+        if found:
+            return found
+    raw_plate = str(plate_number or '').strip()
+    if raw_plate:
+        return queryset.filter(plate_number=raw_plate).first()
+    return None
 
 
 _PERSIAN_DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')
@@ -414,19 +459,31 @@ class BlockedPlateStatusView(APIView):
 
     def get(self, request):
         tenant = getattr(request.user, 'tenant', None)
+        plate_left = request.query_params.get('plate_left', '')
+        plate_letter = request.query_params.get('plate_letter', '')
+        plate_mid = request.query_params.get('plate_mid', '')
+        plate_right = request.query_params.get('plate_right', '')
+        raw_plate = request.query_params.get('plate_number', '')
         plate_number = _normalized_plate_value(
-            plate_number=request.query_params.get('plate_number', ''),
-            plate_left=request.query_params.get('plate_left', ''),
-            plate_letter=request.query_params.get('plate_letter', ''),
-            plate_mid=request.query_params.get('plate_mid', ''),
-            plate_right=request.query_params.get('plate_right', ''),
+            plate_number=raw_plate,
+            plate_left=plate_left,
+            plate_letter=plate_letter,
+            plate_mid=plate_mid,
+            plate_right=plate_right,
         )
-        if not plate_number:
+        if not plate_number and not any([plate_left, plate_letter, plate_mid, plate_right, raw_plate]):
             return Response({'is_blocked': False}, status=status.HTTP_200_OK)
-        blocked = BlockedPlate.objects.filter(tenant=tenant, plate_number=plate_number).first()
+        blocked = _find_blocked_plate(
+            tenant,
+            plate_number=plate_number or raw_plate,
+            plate_left=plate_left,
+            plate_letter=plate_letter,
+            plate_mid=plate_mid,
+            plate_right=plate_right,
+        )
         return Response(
             {
-                'plate_number': plate_number,
+                'plate_number': plate_number or (blocked.plate_number if blocked else ''),
                 'is_blocked': bool(blocked),
                 'blocked_at': blocked.created_at if blocked else None,
             },
@@ -578,38 +635,132 @@ class VehiclePlateRecognitionView(APIView):
 class VehicleBlockPlateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request, pk):
         tenant = getattr(request.user, 'tenant', None)
-        vehicle = VehicleEntry.objects.filter(pk=pk, tenant=tenant).first()
+        vehicle = (
+            VehicleEntry.objects.select_related('customer', 'job', 'job__assigned_worker', 'job__assigned_worker__user')
+            .prefetch_related('job__service_lines__service', 'status_logs')
+            .filter(pk=pk, tenant=tenant)
+            .first()
+        )
         if not vehicle:
             return Response({'detail': 'Vehicle not found.'}, status=status.HTTP_404_NOT_FOUND)
-        blocked_plate, created = BlockedPlate.objects.get_or_create(
-            tenant=tenant,
-            plate_number=_normalized_plate_value(
-                plate_number=vehicle.plate_number,
-                plate_left=vehicle.plate_left,
-                plate_letter=vehicle.plate_letter,
-                plate_mid=vehicle.plate_mid,
-                plate_right=vehicle.plate_right,
-            ),
-            defaults={
-                'plate_left': vehicle.plate_left,
-                'plate_letter': vehicle.plate_letter,
-                'plate_mid': vehicle.plate_mid,
-                'plate_right': vehicle.plate_right,
-                'plate_type': vehicle.plate_type or VehicleEntry.PlateType.CAR,
-                'blocked_by': request.user if getattr(request.user, 'is_authenticated', False) else None,
-                'note': (request.data.get('note') or '').strip(),
-            },
+
+        plate_number = _normalized_plate_value(
+            plate_number=vehicle.plate_number,
+            plate_left=vehicle.plate_left,
+            plate_letter=vehicle.plate_letter,
+            plate_mid=vehicle.plate_mid,
+            plate_right=vehicle.plate_right,
         )
-        if not created and not blocked_plate.blocked_by_id and getattr(request.user, 'is_authenticated', False):
+        if not plate_number:
+            return Response(
+                {
+                    'detail': 'این مراجعه پلاک ندارد (ناشناس یا قطعه‌شویی) و قابل بلاک نیست.',
+                    'plate_number': ['پلاک معتبر برای بلاک ثبت نشده است.'],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        blocked_plate = _find_blocked_plate(
+            tenant,
+            plate_number=plate_number,
+            plate_left=vehicle.plate_left,
+            plate_letter=vehicle.plate_letter,
+            plate_mid=vehicle.plate_mid,
+            plate_right=vehicle.plate_right,
+        )
+        created = False
+        if not blocked_plate:
+            blocked_plate = BlockedPlate.objects.create(
+                tenant=tenant,
+                plate_number=plate_number,
+                plate_left=vehicle.plate_left or '',
+                plate_letter=vehicle.plate_letter or '',
+                plate_mid=vehicle.plate_mid or '',
+                plate_right=vehicle.plate_right or '',
+                plate_type=vehicle.plate_type or VehicleEntry.PlateType.CAR,
+                blocked_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                note=(request.data.get('note') or '').strip(),
+            )
+            created = True
+        elif not blocked_plate.blocked_by_id and getattr(request.user, 'is_authenticated', False):
             blocked_plate.blocked_by = request.user
             blocked_plate.save(update_fields=['blocked_by', 'updated_at'])
+
+        cancelled = False
+        previous_status = vehicle.status
+        if previous_status not in {VehicleEntry.Status.RELEASED, VehicleEntry.Status.CANCELLED}:
+            status_view = VehicleEntryStatusUpdateView()
+            status_view.request = request
+            status_view.format_kwarg = None
+            has_payments = Payment.objects.filter(vehicle_entry=vehicle).exists()
+            vehicle.status = VehicleEntry.Status.CANCELLED
+            vehicle.released_at = None
+            vehicle.payment_status = (
+                VehicleEntry.PaymentStatus.REFUNDED
+                if has_payments
+                else VehicleEntry.PaymentStatus.UNPAID
+            )
+            vehicle.payment_method = ''
+            vehicle.save(update_fields=['status', 'released_at', 'payment_status', 'payment_method', 'updated_at'])
+            status_view._neutralize_cancelled_vehicle_effects(vehicle, request.user)
+            rebuild_customer_score(vehicle.customer)
+            if not vehicle.is_piece_wash:
+                rebuild_plate_loyalty(
+                    get_or_create_plate_loyalty(
+                        tenant=vehicle.tenant,
+                        plate_number=vehicle.plate_number,
+                        plate_left=vehicle.plate_left,
+                        plate_letter=vehicle.plate_letter,
+                        plate_mid=vehicle.plate_mid,
+                        plate_right=vehicle.plate_right,
+                    ),
+                    discount_percent_per_half_star=VehicleEntrySerializer()._discount_percent_per_half_star(vehicle.tenant),
+                )
+            if hasattr(vehicle, 'job') and vehicle.job:
+                vehicle.job.released_at = None
+                vehicle.job.save(update_fields=['released_at', 'updated_at'])
+            VehicleStatusLog.objects.create(
+                tenant=vehicle.tenant,
+                vehicle=vehicle,
+                from_status=previous_status,
+                to_status=VehicleEntry.Status.CANCELLED,
+                changed_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                note=(request.data.get('note') or 'بلاک پلاک و لغو سفارش').strip() or 'بلاک پلاک و لغو سفارش',
+            )
+            cancelled = True
+
+        vehicle.refresh_from_db()
+        serializer = VehicleEntrySerializer(vehicle, context={'request': request})
         return Response(
             {
                 'plate_number': blocked_plate.plate_number,
                 'is_blocked': True,
                 'created': created,
+                'cancelled': cancelled,
+                'vehicle': serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class BlockedPlateUnblockView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        tenant = getattr(request.user, 'tenant', None)
+        blocked = BlockedPlate.objects.filter(pk=pk, tenant=tenant).first()
+        if not blocked:
+            return Response({'detail': 'Blocked plate not found.'}, status=status.HTTP_404_NOT_FOUND)
+        plate_number = blocked.plate_number
+        blocked.delete()
+        return Response(
+            {
+                'id': pk,
+                'plate_number': plate_number,
+                'is_blocked': False,
             },
             status=status.HTTP_200_OK,
         )

@@ -195,13 +195,10 @@
                   </div>
                 </div>
 
-                <div class="qr-row">
-                  <img class="qr-frame" :class="{ disabled: worker.attendance_enabled === false }" :src="qrSrc(worker)" :alt="`QR ${worker.full_name}`" loading="lazy" />
-                  <div class="qr-copy">
-                    <span>لینک ورود و خروج</span>
-                    <code>{{ fullAttendanceLink(worker) }}</code>
-                    <small>برای اسکن یا بازکردن مستقیم توسط نیرو</small>
-                  </div>
+                <div class="link-row">
+                  <span>لینک ورود و خروج</span>
+                  <code>{{ fullAttendanceLink(worker) }}</code>
+                  <small>برای بازکردن مستقیم توسط نیرو</small>
                 </div>
 
                 <div class="worker-actions">
@@ -359,7 +356,6 @@ const attendanceUpgradeNotice = computed(() => {
 })
 
 const fullAttendanceLink = (worker) => `${window.location.origin}${worker.attendance_path || `/attendance/${worker.attendance_token}`}`
-const qrSrc = (worker) => `https://api.qrserver.com/v1/create-qr-code/?size=132x132&data=${encodeURIComponent(fullAttendanceLink(worker))}`
 const barWidth = (value, max) => Math.max(8, Math.round((Number(value || 0) / Math.max(Number(max || 1), 1)) * 100))
 
 const toIsoDate = (value) => {
@@ -600,13 +596,10 @@ watch(activeTab, async (value) => {
 .meta-chip{padding:12px;border-radius:18px;background:#f8fafc;border:1px solid #e2e8f0}
 .meta-chip span{display:block;color:#64748b;font-size:11px}
 .meta-chip strong{display:block;margin-top:8px;font-size:15px}
-.qr-row{display:grid;grid-template-columns:132px 1fr;gap:14px;margin-top:16px;padding:14px;border-radius:20px;background:linear-gradient(135deg,#eff6ff,#f8fafc)}
-.qr-frame{width:132px;height:132px;border-radius:18px;background:#fff;padding:8px;border:1px solid #dbeafe;object-fit:cover}
-.qr-frame.disabled{opacity:.35;filter:grayscale(1)}
-.qr-copy{display:grid;align-content:center;gap:8px;min-width:0}
-.qr-copy span{font-size:12px;color:#0284c7;font-weight:800}
-.qr-copy code{display:block;padding:10px 12px;border-radius:14px;background:#fff;border:1px solid #dbeafe;color:#0f172a;font-size:11px;word-break:break-all}
-.qr-copy small{color:#64748b}
+.link-row{display:grid;gap:8px;margin-top:16px;padding:14px;border-radius:20px;background:linear-gradient(135deg,#eff6ff,#f8fafc)}
+.link-row span{font-size:12px;color:#0284c7;font-weight:800}
+.link-row code{display:block;padding:10px 12px;border-radius:14px;background:#fff;border:1px solid #dbeafe;color:#0f172a;font-size:11px;word-break:break-all}
+.link-row small{color:#64748b}
 .worker-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .primary-btn,.secondary-btn,.ghost-btn,.ghost-inline-btn,.danger-inline-btn{height:42px;border:none;border-radius:14px;padding:0 14px;font:inherit;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .primary-btn{background:linear-gradient(135deg,#0284c7,#06b6d4);color:#fff;box-shadow:0 12px 24px rgba(6,182,212,.18)}
@@ -639,6 +632,6 @@ watch(activeTab, async (value) => {
 .feed-copy p{margin:4px 0 0;color:#64748b;font-size:12px}
 .error-box{padding:12px 14px;border-radius:18px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}
 @media (max-width:1280px){.content-grid,.reports-hero{grid-template-columns:1fr}.hero-panel{grid-template-columns:1fr}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.hero-panel .hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.reports-filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-wide{grid-column:1/-1}}
-@media (max-width:900px){.toolbar-card{grid-template-columns:1fr 1fr}.search-field{grid-column:1/-1}.worker-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.qr-row{grid-template-columns:1fr}.qr-frame{justify-self:center}}
-@media (max-width:640px){.section-card,.hero-panel,.reports-hero{border-radius:24px}.toolbar-card,.kpi-grid,.reports-filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.hero-panel .hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.worker-head,.feed-item{grid-template-columns:1fr}.status-pill{justify-self:start}.trend-item{grid-template-columns:1fr}.section-head{flex-direction:column;align-items:stretch}.hero-copy h2,.reports-hero h2{font-size:26px}.hero-panel,.section-card,.reports-hero{padding:16px}.qr-frame{width:100%;height:auto;aspect-ratio:1/1;max-width:180px}.meta-chip strong{font-size:14px}.hero-stat{padding:12px 10px;border-radius:16px}.hero-stat strong{font-size:18px}.worker-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.primary-btn,.secondary-btn,.ghost-inline-btn,.danger-inline-btn{padding:0 10px;font-size:12px}.search-wide{grid-column:1/-1}.report-table th,.report-table td{font-size:11px}}
+@media (max-width:900px){.toolbar-card{grid-template-columns:1fr 1fr}.search-field{grid-column:1/-1}.worker-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.section-card,.hero-panel,.reports-hero{border-radius:24px}.toolbar-card,.kpi-grid,.reports-filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.hero-panel .hero-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.worker-head,.feed-item{grid-template-columns:1fr}.status-pill{justify-self:start}.trend-item{grid-template-columns:1fr}.section-head{flex-direction:column;align-items:stretch}.hero-copy h2,.reports-hero h2{font-size:26px}.hero-panel,.section-card,.reports-hero{padding:16px}.meta-chip strong{font-size:14px}.hero-stat{padding:12px 10px;border-radius:16px}.hero-stat strong{font-size:18px}.worker-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.primary-btn,.secondary-btn,.ghost-inline-btn,.danger-inline-btn{padding:0 10px;font-size:12px}.search-wide{grid-column:1/-1}.report-table th,.report-table td{font-size:11px}}
 </style>

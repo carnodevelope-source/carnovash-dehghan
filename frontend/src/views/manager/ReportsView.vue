@@ -99,14 +99,14 @@
           <h3>گزارش کل</h3>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
+              <thead><tr><th>ردیف</th><th>نام راننده</th><th>جنسیت</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
               <tbody>
                 <template v-for="row in data.overall_report" :key="`o-${serviceRowKey(row)}`">
                   <tr class="clickable-row" :class="{ expanded: isServicesExpanded(row) }" @click="openVehicleDetail(row.vehicle_id)">
-                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
+                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ formatGender(row.driver_gender) }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
                   </tr>
                   <tr v-if="isServicesExpanded(row)" class="services-expanded-row">
-                    <td colspan="14">
+                    <td colspan="15">
                       <div class="services-expanded-box">
                         <strong>همه خدمات انجام‌شده</strong>
                         <p>{{ normalizeServicesValue(row.services) }}</p>
@@ -192,7 +192,12 @@
         <template v-else-if="activeTab === 'blacklist'">
           <h3>گزارش لیست سیاه</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>پلاک</th><th>نوع وسیله</th><th>توضیح</th><th>ثبت کننده</th><th>تاریخ ثبت</th></tr></thead><tbody>
-            <tr v-for="row in data.blacklist_report" :key="`b-${row.id || row.row}`">
+            <tr
+              v-for="row in data.blacklist_report"
+              :key="`b-${row.id || row.row}`"
+              class="clickable-row"
+              @click="openBlacklistRow(row)"
+            >
               <td>{{ row.row }}</td>
               <td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td>
               <td>{{ row.plate_type === 'motorcycle' ? 'موتور سیکلت' : 'خودرو' }}</td>
@@ -278,6 +283,36 @@
       </div>
     </section>
   </div>
+
+  <div v-if="blacklistModal.open" class="modal-overlay" @click.self="closeBlacklistModal">
+    <section class="modal-panel action-panel">
+      <header class="modal-head">
+        <h3>جزئیات پلاک بلاک‌شده</h3>
+        <button class="close-btn" @click="closeBlacklistModal">✕</button>
+      </header>
+      <div class="modal-body blacklist-modal-body">
+        <div class="blacklist-plate-preview">
+          <PlateBadge
+            :plate-number="blacklistModal.row?.plate_number"
+            :plate-left="blacklistModal.row?.plate_left"
+            :plate-letter="blacklistModal.row?.plate_letter"
+            :plate-mid="blacklistModal.row?.plate_mid"
+            :plate-right="blacklistModal.row?.plate_right"
+            :plate-type="blacklistModal.row?.plate_type || 'car'"
+            compact
+          />
+        </div>
+        <p><span>نوع وسیله</span><strong>{{ blacklistModal.row?.plate_type === 'motorcycle' ? 'موتور سیکلت' : 'خودرو' }}</strong></p>
+        <p><span>توضیح</span><strong>{{ blacklistModal.row?.note || '-' }}</strong></p>
+        <p><span>ثبت‌کننده</span><strong>{{ blacklistModal.row?.blocked_by_name || '-' }}</strong></p>
+        <p><span>تاریخ ثبت</span><strong>{{ dateTime(blacklistModal.row?.created_at) }}</strong></p>
+        <p v-if="blacklistModal.error" class="helper-note error">{{ blacklistModal.error }}</p>
+        <button class="primary-btn" :disabled="blacklistModal.submitting || !blacklistModal.row?.id" @click="unblockBlacklistPlate">
+          {{ blacklistModal.submitting ? 'در حال خارج کردن...' : 'خارج کردن از لیست سیاه' }}
+        </button>
+      </div>
+    </section>
+  </div>
 </template>
 
 <script setup>
@@ -331,6 +366,7 @@ const expandedServiceRows = ref({})
 const selectedWorkerSummary = ref(null)
 const selectedWorkerTransactions = ref([])
 const vehicleModal = reactive({ open: false, loading: false, data: null })
+const blacklistModal = reactive({ open: false, submitting: false, row: null, error: '' })
 const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '' })
 const payoutSubmitError = ref('')
 const adjustmentModal = reactive({ open: false, submitting: false, kind: 'bonus', amount: 0, note: '' })
@@ -371,6 +407,7 @@ const dateOnly = (v) => formatJalaliDate(v)
 const receiptDateTime = (v) => formatJalaliDateTime(v)
 const faNumber = (value) => Number(value || 0).toLocaleString('fa-IR')
 const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assigned: 'در انتظار تکمیل', in_progress: 'در حال انجام', ready_to_settle: 'در انتظار تکمیل', released: 'ترخیص شده', cancelled: 'لغو' }[value] || '-')
+const formatGender = (value) => ({ male: 'مرد', female: 'زن' }[value] || '-')
 const workerPaymentTypeLabel = (value) => ({ hourly: 'ساعتی', fixed: 'ثابت', percent: 'درصدی' }[value] || '-')
 const workHoursLabel = (value) => `${Number(value || 0).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ساعت`
 const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', insurance_payment: 'پرداخت حق بیمه', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
@@ -1028,10 +1065,48 @@ const cancelVehicle = async () => {
 const blockVehiclePlate = async () => {
   if (!vehicleModal.data?.id) return
   try {
-    await api.post(`/vehicles/${vehicleModal.data.id}/block-plate/`, {})
-    await Promise.all([reloadVehicleDetail(), fetchReports()])
+    const { data } = await api.post(`/vehicles/${vehicleModal.data.id}/block-plate/`, {})
+    if (data?.vehicle) {
+      vehicleModal.data = {
+        ...data.vehicle,
+        is_plate_blocked: true
+      }
+    } else {
+      await reloadVehicleDetail()
+    }
+    await fetchReports()
   } catch (error) {
     errorMessage.value = resolveApiErrorMessage(error, 'بلاک کردن پلاک ناموفق بود.')
+  }
+}
+
+const openBlacklistRow = (row) => {
+  if (!row?.id) return
+  blacklistModal.open = true
+  blacklistModal.submitting = false
+  blacklistModal.error = ''
+  blacklistModal.row = { ...row }
+}
+
+const closeBlacklistModal = () => {
+  blacklistModal.open = false
+  blacklistModal.submitting = false
+  blacklistModal.error = ''
+  blacklistModal.row = null
+}
+
+const unblockBlacklistPlate = async () => {
+  if (!blacklistModal.row?.id) return
+  blacklistModal.submitting = true
+  blacklistModal.error = ''
+  try {
+    await api.post(`/vehicles/blocked-plates/${blacklistModal.row.id}/unblock/`, {})
+    closeBlacklistModal()
+    await fetchReports()
+  } catch (error) {
+    blacklistModal.error = resolveApiErrorMessage(error, 'خارج کردن پلاک از لیست سیاه ناموفق بود.')
+  } finally {
+    blacklistModal.submitting = false
   }
 }
 
@@ -1258,6 +1333,12 @@ th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-spa
 .modal-body label{display:grid;gap:6px}
 .helper-note{grid-column:1 / -1;margin:-4px 0 0;color:#475569;font-size:12px}
 .helper-note.error{color:#b91c1c}
+.blacklist-modal-body{grid-template-columns:1fr}
+.blacklist-modal-body p{margin:0;display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}
+.blacklist-modal-body p span{color:#64748b;font-size:12px}
+.blacklist-modal-body p strong{color:#0f172a;font-size:13px;text-align:left}
+.blacklist-plate-preview{display:flex;justify-content:center;padding:8px 0 4px}
+.blacklist-modal-body .primary-btn{width:100%}
 
 .plate-filter-row .plate-filter-blue-input{
   outline:none;

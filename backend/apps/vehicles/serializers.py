@@ -1352,19 +1352,43 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         right = str(plate_right or '').strip()
         if left and letter and mid and right:
             return f'{left} {letter} {mid} {right}'
+        if mid and letter and not left and not right:
+            return f'{mid} {letter}'
         return str(plate_number or '').strip()
 
     def _is_plate_blocked(self, tenant, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
+        if not tenant:
+            return False
+        left = str(plate_left or '').strip()
+        letter = str(plate_letter or '').strip()
+        mid = str(plate_mid or '').strip()
+        right = str(plate_right or '').strip()
         normalized_plate = self._normalized_plate(
             plate_number=plate_number,
-            plate_left=plate_left,
-            plate_letter=plate_letter,
-            plate_mid=plate_mid,
-            plate_right=plate_right,
+            plate_left=left,
+            plate_letter=letter,
+            plate_mid=mid,
+            plate_right=right,
         )
-        if not tenant or not normalized_plate:
-            return False
-        return BlockedPlate.objects.filter(tenant=tenant, plate_number=normalized_plate).exists()
+        queryset = BlockedPlate.objects.filter(tenant=tenant)
+        if normalized_plate and queryset.filter(plate_number=normalized_plate).exists():
+            return True
+        if left and letter and mid and right:
+            return queryset.filter(
+                plate_left=left,
+                plate_letter=letter,
+                plate_mid=mid,
+                plate_right=right,
+            ).exists()
+        if mid and letter and not left and not right:
+            return queryset.filter(
+                plate_mid=mid,
+                plate_letter=letter,
+                plate_left='',
+                plate_right='',
+            ).exists()
+        raw_plate = str(plate_number or '').strip()
+        return bool(raw_plate and queryset.filter(plate_number=raw_plate).exists())
 
     class Meta:
         model = VehicleEntry
@@ -1437,3 +1461,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'driver_gender': {'required': False, 'allow_blank': True},
             'driver_phone': {'required': False, 'allow_blank': True},
         }
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        if getattr(user, 'role', None) == 'worker':
+            data.pop('driver_gender', None)
+        return data

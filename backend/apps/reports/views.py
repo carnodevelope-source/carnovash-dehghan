@@ -185,12 +185,18 @@ def _format_export_datetime(value):
     return localized.strftime('%Y-%m-%d %H:%M')
 
 
+def _driver_gender_label(value):
+    return {'male': 'مرد', 'female': 'زن'}.get(str(value or '').strip().lower(), '')
+
+
 def _export_row_value(row, field):
     value = row.get(field, '')
     if field in {'created_at', 'event_at'}:
         return _format_export_datetime(value)
     if field == 'reminder_due_at':
         return _format_export_datetime(value)[:10] if value else ''
+    if field == 'driver_gender':
+        return _driver_gender_label(value)
     if value is None:
         return ''
     return value
@@ -198,7 +204,7 @@ def _export_row_value(row, field):
 
 def _build_export_config(tab_key):
     configs = {
-        'overall': {'filename': 'overall-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('status', 'وضعیت'), ('carwash_share', 'حق کارواش'), ('worker_share', 'حق نیرو'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('services', 'خدمات'), ('created_at', 'تاریخ')], 'rows_key': 'overall_report'},
+        'overall': {'filename': 'overall-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_gender', 'جنسیت'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('status', 'وضعیت'), ('carwash_share', 'حق کارواش'), ('worker_share', 'حق نیرو'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('services', 'خدمات'), ('created_at', 'تاریخ')], 'rows_key': 'overall_report'},
         'carwash': {'filename': 'carwash-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('carwash_share', 'حق کارواش'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'carwash_report'},
         'worker': {'filename': 'worker-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('service_total', 'قیمت خدمات'), ('tip_amount', 'انعام'), ('worker_share', 'حق نیرو'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'worker_report'},
         'tips': {'filename': 'tips-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('products', 'کالا'), ('created_at', 'تاریخ')], 'rows_key': 'tips_report'},
@@ -545,16 +551,17 @@ class ReportsDashboardView(APIView):
             'job__assigned_worker__user',
             'customer',
         ).prefetch_related('job__product_lines__product', 'job__service_lines__service', 'payments').filter(
-            tenant=tenant
-        ).exclude(status=VehicleEntry.Status.CANCELLED)
+            tenant=tenant,
+            status=VehicleEntry.Status.RELEASED,
+        )
 
     @classmethod
     def _build_filtered_vehicles(cls, start, end, query, tenant, worker_id=None, plate_number='', plate_type=''):
         vehicles = cls._base_queryset(tenant)
         if start:
-            vehicles = vehicles.filter(check_in_at__gte=start)
+            vehicles = vehicles.filter(released_at__gte=start)
         if end:
-            vehicles = vehicles.filter(check_in_at__lte=end)
+            vehicles = vehicles.filter(released_at__lte=end)
         if query:
             vehicles = vehicles.filter(
                 Q(driver_name__icontains=query)
@@ -569,7 +576,7 @@ class ReportsDashboardView(APIView):
         if plate_type in {'car', 'motorcycle'}:
             vehicles = vehicles.filter(plate_type=plate_type)
 
-        records = list(vehicles.order_by('-check_in_at'))
+        records = list(vehicles.order_by('-released_at', '-check_in_at'))
         if worker_id:
             records = [vehicle for vehicle in records if _job_has_worker(getattr(vehicle, 'job', None), worker_id)]
         return records
@@ -642,6 +649,7 @@ class ReportsDashboardView(APIView):
                 'row': idx,
                 'vehicle_id': vehicle.id,
                 'driver_name': vehicle.driver_name,
+                'driver_gender': vehicle.driver_gender or '',
                 'driver_phone': vehicle.driver_phone,
                 'car_model': vehicle.car_model,
                 'car_color': vehicle.car_color,
@@ -665,9 +673,13 @@ class ReportsDashboardView(APIView):
                 'worker_name': _job_worker_names(job),
                 'products': ', '.join(product_names),
                 'services': ', '.join(service_names),
-                'created_at': vehicle.check_in_at,
+                'created_at': vehicle.released_at or vehicle.check_in_at,
             }
             rows.append(row)
+
+        if getattr(request.user, 'role', None) == 'worker':
+            for row in rows:
+                row.pop('driver_gender', None)
 
         total_carwash = sum((_normalize_decimal(getattr(vehicle.job, 'carwash_share_amount', 0)) for vehicle in vehicles if getattr(vehicle, 'job', None)), Decimal('0'))
         total_worker = sum((_normalize_decimal(getattr(vehicle.job, 'worker_share_amount', 0)) for vehicle in vehicles if getattr(vehicle, 'job', None)), Decimal('0'))
@@ -978,6 +990,9 @@ class ReportsExportView(APIView):
     def get(self, request):
         tab_key = str(request.query_params.get('tab') or 'overall').strip().lower()
         config = _build_export_config(tab_key)
+        headers = list(config['headers'])
+        if getattr(request.user, 'role', None) == 'worker':
+            headers = [item for item in headers if item[0] != 'driver_gender']
         dashboard_response = ReportsDashboardView().get(request)
         payload = getattr(dashboard_response, 'data', {}) or {}
         rows = payload.get(config['rows_key'], []) or []
@@ -985,9 +1000,9 @@ class ReportsExportView(APIView):
         response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
         response['Content-Disposition'] = f'attachment; filename="{config["filename"]}.csv"'
         writer = csv.writer(response)
-        writer.writerow([label for _field, label in config['headers']])
+        writer.writerow([label for _field, label in headers])
         for row in rows:
-            writer.writerow([_export_row_value(row, field) for field, _label in config['headers']])
+            writer.writerow([_export_row_value(row, field) for field, _label in headers])
         return response
 
 

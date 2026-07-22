@@ -60,7 +60,10 @@
                 <span class="dot" :style="{ backgroundColor: car.color }"></span>
                 <span>{{ car.status }}</span>
               </div>
-              <span class="time" :style="{ backgroundColor: car.badgeBg, color: car.badgeText }">{{ car.time }}</span>
+              <div class="card-head-badges">
+                <span v-if="car.isPlateBlocked" class="blocked-chip">بلاک شده</span>
+                <span class="time" :style="{ backgroundColor: car.badgeBg, color: car.badgeText }">{{ car.time }}</span>
+              </div>
             </div>
 
             <PlateBadge
@@ -3169,6 +3172,7 @@ const cars = computed(() => vehicles.value.map((item) => ({
   driver_gender: item.driver_gender,
   driverGender: item.driver_gender,
   driverPhone: item.driver_phone,
+  isPlateBlocked: Boolean(item.is_plate_blocked),
   customerScore: Number(item.customer_score || 0),
   customerLoyaltyDiscountPercent: Number(item.customer_loyalty_discount_percent || 0),
   finalTotal: item.job?.final_total || item.job?.services_total || 0,
@@ -3236,22 +3240,52 @@ const cancelVehicle = async () => {
 
 const blockSelectedVehiclePlate = async () => {
   if (!selectedVehicle.value?.id) return
+  const plateNumber = String(selectedVehicle.value.plate_number || '').trim()
+  const hasParts = [
+    selectedVehicle.value.plate_left,
+    selectedVehicle.value.plate_letter,
+    selectedVehicle.value.plate_mid,
+    selectedVehicle.value.plate_right
+  ].some((part) => String(part || '').trim())
+  const model = String(selectedVehicle.value.car_model || '').trim()
+  const color = String(selectedVehicle.value.car_color || '').trim()
+  const isAnonymous = (model === '1111' && color === '1111') || selectedVehicle.value.is_piece_wash
+  if (isAnonymous || (!plateNumber && !hasParts)) {
+    notifyError('مراجعه ناشناس یا بدون پلاک قابل بلاک نیست. یک خودرو با پلاک واقعی ثبت کنید.', {
+      title: 'خطا در بلاک پلاک'
+    })
+    return
+  }
   try {
     const { data } = await api.post(`/vehicles/${selectedVehicle.value.id}/block-plate/`, {})
-    selectedVehicle.value = {
-      ...selectedVehicle.value,
-      is_plate_blocked: Boolean(data?.is_blocked)
-    }
-    const idx = vehicleStore.vehicles.findIndex((item) => item.id === selectedVehicle.value.id)
-    if (idx >= 0) {
-      vehicleStore.vehicles[idx] = {
-        ...vehicleStore.vehicles[idx],
+    const vehiclePayload = data?.vehicle
+    if (vehiclePayload?.id) {
+      syncVehicleSnapshot({
+        ...vehiclePayload,
         is_plate_blocked: true
+      })
+    } else {
+      selectedVehicle.value = {
+        ...selectedVehicle.value,
+        is_plate_blocked: Boolean(data?.is_blocked),
+        status: data?.cancelled ? 'cancelled' : selectedVehicle.value.status
       }
+      const idx = vehicleStore.vehicles.findIndex((item) => item.id === selectedVehicle.value.id)
+      if (idx >= 0) {
+        vehicleStore.vehicles[idx] = {
+          ...vehicleStore.vehicles[idx],
+          is_plate_blocked: true,
+          status: data?.cancelled ? 'cancelled' : vehicleStore.vehicles[idx].status
+        }
+      }
+    }
+    await refreshVehicleBoard()
+    if (selectedVehicle.value?.id) {
+      await vehicleStore.fetchVehicleDetail(selectedVehicle.value.id)
     }
   } catch (error) {
     console.error('blockSelectedVehiclePlate error:', error?.response?.data || error)
-    notifyError('بلاک کردن پلاک ناموفق بود.', { title: 'خطا در بلاک پلاک' })
+    notifyError(apiErrorText(error, 'بلاک کردن پلاک ناموفق بود.'), { title: 'خطا در بلاک پلاک' })
   }
 }
 
@@ -3333,6 +3367,8 @@ onBeforeUnmount(() => {
 .card-head { display: flex; justify-content: space-between; align-items: center; }
 .status { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #475569; }
 .dot { width: 8px; height: 8px; border-radius: 99px; }
+.card-head-badges { display: inline-flex; align-items: center; gap: 6px; }
+.blocked-chip { font-size: 10px; padding: 4px 9px; border-radius: 999px; font-weight: 800; background: #fee2e2; color: #991b1b; }
 .time { font-size: 10px; padding: 4px 9px; border-radius: 999px; font-weight: 700; }
 .plate-box { width: 100%; max-width: 100%; min-width: 0; border-radius: 12px; padding: 10px; display: flex; align-items: stretch; justify-content: center; direction: ltr; overflow: hidden; }
 .plate-white-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; background: #6f59ef18; color: #111827; border-radius: 7px 0 0 7px; padding: 4px 12px; }
