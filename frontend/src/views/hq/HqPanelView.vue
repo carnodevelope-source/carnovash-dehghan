@@ -862,7 +862,7 @@
                 <input v-model.trim="carwashQuery" class="table-search" placeholder="جستجو در کارواش‌ها..." />
               </div>
               <button
-                v-for="item in filteredCarwashes"
+                v-for="item in reportCarwashes"
                 :key="item.id"
                 type="button"
                 class="tenant-report-item"
@@ -1626,6 +1626,7 @@ const filteredCarwashes = computed(() => {
     return haystack.includes(query)
   })
 })
+const reportCarwashes = computed(() => filteredCarwashes.value.filter((item) => item.is_active !== false))
 const selectedCarwashInsight = computed(() => carwashInsight.data)
 
 const teamAssignable = computed(() => hqTeam.value.filter((item) => ['hq_admin', 'hq_support'].includes(item.platform_role)))
@@ -2326,10 +2327,15 @@ const createCarwash = async () => {
 }
 
 const toggleCarwashState = async (row) => {
-  await api.patch(`/auth/hq/carwashes/${row.id}/`, { is_active: !row.is_active })
+  const willBeActive = !row.is_active
+  await api.patch(`/auth/hq/carwashes/${row.id}/`, { is_active: willBeActive })
   await loadCarwashes()
   if (selectedCarwashInsight.value?.tenant?.id === row.id) await loadCarwashInsight(row.id)
+  if (!willBeActive && String(selectedReportTenantId.value) === String(row.id)) {
+    selectedReportTenantId.value = reportCarwashes.value[0]?.id ? String(reportCarwashes.value[0].id) : ''
+  }
   await loadOverview()
+  if (activeTab.value === 'reports') await loadReports()
 }
 
 const ticketActivitySignature = (ticket) => [
@@ -2650,7 +2656,7 @@ watch(activeTab, async (tab) => {
   if (tab === 'team' && authStore.isHqAdmin) await loadTeam()
   if (tab === 'reports' && authStore.isHqAdmin) {
     if (!carwashes.value.length) await loadCarwashes()
-    if (!selectedReportTenantId.value && carwashes.value[0]?.id) selectedReportTenantId.value = String(carwashes.value[0].id)
+    if (!selectedReportTenantId.value && reportCarwashes.value[0]?.id) selectedReportTenantId.value = String(reportCarwashes.value[0].id)
     await Promise.all([loadReports(), selectedReportTenantId.value ? loadTenantReports() : Promise.resolve()])
   }
 })

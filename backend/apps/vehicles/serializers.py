@@ -200,6 +200,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     customer_loyalty_visit_count = serializers.SerializerMethodField()
     customer_loyalty_discount_percent = serializers.SerializerMethodField()
     is_plate_blocked = serializers.SerializerMethodField()
+    blocked_plate_id = serializers.SerializerMethodField()
     blocked_plate_payment_confirmed = serializers.BooleanField(write_only=True, required=False, default=False)
     job = VehicleJobDetailSerializer(read_only=True)
     status_logs = VehicleStatusLogSerializer(many=True, read_only=True)
@@ -342,14 +343,28 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         return float(discount_percent or 0)
 
     def get_is_plate_blocked(self, obj):
-        return self._is_plate_blocked(
-            tenant=getattr(obj, 'tenant', None),
-            plate_number=obj.plate_number,
-            plate_left=obj.plate_left,
-            plate_letter=obj.plate_letter,
-            plate_mid=obj.plate_mid,
-            plate_right=obj.plate_right,
-        )
+        return bool(self._cached_blocked_plate(obj))
+
+    def get_blocked_plate_id(self, obj):
+        blocked = self._cached_blocked_plate(obj)
+        return blocked.id if blocked else None
+
+    def _cached_blocked_plate(self, obj):
+        cache = getattr(self, '_blocked_plate_cache', None)
+        if cache is None:
+            cache = {}
+            self._blocked_plate_cache = cache
+        key = getattr(obj, 'pk', None) or id(obj)
+        if key not in cache:
+            cache[key] = self._find_blocked_plate_record(
+                tenant=getattr(obj, 'tenant', None),
+                plate_number=obj.plate_number,
+                plate_left=obj.plate_left,
+                plate_letter=obj.plate_letter,
+                plate_mid=obj.plate_mid,
+                plate_right=obj.plate_right,
+            )
+        return cache[key]
 
     def _assigned_worker_ids_from_payload(self, payload, assigned_worker=None):
         worker_ids = []
@@ -488,6 +503,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 base_amount=service_list_subtotal,
                 profile=loyalty_profile,
                 settings_obj=settings_obj,
+                visit_count=getattr(loyalty_profile, 'visit_count', 0) if loyalty_profile is not None else 0,
                 score=loyalty_score,
             )
         else:
@@ -669,7 +685,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             products_total=products_total,
             manual_discount_total=manual_discount_total,
             tip_amount=max(Decimal('0'), tip_amount),
-            loyalty_score=getattr(loyalty_profile, 'score', Decimal('0')),
+            loyalty_score=getattr(
+                loyalty_profile,
+                '_loyalty_visit_score',
+                getattr(loyalty_profile, 'score', Decimal('0')),
+            ),
             discount_percent_per_half_star=discount_percent_per_half_star,
             loyalty_profile=loyalty_profile,
             settings_obj=settings_obj,
@@ -1021,7 +1041,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             products_total=products_total,
             manual_discount_total=manual_discount_total,
             tip_amount=tip_amount,
-            loyalty_score=getattr(loyalty_profile, 'score', Decimal('0')),
+            loyalty_score=getattr(
+                loyalty_profile,
+                '_loyalty_visit_score',
+                getattr(loyalty_profile, 'score', Decimal('0')),
+            ),
             discount_percent_per_half_star=discount_percent_per_half_star,
             loyalty_profile=loyalty_profile,
             settings_obj=settings_obj,
@@ -1357,8 +1381,18 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         return str(plate_number or '').strip()
 
     def _is_plate_blocked(self, tenant, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
+        return bool(self._find_blocked_plate_record(
+            tenant=tenant,
+            plate_number=plate_number,
+            plate_left=plate_left,
+            plate_letter=plate_letter,
+            plate_mid=plate_mid,
+            plate_right=plate_right,
+        ))
+
+    def _find_blocked_plate_record(self, tenant, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
         if not tenant:
-            return False
+            return None
         left = str(plate_left or '').strip()
         letter = str(plate_letter or '').strip()
         mid = str(plate_mid or '').strip()
@@ -1371,24 +1405,32 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             plate_right=right,
         )
         queryset = BlockedPlate.objects.filter(tenant=tenant)
-        if normalized_plate and queryset.filter(plate_number=normalized_plate).exists():
-            return True
+        if normalized_plate:
+            found = queryset.filter(plate_number=normalized_plate).first()
+            if found:
+                return found
         if left and letter and mid and right:
-            return queryset.filter(
+            found = queryset.filter(
                 plate_left=left,
                 plate_letter=letter,
                 plate_mid=mid,
                 plate_right=right,
-            ).exists()
+            ).first()
+            if found:
+                return found
         if mid and letter and not left and not right:
-            return queryset.filter(
+            found = queryset.filter(
                 plate_mid=mid,
                 plate_letter=letter,
                 plate_left='',
                 plate_right='',
-            ).exists()
+            ).first()
+            if found:
+                return found
         raw_plate = str(plate_number or '').strip()
-        return bool(raw_plate and queryset.filter(plate_number=raw_plate).exists())
+        if raw_plate:
+            return queryset.filter(plate_number=raw_plate).first()
+        return None
 
     class Meta:
         model = VehicleEntry
@@ -1445,6 +1487,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             'customer_loyalty_visit_count',
             'customer_loyalty_discount_percent',
             'is_plate_blocked',
+            'blocked_plate_id',
             'job',
             'status_logs',
         ]

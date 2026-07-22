@@ -198,4 +198,5 @@ REST_FRAMEWORK = {
 IRANPAYAMAK_BASE_URL = config('IRANPAYAMAK_BASE_URL', default='https://api.iranpayamak.com')
 IRANPAYAMAK_API_KEY = config('IRANPAYAMAK_API_KEY', default='')
 IRANPAYAMAK_LINE_NUMBER = config('IRANPAYAMAK_LINE_NUMBER', default='')
-SMS_PRICE_PER_SEGMENT = config('SMS_PRICE_PER_SEGMENT', default=400, cast=int)
+SMS_PRICE_PER_SEGMENT = config('SMS_PRICE_PER_SEGMENT', default=185, cast=int)
+SMS_CHARS_PER_SEGMENT = config('SMS_CHARS_PER_SEGMENT', default=100, cast=int)

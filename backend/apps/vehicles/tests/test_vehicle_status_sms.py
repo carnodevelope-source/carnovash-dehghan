@@ -25,7 +25,8 @@ from apps.vehicles.models import (
     IRANPAYAMAK_API_KEY='test-api-key',
     IRANPAYAMAK_LINE_NUMBER='30001234',
     IRANPAYAMAK_BASE_URL='https://api.iranpayamak.com',
-    SMS_PRICE_PER_SEGMENT=500,
+    SMS_PRICE_PER_SEGMENT=185,
+    SMS_CHARS_PER_SEGMENT=100,
 )
 class VehicleStatusSmsTests(APITestCase):
     def setUp(self):

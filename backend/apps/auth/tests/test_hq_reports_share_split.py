@@ -154,3 +154,39 @@ class HqReportsShareSplitTests(TestCase):
         self.assertEqual(sms_send['share_group'], 'hq')
         self.assertEqual(int(sms_send['share_amount']), 50000)
         self.assertEqual(int(payload['summary']['sms_cost_total']), 50000)
+
+    def test_inactive_carwash_is_excluded_from_hq_reports(self):
+        active = CarWash.objects.create(name='فعال', slug='active-hq-report', is_active=True)
+        inactive = CarWash.objects.create(name='غیرفعال', slug='inactive-hq-report', is_active=False)
+        for tenant in (active, inactive):
+            vehicle = VehicleEntry.objects.create(
+                tenant=tenant,
+                plate_number='12ب34567',
+                plate_left='12',
+                plate_letter='ب',
+                plate_mid='345',
+                plate_right='67',
+                car_model='206',
+                car_color='سفید',
+                driver_name='رضا',
+                driver_phone='09120000000',
+                status=VehicleEntry.Status.RELEASED,
+            )
+            Payment.objects.create(
+                tenant=tenant,
+                vehicle_entry=vehicle,
+                method=Payment.Method.CASH,
+                status=Payment.Status.SUCCESS,
+                amount=1000000,
+                service_amount=1000000,
+                product_amount=0,
+                tip_amount=0,
+                discount_amount=0,
+            )
+
+        payload = _build_hq_report_snapshot()
+        tenant_ids = {item['tenant_id'] for item in payload['rows']}
+
+        self.assertIn(active.id, tenant_ids)
+        self.assertNotIn(inactive.id, tenant_ids)
+        self.assertEqual(int(payload['summary']['paid_amount']), 1000000)

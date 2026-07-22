@@ -1,7 +1,3 @@
-import math
-from decimal import Decimal
-
-from django.conf import settings
 from django.utils import timezone
 
 from apps.notifications.models import NotificationLog
@@ -11,6 +7,9 @@ from apps.notifications.services import (
     make_json_safe,
     normalize_phone,
     send_provider_sms,
+    sms_cost_for_text,
+    sms_price_per_segment,
+    sms_segments_for_text,
     sms_wallet_balance,
 )
 
@@ -60,16 +59,21 @@ def send_logged_sms(*, tenant, text, phone, template_code, payload=None, created
         )
         return result
 
-    sms_price = Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 500) or 500))
-    segments = max(1, math.ceil(len(str(text or '')) / 70))
-    estimated_cost = sms_price * Decimal(segments)
+    sms_price = sms_price_per_segment()
+    segments = sms_segments_for_text(text)
+    estimated_cost = sms_cost_for_text(text)
     if charge_tenant_wallet and tenant and sms_wallet_balance(tenant) < estimated_cost:
         result = {'ok': False, 'message': 'موجودی کیف پول پیامک کافی نیست.'}
         create_sms_log(
             tenant=tenant,
             recipient=normalized_phone,
             template_code=template_code,
-            payload={**base_payload, 'estimated_cost': float(estimated_cost)},
+            payload={
+                **base_payload,
+                'estimated_cost': float(estimated_cost),
+                'segments': segments,
+                'price_per_segment': float(sms_price),
+            },
             result=result,
             created_by=created_by,
         )
@@ -79,6 +83,8 @@ def send_logged_sms(*, tenant, text, phone, template_code, payload=None, created
     log_payload = {
         **base_payload,
         'estimated_cost': float(estimated_cost),
+        'segments': segments,
+        'price_per_segment': float(sms_price),
         'provider_request': make_json_safe(provider_result.get('payload', {})),
     }
     create_sms_log(

@@ -841,10 +841,6 @@ class ReportsDashboardView(APIView):
         } for i, event in enumerate(attendances.order_by('-event_at'), start=1)]
 
         blocked_plates = BlockedPlate.objects.select_related('blocked_by').filter(tenant=tenant)
-        if start:
-            blocked_plates = blocked_plates.filter(created_at__gte=start)
-        if end:
-            blocked_plates = blocked_plates.filter(created_at__lte=end)
         if query:
             blocked_plates = blocked_plates.filter(
                 Q(plate_number__icontains=query)

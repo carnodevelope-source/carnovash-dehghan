@@ -221,6 +221,7 @@
     @close="closeVehicleModal"
     @cancel="cancelVehicle"
     @block-plate="blockVehiclePlate"
+    @unblock-plate="unblockVehiclePlate"
   />
 
   <div v-if="payoutModal.open" class="modal-overlay" @click.self="closePayoutModal">
@@ -1070,7 +1071,8 @@ const blockVehiclePlate = async () => {
     if (data?.vehicle) {
       vehicleModal.data = {
         ...data.vehicle,
-        is_plate_blocked: true
+        is_plate_blocked: true,
+        blocked_plate_id: data?.id || data.vehicle.blocked_plate_id || null
       }
     } else {
       await reloadVehicleDetail()
@@ -1081,8 +1083,46 @@ const blockVehiclePlate = async () => {
   }
 }
 
+const unblockVehiclePlate = async () => {
+  if (!vehicleModal.data) return
+  try {
+    const vehicle = vehicleModal.data
+    const params = {
+      plate_number: vehicle.plate_number || '',
+      plate_left: vehicle.plate_left || '',
+      plate_letter: vehicle.plate_letter || '',
+      plate_mid: vehicle.plate_mid || '',
+      plate_right: vehicle.plate_right || ''
+    }
+    const { data } = await api.get('/vehicles/plate-status/', {
+      params,
+      meta: { trackLoading: false, showErrorToast: false }
+    })
+    const blockedId = data?.id || vehicle.blocked_plate_id
+    if (!blockedId) {
+      errorMessage.value = 'رکورد بلاک برای این پلاک پیدا نشد.'
+      return
+    }
+    closeVehicleModal()
+    openBlacklistRow({
+      id: blockedId,
+      plate_number: data?.plate_number || vehicle.plate_number,
+      plate_left: data?.plate_left || vehicle.plate_left,
+      plate_letter: data?.plate_letter || vehicle.plate_letter,
+      plate_mid: data?.plate_mid || vehicle.plate_mid,
+      plate_right: data?.plate_right || vehicle.plate_right,
+      plate_type: data?.plate_type || vehicle.plate_type || 'car',
+      note: data?.note || '',
+      blocked_by_name: data?.blocked_by_name || '-',
+      created_at: data?.created_at || data?.blocked_at
+    })
+  } catch (error) {
+    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری جزئیات بلاک ناموفق بود.')
+  }
+}
+
 const openBlacklistRow = (row) => {
-  if (!row?.id) return
+  if (!row) return
   blacklistModal.open = true
   blacklistModal.submitting = false
   blacklistModal.error = ''

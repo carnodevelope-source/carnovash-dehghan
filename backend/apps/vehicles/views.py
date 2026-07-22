@@ -483,9 +483,22 @@ class BlockedPlateStatusView(APIView):
         )
         return Response(
             {
+                'id': blocked.id if blocked else None,
                 'plate_number': plate_number or (blocked.plate_number if blocked else ''),
+                'plate_left': blocked.plate_left if blocked else '',
+                'plate_letter': blocked.plate_letter if blocked else '',
+                'plate_mid': blocked.plate_mid if blocked else '',
+                'plate_right': blocked.plate_right if blocked else '',
+                'plate_type': blocked.plate_type if blocked else '',
                 'is_blocked': bool(blocked),
+                'note': blocked.note if blocked else '',
+                'blocked_by_name': (
+                    blocked.blocked_by.full_name or blocked.blocked_by.username
+                    if blocked and blocked.blocked_by_id
+                    else ''
+                ),
                 'blocked_at': blocked.created_at if blocked else None,
+                'created_at': blocked.created_at if blocked else None,
             },
             status=status.HTTP_200_OK,
         )
@@ -689,57 +702,22 @@ class VehicleBlockPlateView(APIView):
             blocked_plate.blocked_by = request.user
             blocked_plate.save(update_fields=['blocked_by', 'updated_at'])
 
-        cancelled = False
-        previous_status = vehicle.status
-        if previous_status not in {VehicleEntry.Status.RELEASED, VehicleEntry.Status.CANCELLED}:
-            status_view = VehicleEntryStatusUpdateView()
-            status_view.request = request
-            status_view.format_kwarg = None
-            has_payments = Payment.objects.filter(vehicle_entry=vehicle).exists()
-            vehicle.status = VehicleEntry.Status.CANCELLED
-            vehicle.released_at = None
-            vehicle.payment_status = (
-                VehicleEntry.PaymentStatus.REFUNDED
-                if has_payments
-                else VehicleEntry.PaymentStatus.UNPAID
-            )
-            vehicle.payment_method = ''
-            vehicle.save(update_fields=['status', 'released_at', 'payment_status', 'payment_method', 'updated_at'])
-            status_view._neutralize_cancelled_vehicle_effects(vehicle, request.user)
-            rebuild_customer_score(vehicle.customer)
-            if not vehicle.is_piece_wash:
-                rebuild_plate_loyalty(
-                    get_or_create_plate_loyalty(
-                        tenant=vehicle.tenant,
-                        plate_number=vehicle.plate_number,
-                        plate_left=vehicle.plate_left,
-                        plate_letter=vehicle.plate_letter,
-                        plate_mid=vehicle.plate_mid,
-                        plate_right=vehicle.plate_right,
-                    ),
-                    discount_percent_per_half_star=VehicleEntrySerializer()._discount_percent_per_half_star(vehicle.tenant),
-                )
-            if hasattr(vehicle, 'job') and vehicle.job:
-                vehicle.job.released_at = None
-                vehicle.job.save(update_fields=['released_at', 'updated_at'])
-            VehicleStatusLog.objects.create(
-                tenant=vehicle.tenant,
-                vehicle=vehicle,
-                from_status=previous_status,
-                to_status=VehicleEntry.Status.CANCELLED,
-                changed_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
-                note=(request.data.get('note') or 'بلاک پلاک و لغو سفارش').strip() or 'بلاک پلاک و لغو سفارش',
-            )
-            cancelled = True
-
         vehicle.refresh_from_db()
         serializer = VehicleEntrySerializer(vehicle, context={'request': request})
         return Response(
             {
+                'id': blocked_plate.id,
                 'plate_number': blocked_plate.plate_number,
                 'is_blocked': True,
                 'created': created,
-                'cancelled': cancelled,
+                'cancelled': False,
+                'note': blocked_plate.note,
+                'blocked_by_name': (
+                    blocked_plate.blocked_by.full_name or blocked_plate.blocked_by.username
+                    if blocked_plate.blocked_by_id
+                    else '-'
+                ),
+                'created_at': blocked_plate.created_at,
                 'vehicle': serializer.data,
             },
             status=status.HTTP_200_OK,

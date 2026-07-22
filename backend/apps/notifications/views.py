@@ -33,6 +33,10 @@ from .services import (
     send_provider_sms,
     is_valid_iran_mobile,
     normalize_phone,
+    sms_chars_per_segment,
+    sms_cost_for_text,
+    sms_price_per_segment,
+    sms_segments_for_text,
 )
 
 
@@ -273,7 +277,8 @@ class CustomerClubDashboardView(APIView, SmsWalletMixin):
             {
                 'summary': {
                     'sms_balance': self._sms_wallet_balance(tenant),
-                    'sms_price_per_segment': getattr(settings, 'SMS_PRICE_PER_SEGMENT', 400),
+                    'sms_price_per_segment': float(sms_price_per_segment()),
+                    'sms_chars_per_segment': sms_chars_per_segment(),
                     'status_counts': {
                         'success': status_counts.get(NotificationLog.Status.SENT, 0),
                         'pending': status_counts.get(NotificationLog.Status.PENDING, 0),
@@ -516,11 +521,15 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
         tenant = getattr(request.user, 'tenant', None)
         recipients = validated['recipients']
         template_text = validated['template_text']
-        sms_price = Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 400) or 400))
+        sms_price = sms_price_per_segment()
+        chars_per_segment = sms_chars_per_segment()
         campaign_id = str(uuid.uuid4())
-        grouped_batches, rendered_recipients = group_sms_batches(recipients, template_text, getattr(tenant, 'name', ''))
+        grouped_batches, _rendered_recipients = group_sms_batches(recipients, template_text, getattr(tenant, 'name', ''))
 
-        estimated_total = sms_price * Decimal(len(rendered_recipients))
+        estimated_total = sum(
+            (sms_cost_for_text(rendered_text) * Decimal(len(batch_recipients)) for rendered_text, batch_recipients in grouped_batches.items()),
+            Decimal('0'),
+        )
 
         wallet_balance = self._sms_wallet_balance(tenant)
         if wallet_balance < estimated_total:
@@ -541,15 +550,19 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
         for rendered_text, batch_recipients in grouped_batches.items():
             phone_numbers = [recipient['phone'] for recipient in batch_recipients]
             provider_result = self._send_provider_request(text=rendered_text, recipients=phone_numbers)
-            batch_cost = sms_price * Decimal(len(batch_recipients))
+            unit_cost = sms_cost_for_text(rendered_text)
+            segments = sms_segments_for_text(rendered_text)
+            batch_cost = unit_cost * Decimal(len(batch_recipients))
             extra_payload = {
                 'campaign_id': campaign_id,
                 'target_label': validated.get('target_label', ''),
                 'note': validated.get('note', ''),
                 'template_code': validated.get('template_code', ''),
                 'template_text': template_text,
-                'segments': 1,
-                'price_per_sms': str(sms_price),
+                'segments': segments,
+                'chars_per_segment': chars_per_segment,
+                'price_per_sms': str(unit_cost),
+                'price_per_segment': str(sms_price),
                 'total_cost': str(batch_cost),
                 'provider_request': provider_result['payload'],
             }
@@ -583,7 +596,8 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
                             'message': provider_result['message'],
                             'provider_message_id': provider_result.get('provider_id', ''),
                             'rendered_text': recipient.get('rendered_text', ''),
-                            'cost': sms_price,
+                            'cost': unit_cost,
+                            'segments': segments,
                         }
                     )
             else:
@@ -605,7 +619,8 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
                             'message': provider_result['message'],
                             'provider_message_id': '',
                             'rendered_text': recipient.get('rendered_text', ''),
-                            'cost': sms_price,
+                            'cost': unit_cost,
+                            'segments': segments,
                         }
                     )
 

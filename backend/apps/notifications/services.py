@@ -1,4 +1,5 @@
 import json
+import math
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
@@ -19,11 +20,33 @@ from apps.services.models import (
     normalize_vehicle_released_sms_template,
 )
 from apps.vehicles.models import VehicleEntry
-from apps.vehicles.loyalty import next_fixed_discount_notice
+from apps.vehicles.loyalty import loyalty_discount_mode, next_fixed_discount_notice
 
 
 PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹'
 ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩'
+
+
+def sms_chars_per_segment():
+    return max(1, int(getattr(settings, 'SMS_CHARS_PER_SEGMENT', 100) or 100))
+
+
+def sms_price_per_segment():
+    return Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 185) or 185))
+
+
+def sms_segments_for_text(text):
+    length = len(str(text or ''))
+    if length <= 0:
+        return 0
+    return math.ceil(length / sms_chars_per_segment())
+
+
+def sms_cost_for_text(text):
+    segments = sms_segments_for_text(text)
+    if segments <= 0:
+        return Decimal('0')
+    return sms_price_per_segment() * Decimal(segments)
 
 DEFAULT_SMS_TEMPLATES = [
     {
@@ -459,6 +482,22 @@ def build_vehicle_assignment_sms_messages(settings_obj, vehicle, *, assigned_at=
     return messages
 
 
+def prepare_released_discount_template(template, *, mode='step', has_fixed_notice=False):
+    lines = []
+    for line in str(template or '').split('\n'):
+        has_token = '[درصد تخفیف مراجعه بعد]' in line or '[درصد تخفیف سفارش بعد]' in line
+        if not has_token:
+            lines.append(line)
+            continue
+        if mode == 'fixed':
+            if not has_fixed_notice:
+                continue
+            lines.append('[درصد تخفیف مراجعه بعد]')
+            continue
+        lines.append(line)
+    return '\n'.join(lines)
+
+
 def build_vehicle_released_sms(
     settings_obj,
     vehicle,
@@ -477,8 +516,12 @@ def build_vehicle_released_sms(
     released_at = released_at or getattr(vehicle, 'released_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
     plate_label = format_plate_for_sms(vehicle)
     next_discount_label = f"{to_persian_digits(str(round(float(next_discount_percent or 0), 2)).replace('.0', ''))}٪"
-    fixed_discount_notice = next_fixed_discount_notice(settings_obj, visit_count)
-    next_discount_sms_value = to_persian_digits(fixed_discount_notice.get('text')) if fixed_discount_notice else next_discount_label
+    mode = loyalty_discount_mode(settings_obj)
+    fixed_discount_notice = next_fixed_discount_notice(settings_obj, visit_count) if mode == 'fixed' else None
+    if mode == 'fixed':
+        next_discount_sms_value = to_persian_digits(fixed_discount_notice.get('text')) if fixed_discount_notice else ''
+    else:
+        next_discount_sms_value = next_discount_label
     driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
     context = {
         '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
@@ -503,9 +546,13 @@ def build_vehicle_released_sms(
         '[تخفیف دستی]': format_toman(manual_discount_total),
         '[مبلغ نهایی]': format_toman(final_total),
     }
-    template = normalize_vehicle_released_sms_template(
-        getattr(settings_obj, 'sms_vehicle_released_template', '')
-        or DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE
+    template = prepare_released_discount_template(
+        normalize_vehicle_released_sms_template(
+            getattr(settings_obj, 'sms_vehicle_released_template', '')
+            or DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE
+        ),
+        mode=mode,
+        has_fixed_notice=bool(fixed_discount_notice and fixed_discount_notice.get('text')),
     )
     return render_template_tokens(template, context), context
 
@@ -758,8 +805,8 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
     if not message_items:
         return {'ok': False, 'reason': 'empty_template'}
 
-    sms_price = Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 400) or 400))
-    estimated_cost = sms_price * len(message_items)
+    sms_price = sms_price_per_segment()
+    estimated_cost = sum((sms_cost_for_text(item['text']) for item in message_items), Decimal('0'))
     balance = sms_wallet_balance(tenant)
 
     payload = make_json_safe({
@@ -786,11 +833,13 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
 
     sent_count = 0
     for item in message_items:
-        item_cost = sms_price
+        item_cost = sms_cost_for_text(item['text'])
         item_payload = make_json_safe({
             **payload,
             'text': item['text'],
             'estimated_cost': float(item_cost),
+            'segments': sms_segments_for_text(item['text']),
+            'price_per_segment': float(sms_price),
             **{key.strip('[]'): value for key, value in item.get('context', {}).items()},
         })
         provider_result = send_provider_sms(tenant, item['text'], [phone])

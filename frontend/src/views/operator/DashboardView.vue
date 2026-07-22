@@ -170,6 +170,7 @@
       @close="closeVehicleDetails"
       @cancel="cancelVehicle"
       @block-plate="blockSelectedVehiclePlate"
+      @unblock-plate="unblockSelectedVehiclePlate"
       @edit-vehicle="editSelectedVehicleVisit"
     />
     <div v-if="showPlateEditModal" class="modal-overlay plate-edit-overlay" @click.self="closePlateEditModal">
@@ -1477,6 +1478,7 @@ const mapVehicleToDraft = (source = {}) => ({
   pieceWashPrice: Number(source.job?.services_total || 0),
   isAnonymous: isAnonymousVisitFromDatabase(source),
   is_plate_blocked: Boolean(source.is_plate_blocked),
+  blocked_plate_id: source.blocked_plate_id || null,
   serviceIds: Array.isArray(source.job?.service_lines) ? source.job.service_lines.map((s) => s.service).filter(Boolean) : [],
   services: Array.isArray(source.job?.service_lines)
     ? source.job.service_lines.map((line) => ({
@@ -3262,20 +3264,21 @@ const blockSelectedVehiclePlate = async () => {
     if (vehiclePayload?.id) {
       syncVehicleSnapshot({
         ...vehiclePayload,
-        is_plate_blocked: true
+        is_plate_blocked: true,
+        blocked_plate_id: data?.id || vehiclePayload.blocked_plate_id || null
       })
     } else {
       selectedVehicle.value = {
         ...selectedVehicle.value,
         is_plate_blocked: Boolean(data?.is_blocked),
-        status: data?.cancelled ? 'cancelled' : selectedVehicle.value.status
+        blocked_plate_id: data?.id || selectedVehicle.value.blocked_plate_id || null
       }
       const idx = vehicleStore.vehicles.findIndex((item) => item.id === selectedVehicle.value.id)
       if (idx >= 0) {
         vehicleStore.vehicles[idx] = {
           ...vehicleStore.vehicles[idx],
           is_plate_blocked: true,
-          status: data?.cancelled ? 'cancelled' : vehicleStore.vehicles[idx].status
+          blocked_plate_id: data?.id || vehicleStore.vehicles[idx].blocked_plate_id || null
         }
       }
     }
@@ -3286,6 +3289,50 @@ const blockSelectedVehiclePlate = async () => {
   } catch (error) {
     console.error('blockSelectedVehiclePlate error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'بلاک کردن پلاک ناموفق بود.'), { title: 'خطا در بلاک پلاک' })
+  }
+}
+
+const resolveBlockedPlateId = async (vehicle) => {
+  if (vehicle?.blocked_plate_id) return vehicle.blocked_plate_id
+  if (!vehicle) return null
+  try {
+    const { data } = await api.get('/vehicles/plate-status/', {
+      params: {
+        plate_number: vehicle.plate_number || '',
+        plate_left: vehicle.plate_left || '',
+        plate_letter: vehicle.plate_letter || '',
+        plate_mid: vehicle.plate_mid || '',
+        plate_right: vehicle.plate_right || ''
+      },
+      meta: { trackLoading: false, showErrorToast: false }
+    })
+    return data?.id || null
+  } catch {
+    return null
+  }
+}
+
+const unblockSelectedVehiclePlate = async () => {
+  if (!selectedVehicle.value?.id) return
+  try {
+    const blockedId = await resolveBlockedPlateId(selectedVehicle.value)
+    if (!blockedId) {
+      notifyError('رکورد بلاک برای این پلاک پیدا نشد.', { title: 'خطا در خارج کردن از بلاک' })
+      return
+    }
+    await api.post(`/vehicles/blocked-plates/${blockedId}/unblock/`, {})
+    syncVehicleSnapshot({
+      ...selectedVehicle.value,
+      is_plate_blocked: false,
+      blocked_plate_id: null
+    })
+    await refreshVehicleBoard()
+    if (selectedVehicle.value?.id) {
+      await vehicleStore.fetchVehicleDetail(selectedVehicle.value.id)
+    }
+  } catch (error) {
+    console.error('unblockSelectedVehiclePlate error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'خارج کردن پلاک از لیست سیاه ناموفق بود.'), { title: 'خطا در خارج کردن از بلاک' })
   }
 }
 

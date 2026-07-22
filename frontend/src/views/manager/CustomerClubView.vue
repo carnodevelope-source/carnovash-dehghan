@@ -851,7 +851,8 @@ const smsSending = ref(false)
 const templateSaving = ref(false)
 const customers = ref([])
 const smsCreditBalance = ref(0)
-const smsPricePerSegment = ref(500)
+const smsPricePerSegment = ref(185)
+const smsCharsPerSegment = ref(100)
 const highlightedGroupId = ref('')
 const customerImportFileRef = ref(null)
 const CUSTOMER_IMPORT_PRICE = 500000
@@ -1026,7 +1027,17 @@ const groupBuilderPreview = computed(() => {
 
 const smsRecipients = computed(() => smsComposer.recipients || [])
 const smsCharacterCount = computed(() => String(smsComposer.message || '').trim().length)
-const estimatedSmsCost = computed(() => smsRecipients.value.length * Number(smsPricePerSegment.value || 0))
+const smsSegmentCount = computed(() => {
+  const length = smsCharacterCount.value
+  const perSegment = Math.max(1, Number(smsCharsPerSegment.value || 100))
+  if (length <= 0) return 0
+  return Math.ceil(length / perSegment)
+})
+const estimatedSmsCost = computed(() => (
+  smsRecipients.value.length
+  * smsSegmentCount.value
+  * Number(smsPricePerSegment.value || 0)
+))
 const hasEnoughSmsCredit = computed(() => smsCreditBalance.value >= estimatedSmsCost.value)
 const canSendSms = computed(() => smsRecipients.value.length > 0 && String(smsComposer.message || '').trim().length > 0 && hasEnoughSmsCredit.value)
 const smsPreviewText = computed(() => {
@@ -1319,14 +1330,16 @@ const loadCustomerClubData = async ({ showLoading = true } = {}) => {
     smsTemplates.value = Array.isArray(data?.templates) ? data.templates : []
     smsLogs.value = Array.isArray(data?.logs) ? data.logs : []
     smsCreditBalance.value = Number(data?.summary?.sms_balance || 0)
-    smsPricePerSegment.value = Number(data?.summary?.sms_price_per_segment || 400)
+    smsPricePerSegment.value = Number(data?.summary?.sms_price_per_segment || 185)
+    smsCharsPerSegment.value = Number(data?.summary?.sms_chars_per_segment || 100)
   } catch (_error) {
     customers.value = []
     customGroups.value = []
     smsTemplates.value = []
     smsLogs.value = []
     smsCreditBalance.value = 0
-    smsPricePerSegment.value = 500
+    smsPricePerSegment.value = 185
+    smsCharsPerSegment.value = 100
   } finally {
     if (showLoading) loading.value = false
   }

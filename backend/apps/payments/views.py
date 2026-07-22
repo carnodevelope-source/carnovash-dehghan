@@ -87,10 +87,53 @@ FEATURE_OPTION_CATALOG = {
 }
 
 LICENSE_GRACE_DAYS = 7
+INITIAL_SMS_CREDIT_AMOUNT = Decimal('5000')
+INITIAL_SMS_CREDIT_REFERENCE = 'initial_sms_credit'
 
 
 def _money(value):
     return Decimal(str(value or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def grant_initial_sms_credit(tenant, created_by=None):
+    if tenant is None:
+        return None
+    if CashflowTransaction.objects.filter(
+        tenant=tenant,
+        reference_type=INITIAL_SMS_CREDIT_REFERENCE,
+    ).exists():
+        return Wallet.objects.filter(
+            tenant=tenant,
+            wallet_type=Wallet.WalletType.SMS,
+            is_active=True,
+        ).order_by('id').first()
+
+    wallet = Wallet.objects.select_for_update().filter(
+        tenant=tenant,
+        wallet_type=Wallet.WalletType.SMS,
+        is_active=True,
+    ).order_by('id').first()
+    if not wallet:
+        wallet = Wallet.objects.create(
+            tenant=tenant,
+            name='کیف پول پیامک',
+            wallet_type=Wallet.WalletType.SMS,
+            balance=0,
+            is_active=True,
+        )
+
+    wallet.balance = _money(wallet.balance + INITIAL_SMS_CREDIT_AMOUNT)
+    wallet.save(update_fields=['balance', 'updated_at'])
+    CashflowTransaction.objects.create(
+        tenant=tenant,
+        wallet=wallet,
+        direction=CashflowTransaction.Direction.IN,
+        amount=INITIAL_SMS_CREDIT_AMOUNT,
+        description='شارژ اولیه پیامک کاربر جدید',
+        reference_type=INITIAL_SMS_CREDIT_REFERENCE,
+        created_by=created_by if getattr(created_by, 'is_authenticated', False) else None,
+    )
+    return wallet
 
 
 def _feature_payment_plan_label(payment_plan):

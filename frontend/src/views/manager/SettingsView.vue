@@ -416,6 +416,7 @@
               <div class="general-settings-head">
                 <div>
                   <strong>تنظیمات سرویس پیامک</strong>
+                  <p class="sms-cost-hint">هزینه: هر ۱۰۰ کاراکتر ۱۸۵ تومان (۱–۱۰۰: ۱۸۵، ۱۰۱–۲۰۰: ۳۷۰، …)</p>
                 </div>
               </div>
               <div class="sms-auto-send-panel">
@@ -1184,32 +1185,47 @@ const mergeAssignedSmsTemplate = (assignedTemplate, invoiceTemplate) => {
   if (!invoiceText || assignedText.includes('[خلاصه خدمات]')) return ensureAssignedSmsTemplateDetails(assignedText)
   return ensureAssignedSmsTemplateDetails([assignedText, invoiceText].filter(Boolean).join('\n'))
 }
-const smsPreviewContext = computed(() => ({
-  '[خطاب مشتری]': 'آقای رضایی عزیز',
-  '[نام مشتری]': 'آقای علی رضایی',
-  '[جنسیت مشتری]': 'آقای',
-  '[نام کارواش]': authStore.user?.tenant_name || authStore.user?.tenant?.name || 'سونامی',
-  '[شماره پذیرش]': '۱۰۰۰',
-  '[پلاک]': '67 - 345 ب 22',
-  '[ساعت تخصیص]': '10:30',
-  '[تاریخ تخصیص]': '1405/04/22',
-  '[خلاصه خدمات]': 'شست‌وشوی کامل',
-  '[جمع کل]': '350،000 تومان',
-  '[جمع نرخ نامه]': '350،000 تومان',
-  '[ساعت ترخیص]': '12:15',
-  '[تاریخ ترخیص]': '1405/04/22',
-  '[امتیاز مشتری]': '2.5',
-  '[درصد تخفیف مراجعه بعد]': '10٪',
-  '[درصد تخفیف سفارش بعد]': '10٪',
-  '[درصد تخفیف امتیاز مشتری]': '10٪',
-  '[تعداد مراجعات]': '5',
-  '[انعام]': '50،000 تومان',
-  '[تخفیف مجموعه]': '80،000 تومان',
-  '[تخفیف امتیاز مشتری]': '35،000 تومان',
-  '[تخفیف دستی]': '20،000 تومان',
-  '[جمع تخفیف]': '135،000 تومان',
-  '[مبلغ نهایی]': '265،000 تومان'
-}))
+const smsPreviewContext = computed(() => {
+  const isFixed = generalSettings.discount_calculation_mode === 'fixed'
+  const nextDiscountPreview = isFixed ? 'درصد تخفیف مراجعه دوم : ۱۰٪' : '۱۰٪'
+  return {
+    '[خطاب مشتری]': 'آقای رضایی عزیز',
+    '[نام مشتری]': 'آقای علی رضایی',
+    '[جنسیت مشتری]': 'آقای',
+    '[نام کارواش]': authStore.user?.tenant_name || authStore.user?.tenant?.name || 'سونامی',
+    '[شماره پذیرش]': '۱۰۰۰',
+    '[پلاک]': '67 - 345 ب 22',
+    '[ساعت تخصیص]': '10:30',
+    '[تاریخ تخصیص]': '1405/04/22',
+    '[خلاصه خدمات]': 'شست‌وشوی کامل',
+    '[جمع کل]': '350،000 تومان',
+    '[جمع نرخ نامه]': '350،000 تومان',
+    '[ساعت ترخیص]': '12:15',
+    '[تاریخ ترخیص]': '1405/04/22',
+    '[امتیاز مشتری]': '2.5',
+    '[درصد تخفیف مراجعه بعد]': nextDiscountPreview,
+    '[درصد تخفیف سفارش بعد]': nextDiscountPreview,
+    '[درصد تخفیف امتیاز مشتری]': '۱۰٪',
+    '[تعداد مراجعات]': '5',
+    '[انعام]': '50،000 تومان',
+    '[تخفیف مجموعه]': '80،000 تومان',
+    '[تخفیف امتیاز مشتری]': '35،000 تومان',
+    '[تخفیف دستی]': '20،000 تومان',
+    '[جمع تخفیف]': '135،000 تومان',
+    '[مبلغ نهایی]': '265،000 تومان'
+  }
+})
+const prepareReleasedDiscountPreviewTemplate = (template) => {
+  const isFixed = generalSettings.discount_calculation_mode === 'fixed'
+  return String(template || '')
+    .split('\n')
+    .map((line) => {
+      const hasToken = line.includes('[درصد تخفیف مراجعه بعد]') || line.includes('[درصد تخفیف سفارش بعد]')
+      if (!hasToken) return line
+      return isFixed ? '[درصد تخفیف مراجعه بعد]' : line
+    })
+    .join('\n')
+}
 const renderSmsPreview = (template) => {
   let message = String(template || '').trim()
   Object.entries(smsPreviewContext.value).forEach(([token, value]) => {
@@ -1218,7 +1234,9 @@ const renderSmsPreview = (template) => {
   return message
 }
 const smsAssignedPreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template)))
-const smsReleasedPreview = computed(() => renderSmsPreview(ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template)))
+const smsReleasedPreview = computed(() => renderSmsPreview(
+  prepareReleasedDiscountPreviewTemplate(ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template))
+))
 
 watch(() => forms.purchase.product_id, (newProductId) => {
   const selected = products.value.find((item) => Number(item.id) === Number(newProductId))
@@ -1753,6 +1771,13 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .modal-form input, .modal-form select { height: 42px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 10px; background: #fff; }
 .modal-form textarea { border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px; background: #fff; font: inherit; resize: vertical; }
 .sms-settings-card { gap: 18px; }
+.sms-cost-hint {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.7;
+  font-weight: 500;
+}
 .sms-auto-send-panel {
   display: flex;
   padding: 12px 14px;

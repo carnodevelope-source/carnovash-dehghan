@@ -121,7 +121,7 @@
               ویرایش اطلاعات مراجعه
             </button>
             <button
-              v-if="vehicle.status !== 'released' && !vehicle.is_plate_blocked"
+              v-if="!vehicle.is_plate_blocked"
               type="button"
               class="vehicle-details-secondary-btn"
               @click="$emit('block-plate')"
@@ -129,12 +129,12 @@
               بلاک کردن پلاک
             </button>
             <button
-              v-else-if="vehicle.is_plate_blocked"
+              v-else
               type="button"
               class="vehicle-details-secondary-btn vehicle-details-blocked-btn"
-              disabled
+              @click="$emit('unblock-plate')"
             >
-              پلاک بلاک شده
+              خارج کردن از لیست سیاه
             </button>
             <button
               v-if="vehicle.status !== 'cancelled'"
@@ -165,7 +165,7 @@ defineProps({
   showActions: { type: Boolean, default: true }
 })
 
-defineEmits(['close', 'cancel', 'block-plate', 'edit-vehicle'])
+defineEmits(['close', 'cancel', 'block-plate', 'unblock-plate', 'edit-vehicle'])
 
 const authStore = useAuthStore()
 const canSeeDriverGender = computed(() => authStore.role !== 'worker')
@@ -280,7 +280,7 @@ const workerTotalWithTip = (job) => {
 .vehicle-details-actions { display:flex; justify-content:flex-end; gap:10px; }
 .vehicle-details-secondary-btn,.vehicle-details-danger-btn { border:none; border-radius:10px; padding:8px 12px; cursor:pointer; }
 .vehicle-details-secondary-btn { background:#e2e8f0; color:#334155; }
-.vehicle-details-blocked-btn { background:#fee2e2; color:#991b1b; cursor:default; }
+.vehicle-details-blocked-btn { background:#fee2e2; color:#991b1b; }
 .vehicle-details-danger-btn { background:#fee2e2; color:#b91c1c; }
 .vehicle-details-danger-btn:disabled { background:#e5e7eb; color:#94a3b8; cursor:not-allowed; }
 @media (max-width: 1100px) {

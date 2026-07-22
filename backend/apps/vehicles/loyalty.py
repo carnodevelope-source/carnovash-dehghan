@@ -1,4 +1,3 @@
-from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.utils import timezone
@@ -10,6 +9,50 @@ HALF_STAR = Decimal('0.5')
 MAX_STARS = Decimal('5.0')
 CYCLE_VISIT_LIMIT = 10
 FIXED_VISIT_MILESTONES = (2, 5, 10)
+
+_PERSIAN_ORDINAL_ONES = {
+    1: 'اول',
+    2: 'دوم',
+    3: 'سوم',
+    4: 'چهارم',
+    5: 'پنجم',
+    6: 'ششم',
+    7: 'هفتم',
+    8: 'هشتم',
+    9: 'نهم',
+}
+_PERSIAN_ORDINAL_TENS = {
+    10: 'دهم',
+    20: 'بیستم',
+    30: 'سی‌ام',
+    40: 'چهلم',
+    50: 'پنجاهم',
+    60: 'شصتم',
+    70: 'هفتادم',
+    80: 'هشتادم',
+    90: 'نودم',
+}
+_PERSIAN_ORDINAL_TEENS = {
+    11: 'یازدهم',
+    12: 'دوازدهم',
+    13: 'سیزدهم',
+    14: 'چهاردهم',
+    15: 'پانزدهم',
+    16: 'شانزدهم',
+    17: 'هفدهم',
+    18: 'هجدهم',
+    19: 'نوزدهم',
+}
+_PERSIAN_CARDINAL_TENS = {
+    20: 'بیست',
+    30: 'سی',
+    40: 'چهل',
+    50: 'پنجاه',
+    60: 'شصت',
+    70: 'هفتاد',
+    80: 'هشتاد',
+    90: 'نود',
+}
 
 
 def money(value):
@@ -35,16 +78,38 @@ def normalize_plate(
     return str(plate_number or '').strip()
 
 
-def needs_anniversary_reset(profile, now=None):
-    now = timezone.localtime(now or timezone.now())
-    first_order_at = getattr(profile, 'first_order_at', None)
-    if not first_order_at:
-        return False
-    first_local = timezone.localtime(first_order_at)
-    anniversary_this_year = first_local.replace(year=now.year)
-    if anniversary_this_year > now:
-        anniversary_this_year = anniversary_this_year.replace(year=now.year - 1)
-    return anniversary_this_year > timezone.localtime(profile.updated_at)
+def persian_visit_ordinal(visit_number):
+    number = int(visit_number or 0)
+    if number <= 0:
+        return str(number)
+    if number in _PERSIAN_ORDINAL_ONES:
+        return _PERSIAN_ORDINAL_ONES[number]
+    if number in _PERSIAN_ORDINAL_TEENS:
+        return _PERSIAN_ORDINAL_TEENS[number]
+    if number in _PERSIAN_ORDINAL_TENS:
+        return _PERSIAN_ORDINAL_TENS[number]
+    if number < 100:
+        tens = (number // 10) * 10
+        ones = number % 10
+        tens_label = _PERSIAN_CARDINAL_TENS.get(tens)
+        ones_label = _PERSIAN_ORDINAL_ONES.get(ones)
+        if tens_label and ones_label:
+            return f'{tens_label}\u200cو{ones_label}'
+    return str(number)
+
+
+def cycle_visit_position(visit_count):
+    number = int(visit_count or 0)
+    if number <= 0:
+        return 0
+    return ((number - 1) % CYCLE_VISIT_LIMIT) + 1
+
+
+def format_discount_percent_label(percent):
+    value = Decimal(str(percent or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if value == value.to_integral():
+        return f'{int(value)}'
+    return f'{value.normalize()}'
 
 
 def reset_loyalty_profile(profile, now=None):
@@ -85,7 +150,7 @@ def get_or_create_plate_loyalty(
     if not tenant or not normalized_plate:
         return None
     now = timezone.localtime(now or timezone.now())
-    profile, created = PlateLoyaltyProfile.objects.get_or_create(
+    profile, _created = PlateLoyaltyProfile.objects.get_or_create(
         tenant=tenant,
         plate_number=normalized_plate,
         defaults={
@@ -121,8 +186,6 @@ def get_or_create_plate_loyalty(
     if changed_fields:
         changed_fields.append('updated_at')
         profile.save(update_fields=changed_fields)
-    if not created and needs_anniversary_reset(profile, now=now):
-        profile = reset_loyalty_profile(profile, now=now)
     return profile
 
 
@@ -130,27 +193,26 @@ def apply_loyalty_visit(profile, *, discount_percent_per_half_star=0, now=None):
     if not profile:
         return None
     now = timezone.localtime(now or timezone.now())
-    if needs_anniversary_reset(profile, now=now):
-        reset_loyalty_profile(profile, now=now)
-        profile.refresh_from_db()
 
     next_cycle_visit_count = int(profile.cycle_visit_count or 0) + 1
     if next_cycle_visit_count > CYCLE_VISIT_LIMIT:
         next_cycle_visit_count = 1
         profile.last_cycle_started_at = now
 
-    score = HALF_STAR * Decimal(str(next_cycle_visit_count))
-    if score > MAX_STARS:
-        score = HALF_STAR
+    earned_score = HALF_STAR * Decimal(str(next_cycle_visit_count))
+    if earned_score > MAX_STARS:
+        earned_score = MAX_STARS
+    cycle_completed = next_cycle_visit_count >= CYCLE_VISIT_LIMIT
+    next_discount_percent = Decimal(str(discount_percent_per_half_star or 0)) * (earned_score * Decimal('2'))
 
-    next_discount_percent = Decimal(str(discount_percent_per_half_star or 0)) * (score * Decimal('2'))
     profile.visit_count = int(profile.visit_count or 0) + 1
-    profile.cycle_visit_count = next_cycle_visit_count
-    profile.score = score
-    profile.next_discount_percent = next_discount_percent
+    profile.cycle_visit_count = 0 if cycle_completed else next_cycle_visit_count
+    profile.score = Decimal('0') if cycle_completed else earned_score
+    profile.next_discount_percent = Decimal('0') if cycle_completed else next_discount_percent
+    profile._loyalty_visit_score = earned_score
     if not profile.first_order_at:
         profile.first_order_at = now
-    if not profile.last_cycle_started_at:
+    if cycle_completed or not profile.last_cycle_started_at:
         profile.last_cycle_started_at = now
     profile.save(
         update_fields=[
@@ -264,39 +326,53 @@ def compute_configured_loyalty_discount(base_amount, profile, settings_obj, *, v
     if mode == 'fixed':
         current_visit = int(visit_count if visit_count is not None else getattr(profile, 'visit_count', 0) or 0)
         fixed_discounts = normalize_fixed_visit_discounts(getattr(settings_obj, 'fixed_visit_discounts', {}))
-        discount_percent = Decimal(str(fixed_discounts.get(str(current_visit), 0) or 0))
+        position = cycle_visit_position(current_visit)
+        discount_percent = Decimal(str(fixed_discounts.get(str(position), 0) or 0))
         discount_amount = money((normalized_base * discount_percent) / Decimal('100'))
         return discount_percent, discount_amount
 
+    visit_score = score
+    if visit_score is None and profile is not None:
+        visit_score = getattr(profile, '_loyalty_visit_score', None)
+    if visit_score is None:
+        visit_score = getattr(profile, 'score', 0) if profile is not None else 0
+
     return compute_loyalty_discount(
         base_amount=normalized_base,
-        score=score if score is not None else getattr(profile, 'score', 0),
+        score=visit_score,
         percent_per_half_star=getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0,
     )
 
 
+def iter_fixed_discount_milestones(visit_count, fixed_discounts, *, ahead=3):
+    current_visit = int(visit_count or 0)
+    start_cycle = max(0, current_visit // CYCLE_VISIT_LIMIT)
+    for cycle_index in range(start_cycle, start_cycle + max(1, ahead)):
+        cycle_base = cycle_index * CYCLE_VISIT_LIMIT
+        for milestone in FIXED_VISIT_MILESTONES:
+            percent = Decimal(str(fixed_discounts.get(str(milestone), 0) or 0))
+            if percent <= 0:
+                continue
+            absolute_visit = cycle_base + milestone
+            if absolute_visit > current_visit:
+                yield absolute_visit, percent
+
+
 def next_fixed_discount_notice(settings_obj, visit_count):
     if loyalty_discount_mode(settings_obj) != 'fixed':
-        return ''
+        return None
     fixed_discounts = normalize_fixed_visit_discounts(getattr(settings_obj, 'fixed_visit_discounts', {}))
     current_visit = int(visit_count or 0)
-    for visit_number in FIXED_VISIT_MILESTONES:
-        percent = Decimal(str(fixed_discounts.get(str(visit_number), 0) or 0))
-        if percent <= 0 or visit_number <= current_visit:
-            continue
-        remaining = visit_number - current_visit
+    for absolute_visit, percent in iter_fixed_discount_milestones(current_visit, fixed_discounts):
+        percent_label = format_discount_percent_label(percent)
+        remaining = absolute_visit - current_visit
         return {
             'remaining_visits': remaining,
-            'target_visit': visit_number,
+            'target_visit': absolute_visit,
             'discount_percent': float(percent),
-            'text': f'{remaining} مراجعه مانده تا تخفیف {float(percent):g}٪',
+            'text': f'درصد تخفیف مراجعه {persian_visit_ordinal(absolute_visit)} : {percent_label}٪',
         }
-    return {
-        'remaining_visits': 0,
-        'target_visit': 0,
-        'discount_percent': 0,
-        'text': 'تخفیف ثابتی برای مراجعات بعدی ثبت نشده است.',
-    }
+    return None
 
 
 def loyalty_snapshot(profile):

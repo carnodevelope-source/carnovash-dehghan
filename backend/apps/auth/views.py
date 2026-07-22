@@ -1688,7 +1688,7 @@ class HqTicketApproveRegistrationView(HqBaseView):
 
 
 def _build_hq_report_snapshot(start=None, end=None):
-    tenants = list(CarWash.objects.order_by('name').only('id', 'name', 'is_active'))
+    tenants = list(CarWash.objects.filter(is_active=True).order_by('name').only('id', 'name', 'is_active'))
     grouped = {
         tenant.id: {
             'tenant_id': tenant.id,
@@ -2196,9 +2196,9 @@ class HqCarWashReportsView(HqBaseView):
         if forbidden:
             return forbidden
 
-        tenant = CarWash.objects.filter(pk=pk).first()
+        tenant = CarWash.objects.filter(pk=pk, is_active=True).first()
         if not tenant:
-            return Response({'detail': 'کارواش پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'کارواش فعال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
         original_tenant = getattr(request.user, 'tenant', None)
         request.user.tenant = tenant
