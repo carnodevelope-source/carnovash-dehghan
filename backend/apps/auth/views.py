@@ -54,7 +54,9 @@ KARNO_FEATURE_KEYS = {
     CarWashFeaturePurchase.FeatureKey.SMS_CLUB,
     CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT,
     CarWashFeaturePurchase.FeatureKey.ATTENDANCE,
-    CarWashFeaturePurchase.FeatureKey.ACCOUNTING,
+}
+
+ARAKAR_FEATURE_KEYS = {
     CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
     CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE,
 }
@@ -63,37 +65,40 @@ HQ_FEATURE_META = {
     CarWashFeaturePurchase.FeatureKey.SMS_CLUB: {
         'label': 'پنل باشگاه مشتریان پیشرفته',
         'tab_label': 'باشگاه پیشرفته',
-        'description': 'درآمد و پرداخت‌های مربوط به باشگاه مشتریان و ارسال پیامک.',
+        'description': 'درآمد باشگاه مشتریان؛ سهم کارنو.',
     },
     CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT: {
         'label': 'وارد کردن مشتریان با اکسل',
         'tab_label': 'ورود اکسل',
-        'description': 'خرید یا اقساط قابلیت ورود گروهی مشتریان با فایل اکسل.',
+        'description': 'ورود گروهی مشتریان با اکسل؛ سهم کارنو.',
     },
     CarWashFeaturePurchase.FeatureKey.ATTENDANCE: {
         'label': 'ورود و خروج',
         'tab_label': 'حضور و غیاب',
-        'description': 'درآمد قابلیت کنترل ورود و خروج پرسنل.',
-    },
-    CarWashFeaturePurchase.FeatureKey.ACCOUNTING: {
-        'label': 'حسابداری',
-        'tab_label': 'حسابداری',
-        'description': 'درآمد قابلیت حسابداری و کنترل مالی داخلی کارواش.',
+        'description': 'قابلیت ورود و خروج پرسنل؛ سهم کارنو.',
     },
     CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE: {
-        'label': 'پنل اصلی کارواش',
-        'tab_label': 'پنل اصلی',
-        'description': 'درآمد پایه نرم‌افزار و دسترسی اصلی پنل.',
+        'label': 'لایسنس اصلی نرم‌افزار',
+        'tab_label': 'لایسنس اصلی',
+        'description': 'لایسنس اصلی نرم‌افزار؛ سهم آراکار.',
+    },
+    CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE: {
+        'label': 'فضای ابری',
+        'tab_label': 'فضای ابری',
+        'description': 'فضای ابری نگهداری داده؛ سهم آراکار.',
     },
 }
 
 HQ_FEATURE_KEYS = KARNO_FEATURE_KEYS
 
-KARNO_WALLET_REFERENCE_TYPES = {
-    'customer_import_excel',
+FEATURE_PURCHASE_REFERENCE_TYPES = {
     'feature_option_purchase',
     'feature_option_installment',
     'feature_option_installment_manual',
+}
+
+KARNO_WALLET_REFERENCE_TYPES = {
+    'customer_import_excel',
     'sms_campaign_send',
     'vehicle_assigned_sms',
     'vehicle_released_sms',
@@ -102,17 +107,23 @@ KARNO_WALLET_REFERENCE_TYPES = {
 
 
 def _feature_share_group(feature_key):
-    return 'hq' if feature_key in KARNO_FEATURE_KEYS else 'rah'
+    if feature_key in KARNO_FEATURE_KEYS:
+        return 'hq'
+    if feature_key in ARAKAR_FEATURE_KEYS:
+        return 'rah'
+    return 'none'
 
 
 def _wallet_transaction_share_group(tx):
     wallet_type = tx.wallet.wallet_type if tx.wallet_id else ''
     if tx.direction == CashflowTransaction.Direction.IN:
         return 'none'
-    if tx.reference_type in KARNO_WALLET_REFERENCE_TYPES:
+    if wallet_type == Wallet.WalletType.SMS or tx.reference_type in KARNO_WALLET_REFERENCE_TYPES:
         return 'hq'
-    if wallet_type == Wallet.WalletType.SMS:
-        return 'hq'
+    if tx.reference_type in FEATURE_PURCHASE_REFERENCE_TYPES and tx.reference_id:
+        purchase = CarWashFeaturePurchase.objects.filter(pk=tx.reference_id).only('feature_key').first()
+        if purchase:
+            return _feature_share_group(purchase.feature_key)
     return 'rah'
 
 
@@ -1946,11 +1957,22 @@ def _build_hq_report_snapshot(start=None, end=None):
         else:
             row['wallet_regular_balance'] += balance
 
-    wallet_transactions = CashflowTransaction.objects.select_related('wallet', 'tenant', 'created_by')
+    wallet_qs = CashflowTransaction.objects.select_related('wallet', 'tenant', 'created_by')
     if start:
-        wallet_transactions = wallet_transactions.filter(transacted_at__gte=start)
+        wallet_qs = wallet_qs.filter(transacted_at__gte=start)
     if end:
-        wallet_transactions = wallet_transactions.filter(transacted_at__lte=end)
+        wallet_qs = wallet_qs.filter(transacted_at__lte=end)
+    wallet_transactions = list(wallet_qs)
+
+    purchase_ids = {
+        tx.reference_id
+        for tx in wallet_transactions
+        if tx.reference_type in FEATURE_PURCHASE_REFERENCE_TYPES and tx.reference_id
+    }
+    purchase_feature_map = {
+        item.id: item.feature_key
+        for item in CarWashFeaturePurchase.objects.filter(id__in=purchase_ids).only('id', 'feature_key')
+    }
 
     wallet_transaction_rows = []
     for tx in wallet_transactions:
@@ -1959,8 +1981,11 @@ def _build_hq_report_snapshot(start=None, end=None):
             continue
         row = grouped[tenant_id]
         amount = Decimal(str(tx.amount or 0))
-        share_group = _wallet_transaction_share_group(tx)
-        share_amount = _wallet_transaction_share_amount(tx)
+        if tx.reference_type in FEATURE_PURCHASE_REFERENCE_TYPES and tx.reference_id in purchase_feature_map:
+            share_group = _feature_share_group(purchase_feature_map[tx.reference_id])
+        else:
+            share_group = _wallet_transaction_share_group(tx)
+        share_amount = amount if share_group in {'hq', 'rah'} else Decimal('0')
         row['wallet_transactions_count'] += 1
         row['share_breakdown'][share_group] += share_amount
         if share_group == 'hq':

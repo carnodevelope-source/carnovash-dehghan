@@ -78,8 +78,8 @@ class SubscriptionsApiTests(APITestCase):
         self.client.force_authenticate(self.hq_support)
         summary = self.client.get('/api/subscriptions/hq/summary/')
         self.assertEqual(summary.status_code, status.HTTP_200_OK)
-        self.assertNotIn('net_profit', summary.data)
-        self.assertNotIn('cost_total', summary.data)
+        self.assertNotIn('carno_paid', summary.data)
+        self.assertNotIn('arakar_paid', summary.data)
         action = self.client.post(
             f'/api/subscriptions/hq/subscriptions/{order.subscription_id}/actions/',
             {'action': 'block', 'reason': 'test'},

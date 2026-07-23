@@ -64,6 +64,9 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
     usage_percent = serializers.SerializerMethodField()
     sales_owner_name = serializers.SerializerMethodField()
     support_owner_name = serializers.SerializerMethodField()
+    share_owner = serializers.SerializerMethodField()
+    share_owner_label = serializers.SerializerMethodField()
+    accent = serializers.CharField(source='product.accent', read_only=True)
 
     class Meta:
         model = ServiceSubscription
@@ -72,10 +75,11 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
             'product_title', 'product_key', 'plan', 'plan_title', 'plan_code', 'status', 'payment_status',
             'auto_renew', 'purchased_at', 'activated_at', 'starts_at', 'ends_at', 'grace_ends_at',
             'last_renewed_at', 'last_paid_at', 'last_activity_at', 'base_amount', 'discount_amount',
-            'tax_amount', 'final_amount', 'paid_amount', 'remaining_amount', 'cost_amount', 'usage_cap',
+            'tax_amount', 'final_amount', 'paid_amount', 'remaining_amount', 'usage_cap',
             'usage_used', 'usage_unit', 'usage_percent', 'days_remaining', 'license_code', 'seat_limit',
             'device_limit', 'sales_owner', 'sales_owner_name', 'support_owner', 'support_owner_name',
-            'contract_number', 'meta', 'created_at', 'updated_at',
+            'contract_number', 'meta', 'created_at', 'updated_at', 'share_owner', 'share_owner_label',
+            'accent',
         ]
 
     def get_days_remaining(self, obj):
@@ -91,6 +95,14 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
     def get_support_owner_name(self, obj):
         user = obj.support_owner
         return (user.full_name or user.username) if user else ''
+
+    def get_share_owner(self, obj):
+        from .services import product_share_group
+        return product_share_group(obj.product.product_key)
+
+    def get_share_owner_label(self, obj):
+        owner = self.get_share_owner(obj)
+        return {'carno': 'کارنو', 'arakar': 'آراکار'}.get(owner, '—')
 
 
 class ServiceOrderSerializer(serializers.ModelSerializer):

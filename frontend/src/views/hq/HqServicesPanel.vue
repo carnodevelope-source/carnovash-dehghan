@@ -1,7 +1,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
+import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import { useAuthStore } from '../../store/auth.store'
+import { formatJalaliDate, formatJalaliDateTime, parseJalaliToIso } from '../../utils/date'
+import { formatThousandsToman } from '../../utils/money'
 
 const props = defineProps({
   carwashes: { type: Array, default: () => [] }
@@ -108,42 +111,34 @@ const actionOptions = computed(() => {
 
 const kpiCards = computed(() => {
   const cards = [
-    { key: 'clients_count', label: 'کلاینت‌ها', value: summary.clients_count },
-    { key: 'active_count', label: 'فعال', value: summary.active_count },
-    { key: 'inactive_count', label: 'غیرفعال', value: summary.inactive_count },
-    { key: 'expired_count', label: 'منقضی', value: summary.expired_count },
+    { key: 'clients_count', label: 'کلاینت فعال', value: summary.clients_count },
+    { key: 'active_count', label: 'سرویس فعال', value: summary.active_count },
     { key: 'near_expiry_count', label: 'نزدیک انقضا', value: summary.near_expiry_count },
     { key: 'blocked_count', label: 'مسدود', value: summary.blocked_count },
     { key: 'pending_payment_count', label: 'در انتظار پرداخت', value: summary.pending_payment_count }
   ]
   if (capabilities.see_financial) {
     cards.push(
-      { key: 'sales_revenue', label: 'درآمد فروش', value: money(summary.sales_revenue), money: true },
-      { key: 'renewal_revenue', label: 'درآمد تمدید', value: money(summary.renewal_revenue), money: true },
-      { key: 'tax_collected', label: 'مالیات', value: money(summary.tax_collected), money: true },
-      { key: 'discount_total', label: 'تخفیف', value: money(summary.discount_total), money: true },
-      { key: 'receivables', label: 'مطالبات', value: money(summary.receivables), money: true },
-      { key: 'overdue_total', label: 'معوقات', value: money(summary.overdue_total), money: true }
+      { key: 'sales_revenue', label: 'مبلغ کل فروش', value: money(summary.sales_revenue), money: true },
+      { key: 'paid_revenue', label: 'وصول‌شده', value: money(summary.paid_revenue), money: true },
+      { key: 'receivables', label: 'مانده اقساط', value: money(summary.receivables), money: true },
+      { key: 'carno_paid', label: 'سهم کارنو (وصولی)', value: money(summary.carno_paid), money: true },
+      { key: 'arakar_paid', label: 'سهم آراکار (وصولی)', value: money(summary.arakar_paid), money: true }
     )
-  }
-  if (capabilities.see_costs) {
-    cards.push({ key: 'cost_total', label: 'هزینه', value: money(summary.cost_total), money: true })
-  }
-  if (capabilities.see_holding_profit) {
-    cards.push({ key: 'net_profit', label: 'سود خالص', value: money(summary.net_profit), money: true })
   }
   return cards
 })
 
 const allSelected = computed(() => rows.value.length > 0 && selectedIds.value.length === rows.value.length)
 
+const activeCarwashes = computed(() => (props.carwashes || []).filter((item) => item.is_active !== false))
+
 function toFa(value) {
   return String(value ?? 0).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 }
 
 function money(value) {
-  const num = Number(value || 0)
-  return `${toFa(num.toLocaleString('en-US'))} ریال`
+  return formatThousandsToman(value)
 }
 
 function statusLabel(value) {
@@ -164,8 +159,10 @@ function buildQuery(extra = {}) {
   if (filters.payment_status) params.payment_status = filters.payment_status
   if (filters.has_debt) params.has_debt = '1'
   if (filters.near_expiry) params.near_expiry = '1'
-  if (filters.date_from) params.date_from = filters.date_from
-  if (filters.date_to) params.date_to = filters.date_to
+  const dateFrom = parseJalaliToIso(filters.date_from)
+  const dateTo = parseJalaliToIso(filters.date_to)
+  if (dateFrom) params.date_from = dateFrom
+  if (dateTo) params.date_to = dateTo
   if (clientId.value) params.tenant_id = clientId.value
   return params
 }
@@ -337,6 +334,14 @@ function toggleOne(id) {
   else selectedIds.value = [...selectedIds.value, id]
 }
 
+watch(activeCarwashes, (list) => {
+  if (!clientId.value) return
+  if (!list.some((item) => String(item.id) === String(clientId.value))) {
+    clientId.value = ''
+    clientDetail.value = null
+  }
+})
+
 watch([() => filters.search, () => filters.project_id, () => filters.product_key, () => filters.status, () => filters.payment_status, () => filters.has_debt, () => filters.near_expiry, () => filters.ordering, () => filters.date_from, () => filters.date_to, reportKey, clientId], async () => {
   page.value = 1
   await Promise.all([loadSummary(), loadRows(), loadClient()])
@@ -392,12 +397,12 @@ onMounted(refreshAll)
       </select>
       <select v-model="clientId">
         <option value="">همه کلاینت‌ها</option>
-        <option v-for="item in carwashes" :key="item.id" :value="String(item.id)">{{ item.name }}</option>
+        <option v-for="item in activeCarwashes" :key="item.id" :value="String(item.id)">{{ item.name }}</option>
       </select>
       <label class="check"><input v-model="filters.has_debt" type="checkbox" /> بدهکار</label>
       <label class="check"><input v-model="filters.near_expiry" type="checkbox" /> نزدیک انقضا</label>
-      <input v-model="filters.date_from" type="date" />
-      <input v-model="filters.date_to" type="date" />
+      <BaseDatePicker v-model="filters.date_from" placeholder="از تاریخ خرید" />
+      <BaseDatePicker v-model="filters.date_to" placeholder="تا تاریخ خرید" />
       <select v-model="filters.ordering">
         <option value="-updated_at">جدیدترین تغییر</option>
         <option value="-purchased_at">تاریخ خرید</option>
@@ -458,23 +463,21 @@ onMounted(refreshAll)
         <thead>
           <tr>
             <th>سرویس</th>
+            <th>مالک سهم</th>
             <th>تعداد</th>
             <th>فروش</th>
-            <th>پرداخت‌شده</th>
-            <th>مانده</th>
-            <th v-if="capabilities.see_costs">هزینه</th>
-            <th v-if="capabilities.see_holding_profit">سود</th>
+            <th>وصول‌شده</th>
+            <th>مانده اقساط</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="row in revenue?.by_product || []" :key="row.product_key">
             <td>{{ row.product_title }}</td>
+            <td>{{ row.share_owner_label || '—' }}</td>
             <td>{{ toFa(row.subscriptions_count) }}</td>
             <td>{{ money(row.sales) }}</td>
             <td>{{ money(row.paid) }}</td>
             <td>{{ money(row.remaining) }}</td>
-            <td v-if="capabilities.see_costs">{{ money(row.cost) }}</td>
-            <td v-if="capabilities.see_holding_profit">{{ money(row.net_profit) }}</td>
           </tr>
         </tbody>
       </table>
@@ -486,31 +489,31 @@ onMounted(refreshAll)
           <tr>
             <th><input type="checkbox" :checked="allSelected" @change="toggleAll" /></th>
             <th>کلاینت</th>
-            <th>پروژه</th>
             <th>سرویس</th>
+            <th>سهم</th>
             <th>پلن</th>
             <th>وضعیت</th>
+            <th>تاریخ خرید</th>
             <th>انقضا</th>
-            <th>روز باقی</th>
-            <th v-if="capabilities.see_financial">مبلغ نهایی</th>
-            <th v-if="capabilities.see_financial">مانده</th>
-            <th>مصرف</th>
+            <th v-if="capabilities.see_financial">مبلغ فروش</th>
+            <th v-if="capabilities.see_financial">وصول</th>
+            <th v-if="capabilities.see_financial">مانده اقساط</th>
             <th>عملیات</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in rows" :key="row.id">
+          <tr v-for="row in rows" :key="row.id" :class="`share-${row.share_owner || 'none'}`">
             <td><input type="checkbox" :checked="selectedIds.includes(row.id)" @change="toggleOne(row.id)" /></td>
             <td>{{ row.client_name }}</td>
-            <td>{{ row.project_name }}</td>
             <td>{{ row.product_title }}</td>
+            <td>{{ row.share_owner_label || '—' }}</td>
             <td>{{ row.plan_title || '—' }}</td>
             <td><span class="badge" :class="row.status">{{ statusLabel(row.status) }}</span></td>
-            <td>{{ row.ends_at ? row.ends_at.slice(0, 10) : '—' }}</td>
-            <td>{{ row.days_remaining == null ? '—' : toFa(row.days_remaining) }}</td>
+            <td>{{ formatJalaliDate(row.purchased_at) }}</td>
+            <td>{{ row.ends_at ? formatJalaliDate(row.ends_at) : '—' }}</td>
             <td v-if="capabilities.see_financial">{{ money(row.final_amount) }}</td>
+            <td v-if="capabilities.see_financial">{{ money(row.paid_amount) }}</td>
             <td v-if="capabilities.see_financial">{{ money(row.remaining_amount) }}</td>
-            <td>{{ toFa(row.usage_used || 0) }} / {{ toFa(row.usage_cap || 0) }}</td>
             <td class="ops">
               <button type="button" class="link-btn" @click="openDetail(row)">جزئیات</button>
               <button v-if="capabilities.mutate_status || capabilities.register_payment" type="button" class="link-btn" @click="openAction(row)">عملیات</button>
@@ -536,6 +539,9 @@ onMounted(refreshAll)
         </header>
         <div class="drawer-grid">
           <article><small>وضعیت</small><strong>{{ statusLabel(detail.subscription?.status) }}</strong></article>
+          <article><small>تاریخ خرید</small><strong>{{ formatJalaliDate(detail.subscription?.purchased_at) }}</strong></article>
+          <article><small>فعالسازی</small><strong>{{ formatJalaliDate(detail.subscription?.activated_at) }}</strong></article>
+          <article><small>شروع / پایان</small><strong>{{ formatJalaliDate(detail.subscription?.starts_at) }} / {{ detail.subscription?.ends_at ? formatJalaliDate(detail.subscription.ends_at) : '—' }}</strong></article>
           <article v-if="capabilities.see_financial"><small>مبلغ نهایی</small><strong>{{ money(detail.subscription?.final_amount) }}</strong></article>
           <article v-if="capabilities.see_financial"><small>مانده</small><strong>{{ money(detail.subscription?.remaining_amount) }}</strong></article>
           <article><small>مصرف</small><strong>{{ toFa(detail.subscription?.usage_used) }} / {{ toFa(detail.subscription?.usage_cap) }}</strong></article>
@@ -543,20 +549,21 @@ onMounted(refreshAll)
         <h4>دوره‌ها</h4>
         <ul>
           <li v-for="period in detail.periods || []" :key="`p-${period.id}`">
-            {{ period.kind }} — {{ period.starts_at?.slice(0, 10) }} تا {{ period.ends_at?.slice(0, 10) || '—' }}
+            {{ period.kind }} — {{ formatJalaliDate(period.starts_at) }} تا {{ period.ends_at ? formatJalaliDate(period.ends_at) : '—' }}
             <span v-if="capabilities.see_financial"> / {{ money(period.final_amount) }}</span>
           </li>
         </ul>
         <h4 v-if="capabilities.see_financial">پرداخت‌ها</h4>
         <ul v-if="capabilities.see_financial">
           <li v-for="payment in detail.payments || []" :key="`pay-${payment.id}`">
-            {{ money(payment.amount) }} — {{ payment.method || '—' }} — {{ payment.paid_at?.slice(0, 19) }}
+            {{ money(payment.amount) }} — {{ payment.method || '—' }} — {{ formatJalaliDateTime(payment.paid_at) }}
           </li>
         </ul>
         <h4>لاگ عملیات</h4>
         <ul>
           <li v-for="log in detail.audit_logs || []" :key="`a-${log.id}`">
             {{ log.action }} توسط {{ log.actor_name || 'سیستم' }} — {{ log.reason || log.note || '' }}
+            <small v-if="log.created_at"> ({{ formatJalaliDateTime(log.created_at) }})</small>
           </li>
         </ul>
       </aside>
@@ -657,6 +664,16 @@ onMounted(refreshAll)
   flex-wrap: wrap;
   gap: 0.55rem;
 }
+.filter-bar :deep(.base-date-picker) {
+  min-width: 160px;
+}
+.filter-bar :deep(.picker-input) {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: #fff;
+}
 .filter-bar input,
 .filter-bar select,
 .drawer label input,
@@ -734,6 +751,8 @@ td {
 .badge.suspended { background: #fee2e2; color: #991b1b; }
 .badge.pending_payment,
 .badge.pending_activation { background: #ffedd5; color: #9a3412; }
+.share-carno { background: rgba(2, 132, 199, 0.05); }
+.share-arakar { background: rgba(15, 23, 42, 0.04); }
 .link-btn {
   background: transparent;
   color: #0369a1;

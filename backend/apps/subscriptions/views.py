@@ -41,6 +41,7 @@ from .services import (
     backfill_subscriptions_from_feature_purchases,
     create_order_and_activate,
     process_bulk_job,
+    product_share_group,
     renew_subscription,
     seed_catalog_from_legacy,
     summarize_subscriptions,
@@ -121,17 +122,13 @@ def _strip_sensitive(payload, caps):
     if not isinstance(payload, dict):
         return payload
     data = dict(payload)
-    if not caps.get('see_costs'):
-        data.pop('cost_amount', None)
-        data.pop('cost_total', None)
-        data.pop('default_cost', None)
-    if not caps.get('see_holding_profit'):
-        data.pop('net_profit', None)
     if not caps.get('see_financial'):
         for key in (
             'base_amount', 'discount_amount', 'tax_amount', 'final_amount', 'paid_amount',
-            'remaining_amount', 'sales_revenue', 'renewal_revenue', 'tax_collected',
-            'discount_total', 'receivables', 'overdue_total', 'cost_total', 'net_profit',
+            'remaining_amount', 'sales_revenue', 'paid_revenue', 'renewal_revenue', 'tax_collected',
+            'discount_total', 'receivables', 'overdue_total', 'carno_sales', 'carno_paid',
+            'arakar_sales', 'arakar_paid', 'installment_remaining', 'sales', 'paid', 'remaining',
+            'tax', 'revenue', 'cost_amount', 'cost_total', 'net_profit', 'default_cost',
         ):
             data.pop(key, None)
     return data
@@ -151,6 +148,10 @@ class SubscriptionsHqBaseView(APIView):
 
 def _apply_subscription_filters(qs, request):
     params = request.query_params
+    # Inactive carwashes are excluded from HQ service reports by default.
+    include_inactive = str(params.get('include_inactive') or '').strip().lower() in {'1', 'true', 'yes'}
+    if not include_inactive:
+        qs = qs.filter(tenant__is_active=True)
     search = (params.get('search') or '').strip()
     if search:
         qs = qs.filter(
@@ -367,9 +368,9 @@ class ClientServicesView(SubscriptionsHqBaseView):
         forbidden = self.forbid(request)
         if forbidden:
             return forbidden
-        tenant = CarWash.objects.filter(pk=tenant_id).first()
+        tenant = CarWash.objects.filter(pk=tenant_id, is_active=True).first()
         if not tenant:
-            return Response({'detail': 'کلاینت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'کلاینت فعال یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         seed_catalog_from_legacy()
         caps = self.caps(request)
         subs = (
@@ -459,7 +460,10 @@ class AlertsListView(SubscriptionsHqBaseView):
         forbidden = self.forbid(request)
         if forbidden:
             return forbidden
-        qs = ServiceAlert.objects.select_related('tenant', 'subscription', 'subscription__product').filter(is_resolved=False)
+        qs = ServiceAlert.objects.select_related('tenant', 'subscription', 'subscription__product').filter(
+            is_resolved=False,
+            tenant__is_active=True,
+        )
         if request.query_params.get('tenant_id'):
             qs = qs.filter(tenant_id=request.query_params.get('tenant_id'))
         if request.query_params.get('severity'):
@@ -519,7 +523,6 @@ class RevenueMatrixView(SubscriptionsHqBaseView):
                 sales=Sum('final_amount'),
                 paid=Sum('paid_amount'),
                 remaining=Sum('remaining_amount'),
-                cost=Sum('cost_amount'),
                 tax=Sum('tax_amount'),
             )
             .order_by('product__title')
@@ -530,24 +533,26 @@ class RevenueMatrixView(SubscriptionsHqBaseView):
                 sales=Sum('final_amount'),
                 paid=Sum('paid_amount'),
                 remaining=Sum('remaining_amount'),
-                cost=Sum('cost_amount'),
             )
             .order_by('project__name')
         )
         rows = []
         for row in by_product:
             sales = Decimal(str(row['sales'] or 0))
-            cost = Decimal(str(row['cost'] or 0))
+            paid = Decimal(str(row['paid'] or 0))
+            remaining = Decimal(str(row['remaining'] or 0))
+            share = product_share_group(row['product__product_key'])
             item = {
                 'product_key': row['product__product_key'],
                 'product_title': row['product__title'],
+                'share_owner': share,
+                'share_owner_label': 'کارنو' if share == 'carno' else ('آراکار' if share == 'arakar' else '—'),
                 'subscriptions_count': row['count'] or 0,
                 'sales': float(sales),
-                'paid': float(Decimal(str(row['paid'] or 0))),
-                'remaining': float(Decimal(str(row['remaining'] or 0))),
-                'cost': float(cost),
+                'paid': float(paid),
+                'remaining': float(remaining),
                 'tax': float(Decimal(str(row['tax'] or 0))),
-                'net_profit': float(sales - cost),
+                'revenue': float(paid),
             }
             rows.append(_strip_sensitive(item, caps))
         projects = [_strip_sensitive({
@@ -556,8 +561,6 @@ class RevenueMatrixView(SubscriptionsHqBaseView):
             'sales': float(Decimal(str(row['sales'] or 0))),
             'paid': float(Decimal(str(row['paid'] or 0))),
             'remaining': float(Decimal(str(row['remaining'] or 0))),
-            'cost': float(Decimal(str(row['cost'] or 0))),
-            'net_profit': float(Decimal(str(row['sales'] or 0)) - Decimal(str(row['cost'] or 0))),
         }, caps) for row in by_project]
         return Response({
             'summary': _strip_sensitive(summarize_subscriptions(qs), caps),
