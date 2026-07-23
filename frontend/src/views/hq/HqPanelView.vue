@@ -601,7 +601,7 @@
         </aside>
 
         <section class="ticket-desk-stage">
-          <template v-if="selectedTicket">
+          <div v-if="selectedTicket" class="ticket-stage-body">
             <header class="ticket-stage-head">
               <button type="button" class="ticket-back-btn" @click="clearSelectedTicket">
                 بازگشت به لیست
@@ -737,7 +737,7 @@
                 </button>
               </div>
             </footer>
-          </template>
+          </div>
 
           <div v-else class="ticket-stage-empty">
             <strong>یک تیکت انتخاب کنید</strong>
@@ -6452,10 +6452,10 @@ td strong {
 .ticket-desk-stage {
   min-width: 0;
   min-height: 0;
-  display: grid;
 }
 
 .ticket-desk-inbox {
+  display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   background: rgba(255, 255, 255, 0.92);
   border-left: 1px solid rgba(226, 232, 240, 0.95);
@@ -6744,10 +6744,29 @@ td strong {
 }
 
 .ticket-desk-stage {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(59, 130, 246, 0.06), transparent 28%),
     #f8fafc;
+}
+
+.ticket-stage-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ticket-stage-head,
+.ticket-stage-actions,
+.ticket-stage-composer {
+  flex: 0 0 auto;
 }
 
 .ticket-stage-head {
@@ -6894,6 +6913,8 @@ td strong {
 }
 
 .ticket-stage-stream {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   padding: 16px 18px;
   display: grid;
@@ -6977,8 +6998,10 @@ td strong {
 }
 
 .ticket-stage-composer textarea {
-  min-height: 88px;
-  resize: vertical;
+  min-height: 72px;
+  max-height: 120px;
+  height: 84px !important;
+  resize: none;
   line-height: 1.8;
 }
 
@@ -7003,7 +7026,13 @@ td strong {
 }
 
 .ticket-stage-empty {
-  grid-row: 1 / -1;
+  flex: 1 1 auto;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 32px 20px;
+  color: #64748b;
   min-height: 100%;
 }
 
