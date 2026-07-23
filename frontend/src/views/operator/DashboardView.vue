@@ -189,6 +189,7 @@
             v-model:plate-mid="plateEditForm.plateMid"
             v-model:plate-right="plateEditForm.plateRight"
             v-model:plate-type="plateEditForm.plateType"
+            :letter-suggestions="plateEditLetterSuggestions"
             :disabled="plateEditSubmitting"
           />
           <div class="plate-edit-preview">
@@ -907,7 +908,7 @@ import api from '../../services/api'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
-import { buildPlateNumber, isAnonymousPlate, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
+import { buildPlateNumber, getAmbiguousLetterSuggestions, isAnonymousPlate, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -949,6 +950,11 @@ const plateEditForm = ref({
   plateRight: '',
   plateType: 'car'
 })
+const plateEditLetterSuggestions = computed(() => (
+  plateEditForm.value.plateType === 'motorcycle'
+    ? []
+    : getAmbiguousLetterSuggestions(plateEditForm.value.plateLetter)
+))
 const invoiceTemplateRef = ref(null)
 const invoicePreviewFrameRef = ref(null)
 const tempReleaseServiceIds = ref([])

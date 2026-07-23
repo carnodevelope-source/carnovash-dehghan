@@ -34,7 +34,8 @@ def createDataset(inputPath, gtFile, outputPath, checkValid=True):
         checkValid : if true, check the validity of every image
     """
     os.makedirs(outputPath, exist_ok=True)
-    env = lmdb.open(outputPath, map_size=1099511627776)
+    # 1 GiB default (DTRB used 1 TiB which creates huge sparse files that fail to copy to servers)
+    env = lmdb.open(outputPath, map_size=1024 * 1024 * 1024)
     cache = {}
     cnt = 1
 

@@ -109,18 +109,28 @@
       {{ pieceWash ? 'برای قطعه‌شویی پلاک خودرو ثبت نمی‌شود.' : 'برای پذیرش بی‌نام، ورود دستی پلاک پنهان می‌شود.' }}
     </div>
 
-    <div v-if="plateKind === 'car' && letterSuggestions.length > 1" class="letter-suggestions">
-      <button
-        v-for="option in letterSuggestions"
-        :key="option"
-        type="button"
-        class="letter-chip"
-        :class="{ active: plateLetter === option }"
-        :disabled="disabled"
-        @click="selectLetterSuggestion(option)"
-      >
-        {{ option }}
-      </button>
+    <div
+      v-if="plateKind === 'car' && letterSuggestions.length > 1"
+      class="letter-suggestions-panel"
+      role="group"
+      aria-label="انتخاب حرف مبهم پلاک"
+    >
+      <p class="letter-suggestions-hint">
+        حرف شبیه چند گزینه است — یکی را انتخاب کنید
+      </p>
+      <div class="letter-suggestions">
+        <button
+          v-for="option in letterSuggestions"
+          :key="option"
+          type="button"
+          class="letter-chip"
+          :class="{ active: plateLetter === option }"
+          :disabled="disabled"
+          @click="selectLetterSuggestion(option)"
+        >
+          <span class="letter-chip-glyph">{{ option }}</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -430,11 +440,30 @@ const selectLetterSuggestion = (letter) => {
   gap: 8px;
 }
 
+.letter-suggestions-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(241, 248, 255, 0.95), rgba(236, 244, 255, 0.88));
+  border: 1px solid #cfe0f5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  animation: letter-suggest-in 0.28s ease-out;
+}
+
+.letter-suggestions-hint {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .letter-suggestions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 2px;
 }
 
 .anonymous-plate-note {
@@ -444,20 +473,51 @@ const selectLetterSuggestion = (letter) => {
 }
 
 .letter-chip {
-  min-width: 42px;
-  height: 38px;
-  border: 1px solid #d7e3f4;
-  border-radius: 12px;
+  min-width: 46px;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #b9d0ea;
+  border-radius: 999px;
   background: #fff;
-  color: #334155;
+  color: #1e3a5f;
   font-weight: 900;
   cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.letter-chip:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: #7eb0e4;
+  background: #f7fbff;
+}
+
+.letter-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.letter-chip-glyph {
+  display: inline-block;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .letter-chip.active {
-  background: linear-gradient(135deg, #1e5fae, #3b82c4);
+  background: linear-gradient(135deg, #1d4f91, #2f6fad);
   color: #fff;
   border-color: transparent;
+  box-shadow: 0 6px 14px rgba(29, 79, 145, 0.22);
+}
+
+@keyframes letter-suggest-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 640px) {

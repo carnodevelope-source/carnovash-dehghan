@@ -2,6 +2,7 @@ export const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
   .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
 
+/** OCR latin token → default Persian plate letter (DTRB / light_plate_common). */
 const ENGLISH_LETTER_MAP = {
   A: 'الف',
   B: 'ب',
@@ -30,6 +31,26 @@ const ENGLISH_LETTER_MAP = {
   Y: 'ی',
   Z: 'ز'
 }
+
+/**
+ * Ambiguous OCR families: one latin token (or its Persian default) maps to several
+ * look-alike plate letters. Unique letters (ب، م، ن، ک، …) are not listed → no bubbles.
+ */
+const OCR_AMBIGUOUS_BY_LATIN = {
+  s: ['س', 'ص', 'ث'],
+  c: ['ص', 'س', 'ث'],
+  t: ['ط', 'ت']
+}
+
+const OCR_AMBIGUOUS_BY_PERSIAN = (() => {
+  const map = Object.create(null)
+  for (const options of Object.values(OCR_AMBIGUOUS_BY_LATIN)) {
+    for (const letter of options) {
+      if (!map[letter]) map[letter] = [...options]
+    }
+  }
+  return map
+})()
 
 const PERSIAN_LETTER_MAP = {
   ا: 'الف',
@@ -79,6 +100,44 @@ export const normalizePlateLetter = (value) => {
   const upper = first.toUpperCase()
   if (ENGLISH_LETTER_MAP[upper]) return ENGLISH_LETTER_MAP[upper]
   return PERSIAN_LETTER_MAP[first] || ''
+}
+
+/** Extract OCR latin letter token from raw plate text like `67b34512`. */
+export const extractOcrLatinLetter = (rawText) => {
+  const cleaned = String(rawText || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+  if (!cleaned) return ''
+  if (cleaned.length >= 8) {
+    const ch = cleaned[2]
+    return /[a-z]/.test(ch) ? ch : ''
+  }
+  const letter = cleaned.match(/[a-z]/)?.[0] || ''
+  return letter
+}
+
+/**
+ * Bubble options for operator when OCR letter is visually ambiguous.
+ * Returns [] for unique letters (م، ب، ک، …) so UI hides the chip row.
+ */
+export const getAmbiguousLetterSuggestions = (letterOrLatin, rawOcrText = '') => {
+  const latinFromRaw = extractOcrLatinLetter(rawOcrText)
+  if (latinFromRaw && OCR_AMBIGUOUS_BY_LATIN[latinFromRaw]) {
+    return [...OCR_AMBIGUOUS_BY_LATIN[latinFromRaw]]
+  }
+
+  const raw = String(letterOrLatin || '').replace(/\s+/g, '')
+  if (!raw) return []
+
+  const asLatin = raw.length === 1 && /[a-zA-Z]/.test(raw) ? raw.toLowerCase() : ''
+  if (asLatin && OCR_AMBIGUOUS_BY_LATIN[asLatin]) {
+    return [...OCR_AMBIGUOUS_BY_LATIN[asLatin]]
+  }
+
+  const persian = normalizePlateLetter(raw)
+  if (!persian) return []
+  return OCR_AMBIGUOUS_BY_PERSIAN[persian] ? [...OCR_AMBIGUOUS_BY_PERSIAN[persian]] : []
 }
 
 export const splitPlate = (rawPlate) => String(rawPlate || '').trim().split(/\s+/).filter(Boolean)

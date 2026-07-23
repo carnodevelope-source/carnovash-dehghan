@@ -202,7 +202,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
 import PlateBadge from '../vehicles/PlateBadge.vue'
 import PlateEditor from '../vehicles/PlateEditor.vue'
-import { buildPlateNumber, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
+import { buildPlateNumber, getAmbiguousLetterSuggestions, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
 
 const emit = defineEmits(['cancel', 'continue', 'refer'])
 const props = defineProps({
@@ -297,23 +297,6 @@ const isAnonymousVisit = (data = {}) => {
   const plateNumber = String(data.plate || data.plate_number || '').trim()
   return Boolean(data.isAnonymous || data.is_anonymous) || (model === '1111' && color === '1111') || plateNumber === '1111'
 }
-const OCR_LETTER_CONFUSIONS = {
-  ب: ['ب', 'س', 'ص'],
-  س: ['س', 'ب', 'ص'],
-  ص: ['ص', 'س', 'ب'],
-  ث: ['ث', 'ه', 'ح', 'ص', 'س'],
-  ه: ['ه', 'ث', 'ح'],
-  ح: ['ح', 'ه', 'ث'],
-  ق: ['ق', 'ی'],
-  ی: ['ی', 'ق'],
-  ر: ['ر', 'ط'],
-  ط: ['ط', 'ر'],
-  ت: ['ت', 'ث', 'ط'],
-  ج: ['ج', 'چ', 'ح'],
-  چ: ['چ', 'ج', 'ح'],
-  ع: ['ع', 'غ'],
-  غ: ['غ', 'ع']
-}
 const showAiPanel = computed(() => !props.vehicleInfo?.hideAiPanel && (!isMobileViewport.value || !isAiPanelCollapsed.value))
 const availableTariffTypeOptions = computed(() => (
   form.plateType === 'motorcycle' ? motorcycleTariffTypeOptions : carTariffTypeOptions
@@ -400,15 +383,13 @@ const onlyDigits = (key) => {
   form[key] = normalized
 }
 
-const buildLetterSuggestions = (letter) => {
+const buildLetterSuggestions = (letter, rawOcrText = '') => {
   if (isMotorcyclePlate()) return []
-  const normalized = normalizePlateLetter(letter)
-  if (!normalized) return []
-  return OCR_LETTER_CONFUSIONS[normalized] || [normalized]
+  return getAmbiguousLetterSuggestions(letter, rawOcrText)
 }
 
-const syncLetterSuggestions = (letter) => {
-  letterSuggestions.value = buildLetterSuggestions(letter)
+const syncLetterSuggestions = (letter, rawOcrText = '') => {
+  letterSuggestions.value = buildLetterSuggestions(letter, rawOcrText)
 }
 
 const setCameraMessage = (message, isError = false) => {
@@ -519,7 +500,9 @@ const applyRecognizedPlate = (data) => {
   const letter = plateType === 'motorcycle'
     ? normalizeDigits(data?.plate_letter || '').replace(/\D/g, '').slice(0, 5)
     : normalizePlateLetter(data?.plate_letter || '')
-  const suggestions = plateType === 'motorcycle' ? [] : buildLetterSuggestions(letter)
+  const suggestions = plateType === 'motorcycle'
+    ? []
+    : buildLetterSuggestions(letter, data?.text || data?.raw_text || '')
   if (plateType === 'motorcycle') {
     if (mid.length !== 3 || letter.length !== 5) return false
   } else if (left.length !== 2 || mid.length !== 3 || right.length !== 2 || !letter) {
