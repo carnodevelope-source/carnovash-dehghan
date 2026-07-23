@@ -1,7 +1,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
+import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import { useAuthStore } from '../../store/auth.store'
+import { formatJalaliDate, formatJalaliDateTime, parseJalaliToIso } from '../../utils/date'
 
 const props = defineProps({
   carwashes: { type: Array, default: () => [] }
@@ -137,6 +139,8 @@ const kpiCards = computed(() => {
 
 const allSelected = computed(() => rows.value.length > 0 && selectedIds.value.length === rows.value.length)
 
+const activeCarwashes = computed(() => (props.carwashes || []).filter((item) => item.is_active !== false))
+
 function toFa(value) {
   return String(value ?? 0).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
 }
@@ -164,8 +168,10 @@ function buildQuery(extra = {}) {
   if (filters.payment_status) params.payment_status = filters.payment_status
   if (filters.has_debt) params.has_debt = '1'
   if (filters.near_expiry) params.near_expiry = '1'
-  if (filters.date_from) params.date_from = filters.date_from
-  if (filters.date_to) params.date_to = filters.date_to
+  const dateFrom = parseJalaliToIso(filters.date_from)
+  const dateTo = parseJalaliToIso(filters.date_to)
+  if (dateFrom) params.date_from = dateFrom
+  if (dateTo) params.date_to = dateTo
   if (clientId.value) params.tenant_id = clientId.value
   return params
 }
@@ -337,6 +343,14 @@ function toggleOne(id) {
   else selectedIds.value = [...selectedIds.value, id]
 }
 
+watch(activeCarwashes, (list) => {
+  if (!clientId.value) return
+  if (!list.some((item) => String(item.id) === String(clientId.value))) {
+    clientId.value = ''
+    clientDetail.value = null
+  }
+})
+
 watch([() => filters.search, () => filters.project_id, () => filters.product_key, () => filters.status, () => filters.payment_status, () => filters.has_debt, () => filters.near_expiry, () => filters.ordering, () => filters.date_from, () => filters.date_to, reportKey, clientId], async () => {
   page.value = 1
   await Promise.all([loadSummary(), loadRows(), loadClient()])
@@ -392,12 +406,12 @@ onMounted(refreshAll)
       </select>
       <select v-model="clientId">
         <option value="">همه کلاینت‌ها</option>
-        <option v-for="item in carwashes" :key="item.id" :value="String(item.id)">{{ item.name }}</option>
+        <option v-for="item in activeCarwashes" :key="item.id" :value="String(item.id)">{{ item.name }}</option>
       </select>
       <label class="check"><input v-model="filters.has_debt" type="checkbox" /> بدهکار</label>
       <label class="check"><input v-model="filters.near_expiry" type="checkbox" /> نزدیک انقضا</label>
-      <input v-model="filters.date_from" type="date" />
-      <input v-model="filters.date_to" type="date" />
+      <BaseDatePicker v-model="filters.date_from" placeholder="از تاریخ خرید" />
+      <BaseDatePicker v-model="filters.date_to" placeholder="تا تاریخ خرید" />
       <select v-model="filters.ordering">
         <option value="-updated_at">جدیدترین تغییر</option>
         <option value="-purchased_at">تاریخ خرید</option>
@@ -490,6 +504,7 @@ onMounted(refreshAll)
             <th>سرویس</th>
             <th>پلن</th>
             <th>وضعیت</th>
+            <th>تاریخ خرید</th>
             <th>انقضا</th>
             <th>روز باقی</th>
             <th v-if="capabilities.see_financial">مبلغ نهایی</th>
@@ -506,7 +521,8 @@ onMounted(refreshAll)
             <td>{{ row.product_title }}</td>
             <td>{{ row.plan_title || '—' }}</td>
             <td><span class="badge" :class="row.status">{{ statusLabel(row.status) }}</span></td>
-            <td>{{ row.ends_at ? row.ends_at.slice(0, 10) : '—' }}</td>
+            <td>{{ formatJalaliDate(row.purchased_at) }}</td>
+            <td>{{ row.ends_at ? formatJalaliDate(row.ends_at) : '—' }}</td>
             <td>{{ row.days_remaining == null ? '—' : toFa(row.days_remaining) }}</td>
             <td v-if="capabilities.see_financial">{{ money(row.final_amount) }}</td>
             <td v-if="capabilities.see_financial">{{ money(row.remaining_amount) }}</td>
@@ -536,6 +552,9 @@ onMounted(refreshAll)
         </header>
         <div class="drawer-grid">
           <article><small>وضعیت</small><strong>{{ statusLabel(detail.subscription?.status) }}</strong></article>
+          <article><small>تاریخ خرید</small><strong>{{ formatJalaliDate(detail.subscription?.purchased_at) }}</strong></article>
+          <article><small>فعالسازی</small><strong>{{ formatJalaliDate(detail.subscription?.activated_at) }}</strong></article>
+          <article><small>شروع / پایان</small><strong>{{ formatJalaliDate(detail.subscription?.starts_at) }} / {{ detail.subscription?.ends_at ? formatJalaliDate(detail.subscription.ends_at) : '—' }}</strong></article>
           <article v-if="capabilities.see_financial"><small>مبلغ نهایی</small><strong>{{ money(detail.subscription?.final_amount) }}</strong></article>
           <article v-if="capabilities.see_financial"><small>مانده</small><strong>{{ money(detail.subscription?.remaining_amount) }}</strong></article>
           <article><small>مصرف</small><strong>{{ toFa(detail.subscription?.usage_used) }} / {{ toFa(detail.subscription?.usage_cap) }}</strong></article>
@@ -543,20 +562,21 @@ onMounted(refreshAll)
         <h4>دوره‌ها</h4>
         <ul>
           <li v-for="period in detail.periods || []" :key="`p-${period.id}`">
-            {{ period.kind }} — {{ period.starts_at?.slice(0, 10) }} تا {{ period.ends_at?.slice(0, 10) || '—' }}
+            {{ period.kind }} — {{ formatJalaliDate(period.starts_at) }} تا {{ period.ends_at ? formatJalaliDate(period.ends_at) : '—' }}
             <span v-if="capabilities.see_financial"> / {{ money(period.final_amount) }}</span>
           </li>
         </ul>
         <h4 v-if="capabilities.see_financial">پرداخت‌ها</h4>
         <ul v-if="capabilities.see_financial">
           <li v-for="payment in detail.payments || []" :key="`pay-${payment.id}`">
-            {{ money(payment.amount) }} — {{ payment.method || '—' }} — {{ payment.paid_at?.slice(0, 19) }}
+            {{ money(payment.amount) }} — {{ payment.method || '—' }} — {{ formatJalaliDateTime(payment.paid_at) }}
           </li>
         </ul>
         <h4>لاگ عملیات</h4>
         <ul>
           <li v-for="log in detail.audit_logs || []" :key="`a-${log.id}`">
             {{ log.action }} توسط {{ log.actor_name || 'سیستم' }} — {{ log.reason || log.note || '' }}
+            <small v-if="log.created_at"> ({{ formatJalaliDateTime(log.created_at) }})</small>
           </li>
         </ul>
       </aside>
@@ -656,6 +676,16 @@ onMounted(refreshAll)
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+}
+.filter-bar :deep(.base-date-picker) {
+  min-width: 160px;
+}
+.filter-bar :deep(.picker-input) {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: #fff;
 }
 .filter-bar input,
 .filter-bar select,
