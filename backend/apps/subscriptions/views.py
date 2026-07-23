@@ -151,10 +151,6 @@ class SubscriptionsHqBaseView(APIView):
 
 def _apply_subscription_filters(qs, request):
     params = request.query_params
-    # Inactive carwashes are excluded from HQ service reports by default.
-    include_inactive = str(params.get('include_inactive') or '').strip().lower() in {'1', 'true', 'yes'}
-    if not include_inactive:
-        qs = qs.filter(tenant__is_active=True)
     search = (params.get('search') or '').strip()
     if search:
         qs = qs.filter(
@@ -371,9 +367,9 @@ class ClientServicesView(SubscriptionsHqBaseView):
         forbidden = self.forbid(request)
         if forbidden:
             return forbidden
-        tenant = CarWash.objects.filter(pk=tenant_id, is_active=True).first()
+        tenant = CarWash.objects.filter(pk=tenant_id).first()
         if not tenant:
-            return Response({'detail': 'کلاینت فعال یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'detail': 'کلاینت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         seed_catalog_from_legacy()
         caps = self.caps(request)
         subs = (
@@ -463,10 +459,7 @@ class AlertsListView(SubscriptionsHqBaseView):
         forbidden = self.forbid(request)
         if forbidden:
             return forbidden
-        qs = ServiceAlert.objects.select_related('tenant', 'subscription', 'subscription__product').filter(
-            is_resolved=False,
-            tenant__is_active=True,
-        )
+        qs = ServiceAlert.objects.select_related('tenant', 'subscription', 'subscription__product').filter(is_resolved=False)
         if request.query_params.get('tenant_id'):
             qs = qs.filter(tenant_id=request.query_params.get('tenant_id'))
         if request.query_params.get('severity'):
