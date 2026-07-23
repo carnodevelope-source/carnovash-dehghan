@@ -1,5 +1,12 @@
 <template>
-  <div class="hq-page" :class="{ 'support-only': !authStore.isHqAdmin }" dir="rtl">
+  <div
+    class="hq-page"
+    :class="{
+      'support-only': !authStore.isHqAdmin,
+      'ticket-focus-mode': activeTab === 'tickets'
+    }"
+    dir="rtl"
+  >
     <div class="hq-bg hq-bg-one"></div>
     <div class="hq-bg hq-bg-two"></div>
 
@@ -47,9 +54,13 @@
     </aside>
 
     <main class="hq-main">
-      <header class="hq-header" :class="{ 'hq-header-compact': !authStore.isHqAdmin }">
+      <header
+        v-if="activeTab !== 'tickets'"
+        class="hq-header"
+        :class="{ 'hq-header-compact': !authStore.isHqAdmin }"
+      >
         <div>
-          <p class="hq-kicker">{{ authStore.isHqAdmin ? 'مرکز کنترل پلتفرم' : 'Ticket Desk' }}</p>
+          <p class="hq-kicker">{{ authStore.isHqAdmin ? 'مرکز کنترل پلتفرم' : 'میز پشتیبانی' }}</p>
           <h1>{{ currentTabTitle }}</h1>
         </div>
         <div class="hq-header-tools">
@@ -63,13 +74,13 @@
           >
             ☰
           </button>
-          <span class="hq-role-badge">{{ authStore.isHqAdmin ? 'HQ Admin' : 'HQ Support' }}</span>
+          <span class="hq-role-badge">{{ authStore.isHqAdmin ? 'HQ Admin' : 'پشتیبان' }}</span>
           <button v-if="activeTab === 'overview'" type="button" class="primary-btn" @click="loadOverview">به‌روزرسانی</button>
           <button v-if="!authStore.isHqAdmin" type="button" class="ghost-btn" @click="logout">خروج</button>
         </div>
       </header>
 
-      <section v-if="authStore.isHqAdmin" class="hq-context-strip">
+      <section v-if="authStore.isHqAdmin && activeTab !== 'tickets'" class="hq-context-strip">
         <div class="hq-scope-card">
           <small>Scope</small>
           <strong>{{ hqActiveScopeLabel }}</strong>
@@ -90,7 +101,12 @@
         </div>
       </section>
 
-      <section v-else class="hq-support-tabs" role="tablist" aria-label="تب‌های پشتیبان">
+      <section
+        v-else-if="!authStore.isHqAdmin && activeTab !== 'tickets'"
+        class="hq-support-tabs"
+        role="tablist"
+        aria-label="تب‌های پشتیبان"
+      >
         <button
           v-for="tab in visibleTabs"
           :key="`support-${tab.key}`"
@@ -409,37 +425,116 @@
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'tickets'" class="ticket-command-center" :class="{ 'support-ticket-mode': !authStore.isHqAdmin }">
-        <article class="ticket-modern-shell ticket-workspace-head">
-          <div class="ticket-workspace-copy">
-            <span class="desk-kicker">{{ authStore.isHqAdmin ? 'HQ Ticket Center' : 'Assigned Support Desk' }}</span>
-            <h3>{{ authStore.isHqAdmin ? 'مرکز پاسخ‌گویی تیکت‌ها' : 'صف پاسخ‌گویی تیکت‌های شما' }}</h3>
-            <p>{{ visibleTickets.length.toLocaleString('fa-IR') }} تیکت در نمای فعلی. نمای فعال: {{ activeTicketScopeLabel }}</p>
-          </div>
-          <div class="ticket-workspace-actions">
-            <div class="ticket-workspace-stat">
-              <small>باز</small>
-              <strong>{{ toFa(ticketSummaryCards.find((item) => item.key === 'open')?.value || 0) }}</strong>
-            </div>
-            <div class="ticket-workspace-stat">
-              <small>فوری</small>
-              <strong>{{ toFa(ticketSummaryCards.find((item) => item.key === 'urgent')?.value || 0) }}</strong>
-            </div>
-            <button type="button" class="link-btn desk-refresh-btn" @click="loadTickets">بروزرسانی</button>
-          </div>
-        </article>
-
-        <div class="command-body-grid command-body-grid-simple" :class="{ compact: !authStore.isHqAdmin }">
-          <article class="ticket-list-shell ticket-inbox-shell ticket-modern-shell command-inbox-card">
-            <div class="card-head ticket-inbox-head">
+      <section
+        v-else-if="activeTab === 'tickets'"
+        class="ticket-desk"
+        :class="{
+          'support-ticket-mode': !authStore.isHqAdmin,
+          'ticket-desk-open': Boolean(selectedTicket)
+        }"
+      >
+        <aside class="ticket-desk-inbox">
+          <div class="ticket-desk-inbox-top">
+            <div class="ticket-desk-brand">
               <div>
-                <h3>اینباکس و صف تیکت‌ها</h3>
-                <span>{{ visibleTickets.length.toLocaleString('fa-IR') }} مورد در نمای فعلی</span>
+                <strong>{{ authStore.isHqAdmin ? 'مرکز تیکت' : 'میز پاسخ‌گویی' }}</strong>
+                <span>{{ toFa(visibleTickets.length) }} گفتگو</span>
+              </div>
+              <div class="ticket-desk-brand-actions">
+                <button
+                  v-if="authStore.isHqAdmin"
+                  type="button"
+                  class="ticket-icon-btn ticket-menu-mobile"
+                  title="منو"
+                  aria-label="باز کردن منوی پنل مرکزی"
+                  @click="toggleMobileSidebar"
+                >
+                  ☰
+                </button>
+                <button type="button" class="ticket-icon-btn" title="بروزرسانی" @click="loadTickets">↻</button>
+                <button
+                  v-if="!authStore.isHqAdmin"
+                  type="button"
+                  class="ticket-text-btn"
+                  @click="logout"
+                >
+                  خروج
+                </button>
               </div>
             </div>
 
-            <div class="ticket-filter-grid ticket-filter-grid-wide ticket-filter-grid-desk" :class="{ compact: !authStore.isHqAdmin }">
-              <input v-model.trim="ticketQuery" placeholder="جستجو در عنوان، متن، نام کارواش یا کاربر..." @input="loadTickets" />
+            <div class="ticket-desk-stats">
+              <button
+                type="button"
+                class="ticket-stat"
+                :class="{ active: ticketScope === 'all' }"
+                @click="ticketScope = 'all'"
+              >
+                <small>فعال</small>
+                <strong>{{ toFa(ticketSummaryCards.find((item) => item.key === 'open')?.value || 0) }}</strong>
+              </button>
+              <button
+                type="button"
+                class="ticket-stat urgent"
+                :class="{ active: ticketScope === 'urgent' }"
+                @click="ticketScope = 'urgent'"
+              >
+                <small>فوری</small>
+                <strong>{{ toFa(ticketSummaryCards.find((item) => item.key === 'urgent')?.value || 0) }}</strong>
+              </button>
+              <button
+                v-if="authStore.isHqAdmin"
+                type="button"
+                class="ticket-stat"
+                :class="{ active: ticketScope === 'mine' }"
+                @click="ticketScope = 'mine'"
+              >
+                <small>من</small>
+                <strong>{{ toFa(ticketSummaryCards.find((item) => item.key === 'mine')?.value || 0) }}</strong>
+              </button>
+              <button
+                v-else
+                type="button"
+                class="ticket-stat"
+                :class="{ active: ticketScope === 'answered' }"
+                @click="ticketScope = 'answered'"
+              >
+                <small>پاسخ‌داده‌شده</small>
+                <strong>{{ toFa(ticketSummaryCards.find((item) => item.key === 'answered')?.value || 0) }}</strong>
+              </button>
+            </div>
+
+            <label class="ticket-desk-search">
+              <span class="sr-only">جستجو</span>
+              <input
+                v-model.trim="ticketQuery"
+                placeholder="جستجو در عنوان، کارواش یا متن..."
+                @input="loadTickets"
+              />
+            </label>
+
+            <div class="ticket-desk-scopes">
+              <button
+                v-for="scope in ticketScopeOptions"
+                :key="scope.key"
+                type="button"
+                class="ticket-scope"
+                :class="{ active: ticketScope === scope.key }"
+                @click="ticketScope = scope.key"
+              >
+                {{ scope.label }}
+              </button>
+              <button
+                type="button"
+                class="ticket-scope ticket-scope-filters"
+                :class="{ active: ticketFiltersOpen }"
+                @click="ticketFiltersOpen = !ticketFiltersOpen"
+              >
+                فیلتر
+              </button>
+            </div>
+
+            <div v-if="ticketFiltersOpen" class="ticket-desk-filters">
               <select v-if="authStore.isHqAdmin" v-model="ticketStatus" @change="loadTickets">
                 <option value="all">همه وضعیت‌ها</option>
                 <option value="open">باز</option>
@@ -459,178 +554,196 @@
                 <option v-for="item in carwashes" :key="item.id" :value="item.id">{{ item.name }}</option>
               </select>
             </div>
+          </div>
 
-            <div class="hq-ticket-scope-row">
-              <button
-                v-for="scope in ticketScopeOptions"
-                :key="scope.key"
-                type="button"
-                class="scope-chip"
-                :class="{ active: ticketScope === scope.key }"
-                @click="ticketScope = scope.key"
-              >
-                {{ scope.label }}
-              </button>
-            </div>
-
-            <div class="ticket-list ticket-list-modern">
-              <button
-                v-for="item in visibleTickets"
-                :key="item.id"
-                type="button"
-                class="ticket-thread ticket-thread-rich desk-ticket-thread"
-                :class="{ active: selectedTicket?.id === item.id }"
-                @click="selectTicket(item.id)"
-              >
-                <div class="ticket-thread-top">
-                  <strong>{{ item.subject }}</strong>
-                  <span class="ticket-mini-status" :class="`ticket-${item.status}`">{{ statusLabel(item.status) }}</span>
-                </div>
-                <div class="ticket-thread-meta">
-                  <span>{{ item.tenant_name }}</span>
-                  <span>{{ priorityLabel(item.priority) }}</span>
-                </div>
-                <p>{{ item.last_message_preview || item.message }}</p>
-                <div class="ticket-thread-foot">
-                  <small>#{{ item.id }}</small>
-                  <small>{{ ticketSlaShortLabel(item) }}</small>
-                </div>
-              </button>
-              <div v-if="!visibleTickets.length" class="ticket-list-empty desk-empty">
-                <strong>تیکتی در این نما پیدا نشد</strong>
-                <span>فیلترها را تغییر دهید یا دوباره بروزرسانی کنید.</span>
+          <div class="ticket-desk-list">
+            <button
+              v-for="item in visibleTickets"
+              :key="item.id"
+              type="button"
+              class="ticket-row"
+              :class="{
+                active: selectedTicket?.id === item.id,
+                urgent: ['urgent', 'high'].includes(item.priority)
+              }"
+              @click="selectTicket(item.id)"
+            >
+              <div class="ticket-row-main">
+                <strong>{{ item.subject }}</strong>
+                <span class="ticket-row-status" :class="`is-${item.status}`">{{ statusLabel(item.status) }}</span>
               </div>
-            </div>
-          </article>
+              <p>{{ item.last_message_preview || item.message }}</p>
+              <div class="ticket-row-foot">
+                <span>{{ item.tenant_name || 'بدون کارواش' }}</span>
+                <span>{{ priorityLabel(item.priority) }}</span>
+                <span>{{ ticketRelativeTime(item.last_message_at || item.updated_at || item.created_at) }}</span>
+              </div>
+            </button>
 
-          <article v-if="selectedTicket" class="ticket-chat-shell ticket-chat-shell-rich ticket-modern-shell command-chat-card">
-            <div class="desk-detail-head">
-              <div class="chat-head ticket-chat-head desk-ticket-chat-head">
+            <div v-if="!visibleTickets.length" class="ticket-desk-empty">
+              <strong>تیکتی اینجا نیست</strong>
+              <span>فیلتر را عوض کنید یا لیست را بروزرسانی کنید.</span>
+            </div>
+          </div>
+
+          <nav v-if="!authStore.isHqAdmin" class="ticket-desk-support-nav" aria-label="بخش‌های پشتیبان">
+            <button
+              v-for="tab in visibleTabs"
+              :key="`desk-nav-${tab.key}`"
+              type="button"
+              class="ticket-desk-nav-item"
+              :class="{ active: activeTab === tab.key }"
+              @click="selectTab(tab.key)"
+            >
+              {{ tab.label }}
+            </button>
+          </nav>
+        </aside>
+
+        <section class="ticket-desk-stage">
+          <template v-if="selectedTicket">
+            <header class="ticket-stage-head">
+              <button type="button" class="ticket-back-btn" @click="clearSelectedTicket">
+                بازگشت به لیست
+              </button>
+              <div class="ticket-stage-title">
+                <div class="ticket-stage-title-row">
+                  <h2>{{ selectedTicket.subject }}</h2>
+                  <span class="ticket-row-status" :class="`is-${selectedTicket.status}`">
+                    {{ statusLabel(selectedTicket.status) }}
+                  </span>
+                </div>
+                <div class="ticket-stage-meta">
+                  <span>{{ selectedTicket.tenant_name || 'بدون کارواش' }}</span>
+                  <span>{{ categoryLabel(selectedTicket.category) }}</span>
+                  <span>{{ priorityLabel(selectedTicket.priority) }}</span>
+                  <span class="mono">#{{ selectedTicket.id }}</span>
+                </div>
+              </div>
+              <div class="ticket-stage-controls">
+                <label>
+                  <span>وضعیت</span>
+                  <select v-model="ticketReply.status">
+                    <option value="">بدون تغییر</option>
+                    <option value="answered">پاسخ داده شده</option>
+                    <option value="pending">در انتظار پیگیری</option>
+                    <option value="closed">بستن تیکت</option>
+                  </select>
+                </label>
+                <label v-if="authStore.isHqAdmin">
+                  <span>ارجاع</span>
+                  <select v-model="ticketReply.assign_to_user_id">
+                    <option :value="0">بدون ارجاع</option>
+                    <option v-for="member in teamAssignable" :key="member.id" :value="member.id">
+                      {{ member.full_name || member.username }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+            </header>
+
+            <div v-if="canApproveRegistration || isWalletOperationTicket(selectedTicket) || selectedTicket.attachments?.length" class="ticket-stage-actions">
+              <section v-if="canApproveRegistration" class="ticket-action-card approve">
                 <div>
-                  <div class="ticket-chat-title">
-                    <h3>{{ selectedTicket.subject }}</h3>
-                    <span class="ticket-mini-status" :class="`ticket-${selectedTicket.status}`">{{ statusLabel(selectedTicket.status) }}</span>
-                  </div>
-                  <p>{{ selectedTicket.tenant_name }}</p>
+                  <strong>تایید ثبت‌نام کارواش</strong>
+                  <p>مدارک را بررسی کنید و حساب را فعال کنید.</p>
                 </div>
-                <div class="chat-head-badges">
-                  <span class="meta-chip">{{ categoryLabel(selectedTicket.category) }}</span>
-                  <span class="meta-chip">{{ priorityLabel(selectedTicket.priority) }}</span>
-                  <span class="meta-chip">#{{ selectedTicket.id }}</span>
-                </div>
-              </div>
+                <button type="button" class="primary-btn" :disabled="registrationApproval.submitting" @click="approveRegistrationTicket">
+                  {{ registrationApproval.submitting ? 'در حال تایید...' : 'تایید و فعال‌سازی' }}
+                </button>
+                <small v-if="registrationApproval.message" class="transfer-feedback success">{{ registrationApproval.message }}</small>
+                <small v-if="registrationApproval.error" class="transfer-feedback error">{{ registrationApproval.error }}</small>
+              </section>
 
+              <section v-if="isWalletOperationTicket(selectedTicket)" class="ticket-action-card wallet">
+                <div>
+                  <strong>{{ walletOperationButtonLabel }}</strong>
+                  <p>مبلغ تاییدشده را وارد کنید تا به کیف پول مقصد اعمال شود.</p>
+                </div>
+                <label class="ticket-amount-field">
+                  <span>مبلغ (تومان)</span>
+                  <input v-model="walletTransfer.amountText" inputmode="numeric" placeholder="مثلا ۲۵۰۰۰۰" />
+                </label>
+                <button type="button" class="primary-btn" :disabled="walletTransfer.submitting" @click="submitWalletTransfer">
+                  {{ walletTransfer.submitting ? walletOperationSubmittingLabel : walletOperationButtonLabel }}
+                </button>
+                <small v-if="walletTransfer.error" class="transfer-feedback error">{{ walletTransfer.error }}</small>
+                <small v-if="walletTransfer.success" class="transfer-feedback success">{{ walletTransfer.success }}</small>
+              </section>
+
+              <section v-if="selectedTicket.attachments?.length" class="ticket-action-card files">
+                <strong>پیوست‌ها</strong>
+                <div class="ticket-file-row">
+                  <a
+                    v-for="attachment in selectedTicket.attachments"
+                    :key="attachment.id"
+                    class="ticket-file-chip"
+                    :href="attachment.file_url"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {{ attachment.original_name || 'فایل' }}
+                  </a>
+                </div>
+              </section>
             </div>
 
-            <div class="chat-head-actions ticket-chat-actions desk-ticket-actions">
-              <select v-model="ticketReply.status">
-                <option value="">بدون تغییر وضعیت</option>
-                <option value="answered">پاسخ داده شده</option>
-                <option value="pending">در انتظار پیگیری</option>
-                <option value="closed">بستن تیکت</option>
-              </select>
-              <select v-if="authStore.isHqAdmin" v-model="ticketReply.assign_to_user_id">
-                <option :value="0">بدون ارجاع</option>
-                <option v-for="member in teamAssignable" :key="member.id" :value="member.id">
-                  {{ member.full_name || member.username }}
-                </option>
-              </select>
-            </div>
-
-            <section v-if="canApproveRegistration" class="registration-approval-card">
-              <div>
-                <span>تایید ثبت‌نام کارواش</span>
-                <strong>مدارک بارگذاری‌شده را بررسی کنید و بعد حساب را فعال کنید.</strong>
-                <p>بعد از تایید، لاگین مدیر باز می‌شود و پیامک فعال‌سازی برای شماره ثبت‌شده ارسال خواهد شد.</p>
-              </div>
-              <button type="button" class="primary-btn" :disabled="registrationApproval.submitting" @click="approveRegistrationTicket">
-                {{ registrationApproval.submitting ? 'در حال تایید...' : 'تایید ثبت‌نام و فعال‌سازی' }}
-              </button>
-              <small v-if="registrationApproval.message" class="transfer-feedback success">{{ registrationApproval.message }}</small>
-              <small v-if="registrationApproval.error" class="transfer-feedback error">{{ registrationApproval.error }}</small>
-            </section>
-
-            <section v-if="isWalletOperationTicket(selectedTicket)" class="wallet-ticket-transfer-card">
-              <div>
-                <span>عملیات تیکت پرداخت</span>
-                <strong>انتقال پول به کیف پول مقصد</strong>
-                <p>بعد از بررسی رسید، مبلغ تایید شده را وارد کنید تا مستقیم به کیف پول صاحب تیکت اضافه شود.</p>
-              </div>
-              <label>
-                <span>مبلغ انتقال (تومان)</span>
-                <input v-model="walletTransfer.amountText" inputmode="numeric" placeholder="مثلا ۲۵۰۰۰۰" />
-              </label>
-              <button type="button" class="primary-btn wallet-transfer-btn" :disabled="walletTransfer.submitting" @click="submitWalletTransfer">
-                {{ walletTransfer.submitting ? walletOperationSubmittingLabel : walletOperationButtonLabel }}
-              </button>
-              <small v-if="walletTransfer.error" class="transfer-feedback error">{{ walletTransfer.error }}</small>
-              <small v-if="walletTransfer.success" class="transfer-feedback success">{{ walletTransfer.success }}</small>
-            </section>
-
-            <section v-if="selectedTicket.attachments?.length" class="hq-ticket-attachments">
-              <div class="reply-head">
-                <strong>رسیدها و فایل‌های پیوست</strong>
-                <small>{{ toFa(selectedTicket.attachments.length) }} فایل</small>
-              </div>
-              <div class="hq-ticket-attachments-list">
-                <a
-                  v-for="attachment in selectedTicket.attachments"
-                  :key="attachment.id"
-                  class="hq-ticket-attachment-item"
-                  :href="attachment.file_url"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <strong>{{ attachment.original_name || 'فایل پیوست' }}</strong>
-                  <span>باز کردن فایل</span>
-                </a>
-              </div>
-            </section>
-
-            <div class="chat-stream ticket-chat-stream desk-ticket-stream">
+            <div ref="ticketStreamEl" class="ticket-stage-stream">
               <div
                 v-for="message in selectedTicket.messages"
                 :key="message.id"
-                class="chat-bubble ticket-chat-bubble desk-ticket-bubble"
-                :class="{ mine: message.sender === authStore.user?.id, internal: message.is_internal }"
+                class="ticket-bubble"
+                :class="{
+                  mine: message.sender === authStore.user?.id,
+                  internal: message.is_internal
+                }"
               >
-                <div class="chat-meta">
+                <div class="ticket-bubble-meta">
                   <strong>{{ message.sender_name }}</strong>
                   <span>{{ roleLabel(message) }}</span>
+                  <small>{{ ticketRelativeTime(message.created_at) }}</small>
                 </div>
                 <p>{{ message.body }}</p>
-                <small>{{ dateTime(message.created_at) }}</small>
               </div>
             </div>
 
-            <div class="chat-reply ticket-chat-reply desk-ticket-reply">
-              <div class="template-chip-row" :class="{ compact: !authStore.isHqAdmin }">
+            <footer class="ticket-stage-composer">
+              <div class="ticket-template-row">
                 <button
                   v-for="template in ticketResponseTemplates"
                   :key="template.id"
                   type="button"
-                  class="template-chip"
+                  class="ticket-template"
                   @click="applyTicketTemplate(template.body)"
                 >
                   {{ template.title }}
                 </button>
               </div>
-              <textarea v-model.trim="ticketReply.body" placeholder="پاسخ کامل، ساختاریافته و حرفه‌ای برای کارواش بنویس..." />
-              <div class="chat-tools">
-                <label v-if="authStore.isHqAdmin" class="internal-toggle">
+              <textarea
+                v-model.trim="ticketReply.body"
+                rows="3"
+                placeholder="پاسخ را اینجا بنویسید..."
+                @keydown.ctrl.enter.prevent="sendTicketReply"
+                @keydown.meta.enter.prevent="sendTicketReply"
+              />
+              <div class="ticket-composer-bar">
+                <label v-if="authStore.isHqAdmin" class="ticket-internal">
                   <input v-model="ticketReply.is_internal" type="checkbox" />
                   <span>یادداشت داخلی</span>
                 </label>
-                <button type="button" class="primary-btn" @click="sendTicketReply">ارسال پاسخ</button>
+                <span v-else class="ticket-composer-hint">Ctrl + Enter برای ارسال</span>
+                <button type="button" class="primary-btn" :disabled="!ticketReply.body" @click="sendTicketReply">
+                  ارسال پاسخ
+                </button>
               </div>
-            </div>
-          </article>
+            </footer>
+          </template>
 
-          <article v-else class="ticket-placeholder ticket-placeholder-rich ticket-modern-shell desk-placeholder command-chat-card">
-            <strong>یک تیکت را از اینباکس انتخاب کنید</strong>
-            <span>جزئیات کامل، گفتگو، ارجاع، وضعیت و پاسخ‌گویی از همین بخش انجام می‌شود.</span>
-          </article>
-        </div>
+          <div v-else class="ticket-stage-empty">
+            <strong>یک تیکت انتخاب کنید</strong>
+            <span>از لیست سمت راست گفتگو را باز کنید و مستقیم پاسخ بدهید.</span>
+          </div>
+        </section>
       </section>
 
       <section v-else-if="activeTab === 'team'" class="workspace-grid">
@@ -1420,7 +1533,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../services/api'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
@@ -1428,6 +1541,11 @@ import HqServicesPanel from './HqServicesPanel.vue'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman } from '../../utils/money'
+import {
+  notifyNewSupportTickets,
+  playTicketAlertSound,
+  unlockTicketAlerts
+} from '../../utils/ticketAlert'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -1446,8 +1564,7 @@ let hqTicketPollingTimer = null
 let hqTicketPollingInFlight = false
 let knownTicketIds = new Set()
 let knownTicketActivity = new Map()
-let notificationAudioContext = null
-let notificationAudioUnlocked = false
+let alertKnownTicketIds = new Set()
 const visibleTabs = computed(() => {
   if (authStore.isHqAdmin) {
     return allTabs
@@ -1572,6 +1689,8 @@ const ticketStatus = ref('all')
 const ticketPriority = ref('all')
 const ticketTenantId = ref('')
 const ticketScope = ref('all')
+const ticketFiltersOpen = ref(false)
+const ticketStreamEl = ref(null)
 const ticketReply = reactive({
   body: '',
   status: '',
@@ -1657,15 +1776,15 @@ const selectedCarwashInsight = computed(() => carwashInsight.data)
 const teamAssignable = computed(() => hqTeam.value.filter((item) => ['hq_admin', 'hq_support'].includes(item.platform_role)))
 const ticketScopeOptions = computed(() => (authStore.isHqAdmin
   ? [
-    { key: 'all', label: 'همه تیکت‌ها' },
-    { key: 'mine', label: 'ارجاع‌شده به من' },
+    { key: 'all', label: 'همه' },
+    { key: 'mine', label: 'ارجاع به من' },
     { key: 'unassigned', label: 'بدون مسئول' },
-    { key: 'urgent', label: 'فوری و حساس' }
+    { key: 'urgent', label: 'فوری' }
   ]
   : [
     { key: 'all', label: 'صف فعال' },
-    { key: 'answered', label: 'پاسخ داده شده' },
-    { key: 'urgent', label: 'فوری و حساس' }
+    { key: 'answered', label: 'پاسخ‌داده‌شده' },
+    { key: 'urgent', label: 'فوری' }
   ]))
 const ticketSummaryCards = computed(() => {
   const items = Array.isArray(tickets.value) ? tickets.value : []
@@ -2188,44 +2307,27 @@ const applyTicketTemplate = (body) => {
   const tenantName = selectedTicket.value?.tenant_name || 'کارواش'
   ticketReply.body = String(body || '').replaceAll('{{tenant_name}}', tenantName)
 }
-const unlockNotificationAudio = () => {
-  if (notificationAudioUnlocked || typeof window === 'undefined') return
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext
-  if (!AudioContextClass) return
-  notificationAudioContext = notificationAudioContext || new AudioContextClass()
-  notificationAudioContext.resume?.()
-  notificationAudioUnlocked = true
+
+const clearSelectedTicket = () => {
+  selectedTicket.value = null
+  ticketReply.body = ''
+  ticketReply.status = ''
+  ticketReply.is_internal = false
 }
 
-const playTicketDing = () => {
-  if (typeof window === 'undefined') return
-  try {
-    unlockNotificationAudio()
-    const context = notificationAudioContext
-    if (!context) return
-    const startedAt = context.currentTime
-    const gain = context.createGain()
-    gain.gain.setValueAtTime(0.0001, startedAt)
-    gain.gain.exponentialRampToValueAtTime(0.16, startedAt + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, startedAt + 0.36)
-    gain.connect(context.destination)
-
-    const firstTone = context.createOscillator()
-    firstTone.type = 'sine'
-    firstTone.frequency.setValueAtTime(880, startedAt)
-    firstTone.connect(gain)
-    firstTone.start(startedAt)
-    firstTone.stop(startedAt + 0.16)
-
-    const secondTone = context.createOscillator()
-    secondTone.type = 'sine'
-    secondTone.frequency.setValueAtTime(1175, startedAt + 0.12)
-    secondTone.connect(gain)
-    secondTone.start(startedAt + 0.12)
-    secondTone.stop(startedAt + 0.34)
-  } catch (_error) {
-    // Browser autoplay policies can block sound until the first user interaction.
-  }
+const ticketRelativeTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return formatJalaliDate(value)
+  const diffMs = Date.now() - date.getTime()
+  const diffMinutes = Math.round(diffMs / 60000)
+  if (diffMinutes < 1) return 'همین الان'
+  if (diffMinutes < 60) return `${toFa(diffMinutes)} دقیقه پیش`
+  const diffHours = Math.round(diffMinutes / 60)
+  if (diffHours < 24) return `${toFa(diffHours)} ساعت پیش`
+  const diffDays = Math.round(diffHours / 24)
+  if (diffDays < 7) return `${toFa(diffDays)} روز پیش`
+  return formatJalaliDate(value)
 }
 
 const roleLabel = (message) => {
@@ -2382,18 +2484,38 @@ const loadTickets = async (options = {}) => {
   })
   const nextTickets = Array.isArray(data) ? data : []
   if (knownTicketIds.size && options.notifyNew) {
-    const hasUserActivity = nextTickets.some((item) => {
+    const hasMessageActivity = nextTickets.some((item) => {
       if (item.status === 'closed') return false
       const id = Number(item.id)
-      if (!knownTicketIds.has(id)) return true
+      if (!knownTicketIds.has(id)) return false
       return knownTicketActivity.get(id) !== ticketActivitySignature(item)
     })
-    if (hasUserActivity) playTicketDing()
+    // Soft chime for customer replies on existing tickets (new tickets handled by pollTicketAlerts).
+    if (hasMessageActivity) playTicketAlertSound()
   }
   knownTicketIds = new Set(nextTickets.map((item) => Number(item.id)))
   knownTicketActivity = new Map(nextTickets.map((item) => [Number(item.id), ticketActivitySignature(item)]))
   tickets.value = nextTickets
   if (!options.skipSelection) await ensureSelectedTicket(options)
+}
+
+const pollTicketAlerts = async () => {
+  const { data } = await api.get('/auth/hq/tickets/', {
+    params: {
+      status: 'all',
+      priority: 'all'
+    },
+    meta: { trackLoading: false, showErrorToast: false }
+  })
+  const nextTickets = Array.isArray(data) ? data : []
+  if (alertKnownTicketIds.size) {
+    const freshTickets = nextTickets.filter((item) => {
+      if (!item || item.status === 'closed') return false
+      return !alertKnownTicketIds.has(Number(item.id))
+    })
+    if (freshTickets.length) notifyNewSupportTickets(freshTickets)
+  }
+  alertKnownTicketIds = new Set(nextTickets.map((item) => Number(item.id)))
 }
 
 const ensureSelectedTicket = async (options = {}) => {
@@ -2436,12 +2558,18 @@ const selectTicket = async (ticketId, options = {}) => {
     registrationApproval.error = ''
     registrationApproval.message = ''
   }
+  await nextTick()
+  if (ticketStreamEl.value) {
+    ticketStreamEl.value.scrollTop = ticketStreamEl.value.scrollHeight
+  }
 }
 
 const refreshTicketsQuietly = async () => {
   if (hqTicketPollingInFlight) return
   hqTicketPollingInFlight = true
   try {
+    // Unfiltered alert poll so new tickets are not missed when inbox filters are active.
+    await pollTicketAlerts()
     await loadTickets({
       keepReply: true,
       notifyNew: true,
@@ -2450,6 +2578,12 @@ const refreshTicketsQuietly = async () => {
     })
   } finally {
     hqTicketPollingInFlight = false
+  }
+}
+
+const handleVisibilityRefresh = () => {
+  if (document.visibilityState === 'visible') {
+    refreshTicketsQuietly()
   }
 }
 
@@ -2704,8 +2838,9 @@ watch(ticketScope, async () => {
 })
 
 onMounted(async () => {
-  window.addEventListener('pointerdown', unlockNotificationAudio, { once: true })
-  window.addEventListener('keydown', unlockNotificationAudio, { once: true })
+  window.addEventListener('pointerdown', unlockTicketAlerts, { once: true })
+  window.addEventListener('keydown', unlockTicketAlerts, { once: true })
+  document.addEventListener('visibilitychange', handleVisibilityRefresh)
   if (authStore.isHqAdmin) {
     await loadOverview()
     await loadCarwashes()
@@ -2715,6 +2850,8 @@ onMounted(async () => {
   }
   setReportRange('month')
   if (activeTab.value === 'tickets') await loadTickets()
+  // Seed alert baseline so the first poll does not treat existing tickets as new.
+  await pollTicketAlerts()
   hqTicketPollingTimer = window.setInterval(async () => {
     await refreshTicketsQuietly()
   }, 10000)
@@ -2722,8 +2859,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (hqTicketPollingTimer) window.clearInterval(hqTicketPollingTimer)
-  window.removeEventListener('pointerdown', unlockNotificationAudio)
-  window.removeEventListener('keydown', unlockNotificationAudio)
+  window.removeEventListener('pointerdown', unlockTicketAlerts)
+  window.removeEventListener('keydown', unlockTicketAlerts)
+  document.removeEventListener('visibilitychange', handleVisibilityRefresh)
 })
 </script>
 
@@ -3754,7 +3892,12 @@ td strong {
 }
 
 .ticket-desk {
-  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  background: #f4f7fb;
+  overflow: hidden;
 }
 
 .ticket-list-shell,
@@ -6255,6 +6398,663 @@ td strong {
   .tenant-report-head {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+/* ========== Ticket Desk v2 (clean support workspace) ========== */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hq-page.ticket-focus-mode {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.hq-page.ticket-focus-mode .hq-main {
+  padding: 0;
+  gap: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.hq-page.ticket-focus-mode.support-only .hq-main {
+  max-width: none;
+  margin: 0;
+  min-height: 100vh;
+  height: 100vh;
+}
+
+.ticket-desk {
+  display: grid !important;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr) !important;
+  gap: 0 !important;
+  height: 100%;
+  min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(241, 245, 249, 0.95), rgba(248, 250, 252, 0.98));
+  border: 0;
+  overflow: hidden;
+}
+
+.ticket-desk-inbox,
+.ticket-desk-stage {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+}
+
+.ticket-desk-inbox {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: rgba(255, 255, 255, 0.92);
+  border-left: 1px solid rgba(226, 232, 240, 0.95);
+  backdrop-filter: blur(12px);
+}
+
+.ticket-desk-inbox-top {
+  display: grid;
+  gap: 12px;
+  padding: 16px 14px 12px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.ticket-desk-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ticket-desk-brand strong {
+  display: block;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.ticket-desk-brand span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.ticket-desk-brand-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ticket-icon-btn,
+.ticket-text-btn,
+.ticket-back-btn,
+.ticket-scope,
+.ticket-template,
+.ticket-file-chip,
+.ticket-desk-nav-item,
+.ticket-stat,
+.ticket-row {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ticket-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  color: #334155;
+  display: inline-grid;
+  place-items: center;
+}
+
+.ticket-menu-mobile {
+  display: none;
+}
+
+.ticket-text-btn,
+.ticket-back-btn {
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.ticket-desk-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ticket-stat {
+  display: grid;
+  gap: 2px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  text-align: right;
+}
+
+.ticket-stat small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.ticket-stat strong {
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.ticket-stat.active {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.28);
+}
+
+.ticket-stat.urgent.active,
+.ticket-stat.urgent:hover {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.ticket-desk-search input,
+.ticket-desk-filters select,
+.ticket-stage-controls select,
+.ticket-amount-field input,
+.ticket-stage-composer textarea {
+  width: 100%;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  background: #fff;
+  border-radius: 14px;
+  padding: 11px 12px;
+  color: #0f172a;
+  outline: none;
+}
+
+.ticket-desk-search input:focus,
+.ticket-desk-filters select:focus,
+.ticket-stage-controls select:focus,
+.ticket-amount-field input:focus,
+.ticket-stage-composer textarea:focus {
+  border-color: rgba(37, 99, 235, 0.45);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.ticket-desk-scopes {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ticket-desk-scopes::-webkit-scrollbar {
+  display: none;
+}
+
+.ticket-scope {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ticket-scope.active {
+  background: #0f172a;
+  color: #fff;
+}
+
+.ticket-scope-filters.active {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.ticket-desk-filters {
+  display: grid;
+  gap: 8px;
+}
+
+.ticket-desk-list {
+  overflow: auto;
+  padding: 8px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.ticket-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px 12px;
+  border-radius: 16px;
+  text-align: right;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background .16s ease, border-color .16s ease;
+}
+
+.ticket-row:hover {
+  background: #f8fafc;
+}
+
+.ticket-row.active {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.2);
+}
+
+.ticket-row.urgent:not(.active) {
+  background: rgba(255, 251, 235, 0.7);
+}
+
+.ticket-row-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ticket-row-main strong {
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ticket-row p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.7;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ticket-row-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.ticket-row-status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.ticket-row-status.is-open { background: rgba(37, 99, 235, 0.12); color: #1d4ed8; }
+.ticket-row-status.is-pending { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+.ticket-row-status.is-answered { background: rgba(22, 163, 74, 0.12); color: #15803d; }
+.ticket-row-status.is-closed { background: #e2e8f0; color: #64748b; }
+
+.ticket-desk-empty,
+.ticket-stage-empty {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 32px 20px;
+  color: #64748b;
+}
+
+.ticket-desk-empty strong,
+.ticket-stage-empty strong {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.ticket-desk-support-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid rgba(226, 232, 240, 0.95);
+  background: #fff;
+}
+
+.ticket-desk-nav-item {
+  padding: 12px 10px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ticket-desk-nav-item.active {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.ticket-desk-stage {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.06), transparent 28%),
+    #f8fafc;
+}
+
+.ticket-stage-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 16px;
+  align-items: start;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+}
+
+.ticket-back-btn {
+  display: none;
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding-inline: 0;
+}
+
+.ticket-stage-title {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ticket-stage-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ticket-stage-title h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.5;
+  color: #0f172a;
+}
+
+.ticket-stage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.ticket-stage-meta .mono {
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+}
+
+.ticket-stage-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ticket-stage-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.ticket-stage-controls label span {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.ticket-stage-actions {
+  display: grid;
+  gap: 10px;
+  padding: 12px 18px 0;
+}
+
+.ticket-action-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+}
+
+.ticket-action-card.approve {
+  background: rgba(240, 253, 244, 0.9);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.ticket-action-card.wallet {
+  background: rgba(239, 246, 255, 0.95);
+  border-color: rgba(59, 130, 246, 0.2);
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
+}
+
+.ticket-action-card .transfer-feedback {
+  grid-column: 1 / -1;
+}
+
+.ticket-action-card.files {
+  grid-template-columns: 1fr;
+}
+
+.ticket-action-card strong {
+  display: block;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.ticket-action-card p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.ticket-amount-field {
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.ticket-amount-field span {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.ticket-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ticket-file-chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.ticket-stage-stream {
+  overflow: auto;
+  padding: 16px 18px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.ticket-bubble {
+  max-width: min(720px, 92%);
+  justify-self: start;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 18px 18px 18px 8px;
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.03);
+}
+
+.ticket-bubble.mine {
+  justify-self: end;
+  border-radius: 18px 18px 8px 18px;
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.16);
+}
+
+.ticket-bubble.internal {
+  background: rgba(254, 243, 199, 0.7);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.ticket-bubble-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.ticket-bubble-meta strong {
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.ticket-bubble p {
+  margin: 0;
+  color: #1e293b;
+  font-size: 13px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+}
+
+.ticket-stage-composer {
+  display: grid;
+  gap: 10px;
+  padding: 12px 18px 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1px solid rgba(226, 232, 240, 0.95);
+}
+
+.ticket-template-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ticket-template-row::-webkit-scrollbar {
+  display: none;
+}
+
+.ticket-template {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ticket-stage-composer textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.8;
+}
+
+.ticket-composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ticket-internal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.ticket-composer-hint {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.ticket-stage-empty {
+  grid-row: 1 / -1;
+  min-height: 100%;
+}
+
+@media (max-width: 980px) {
+  .ticket-menu-mobile {
+    display: inline-grid;
+  }
+
+  .ticket-desk {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ticket-desk:not(.ticket-desk-open) .ticket-desk-stage,
+  .ticket-desk.ticket-desk-open .ticket-desk-inbox {
+    display: none;
+  }
+
+  .ticket-back-btn {
+    display: inline-flex;
+  }
+
+  .ticket-stage-head {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-stage-controls {
+    width: 100%;
+  }
+
+  .ticket-stage-controls label {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ticket-action-card,
+  .ticket-action-card.wallet {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .ticket-desk-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ticket-stat strong {
+    font-size: 16px;
+  }
+
+  .ticket-stage-composer textarea {
+    min-height: 76px;
   }
 }
 </style>
