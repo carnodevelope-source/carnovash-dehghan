@@ -27,6 +27,23 @@ from .models import (
 
 VAT_PERCENT = Decimal('10')
 
+# Share ownership for HQ finance (Carno vs Arakar).
+KARNO_PRODUCT_KEYS = {'attendance', 'excel_import', 'sms_club', 'sms_panel', 'sms_credit', 'wallet'}
+ARAKAR_PRODUCT_KEYS = {'core_software', 'cloud_storage'}
+
+SMS_COST_PER_100 = Decimal('145')
+SMS_PROFIT_PER_100 = Decimal('40')
+SMS_BILL_PER_100 = SMS_COST_PER_100 + SMS_PROFIT_PER_100
+
+
+def product_share_group(product_key_or_feature):
+    key = (product_key_or_feature or '').strip()
+    if key in KARNO_PRODUCT_KEYS:
+        return 'carno'
+    if key in ARAKAR_PRODUCT_KEYS:
+        return 'arakar'
+    return 'none'
+
 
 def money(value):
     return Decimal(str(value or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -742,11 +759,11 @@ def summarize_subscriptions(queryset=None):
         blocked=Count('id', filter=Q(status=ServiceSubscription.Status.BLOCKED)),
         pending_payment=Count('id', filter=Q(status=ServiceSubscription.Status.PENDING_PAYMENT)),
         sales_total=Coalesce(Sum('final_amount'), Value(Decimal('0'))),
+        paid_total=Coalesce(Sum('paid_amount'), Value(Decimal('0'))),
         renew_total=Coalesce(
             Sum('periods__final_amount', filter=Q(periods__kind=ServicePeriod.Kind.RENEWAL)),
             Value(Decimal('0')),
         ),
-        cost_total=Coalesce(Sum('cost_amount'), Value(Decimal('0'))),
         tax_total=Coalesce(Sum('tax_amount'), Value(Decimal('0'))),
         discount_total=Coalesce(Sum('discount_amount'), Value(Decimal('0'))),
         receivables=Coalesce(Sum('remaining_amount'), Value(Decimal('0'))),
@@ -754,9 +771,26 @@ def summarize_subscriptions(queryset=None):
             Sum('remaining_amount', filter=Q(payment_status=ServiceSubscription.PaymentStatus.OVERDUE)),
             Value(Decimal('0')),
         ),
+        carno_sales=Coalesce(
+            Sum('final_amount', filter=Q(product__product_key__in=KARNO_PRODUCT_KEYS)),
+            Value(Decimal('0')),
+        ),
+        carno_paid=Coalesce(
+            Sum('paid_amount', filter=Q(product__product_key__in=KARNO_PRODUCT_KEYS)),
+            Value(Decimal('0')),
+        ),
+        arakar_sales=Coalesce(
+            Sum('final_amount', filter=Q(product__product_key__in=ARAKAR_PRODUCT_KEYS)),
+            Value(Decimal('0')),
+        ),
+        arakar_paid=Coalesce(
+            Sum('paid_amount', filter=Q(product__product_key__in=ARAKAR_PRODUCT_KEYS)),
+            Value(Decimal('0')),
+        ),
     )
     sales = money(aggregates['sales_total'])
-    cost = money(aggregates['cost_total'])
+    paid = money(aggregates['paid_total'])
+    receivables = money(aggregates['receivables'])
     return {
         'clients_count': aggregates['clients'] or 0,
         'active_count': aggregates['active'] or 0,
@@ -766,13 +800,17 @@ def summarize_subscriptions(queryset=None):
         'blocked_count': aggregates['blocked'] or 0,
         'pending_payment_count': aggregates['pending_payment'] or 0,
         'sales_revenue': float(sales),
+        'paid_revenue': float(paid),
         'renewal_revenue': float(money(aggregates['renew_total'])),
-        'cost_total': float(cost),
-        'net_profit': float(sales - cost),
         'tax_collected': float(money(aggregates['tax_total'])),
         'discount_total': float(money(aggregates['discount_total'])),
-        'receivables': float(money(aggregates['receivables'])),
+        'receivables': float(receivables),
         'overdue_total': float(money(aggregates['overdue'])),
+        'carno_sales': float(money(aggregates['carno_sales'])),
+        'carno_paid': float(money(aggregates['carno_paid'])),
+        'arakar_sales': float(money(aggregates['arakar_sales'])),
+        'arakar_paid': float(money(aggregates['arakar_paid'])),
+        'installment_remaining': float(receivables),
     }
 
 

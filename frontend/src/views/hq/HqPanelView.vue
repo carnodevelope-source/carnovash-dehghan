@@ -1445,7 +1445,7 @@
       </section>
 
       <section v-else-if="activeTab === 'services'" class="glass-card services-tab-shell">
-        <HqServicesPanel :carwashes="carwashes" />
+        <HqServicesPanel :carwashes="reportCarwashes" />
       </section>
     </main>
 
