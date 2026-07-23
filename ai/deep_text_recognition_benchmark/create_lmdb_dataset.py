@@ -1,6 +1,5 @@
 """ a modified version of CRNN torch repository https://github.com/bgshih/crnn/blob/master/tool/create_dataset.py """
 
-import fire
 import os
 import lmdb
 import cv2
@@ -84,4 +83,8 @@ def createDataset(inputPath, gtFile, outputPath, checkValid=True):
 
 
 if __name__ == '__main__':
+    try:
+        import fire
+    except ImportError as exc:
+        raise SystemExit('Install fire to run this file directly: python -m pip install fire') from exc
     fire.Fire(createDataset)

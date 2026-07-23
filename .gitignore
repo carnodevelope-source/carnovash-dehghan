@@ -44,6 +44,7 @@ ai/io/output/**
 !ai/io/output/.gitkeep
 ai/weigths/**/*.pt
 ai/weigths/**/*.pth
+ai/deep_text_recognition_benchmark/saved_models/
 ai/**/*.download
 ai/**/*.corrupt
 ai/**/*.corrupt.*

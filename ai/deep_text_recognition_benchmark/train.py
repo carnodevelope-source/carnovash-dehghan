@@ -80,10 +80,11 @@ def train(opt):
     model.train()
     if opt.saved_model != '':
         print(f'loading pretrained model from {opt.saved_model}')
+        state = torch.load(opt.saved_model, map_location=device)
         if opt.FT:
-            model.load_state_dict(torch.load(opt.saved_model), strict=False)
+            model.load_state_dict(state, strict=False)
         else:
-            model.load_state_dict(torch.load(opt.saved_model))
+            model.load_state_dict(state)
     print("Model:")
     print(model)
 
@@ -147,11 +148,13 @@ def train(opt):
         image_tensors, labels = train_dataset.get_batch()
         image = image_tensors.to(device)
         text, length = converter.encode(labels, batch_max_length=opt.batch_max_length)
+        text = text.to(device)
+        length = length.to(device)
         batch_size = image.size(0)
 
         if 'CTC' in opt.Prediction:
             preds = model(image, text)
-            preds_size = torch.IntTensor([preds.size(1)] * batch_size)
+            preds_size = torch.IntTensor([preds.size(1)] * batch_size).to(device)
             if opt.baiduCTC:
                 preds = preds.permute(1, 0, 2)  # to use CTCLoss format
                 cost = criterion(preds, text, preds_size, length) / batch_size
@@ -161,7 +164,7 @@ def train(opt):
 
         else:
             preds = model(image, text[:, :-1])  # align with Attention.forward
-            target = text[:, 1:]  # without [GO] Symbol
+            target = text[:, 1:].to(device)  # without [GO] Symbol
             cost = criterion(preds.view(-1, preds.shape[-1]), target.contiguous().view(-1))
 
         model.zero_grad()
