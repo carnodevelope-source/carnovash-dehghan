@@ -48,7 +48,12 @@ class TenantLicenseLockMiddleware:
         user = getattr(request, 'user', None)
         if not getattr(user, 'is_authenticated', False):
             return None
-        if getattr(user, 'platform_role', '') in {'hq_admin', 'hq_support'}:
+        if getattr(user, 'platform_role', '') in {
+            'hq_admin',
+            'hq_support',
+            'hq_project_manager',
+            'hq_finance',
+        }:
             return None
         tenant = getattr(user, 'tenant', None)
         if tenant is None:

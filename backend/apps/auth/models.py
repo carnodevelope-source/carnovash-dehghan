@@ -48,6 +48,8 @@ class User(AbstractUser):
     class PlatformRoles(models.TextChoices):
         NONE = '', 'None'
         HQ_ADMIN = 'hq_admin', 'HQ Admin'
+        HQ_PROJECT_MANAGER = 'hq_project_manager', 'HQ Project Manager'
+        HQ_FINANCE = 'hq_finance', 'HQ Finance'
         HQ_SUPPORT = 'hq_support', 'HQ Support'
 
     full_name = models.CharField(max_length=150, blank=True)
@@ -61,7 +63,7 @@ class User(AbstractUser):
     )
     role = models.CharField(max_length=20, choices=Roles.choices, default=Roles.OPERATOR)
     platform_role = models.CharField(
-        max_length=20,
+        max_length=32,
         choices=PlatformRoles.choices,
         default=PlatformRoles.NONE,
         blank=True,

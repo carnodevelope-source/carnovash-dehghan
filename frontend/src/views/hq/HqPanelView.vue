@@ -90,6 +90,20 @@
         </div>
       </section>
 
+      <section v-else class="hq-support-tabs" role="tablist" aria-label="تب‌های پشتیبان">
+        <button
+          v-for="tab in visibleTabs"
+          :key="`support-${tab.key}`"
+          type="button"
+          class="hq-jump-tab"
+          :class="{ active: activeTab === tab.key }"
+          @click="selectTab(tab.key)"
+        >
+          <span>{{ tab.label }}</span>
+          <small>{{ tab.meta }}</small>
+        </button>
+      </section>
+
       <section v-if="activeTab === 'overview'" class="overview-grid">
         <article class="hero-card overview-hero-card">
           <div class="hero-copy">
@@ -1316,6 +1330,10 @@
           </aside>
         </div>
       </section>
+
+      <section v-else-if="activeTab === 'services'" class="glass-card services-tab-shell">
+        <HqServicesPanel :carwashes="carwashes" />
+      </section>
     </main>
 
     <div v-if="paymentDetailModal.open" class="modal-overlay" @click.self="closePaymentDetailModal">
@@ -1406,6 +1424,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../services/api'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
+import HqServicesPanel from './HqServicesPanel.vue'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman } from '../../utils/money'
@@ -1418,6 +1437,7 @@ const allTabs = [
   { key: 'carwashes', label: 'کارواش‌ها', meta: 'ثبت و نظارت' },
   { key: 'tickets', label: 'مرکز تیکت', meta: 'پاسخ چت‌محور' },
   { key: 'team', label: 'تیم مرکزی', meta: 'ساخت پشتیبان' },
+  { key: 'services', label: 'سرویس‌ها و قابلیت‌ها', meta: 'اشتراک و لایسنس' },
   { key: 'reports', label: 'گزارشات', meta: 'تحلیل تاریخی و مالی' }
 ]
 const activeTab = ref(authStore.isHqAdmin ? 'overview' : 'tickets')
@@ -1429,11 +1449,16 @@ let knownTicketActivity = new Map()
 let notificationAudioContext = null
 let notificationAudioUnlocked = false
 const visibleTabs = computed(() => {
-  if (!authStore.isHqAdmin) return allTabs.filter((tab) => tab.key === 'tickets')
-  return allTabs.filter((tab) => {
-    if (tab.key === 'reports' || tab.key === 'team') return authStore.isHqAdmin
-    return true
-  })
+  if (authStore.isHqAdmin) {
+    return allTabs
+  }
+  if (authStore.isHqFinance) {
+    return allTabs.filter((tab) => ['services', 'reports', 'tickets'].includes(tab.key))
+  }
+  if (authStore.isHqProjectManager) {
+    return allTabs.filter((tab) => ['services', 'carwashes', 'tickets'].includes(tab.key))
+  }
+  return allTabs.filter((tab) => ['tickets', 'services'].includes(tab.key))
 })
 const currentTabTitle = computed(() => visibleTabs.value.find((tab) => tab.key === activeTab.value)?.label || 'پنل مرکزی')
 const hqActiveScopeLabel = computed(() => 'شبکه کامل کارواش‌ها / HQ')
@@ -2659,6 +2684,9 @@ watch(activeTab, async (tab) => {
     if (!selectedReportTenantId.value && reportCarwashes.value[0]?.id) selectedReportTenantId.value = String(reportCarwashes.value[0].id)
     await Promise.all([loadReports(), selectedReportTenantId.value ? loadTenantReports() : Promise.resolve()])
   }
+  if (tab === 'services') {
+    if (!carwashes.value.length) await loadCarwashes()
+  }
 })
 
 watch(() => [reportFilter.start, reportFilter.end], async () => {
@@ -2923,6 +2951,13 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: 16px;
+  margin-top: 16px;
+}
+
+.hq-support-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-top: 16px;
 }
 

@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'apps.reports',
     'apps.notifications',
     'apps.inventory',
+    'apps.subscriptions',
 ]
 
 MIDDLEWARE = [

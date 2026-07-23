@@ -31,6 +31,9 @@ def _background_jobs_loop():
             close_old_connections()
             dispatch_due_nightly_manager_summaries()
             close_stale_support_tickets()
+            from apps.subscriptions.services import run_expiry_and_reminder_jobs
+
+            run_expiry_and_reminder_jobs()
         except Exception:
             pass
         time.sleep(300)

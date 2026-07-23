@@ -575,6 +575,17 @@ class WalletBaseMixin:
             reference_id=purchase.id,
             created_by=user if getattr(user, 'is_authenticated', False) else None,
         )
+        try:
+            from apps.subscriptions.services import sync_subscription_from_feature_purchase
+
+            sync_subscription_from_feature_purchase(
+                purchase,
+                actor=user if getattr(user, 'is_authenticated', False) else None,
+                cashflow=transaction_record,
+                debit_amount=installment_amount,
+            )
+        except Exception:
+            pass
         return wallet, purchase, transaction_record, installment_amount
 
 
@@ -801,6 +812,18 @@ class WalletOptionsView(WalletBaseMixin, APIView):
             reference_id=purchase.id,
             created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
         )
+
+        try:
+            from apps.subscriptions.services import sync_subscription_from_feature_purchase
+
+            sync_subscription_from_feature_purchase(
+                purchase,
+                actor=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                cashflow=transaction_record,
+                debit_amount=debit_amount,
+            )
+        except Exception:
+            pass
 
         return Response(
             {

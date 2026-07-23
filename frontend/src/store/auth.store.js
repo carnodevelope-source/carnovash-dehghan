@@ -6,8 +6,10 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     role: (state) => state.user?.role || '',
     platformRole: (state) => state.user?.platform_role || '',
-    isHq: (state) => state.user?.is_hq === true || ['hq_admin', 'hq_support'].includes(state.user?.platform_role),
+    isHq: (state) => state.user?.is_hq === true || ['hq_admin', 'hq_support', 'hq_project_manager', 'hq_finance'].includes(state.user?.platform_role),
     isHqAdmin: (state) => state.user?.is_hq_admin === true || state.user?.platform_role === 'hq_admin',
+    isHqFinance: (state) => state.user?.platform_role === 'hq_finance',
+    isHqProjectManager: (state) => state.user?.platform_role === 'hq_project_manager',
     isAccountant: (state) => state.user?.role === 'accountant',
     licenseStatus: (state) => state.user?.license_status || {},
     isLicenseLocked: (state) => state.user?.license_status?.is_locked === true,
