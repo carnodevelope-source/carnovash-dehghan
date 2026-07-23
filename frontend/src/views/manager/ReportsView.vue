@@ -139,18 +139,19 @@
             <article class="payout-card"><p>نوع پرداخت</p><strong>{{ workerPaymentTypeLabel(selectedWorkerSummary.payment_type) }}</strong></article>
             <article v-if="selectedWorkerSummary.payment_type === 'hourly'" class="payout-card"><p>ساعت کاری</p><strong>{{ workHoursLabel(selectedWorkerSummary.attendance_hours) }}</strong></article>
             <article v-if="selectedWorkerSummary.payment_type === 'hourly'" class="payout-card"><p>نرخ ساعتی</p><strong>{{ money(selectedWorkerSummary.hourly_wage) }}</strong></article>
-            <article class="payout-card"><p>حق حقوق</p><strong>{{ money(selectedWorkerSummary.wage_total) }}</strong></article>
+            <article class="payout-card"><p>جمع حق نیرو (دوره)</p><strong>{{ money(selectedWorkerSummary.wage_total) }}</strong></article>
             <article class="payout-card"><p>پاداش</p><strong>{{ money(selectedWorkerSummary.bonus_total) }}</strong></article>
             <article class="payout-card"><p>جریمه</p><strong>{{ money(selectedWorkerSummary.penalty_total) }}</strong></article>
-            <article class="payout-card"><p>پرداخت شده</p><strong>{{ money(selectedWorkerSummary.wage_paid_total) }}</strong></article>
-            <article class="payout-card"><p>مانده حقوق</p><strong>{{ money(selectedWorkerSummary.payable_total) }}</strong></article>
+            <article class="payout-card"><p>حقوق پرداخت‌شده</p><strong>{{ money(selectedWorkerSummary.wage_paid_total) }}</strong></article>
+            <article class="payout-card"><p>مانده قابل پرداخت حقوق</p><strong>{{ money(selectedWorkerSummary.payable_total) }}</strong></article>
             <article class="payout-card"><p>حق بیمه هر ماه</p><strong>{{ money(selectedWorkerSummary.insurance_monthly_amount) }}</strong></article>
-            <article class="payout-card"><p>پرداخت بیمه تا این ماه</p><strong>{{ money(selectedWorkerSummary.insurance_paid_total) }}</strong></article>
-            <article class="payout-card"><p>مانده بیمه تا این ماه</p><strong>{{ money(selectedWorkerSummary.insurance_balance) }}</strong></article>
-            <article class="payout-card"><p>انعام</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
+            <article class="payout-card"><p>پرداخت بیمه این ماه</p><strong>{{ money(selectedWorkerSummary.insurance_selected_month_paid_total) }}</strong></article>
+            <article class="payout-card"><p>مانده بیمه این ماه</p><strong>{{ money(selectedWorkerSummary.insurance_selected_month_balance) }}</strong></article>
+            <article class="payout-card"><p>جمع انعام (دوره)</p><strong>{{ money(selectedWorkerSummary.tip_total) }}</strong></article>
+            <article class="payout-card"><p>مانده انعام قابل پرداخت</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
           </div>
-          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.worker_report" :key="`w-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>مبلغ سفارش بدون انعام</th><th>انعام</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in data.worker_report" :key="`w-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.final_total_without_tip ?? row.service_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
           <div v-if="selectedWorkerSummary" class="transactions-shell">
             <div class="worker-head">
@@ -462,9 +463,9 @@ const visibleSummaryCards = computed(() => {
   }
   if (activeTab.value === 'worker') {
     return [
-      { key: 'worker_total', label: 'حق نیرو', value: money(summary.worker_total) },
-      { key: 'payable_worker_total', label: 'مانده حق نیرو', value: money(summary.payable_worker_total) },
-      { key: 'insurance_total', label: 'مانده حق بیمه', value: money(summary.insurance_total) },
+      { key: 'worker_total', label: selectedWorkerSummary.value ? 'جمع حق نیرو (دوره)' : 'جمع حق نیرو', value: money(summary.worker_total) },
+      { key: 'payable_worker_total', label: selectedWorkerSummary.value ? 'مانده قابل پرداخت حقوق' : 'مانده حق نیرو', value: money(summary.payable_worker_total) },
+      { key: 'insurance_total', label: 'مانده بیمه این ماه', value: money(summary.insurance_total) },
       { key: 'bonus_total', label: 'پاداش', value: money(summary.bonus_total) },
       { key: 'penalty_total', label: 'جریمه', value: money(summary.penalty_total) }
     ]
@@ -787,30 +788,15 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#039;')
 
 const workerReceiptOrderPrice = (row) => {
+  // Final charged order price without tip: (sale - discounts). Never rate-card list price.
   if (row?.final_total_without_tip !== undefined && row?.final_total_without_tip !== null) {
-    const finalWithoutTip = Number(row.final_total_without_tip || 0)
-    if (finalWithoutTip > 0) return finalWithoutTip
+    return Math.max(0, Number(row.final_total_without_tip || 0))
   }
   if (row?.final_total !== undefined && row?.final_total !== null) {
-    const finalBase = Math.max(0, Number(row.final_total || 0) - Number(row.tip_amount || 0))
-    if (finalBase > 0) return finalBase
+    return Math.max(0, Number(row.final_total || 0) - Number(row.tip_amount || 0))
   }
   if (row?.service_total !== undefined && row?.service_total !== null) {
-    const serviceTotal = Number(row.service_total || 0)
-    if (serviceTotal > 0) return serviceTotal
-  }
-  if (row?.services_total !== undefined && row?.services_total !== null) {
-    const servicesTotal = Number(row.services_total || 0)
-    if (servicesTotal > 0) return servicesTotal
-  }
-  if (row?.service_amount !== undefined && row?.service_amount !== null) {
-    const serviceAmount = Number(row.service_amount || 0)
-    if (serviceAmount > 0) return serviceAmount
-  }
-  const commissionPercent = Number(row?.worker_commission_percent || selectedWorkerSummary.value?.default_commission_percent || 0)
-  const workerShare = Number(row?.worker_share || 0)
-  if (workerShare > 0 && commissionPercent > 0) {
-    return (workerShare * 100) / commissionPercent
+    return Math.max(0, Number(row.service_total || 0))
   }
   return 0
 }
@@ -827,8 +813,18 @@ const workerReceiptRows = computed(() => (
 })))
 
 const workerReceiptTotalServices = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.price, 0))
-const workerReceiptTotalTip = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.tip, 0))
-const workerReceiptStaffShare = computed(() => workerReceiptRows.value.reduce((sum, row) => sum + row.share, 0))
+const workerReceiptTotalTip = computed(() => {
+  if (selectedWorkerSummary.value) {
+    return Number(selectedWorkerSummary.value.tip_total || 0)
+  }
+  return workerReceiptRows.value.reduce((sum, row) => sum + row.tip, 0)
+})
+const workerReceiptStaffShare = computed(() => {
+  if (selectedWorkerSummary.value) {
+    return Number(selectedWorkerSummary.value.wage_total || 0)
+  }
+  return workerReceiptRows.value.reduce((sum, row) => sum + row.share, 0)
+})
 const workerReceiptGrandTotal = computed(() => workerReceiptStaffShare.value + workerReceiptTotalTip.value)
 
 const buildWorkerReceiptElement = () => {
@@ -856,10 +852,10 @@ const buildWorkerReceiptElement = () => {
         <tbody>${rowsHtml || '<tr><td colspan="5">رکوردی ثبت نشده است.</td></tr>'}</tbody>
       </table>
       <footer>
-        <p><span>جمع کل خدمات</span><strong>${escapeHtml(money(workerReceiptTotalServices.value))}</strong></p>
-        <p><span>جمع سهم نیرو</span><strong>${escapeHtml(money(workerReceiptStaffShare.value))}</strong></p>
+        <p><span>جمع مبلغ سفارش‌ها</span><strong>${escapeHtml(money(workerReceiptTotalServices.value))}</strong></p>
+        <p><span>جمع حق نیرو</span><strong>${escapeHtml(money(workerReceiptStaffShare.value))}</strong></p>
         <p><span>جمع انعام نیرو</span><strong>${escapeHtml(money(workerReceiptTotalTip.value))}</strong></p>
-        <p class="grand"><span>جمع انعام + سهم نیرو</span><strong>${escapeHtml(money(workerReceiptGrandTotal.value))}</strong></p>
+        <p class="grand"><span>جمع انعام + حق نیرو</span><strong>${escapeHtml(money(workerReceiptGrandTotal.value))}</strong></p>
       </footer>
     </article>
   `
