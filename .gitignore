@@ -65,3 +65,4 @@ temp/
 # Local assets and docs that should not be tracked
 frontend/public/Untitled Project.mp4
 Docs/iconly/
+ai/io/data/

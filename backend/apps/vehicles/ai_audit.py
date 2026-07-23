@@ -48,7 +48,23 @@ def _decode_data_url(value):
     return base64.b64decode(payload), extension
 
 
-def _save_ai_image(*, vehicle, request_data):
+def _vehicle_car_model(vehicle, request_data=None):
+    return (
+        _clean_text(getattr(vehicle, 'car_model', ''))
+        or _clean_text(_value(request_data or {}, 'car_model'))
+        or _clean_text(_value(request_data or {}, 'model'))
+    )
+
+
+def _vehicle_car_color(vehicle, request_data=None):
+    return (
+        _clean_text(getattr(vehicle, 'car_color', ''))
+        or _clean_text(_value(request_data or {}, 'car_color'))
+        or _clean_text(_value(request_data or {}, 'color'))
+    )
+
+
+def _save_ai_image(*, vehicle, request_data, record):
     image_base64 = _value(request_data, 'ai_image_base64') or _value(request_data, 'image_base64')
     image_bytes, extension = _decode_data_url(image_base64)
     if not image_bytes:
@@ -61,10 +77,19 @@ def _save_ai_image(*, vehicle, request_data):
     target_dir.mkdir(parents=True, exist_ok=True)
 
     plate_part = _safe_filename_part(getattr(vehicle, 'plate_number', '') or getattr(vehicle, 'id', ''))
-    filename = f'vehicle-{vehicle.id}-{plate_part}-{uuid4().hex[:10]}.{extension}'
-    relative_path = relative_dir / filename
+    model_part = _safe_filename_part(record.get('car_model') or 'model')
+    color_part = _safe_filename_part(record.get('car_color') or 'color')
+    stem = f'vehicle-{vehicle.id}-{plate_part}-{model_part}-{color_part}-{uuid4().hex[:10]}'
+    relative_path = relative_dir / f'{stem}.{extension}'
     absolute_path = media_root / relative_path
     absolute_path.write_bytes(image_bytes)
+
+    sidecar_path = absolute_path.with_suffix('.json')
+    sidecar_payload = {
+        **record,
+        'image_path': relative_path.as_posix(),
+    }
+    sidecar_path.write_text(json.dumps(sidecar_payload, ensure_ascii=False, indent=2), encoding='utf-8')
     return relative_path.as_posix()
 
 
@@ -104,12 +129,15 @@ def log_ai_plate_audit_event(*, vehicle, request, operation):
     persian_text = _clean_text(_value(request_data, 'ai_persian_text'))
     converted_plate = _converted_plate_from_request(request_data)
     has_image = bool(_value(request_data, 'ai_image_base64') or _value(request_data, 'image_base64'))
+    car_model = _vehicle_car_model(vehicle, request_data)
+    car_color = _vehicle_car_color(vehicle, request_data)
 
-    if not any([raw_text, persian_text, converted_plate, has_image]):
+    # Every admission (create) must be logged with plate + model + color.
+    # Updates still log when AI payload exists, or when model/color/plate are present.
+    if operation != 'create' and not any([raw_text, persian_text, converted_plate, has_image, car_model, car_color]):
         return
 
     try:
-        image_path = _save_ai_image(vehicle=vehicle, request_data=request_data)
         user = getattr(request, 'user', None)
         tenant = getattr(user, 'tenant', None)
         now = timezone.localtime()
@@ -125,10 +153,15 @@ def log_ai_plate_audit_event(*, vehicle, request, operation):
             'ai_converted_plate': converted_plate,
             'final_plate': _final_plate_from_vehicle(vehicle),
             'plate_type': _clean_text(getattr(vehicle, 'plate_type', '')),
+            'car_model': car_model,
+            'car_color': car_color,
             'ai_confidence': _value(request_data, 'ai_confidence', None),
             'ai_latency_ms': _value(request_data, 'ai_latency_ms', None),
-            'image_path': image_path,
+            'image_path': '',
         }
+
+        image_path = _save_ai_image(vehicle=vehicle, request_data=request_data, record=record)
+        record['image_path'] = image_path
 
         log_dir = Path(settings.MEDIA_ROOT) / 'ai_plate_audit'
         log_dir.mkdir(parents=True, exist_ok=True)
