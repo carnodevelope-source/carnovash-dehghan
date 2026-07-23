@@ -141,7 +141,12 @@ def _platform_role(user):
 
 
 def _is_hq_user(user):
-    return _platform_role(user) in {User.PlatformRoles.HQ_ADMIN, User.PlatformRoles.HQ_SUPPORT}
+    return _platform_role(user) in {
+        User.PlatformRoles.HQ_ADMIN,
+        User.PlatformRoles.HQ_SUPPORT,
+        User.PlatformRoles.HQ_PROJECT_MANAGER,
+        User.PlatformRoles.HQ_FINANCE,
+    }
 
 
 def _is_hq_admin(user):
