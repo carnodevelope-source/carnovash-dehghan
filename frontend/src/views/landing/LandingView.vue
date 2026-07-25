@@ -412,8 +412,7 @@ const painPoints = [
   'محاسبه سخت سهم نیرو، انعام و درآمد کارواش',
   'نبود سابقه دقیق مشتری و مراجعه بعدی',
   'اطلاع‌رسانی دیر یا ناقص به مشتری',
-  'گزارش‌های مالی غیرقابل‌اتکا برای تصمیم‌گیری',
-  'مدیریت دشوار چند شعبه از یک نقطه مرکزی'
+  'گزارش‌های مالی غیرقابل‌اتکا برای تصمیم‌گیری'
 ]
 
 const workflowSteps = [
@@ -1589,23 +1588,28 @@ a.btn-primary:visited {
   right: 16px;
   background: #fff;
   border-radius: 18px;
-  padding: 18px;
+  padding: 12px;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  gap: 6px;
   box-shadow: 0 24px 50px rgba(12, 71, 154, 0.18);
 }
 
 .mobile-nav a {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  min-height: 46px;
-  padding: 0 10px;
+  justify-content: center;
+  gap: 5px;
+  min-height: 58px;
+  padding: 8px 4px;
   border-radius: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--navy);
-  font-size: 13px;
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .mobile-nav a:hover {
@@ -1859,8 +1863,20 @@ a.btn-primary:visited {
     width: min(100%, 340px);
   }
 
+  .platforms {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
   .platforms button {
-    min-height: 80px;
+    min-height: 72px;
+    padding: 8px 4px;
+    border-radius: 12px;
+    gap: 6px;
+  }
+
+  .platforms span {
+    font-size: 11px;
   }
 
   .cta {
@@ -1904,8 +1920,7 @@ a.btn-primary:visited {
   .workflow-grid,
   .modules-grid,
   .roles-grid,
-  .why-grid,
-  .platforms {
+  .why-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
