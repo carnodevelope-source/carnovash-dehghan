@@ -440,7 +440,7 @@
                   <div class="sms-preview-panel">
                     <div class="sms-preview-head">
                       <small>نمونه خروجی</small>
-                      <span>پیام پذیرش و پیش‌فاکتور</span>
+                      <span>پیام پذیرش</span>
                     </div>
                     <pre class="sms-preview-box">{{ smsAssignedPreview }}</pre>
                   </div>
@@ -1197,7 +1197,7 @@ const smsPreviewContext = computed(() => {
     '[پلاک]': '67 - 345 ب 22',
     '[ساعت تخصیص]': '10:30',
     '[تاریخ تخصیص]': '1405/04/22',
-    '[خلاصه خدمات]': 'شست‌وشوی کامل',
+    '[خلاصه خدمات]': 'روشویی : ۷۰،۰۰۰ تومان\nواکس بدنه : ۱۲۰،۰۰۰ تومان',
     '[جمع کل]': '350،000 تومان',
     '[جمع نرخ نامه]': '350،000 تومان',
     '[ساعت ترخیص]': '12:15',
@@ -1263,7 +1263,7 @@ watch(() => forms.worker.role, (role) => {
 const loadAll = async () => {
   try {
     const [w, p, e, s, inv] = await Promise.all([
-      api.get('/workers/'),
+      api.get('/workers/', { params: { include_inactive: 1 } }),
       api.get('/products/'),
       api.get('/inventory/expenses/'),
       api.get('/services/'),

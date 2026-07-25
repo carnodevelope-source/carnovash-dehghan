@@ -211,11 +211,17 @@ class WorkerProfileListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         tenant = _resolve_request_tenant(self.request)
-        return WorkerProfile.objects.select_related('user').filter(
+        queryset = WorkerProfile.objects.select_related('user').filter(
             tenant=tenant,
             is_deleted=False,
             user__is_deleted=False,
-        ).order_by(
+        )
+        include_inactive = str(self.request.query_params.get('include_inactive') or '').strip().lower() in {
+            '1', 'true', 'yes'
+        }
+        if not include_inactive:
+            queryset = queryset.filter(is_available=True, user__is_active=True)
+        return queryset.order_by(
             'user__full_name',
             'user__username',
         )

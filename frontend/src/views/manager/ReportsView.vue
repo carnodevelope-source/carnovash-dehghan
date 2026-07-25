@@ -15,69 +15,79 @@
       </section>
 
       <section class="filters-card">
-        <div class="field search-field">
-          <span><IconlyIcon name="search" size="xs" />جستجو</span>
-          <input v-model="filters.q" type="text" placeholder="راننده، شماره، نیرو، مدل یا پلاک..." />
+        <div class="filters-top-row">
+          <div class="field search-field">
+            <span><IconlyIcon name="search" size="xs" />جستجو</span>
+            <input v-model="filters.q" type="text" placeholder="راننده، شماره، نیرو، مدل یا پلاک..." />
+          </div>
+          <div class="field">
+            <span><IconlyIcon name="calendar" size="xs" />شروع بازه (شمسی)</span>
+            <BaseDatePicker v-model="filters.startJalali" placeholder="1405/01/01" />
+          </div>
+          <div class="field">
+            <span><IconlyIcon name="calendar" size="xs" />پایان بازه (شمسی)</span>
+            <BaseDatePicker v-model="filters.endJalali" placeholder="1405/01/30" />
+          </div>
+          <div class="field">
+            <span><IconlyIcon name="users3" size="xs" />نیرو</span>
+            <select v-model="filters.workerId">
+              <option value="">همه نیروها</option>
+              <option v-for="worker in workers" :key="worker.id" :value="String(worker.id)">{{ worker.full_name }}</option>
+            </select>
+          </div>
+          <div class="field">
+            <span><IconlyIcon name="calendar" size="xs" />ماه بیمه</span>
+            <select v-model="filters.insuranceMonthJalali">
+              <option v-for="item in insuranceMonthOptions" :key="`filter-${item.value}`" :value="item.value">{{ item.label }}</option>
+            </select>
+          </div>
         </div>
-        <div class="field">
-          <span><IconlyIcon name="calendar" size="xs" />شروع بازه (شمسی)</span>
-          <BaseDatePicker v-model="filters.startJalali" placeholder="1405/01/01" />
-        </div>
-        <div class="field">
-          <span><IconlyIcon name="calendar" size="xs" />پایان بازه (شمسی)</span>
-          <BaseDatePicker v-model="filters.endJalali" placeholder="1405/01/30" />
-        </div>
-        <div class="field">
-          <span><IconlyIcon name="users3" size="xs" />نیرو</span>
-          <select v-model="filters.workerId">
-            <option value="">همه نیروها</option>
-            <option v-for="worker in workers" :key="worker.id" :value="String(worker.id)">{{ worker.full_name }}</option>
-          </select>
-        </div>
-        <div class="field">
-          <span><IconlyIcon name="calendar" size="xs" />ماه بیمه</span>
-          <select v-model="filters.insuranceMonthJalali">
-            <option v-for="item in insuranceMonthOptions" :key="`filter-${item.value}`" :value="item.value">{{ item.label }}</option>
-          </select>
-        </div>
-        <div class="field">
-          <span><IconlyIcon name="category" size="xs" />نوع وسیله</span>
-          <select v-model="filters.plateType">
+
+        <div class="plate-filter-bar">
+          <span class="plate-filter-label"><IconlyIcon name="filter" size="xs" />پلاک</span>
+          <select v-model="filters.plateType" class="plate-type-inline" aria-label="نوع وسیله">
             <option value="">همه</option>
             <option value="car">خودرو</option>
             <option value="motorcycle">موتور سیکلت</option>
           </select>
-        </div>
-        <div class="field plate-field">
-          <span><IconlyIcon name="filter" size="xs" />پلاک خودرو</span>
-          <div class="plate-filter-shell">
-            <div v-if="filters.plateType === 'motorcycle'" class="plate-filter-row plate-filter-row-motorcycle" dir="ltr">
-              <div class="plate-filter-motor-main">
-                <input v-model="filters.plateMid" type="text" maxlength="3" placeholder="345" />
-                <input v-model="filters.plateLetter" type="text" maxlength="5" placeholder="67890" />
-              </div>
-              <span class="plate-filter-blue plate-filter-blue-motor">IR</span>
-            </div>
-            <div v-else class="plate-filter-row plate-filter-row-car" dir="ltr">
-              <input v-model="filters.plateRight" type="text" maxlength="2" placeholder="67" />
-              <input v-model="filters.plateLetter" type="text" maxlength="1" placeholder="ب" />
-              <input v-model="filters.plateMid" type="text" maxlength="3" placeholder="345" />
-              <input v-model="filters.plateLeft" class="plate-filter-blue plate-filter-blue-input" type="text" maxlength="2" placeholder="12" />
-            </div>
+          <PlateEditor
+            class="plate-filter-editor"
+            dense
+            :plate-left="filters.plateLeft"
+            :plate-letter="filters.plateLetter"
+            :plate-mid="filters.plateMid"
+            :plate-right="filters.plateRight"
+            :plate-type="filters.plateType || 'car'"
+            :show-type-switch="false"
+            :show-anonymous-toggle="false"
+            :show-piece-wash-toggle="false"
+            @update:plateLeft="filters.plateLeft = $event"
+            @update:plateLetter="filters.plateLetter = $event"
+            @update:plateMid="filters.plateMid = $event"
+            @update:plateRight="filters.plateRight = $event"
+            @update:plateType="filters.plateType = $event"
+          />
+          <button
+            type="button"
+            class="plate-clear-btn"
+            :disabled="!hasPlateFilter"
+            @click="clearPlateFilter"
+          >
+            پاک کردن
+          </button>
+          <div class="filters-actions">
+            <button class="secondary-btn clear-btn btn-with-icon" @click="resetFilters"><IconlyIcon name="filter" size="sm" />حذف فیلتر</button>
+            <section class="export-studio-actions">
+              <button class="export-action-btn csv" :disabled="exportState.csvLoading" @click="exportCsv">
+                <IconlyIcon name="document" size="sm" />
+                {{ exportState.csvLoading ? 'در حال آماده‌سازی CSV...' : 'خروجی CSV' }}
+              </button>
+              <button class="export-action-btn pdf" :disabled="exportState.pdfLoading" @click="exportPdf">
+                <IconlyIcon name="download" size="sm" />
+                {{ exportState.pdfLoading ? 'در حال ساخت PDF...' : 'خروجی PDF' }}
+              </button>
+            </section>
           </div>
-        </div>
-        <div class="filters-actions">
-          <button class="secondary-btn clear-btn btn-with-icon" @click="resetFilters"><IconlyIcon name="filter" size="sm" />حذف فیلتر</button>
-          <section class="export-studio-actions">
-            <button class="export-action-btn csv" :disabled="exportState.csvLoading" @click="exportCsv">
-              <IconlyIcon name="document" size="sm" />
-              {{ exportState.csvLoading ? 'در حال آماده‌سازی CSV...' : 'خروجی CSV' }}
-            </button>
-            <button class="export-action-btn pdf" :disabled="exportState.pdfLoading" @click="exportPdf">
-              <IconlyIcon name="download" size="sm" />
-              {{ exportState.pdfLoading ? 'در حال ساخت PDF...' : 'خروجی PDF' }}
-            </button>
-          </section>
         </div>
       </section>
 
@@ -99,11 +109,19 @@
           <h3>گزارش کل</h3>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ردیف</th><th>نام راننده</th><th>جنسیت</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
+              <thead><tr><th>ردیف</th><th>نام راننده</th><th>جنسیت</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
               <tbody>
                 <template v-for="row in data.overall_report" :key="`o-${serviceRowKey(row)}`">
                   <tr class="clickable-row" :class="{ expanded: isServicesExpanded(row) }" @click="openVehicleDetail(row.vehicle_id)">
-                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ formatGender(row.driver_gender) }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
+                    <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ formatGender(row.driver_gender) }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+                      :plate-number="row.plate_number"
+                      :plate-left="row.plate_left"
+                      :plate-letter="row.plate_letter"
+                      :plate-mid="row.plate_mid"
+                      :plate-right="row.plate_right"
+                      :plate-type="row.plate_type || 'car'"
+                      compact
+                    /></span></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
                   </tr>
                   <tr v-if="isServicesExpanded(row)" class="services-expanded-row">
                     <td colspan="15">
@@ -121,8 +139,16 @@
 
         <template v-else-if="activeTab === 'carwash'">
           <h3>گزارش حق کارواش</h3>
-          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>حق کارواش</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.carwash_report" :key="`c-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>حق کارواش</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in data.carwash_report" :key="`c-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+                      :plate-number="row.plate_number"
+                      :plate-left="row.plate_left"
+                      :plate-letter="row.plate_letter"
+                      :plate-mid="row.plate_mid"
+                      :plate-right="row.plate_right"
+                      :plate-type="row.plate_type || 'car'"
+                      compact
+                    /></span></td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
@@ -150,8 +176,16 @@
             <article class="payout-card"><p>جمع انعام (دوره)</p><strong>{{ money(selectedWorkerSummary.tip_total) }}</strong></article>
             <article class="payout-card"><p>مانده انعام قابل پرداخت</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
           </div>
-          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>مبلغ سفارش بدون انعام</th><th>انعام</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.worker_report" :key="`w-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.final_total_without_tip ?? row.service_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>مبلغ سفارش بدون انعام</th><th>انعام</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in data.worker_report" :key="`w-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+                      :plate-number="row.plate_number"
+                      :plate-left="row.plate_left"
+                      :plate-letter="row.plate_letter"
+                      :plate-mid="row.plate_mid"
+                      :plate-right="row.plate_right"
+                      :plate-type="row.plate_type || 'car'"
+                      compact
+                    /></span></td><td>{{ money(row.final_total_without_tip ?? row.service_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
           <div v-if="selectedWorkerSummary" class="transactions-shell">
             <div class="worker-head">
@@ -170,15 +204,31 @@
 
         <template v-else-if="activeTab === 'tips'">
           <h3>گزارش انعام</h3>
-          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th>پلاک</th><th>انعام</th><th>نام نیرو</th><th>کالا</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.tips_report" :key="`t-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>انعام</th><th>نام نیرو</th><th>کالا</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in data.tips_report" :key="`t-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+                      :plate-number="row.plate_number"
+                      :plate-left="row.plate_left"
+                      :plate-letter="row.plate_letter"
+                      :plate-mid="row.plate_mid"
+                      :plate-right="row.plate_right"
+                      :plate-type="row.plate_type || 'car'"
+                      compact
+                    /></span></td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
         <template v-else-if="activeTab === 'revenue'">
           <h3>گزارش درآمد</h3>
-          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>تاریخ</th><th>راننده</th><th>شماره</th><th>مدل خودرو</th><th>رنگ</th><th>پلاک</th><th>روش پرداخت</th><th>وضعیت پرداخت</th><th>خدمات</th><th>محصولات</th><th>تخفیف</th><th>انعام</th><th>مبلغ نهایی</th><th>وصول شده</th><th>مانده</th><th>شماره چک</th><th>سررسید</th></tr></thead><tbody>
-            <tr v-for="row in data.revenue_report" :key="`r-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>تاریخ</th><th>راننده</th><th>شماره</th><th>مدل خودرو</th><th>رنگ</th><th class="col-plate">پلاک</th><th>روش پرداخت</th><th>وضعیت پرداخت</th><th>خدمات</th><th>محصولات</th><th>تخفیف</th><th>انعام</th><th>مبلغ نهایی</th><th>وصول شده</th><th>مانده</th><th>شماره چک</th><th>سررسید</th></tr></thead><tbody>
+            <tr v-for="row in data.revenue_report" :key="`r-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+                      :plate-number="row.plate_number"
+                      :plate-left="row.plate_left"
+                      :plate-letter="row.plate_letter"
+                      :plate-mid="row.plate_mid"
+                      :plate-right="row.plate_right"
+                      :plate-type="row.plate_type || 'car'"
+                      compact
+                    /></span></td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
@@ -192,7 +242,7 @@
 
         <template v-else-if="activeTab === 'blacklist'">
           <h3>گزارش لیست سیاه</h3>
-          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>پلاک</th><th>نوع وسیله</th><th>توضیح</th><th>ثبت کننده</th><th>تاریخ ثبت</th></tr></thead><tbody>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th class="col-plate">پلاک</th><th>نوع وسیله</th><th>توضیح</th><th>ثبت کننده</th><th>تاریخ ثبت</th></tr></thead><tbody>
             <tr
               v-for="row in data.blacklist_report"
               :key="`b-${row.id || row.row}`"
@@ -200,7 +250,15 @@
               @click="openBlacklistRow(row)"
             >
               <td>{{ row.row }}</td>
-              <td><PlateBadge class="report-plate" :plate-number="row.plate_number" :plate-left="row.plate_left" :plate-letter="row.plate_letter" :plate-mid="row.plate_mid" :plate-right="row.plate_right" :plate-type="row.plate_type || 'car'" compact /></td>
+              <td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+                      :plate-number="row.plate_number"
+                      :plate-left="row.plate_left"
+                      :plate-letter="row.plate_letter"
+                      :plate-mid="row.plate_mid"
+                      :plate-right="row.plate_right"
+                      :plate-type="row.plate_type || 'car'"
+                      compact
+                    /></span></td>
               <td>{{ row.plate_type === 'motorcycle' ? 'موتور سیکلت' : 'خودرو' }}</td>
               <td>{{ row.note || '-' }}</td>
               <td>{{ row.blocked_by_name || '-' }}</td>
@@ -276,9 +334,18 @@
       <div class="pdf-format-body">
         <button class="pdf-format-option" @click="selectPdfFormat('a4')">
           <strong>A4</strong>
-          <span>خروجی گزارش فعلی</span>
+          <span>خروجی گزارش افقی</span>
         </button>
-        <button class="pdf-format-option receipt" :disabled="!selectedWorkerSummary?.worker_id" @click="selectPdfFormat('receipt')">
+        <button class="pdf-format-option" @click="selectPdfFormat('a5')">
+          <strong>A5</strong>
+          <span>خروجی فشرده‌تر</span>
+        </button>
+        <button
+          v-if="activeTab === 'worker'"
+          class="pdf-format-option receipt"
+          :disabled="!selectedWorkerSummary?.worker_id"
+          @click="selectPdfFormat('receipt')"
+        >
           <strong>فیش</strong>
           <span>{{ selectedWorkerSummary?.worker_id ? 'مخصوص پرینتر حرارتی' : 'اول نیرو را انتخاب کنید' }}</span>
         </button>
@@ -325,9 +392,12 @@ import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import PlateBadge from '../../components/vehicles/PlateBadge.vue'
+import IranPlateMark from '../../components/vehicles/IranPlateMark.vue'
+import PlateEditor from '../../components/vehicles/PlateEditor.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
 import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
+import { normalizeDigits, normalizePlateLetter as normalizePlateLetterUtil } from '../../utils/plate'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 
 const activeTab = ref('overall')
@@ -407,9 +477,10 @@ const money = (v) => formatThousandsToman(v)
 const dateTime = (v) => formatJalaliDate(v)
 const dateOnly = (v) => formatJalaliDate(v)
 const receiptDateTime = (v) => formatJalaliDateTime(v)
-const faNumber = (value) => Number(value || 0).toLocaleString('fa-IR')
+const faNumberLatin = (value) => Number(value || 0).toLocaleString('en-US')
+const moneyLatin = (value) => Number(value || 0).toLocaleString('en-US')
 const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assigned: 'در انتظار تکمیل', in_progress: 'در حال انجام', ready_to_settle: 'در انتظار تکمیل', released: 'ترخیص شده', cancelled: 'لغو' }[value] || '-')
-const formatGender = (value) => ({ male: 'مرد', female: 'زن' }[value] || '-')
+const formatGender = (value) => ({ male: 'آقا', female: 'خانم' }[value] || '-')
 const workerPaymentTypeLabel = (value) => ({ hourly: 'ساعتی', fixed: 'ثابت', percent: 'درصدی' }[value] || '-')
 const workHoursLabel = (value) => `${Number(value || 0).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ساعت`
 const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', insurance_payment: 'پرداخت حق بیمه', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
@@ -602,10 +673,39 @@ const isPayoutAmountValid = computed(() => {
   return amount > 0 && amount < payoutModalMaxAmount.value
 })
 
-const normalizeDigits = (value) => String(value || '')
-  .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
-  .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+const hasPlateFilter = computed(() => Boolean(
+  filters.plateLeft
+  || filters.plateLetter
+  || filters.plateMid
+  || filters.plateRight
+  || filters.plateType
+))
 
+const clearPlateFilter = () => {
+  filters.plateType = ''
+  filters.plateLeft = ''
+  filters.plateLetter = ''
+  filters.plateMid = ''
+  filters.plateRight = ''
+}
+
+const normalizePlateFilters = () => {
+  if (filters.plateType !== 'motorcycle' && filters.plateType !== 'car') filters.plateType = ''
+  filters.plateLeft = normalizeDigits(filters.plateLeft).replace(/\D/g, '').slice(0, 2)
+  filters.plateRight = normalizeDigits(filters.plateRight).replace(/\D/g, '').slice(0, 2)
+  filters.plateMid = normalizeDigits(filters.plateMid).replace(/\D/g, '').slice(0, 3)
+  const letterRaw = String(filters.plateLetter || '')
+  const letterLooksMotor = /^\d+$/.test(normalizeDigits(letterRaw).replace(/\D/g, '')) && normalizeDigits(letterRaw).replace(/\D/g, '').length > 1
+  if (filters.plateType === 'motorcycle' || (!filters.plateType && letterLooksMotor)) {
+    filters.plateLetter = normalizeDigits(filters.plateLetter).replace(/\D/g, '').slice(0, 5)
+  } else {
+    filters.plateLetter = normalizePlateLetterUtil(filters.plateLetter)
+  }
+  if (filters.plateType === 'motorcycle') {
+    filters.plateLeft = ''
+    filters.plateRight = ''
+  }
+}
 const parseJalaliToIso = (input) => {
   const value = (input || '').trim().replace(/-/g, '/')
   const match = value.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/)
@@ -705,31 +805,9 @@ const resolveInsuranceYear = () => {
   return getCurrentJalaliYear()
 }
 
-const normalizePlateLetter = (value) => {
-  const raw = String(value || '').replace(/\s+/g, '').slice(0, 1)
-  const englishMap = { A: 'ا', B: 'ب', D: 'د', H: 'ه', J: 'ج', L: 'ل', M: 'م', N: 'ن', P: 'پ', S: 'س', T: 'ط', V: 'و', Y: 'ی' }
-  const upper = raw.toUpperCase()
-  if (englishMap[upper]) return englishMap[upper]
-  return raw.replace(/[^آابپتثجچحخدذرزسشصضطظعغفقکگلمنوهی]/g, '')
-}
-
-const normalizePlateFilters = () => {
-  if (filters.plateType !== 'motorcycle' && filters.plateType !== 'car') filters.plateType = ''
-  filters.plateLeft = normalizeDigits(filters.plateLeft).replace(/\D/g, '').slice(0, 2)
-  filters.plateRight = normalizeDigits(filters.plateRight).replace(/\D/g, '').slice(0, 2)
-  filters.plateMid = normalizeDigits(filters.plateMid).replace(/\D/g, '').slice(0, 3)
-  filters.plateLetter = filters.plateType === 'motorcycle'
-    ? normalizeDigits(filters.plateLetter).replace(/\D/g, '').slice(0, 5)
-    : normalizePlateLetter(filters.plateLetter)
-  if (filters.plateType === 'motorcycle') {
-    filters.plateLeft = ''
-    filters.plateRight = ''
-  }
-}
-
 const fetchWorkers = async () => {
   try {
-    const { data } = await api.get('/workers/')
+    const { data } = await api.get('/workers/', { params: { include_inactive: 1 } })
     workers.value = Array.isArray(data) ? data : []
   } catch (_error) {
     workers.value = []
@@ -830,18 +908,18 @@ const workerReceiptGrandTotal = computed(() => workerReceiptStaffShare.value + w
 const buildWorkerReceiptElement = () => {
   const rowsHtml = workerReceiptRows.value.map((row) => `
     <tr>
-      <td>${escapeHtml(faNumber(row.row))}</td>
+      <td>${escapeHtml(faNumberLatin(row.row))}</td>
       <td>${escapeHtml(row.date)}</td>
       <td>${escapeHtml(row.car)}</td>
-      <td>${escapeHtml(money(row.price))}</td>
-      <td>${escapeHtml(money(row.tip))}</td>
+      <td>${escapeHtml(moneyLatin(row.price))}</td>
+      <td>${escapeHtml(moneyLatin(row.tip))}</td>
     </tr>
   `).join('')
   const element = document.createElement('div')
   element.innerHTML = `
     <article class="worker-receipt-pdf" dir="rtl">
       <header>
-        <strong>${escapeHtml(authStore.user?.tenant_address || authStore.user?.tenant_name || '-')}</strong>
+        <strong>${escapeHtml(authStore.user?.tenant_name || '-')}</strong>
         <span>صورت‌حساب: ${escapeHtml(selectedWorkerSummary.value?.worker_name || '-')}</span>
         <span>دوره گزارش: ${escapeHtml(reportPeriodLabel.value)}</span>
       </header>
@@ -852,10 +930,10 @@ const buildWorkerReceiptElement = () => {
         <tbody>${rowsHtml || '<tr><td colspan="5">رکوردی ثبت نشده است.</td></tr>'}</tbody>
       </table>
       <footer>
-        <p><span>جمع مبلغ سفارش‌ها</span><strong>${escapeHtml(money(workerReceiptTotalServices.value))}</strong></p>
-        <p><span>جمع حق نیرو</span><strong>${escapeHtml(money(workerReceiptStaffShare.value))}</strong></p>
-        <p><span>جمع انعام نیرو</span><strong>${escapeHtml(money(workerReceiptTotalTip.value))}</strong></p>
-        <p class="grand"><span>جمع انعام + حق نیرو</span><strong>${escapeHtml(money(workerReceiptGrandTotal.value))}</strong></p>
+        <p><span>جمع مبلغ سفارش‌ها</span><strong>${escapeHtml(moneyLatin(workerReceiptTotalServices.value))}</strong></p>
+        <p><span>جمع حق نیرو</span><strong>${escapeHtml(moneyLatin(workerReceiptStaffShare.value))}</strong></p>
+        <p><span>جمع انعام نیرو</span><strong>${escapeHtml(moneyLatin(workerReceiptTotalTip.value))}</strong></p>
+        <p class="grand"><span>جمع انعام + حق نیرو</span><strong>${escapeHtml(moneyLatin(workerReceiptGrandTotal.value))}</strong></p>
       </footer>
     </article>
   `
@@ -892,24 +970,25 @@ const buildWorkerReceiptElement = () => {
   return wrapper
 }
 
-const exportPdfAsA4 = async () => {
+const exportPdfAsPaper = async (paper = 'a4') => {
   if (!reportExportRef.value) return
   await nextTick()
   const html2pdfModule = await import('html2pdf.js')
   const html2pdf = html2pdfModule.default || html2pdfModule
+  const format = paper === 'a5' ? 'a5' : 'a4'
   const worker = html2pdf()
     .set({
-      margin: 8,
-      filename: `reports-${activeTab.value}.pdf`,
+      margin: format === 'a5' ? 6 : 8,
+      filename: `reports-${activeTab.value}-${format}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+      jsPDF: { unit: 'mm', format, orientation: 'landscape' },
       pagebreak: { mode: ['css', 'legacy'] }
     })
     .from(reportExportRef.value)
     .toPdf()
   const pdf = await worker.get('pdf')
-  downloadBlob(pdf.output('blob'), `reports-${activeTab.value}.pdf`)
+  downloadBlob(pdf.output('blob'), `reports-${activeTab.value}-${format}.pdf`)
 }
 
 const exportWorkerReceiptPdf = async () => {
@@ -953,7 +1032,7 @@ const selectPdfFormat = async (format) => {
   errorMessage.value = ''
   try {
     if (format === 'receipt') await exportWorkerReceiptPdf()
-    else await exportPdfAsA4()
+    else await exportPdfAsPaper(format)
   } catch (error) {
     console.error('exportPdf error:', error)
     errorMessage.value = 'ساخت خروجی PDF ناموفق بود.'
@@ -983,20 +1062,7 @@ const exportCsv = async () => {
 }
 
 const exportPdf = async () => {
-  if (activeTab.value === 'worker') {
-    pdfFormatModal.open = true
-    return
-  }
-  exportState.pdfLoading = true
-  errorMessage.value = ''
-  try {
-    await exportPdfAsA4()
-  } catch (error) {
-    console.error('exportPdf error:', error)
-    errorMessage.value = 'ساخت خروجی PDF ناموفق بود.'
-  } finally {
-    exportState.pdfLoading = false
-  }
+  pdfFormatModal.open = true
 }
 
 const resetFilters = () => {
@@ -1277,34 +1343,30 @@ onMounted(async () => {
 .range-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .range-chip{border:1px solid #cbd5e1;background:#fff;color:#334155;padding:9px 16px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:8px}
 .range-chip.active{background:#2563eb;border-color:#2563eb;color:#fff}
-.filters-card{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;padding:14px;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:10px;align-items:end;background:linear-gradient(180deg,#fff,#f8fbff)}
-.field{display:grid;gap:5px;font-size:12px}
+.filters-card{display:grid;gap:10px;padding:14px;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:10px;background:linear-gradient(180deg,#fff,#f8fbff)}
+.filters-top-row{display:grid;grid-template-columns:minmax(180px,1.4fr) repeat(4,minmax(120px,1fr));gap:10px;align-items:end}
+.field{display:grid;gap:5px;font-size:12px;min-width:0}
 .field span{display:inline-flex;align-items:center;gap:6px}
 .field input,.field select{height:38px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;font-size:12px;background:#fff}
-.search-field{grid-column:span 2}
-.plate-field{grid-column:span 2}
-.filters-actions{grid-column:span 5;display:flex;align-items:flex-end;justify-content:flex-start;gap:12px;flex-wrap:wrap}
-.plate-filter-shell{padding:10px;border:1px solid #dbe5f0;border-radius:14px;background:linear-gradient(180deg,#fdfefe,#f3f7fb)}
-.plate-filter-row{display:grid;grid-template-columns:62px 62px 86px 30px 62px;gap:8px;align-items:center}
-.plate-filter-row span{display:inline-flex;align-items:center;justify-content:center;height:38px;color:#64748b;font-weight:700}
-.plate-filter-row input{text-align:center;padding:0;border:1px solid #c9d6e5;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.8)}
-.plate-filter-row-car{direction:ltr}
-.plate-filter-blue{border-radius:10px;background-color:#2563eb;border:1px solid #1d4ed8}
-.plate-filter-blue-input{
-  font-weight:700;
-  background-color:#2563eb
+.search-field{min-width:0}
+.plate-filter-bar{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:nowrap;
+  min-width:0;
+  padding:8px 10px;
+  border:1px solid #dbe5f0;
+  border-radius:14px;
+  background:linear-gradient(180deg,#fdfefe,#f3f7fb);
 }
-.plate-filter-row .plate-filter-blue-input:focus{
-  outline:none;
-  border-color:#ffffff;
-  box-shadow:0 0 0 3px rgba(191,219,254,.28);
-  background-color:#2563eb
-}
-.plate-filter-row .plate-filter-blue-input::placeholder{color:rgba(255,255,255,.78);
-  background-color:#2563eb}
-.plate-filter-row-motorcycle{grid-template-columns:minmax(0,1fr) 44px}
-.plate-filter-motor-main{display:grid;grid-template-columns:86px 1fr;gap:8px;align-items:center}
-.plate-filter-blue-motor{min-width:44px}
+.plate-filter-label{display:inline-flex;align-items:center;gap:6px;color:#334155;font-size:12px;font-weight:700;white-space:nowrap;flex:0 0 auto}
+.plate-type-inline{height:38px;min-width:110px;flex:0 0 auto;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;background:#fff;font-size:12px}
+.plate-filter-editor{flex:0 1 auto;min-width:0;max-width:340px}
+.plate-filter-bar :deep(.plate-editor){gap:0}
+.plate-clear-btn{flex:0 0 auto;height:38px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#475569;padding:0 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.plate-clear-btn:disabled{opacity:.45;cursor:not-allowed}
+.filters-actions{margin-right:auto;display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:nowrap}
 .summary-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;margin-bottom:10px}
 .kpi-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fbff}
 .kpi-card p{margin:0;color:#64748b;font-size:12px}
@@ -1328,26 +1390,97 @@ onMounted(async () => {
 .danger-soft :deep(.iconly-shell) { --iconly-filter: brightness(0) saturate(100%) invert(20%) sepia(78%) saturate(2280%) hue-rotate(345deg) brightness(97%) contrast(92%); }
 .table-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px}
 .table-card h3{margin:0 0 8px;font-size:15px}
-.table-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px}
-th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-space:normal;vertical-align:top;line-height:1.5;word-break:break-word}
+.table-wrap{
+  width:100%;
+  max-width:100%;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+}
+.table-card table{
+  width:max-content;
+  min-width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  table-layout:auto;
+  font-size:12px;
+}
+.table-card th,
+.table-card td{
+  padding:8px 10px;
+  border-bottom:1px solid #e2e8f0;
+  text-align:right;
+  white-space:nowrap;
+  vertical-align:middle;
+  line-height:1.45;
+  word-break:normal;
+  overflow-wrap:normal;
+  box-sizing:border-box;
+}
+.table-card th.col-plate,
+.table-card td.col-plate{
+  width:132px;
+  min-width:132px;
+  max-width:132px;
+  padding:8px 8px;
+  text-align:center;
+  overflow:hidden;
+}
+.report-plate-cell{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  max-width:116px;
+  margin:0 auto;
+  overflow:hidden;
+}
+.report-plate-cell :deep(.iran-plate){
+  width:116px;
+  max-width:116px;
+  min-width:116px;
+  height:28px;
+  flex-shrink:0;
+}
+.report-plate-cell :deep(.iran-plate-motorcycle){
+  height:36px;
+}
+.report-plate-cell :deep(.iran-plate-body),
+.report-plate-cell :deep(.iran-plate-motor-body){
+  gap:4px;
+  padding:2px 6px;
+  min-width:0;
+  flex:1 1 auto;
+}
+.report-plate-cell :deep(.iran-plate-body strong),
+.report-plate-cell :deep(.iran-plate-motor-top){
+  font-size:11px;
+  letter-spacing:0;
+}
+.report-plate-cell :deep(.iran-plate-body em),
+.report-plate-cell :deep(.iran-plate-motor-bottom){
+  font-size:10px;
+  min-width:0;
+}
+.report-plate-cell :deep(.iran-plate-city){
+  min-width:26px;
+  padding:1px 4px;
+  flex:0 0 auto;
+}
+.report-plate-cell :deep(.iran-plate-city small){font-size:5px}
+.report-plate-cell :deep(.iran-plate-city strong){font-size:10px}
+.report-plate-cell :deep(.iran-plate-ir){
+  min-width:22px;
+  padding:2px 3px;
+  font-size:5px;
+  flex:0 0 auto;
+}
 .error-box{margin-bottom:10px;padding:10px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;border-radius:10px}
 .clickable-row{cursor:pointer}
 .clickable-row.expanded{background:#f8fbff}
-.services-preview-cell{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-.services-preview-text{flex:1;min-width:0}
-.report-plate{min-width:58px}
-.report-plate:deep(.plate-badge){padding:2px;border-radius:10px}
-.report-plate:deep(.plate-white-wrap){gap:4px;padding:2px 5px}
-.report-plate:deep(.plate-two),
-.report-plate:deep(.plate-three){height:18px;font-size:11px;padding-top:3px;padding-bottom:2px}
-.report-plate:deep(.plate-letter){min-width:10px;font-size:11px}
-.report-plate:deep(.plate-blue){min-width:24px;font-size:10px;padding-top:3px;padding-bottom:2px}
-.report-plate:deep(.motor-blue){min-width:22px;font-size:5px;gap:2px;padding-top:4px;padding-bottom:3px}
-.report-plate:deep(.plate-motorcycle .motor-main){padding:3px 5px 4px;gap:1px;border-radius:7px 0 0 7px}
-.report-plate:deep(.plate-motorcycle .plate-cell){font-size:7px}
-.report-plate:deep(.plate-motorcycle .plate-cell.mid){font-size:9px;letter-spacing:.08em}
-.report-plate:deep(.plate-motorcycle .plate-cell.bottom){font-size:11px;letter-spacing:.06em}
+.services-preview-cell{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:140px}
+.services-preview-text{flex:1;min-width:0;white-space:normal;word-break:break-word}
+.table-card td:has(.services-preview-cell){white-space:normal;min-width:160px;max-width:220px}
 .services-toggle-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#475569;cursor:pointer;flex-shrink:0;transition:.18s ease}
 .services-toggle-btn:hover,.services-toggle-btn.active{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
 .services-toggle-dots{font-size:15px;line-height:1;transform:translateY(-1px)}
@@ -1377,16 +1510,8 @@ th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-spa
 .blacklist-plate-preview{display:flex;justify-content:center;padding:8px 0 4px}
 .blacklist-modal-body .primary-btn{width:100%}
 
-.plate-filter-row .plate-filter-blue-input{
-  outline:none;
-  border-color:#bfdbfe;
-  box-shadow:0 0 0 3px rgba(191,219,254,.28);
-  color: white;
-  background-color:#2563eb
-}
-
 .modal-body input,.modal-body select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px}
-.pdf-format-panel{width:min(460px,100%)}
+.pdf-format-panel{width:min(560px,100%)}
 .pdf-format-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px}
 .pdf-format-option{border:1px solid #cbd5e1;border-radius:14px;background:#fff;color:#0f172a;padding:16px;display:grid;gap:6px;text-align:right;cursor:pointer}
 .pdf-format-option strong{font-size:18px}
@@ -1394,7 +1519,7 @@ th,td{padding:7px 6px;border-bottom:1px solid #e2e8f0;text-align:right;white-spa
 .pdf-format-option.receipt{border-color:#0f172a;background:#f8fafc}
 .pdf-format-option:disabled{opacity:.56;cursor:not-allowed}
 @media (max-width:1400px){.summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
-@media (max-width:1200px){.filters-card{grid-template-columns:repeat(2,minmax(0,1fr))}.search-field,.plate-field,.filters-actions{grid-column:span 2}.worker-summary-grid{grid-template-columns:repeat(2,1fr)}.filters-actions{justify-content:space-between}.export-studio-actions{grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch}}
-@media (max-width:760px){.reports-content{font-size:11px}.range-chip,.chip,.field,.field input,.field select,.modal-step{font-size:10px}.table-wrap{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}.table-wrap table{width:max-content;min-width:100%;table-layout:auto}.table-wrap th,.table-wrap td{white-space:nowrap;word-break:normal;overflow-wrap:normal}.primary-btn,.secondary-btn,.close-btn{font-size:10px;padding:7px 10px}.filters-card,.summary-grid,.worker-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.plate-filter-row{grid-template-columns:42px 32px 56px 24px 42px;gap:6px}.search-field{grid-column:span 1}.plate-field{grid-column:span 2}.filters-card>.field:nth-child(4){grid-column:span 1}.worker-head,.action-row,.services-preview-cell,.filters-actions{flex-direction:column;align-items:stretch}.kpi-card p,.services-expanded-box strong,.payout-card p{font-size:10px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:12px}.field input,.field select,.modal-body input,.modal-body select{height:34px}.range-bar,.tabs-bar{gap:5px}.modal-overlay{padding:10px}.modal-panel{max-height:calc(100vh - 20px);overflow:auto}.modal-body{grid-template-columns:repeat(2,minmax(0,1fr))}.report-plate{min-width:52px}.report-plate:deep(.plate-white-wrap){gap:3px;padding:2px 4px}.report-plate:deep(.plate-two),.report-plate:deep(.plate-three){height:14px;font-size:9px;padding-top:2px;padding-bottom:1px}.report-plate:deep(.plate-letter){min-width:8px;font-size:9px}.report-plate:deep(.plate-blue){min-width:18px;font-size:8px;padding-top:2px;padding-bottom:1px}.export-studio-actions{grid-template-columns:1fr}.export-action-btn,.clear-btn{width:100%}}
-@media (max-width:480px){.reports-content{font-size:10px}.range-chip,.chip,.field,.field input,.field select{font-size:9px}.primary-btn,.secondary-btn,.close-btn{font-size:9px;padding:6px 9px}.kpi-card{padding:8px}.kpi-card p,.services-expanded-box strong,.services-expanded-box p,.payout-card p,.modal-step{font-size:9px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:11px}.field input,.field select,.modal-body input,.modal-body select{height:32px}.plate-filter-shell,.table-card,.modal-body{padding:8px}.worker-head,.action-row{gap:6px}.filters-card,.summary-grid,.worker-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.search-field{grid-column:span 1}.plate-field{grid-column:span 2}.filters-card>.field:nth-child(4){grid-column:span 1}.plate-filter-row{grid-template-columns:38px 26px 48px 22px 38px;gap:5px}}
+@media (max-width:1200px){.filters-top-row{grid-template-columns:repeat(3,minmax(0,1fr))}.plate-filter-bar{flex-wrap:wrap}.filters-actions{margin-right:0;width:100%;justify-content:flex-start;flex-wrap:wrap}.worker-summary-grid{grid-template-columns:repeat(2,1fr)}.export-studio-actions{grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch}}
+@media (max-width:760px){.reports-content{font-size:11px}.range-chip,.chip,.field,.field input,.field select,.modal-step{font-size:10px}.table-wrap{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}.table-wrap table{width:max-content;min-width:100%;table-layout:auto}.table-wrap th,.table-wrap td{white-space:nowrap;word-break:normal;overflow-wrap:normal}.primary-btn,.secondary-btn,.close-btn{font-size:10px;padding:7px 10px}.filters-top-row{grid-template-columns:repeat(2,minmax(0,1fr))}.summary-grid,.worker-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.worker-head,.action-row,.services-preview-cell,.filters-actions{flex-direction:column;align-items:stretch}.kpi-card p,.services-expanded-box strong,.payout-card p{font-size:10px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:12px}.field input,.field select,.modal-body input,.modal-body select{height:34px}.range-bar,.tabs-bar{gap:5px}.modal-overlay{padding:10px}.modal-panel{max-height:calc(100vh - 20px);overflow:auto}.modal-body{grid-template-columns:repeat(2,minmax(0,1fr))}.export-studio-actions{grid-template-columns:1fr}.export-action-btn,.clear-btn{width:100%}}
+@media (max-width:480px){.reports-content{font-size:10px}.range-chip,.chip,.field,.field input,.field select{font-size:9px}.primary-btn,.secondary-btn,.close-btn{font-size:9px;padding:6px 9px}.kpi-card{padding:8px}.kpi-card p,.services-expanded-box strong,.services-expanded-box p,.payout-card p,.modal-step{font-size:9px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:11px}.field input,.field select,.modal-body input,.modal-body select{height:32px}.plate-filter-bar,.table-card,.modal-body{padding:8px}.worker-head,.action-row{gap:6px}.filters-top-row{grid-template-columns:1fr}.plate-type-inline,.plate-clear-btn,.plate-filter-editor{width:100%;max-width:none}}
 </style>

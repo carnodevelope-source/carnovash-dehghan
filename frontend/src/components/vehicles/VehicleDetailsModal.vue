@@ -111,9 +111,17 @@
           <p v-else class="vehicle-details-empty-row">لاگ وضعیتی ثبت نشده است.</p>
         </section>
 
-        <section v-if="showActions" class="vehicle-details-card vehicle-details-full">
+        <section class="vehicle-details-card vehicle-details-full">
           <div class="vehicle-details-actions">
             <button
+              type="button"
+              class="vehicle-details-primary-btn"
+              @click="invoiceOpen = true"
+            >
+              فاکتور
+            </button>
+            <button
+              v-if="showActions"
               type="button"
               class="vehicle-details-secondary-btn"
               @click="$emit('edit-vehicle')"
@@ -121,7 +129,7 @@
               ویرایش اطلاعات مراجعه
             </button>
             <button
-              v-if="!vehicle.is_plate_blocked"
+              v-if="showActions && !vehicle.is_plate_blocked"
               type="button"
               class="vehicle-details-secondary-btn"
               @click="$emit('block-plate')"
@@ -129,7 +137,7 @@
               بلاک کردن پلاک
             </button>
             <button
-              v-else
+              v-else-if="showActions"
               type="button"
               class="vehicle-details-secondary-btn vehicle-details-blocked-btn"
               @click="$emit('unblock-plate')"
@@ -137,7 +145,7 @@
               خارج کردن از لیست سیاه
             </button>
             <button
-              v-if="vehicle.status !== 'cancelled'"
+              v-if="showActions && vehicle.status !== 'cancelled'"
               type="button"
               class="vehicle-details-danger-btn"
               @click="$emit('cancel')"
@@ -148,16 +156,23 @@
         </section>
       </div>
     </section>
+
+    <VehicleInvoiceModal
+      :open="invoiceOpen"
+      :vehicle="vehicle"
+      @close="invoiceOpen = false"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { formatThousandsToman } from '../../utils/money'
 import PlateBadge from './PlateBadge.vue'
+import VehicleInvoiceModal from './VehicleInvoiceModal.vue'
 import { useAuthStore } from '../../store/auth.store'
 
-defineProps({
+const props = defineProps({
   open: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   vehicle: { type: Object, default: null },
@@ -168,7 +183,12 @@ defineProps({
 defineEmits(['close', 'cancel', 'block-plate', 'unblock-plate', 'edit-vehicle'])
 
 const authStore = useAuthStore()
+const invoiceOpen = ref(false)
 const canSeeDriverGender = computed(() => authStore.role !== 'worker')
+
+watch(() => props.open, (isOpen) => {
+  if (!isOpen) invoiceOpen.value = false
+})
 
 const formatStatus = (value) => ({
   entered: 'وارد شده',
@@ -187,8 +207,8 @@ const formatPaymentStatus = (value) => ({
 }[value] || '-')
 
 const driverGenderLabel = (value) => ({
-  male: 'مرد',
-  female: 'زن'
+  male: 'آقا',
+  female: 'خانم'
 }[value] || '-')
 
 const workerPaymentTypeLabel = (value) => ({
@@ -277,8 +297,9 @@ const workerTotalWithTip = (job) => {
 .vehicle-details-service-price-box { display:grid; justify-items:end; gap:4px; }
 .vehicle-details-service-base-price { color:#94a3b8; text-decoration:line-through; font-size:11px; }
 .vehicle-details-empty-row { margin: 0; color: #64748b; font-size: 13px; }
-.vehicle-details-actions { display:flex; justify-content:flex-end; gap:10px; }
-.vehicle-details-secondary-btn,.vehicle-details-danger-btn { border:none; border-radius:10px; padding:8px 12px; cursor:pointer; }
+.vehicle-details-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+.vehicle-details-primary-btn,.vehicle-details-secondary-btn,.vehicle-details-danger-btn { border:none; border-radius:10px; padding:8px 12px; cursor:pointer; }
+.vehicle-details-primary-btn { background:#2563eb; color:#fff; font-weight:700; }
 .vehicle-details-secondary-btn { background:#e2e8f0; color:#334155; }
 .vehicle-details-blocked-btn { background:#fee2e2; color:#991b1b; }
 .vehicle-details-danger-btn { background:#fee2e2; color:#b91c1c; }

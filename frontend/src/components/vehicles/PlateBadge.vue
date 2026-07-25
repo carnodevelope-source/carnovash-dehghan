@@ -68,11 +68,12 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border-radius: 14px;
-  padding: 8px;
+  border-radius: 8px;
+  padding: 0;
   direction: ltr;
   overflow: hidden;
   position: relative;
+  background: transparent;
 }
 
 .plate-white-wrap,
@@ -86,22 +87,22 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: #6f59ef18;
+  background: #f4f5ff;
   color: #111827;
-  border-radius: 7px 0 0 7px;
+  border-radius: 6px 0 0 6px;
   padding: 4px 12px;
+  border: 0;
 }
 
 .motor-main {
   flex: 1;
-  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(241,245,249,0.95));
+  background: #f4f5ff;
   color: #111827;
   display: flex;
   overflow: hidden;
-  border-radius: 10px 0 0 10px;
-  border: 1px solid rgba(203, 213, 225, 0.9);
-  border-right: 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  border-radius: 6px 0 0 6px;
+  border: 0;
+  box-shadow: none;
 }
 
 .plate-part {
@@ -131,7 +132,7 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
   min-width: 52px;
   background: #2563eb;
   color: #ffffff;
-  border-radius: 0 7px 7px 0;
+  border-radius: 0 6px 6px 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -140,6 +141,7 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
   line-height: 1;
   padding-top: 12px;
   padding-bottom: 8px;
+  border: 0;
 }
 
 .motor-blue {
@@ -168,13 +170,7 @@ const hasPlate = computed(() => Object.values(resolved.value).some(Boolean))
 }
 
 .plate-motorcycle .motor-main::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0));
-  pointer-events: none;
+  display: none;
 }
 
 .motor-row,

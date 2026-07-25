@@ -1,5 +1,5 @@
 <template>
-  <div class="plate-editor" :class="{ 'plate-editor-disabled': disabled }">
+  <div class="plate-editor" :class="{ 'plate-editor-disabled': disabled, 'plate-editor-dense': dense }">
     <div v-if="showTypeSwitch || showAnonymousToggle || showPieceWashToggle" class="plate-tools">
       <label v-if="showTypeSwitch" class="plate-type-select">
         <span>نوع پلاک</span>
@@ -35,9 +35,13 @@
               class="plate-input mid"
               maxlength="3"
               inputmode="numeric"
+              pattern="[0-9]*"
+              autocomplete="off"
               placeholder="---"
               :disabled="disabled"
               @focus="selectFieldText"
+              @keydown="onDigitKeydown"
+              @paste="onDigitPaste($event, 'plateMid', 3)"
               @input="handleMotorPartInput('plateMid', $event)"
             />
           </div>
@@ -47,9 +51,13 @@
               class="plate-input motor-bottom-input"
               maxlength="5"
               inputmode="numeric"
+              pattern="[0-9]*"
+              autocomplete="off"
               placeholder="-----"
               :disabled="disabled"
               @focus="selectFieldText"
+              @keydown="onDigitKeydown"
+              @paste="onDigitPaste($event, 'plateLetter', 5)"
               @input="handleMotorPartInput('plateLetter', $event)"
             />
           </div>
@@ -63,9 +71,13 @@
             class="plate-input right"
             maxlength="2"
             inputmode="numeric"
+            pattern="[0-9]*"
+            autocomplete="off"
             placeholder="--"
             :disabled="disabled"
             @focus="selectFieldText"
+            @keydown="onDigitKeydown"
+            @paste="onDigitPaste($event, 'plateRight', 2)"
             @input="handleCarPartInput('plateRight', $event)"
           />
           <select
@@ -84,9 +96,13 @@
             class="plate-input mid"
             maxlength="3"
             inputmode="numeric"
+            pattern="[0-9]*"
+            autocomplete="off"
             placeholder="---"
             :disabled="disabled"
             @focus="selectFieldText"
+            @keydown="onDigitKeydown"
+            @paste="onDigitPaste($event, 'plateMid', 3)"
             @input="handleCarPartInput('plateMid', $event)"
           />
         </div>
@@ -97,9 +113,13 @@
             class="plate-input blue-input"
             maxlength="2"
             inputmode="numeric"
+            pattern="[0-9]*"
+            autocomplete="off"
             placeholder="--"
             :disabled="disabled"
             @focus="selectFieldText"
+            @keydown="onDigitKeydown"
+            @paste="onDigitPaste($event, 'plateLeft', 2)"
             @input="handleCarPartInput('plateLeft', $event)"
           />
         </div>
@@ -161,7 +181,8 @@ const props = defineProps({
   showTypeSwitch: { type: Boolean, default: true },
   showAnonymousToggle: { type: Boolean, default: false },
   showPieceWashToggle: { type: Boolean, default: false },
-  letterSuggestions: { type: Array, default: () => [] }
+  letterSuggestions: { type: Array, default: () => [] },
+  dense: { type: Boolean, default: false }
 })
 
 const plateRightInputRef = ref(null)
@@ -173,6 +194,25 @@ const plateLetterOptions = ['الف', 'ب', 'پ', 'ت', 'ث', 'ج', 'چ', 'ح', 
 const plateKind = computed(() => (props.plateType === 'motorcycle' ? 'motorcycle' : 'car'))
 
 const digitPart = (value, limit) => normalizeDigits(value).replace(/\D/g, '').slice(0, limit)
+
+const isDigitKeyEvent = (event) => {
+  if (event.ctrlKey || event.metaKey || event.altKey) return true
+  const allowed = ['Backspace', 'Delete', 'Tab', 'Enter', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']
+  if (allowed.includes(event.key)) return true
+  return /^[0-9۰-۹٠-٩]$/.test(event.key)
+}
+
+const onDigitKeydown = (event) => {
+  if (!isDigitKeyEvent(event)) event.preventDefault()
+}
+
+const onDigitPaste = (event, key, limit) => {
+  event.preventDefault()
+  const pasted = digitPart(event.clipboardData?.getData('text') || '', limit)
+  emit(`update:${key}`, pasted)
+  if (event.target) event.target.value = pasted
+  if (plateKind.value !== 'motorcycle') focusNextPlatePart(key, pasted)
+}
 
 const setPlateType = (value) => {
   const nextType = value === 'motorcycle' ? 'motorcycle' : 'car'
@@ -214,13 +254,16 @@ const handleCarPartInput = (key, event) => {
     const limits = { plateLeft: 2, plateMid: 3, plateRight: 2 }
     nextValue = digitPart(rawValue, limits[key] || 2)
     emit(`update:${key}`, nextValue)
+    if (event?.target) event.target.value = nextValue
   }
   focusNextPlatePart(key, nextValue)
 }
 
 const handleMotorPartInput = (key, event) => {
   const rawValue = event?.target?.value || ''
-  emit(`update:${key}`, digitPart(rawValue, key === 'plateLetter' ? 5 : 3))
+  const nextValue = digitPart(rawValue, key === 'plateLetter' ? 5 : 3)
+  emit(`update:${key}`, nextValue)
+  if (event?.target) event.target.value = nextValue
 }
 
 const selectLetterSuggestion = (letter) => {
@@ -287,39 +330,38 @@ const selectLetterSuggestion = (letter) => {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border-radius: 12px;
-  padding: 10px;
+  border-radius: 8px;
+  padding: 0;
   overflow: hidden;
   direction: ltr;
+  border: 0;
+  background: transparent;
 }
 
 .manual-plate-main {
   min-width: 0;
   flex: 1;
-  background: #6f59ef18;
+  background: #f4f5ff;
 }
 
 .manual-plate-car .manual-plate-main {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  border-radius: 7px 0 0 7px;
-  padding: 6px 18px;
+  gap: 10px;
+  border-radius: 6px 0 0 6px;
+  padding: 4px 12px;
 }
 
 .manual-plate-motorcycle .manual-plate-main {
   display: grid;
   grid-template-rows: auto auto;
-  gap: 6px;
+  gap: 4px;
   padding: 8px 10px 9px;
-  border-radius: 10px 0 0 10px;
-  background:
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(255,255,255,0.98), rgba(241,245,249,0.95));
-  border: 1px solid rgba(203, 213, 225, 0.9);
-  border-right: 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  border-radius: 6px 0 0 6px;
+  background: #f4f5ff;
+  border: 0;
+  box-shadow: none;
 }
 
 .manual-plate-blue {
@@ -329,11 +371,12 @@ const selectLetterSuggestion = (letter) => {
   justify-content: center;
   background: #2563eb;
   color: #fff;
-  border-radius: 0 7px 7px 0;
+  border-radius: 0 6px 6px 0;
   font-size: 24px;
   font-weight: 800;
   line-height: 1;
   padding: 12px 0 8px;
+  border: 0;
 }
 
 .manual-plate-blue-motor {
@@ -652,5 +695,59 @@ const selectLetterSuggestion = (letter) => {
     border-radius: 12px;
     font-size: 12px;
   }
+}
+
+.plate-editor-dense .manual-plate-badge {
+  max-width: 320px;
+}
+
+.plate-editor-dense .manual-plate-car .manual-plate-main {
+  gap: 6px;
+  padding: 2px 8px;
+}
+
+.plate-editor-dense .manual-plate-blue {
+  min-width: 40px;
+  font-size: 16px;
+  padding: 6px 0;
+}
+
+.plate-editor-dense .plate-input {
+  height: 32px;
+  font-size: 16px;
+}
+
+.plate-editor-dense .manual-plate-car .plate-input.right,
+.plate-editor-dense .manual-plate-car .plate-input.left {
+  width: 42px;
+}
+
+.plate-editor-dense .manual-plate-car .plate-input.mid {
+  width: 58px;
+}
+
+.plate-editor-dense .manual-plate-car .plate-input.letter {
+  width: 58px;
+  min-width: 52px;
+  padding: 0 4px;
+}
+
+.plate-editor-dense .blue-input {
+  width: 40px !important;
+  font-size: 16px;
+}
+
+.plate-editor-dense .manual-plate-motorcycle .manual-plate-main {
+  padding: 4px 6px;
+  gap: 2px;
+}
+
+.plate-editor-dense .manual-plate-motorcycle .plate-input.mid,
+.plate-editor-dense .manual-plate-motorcycle .motor-bottom-input {
+  height: 28px;
+  line-height: 28px;
+  font-size: 14px;
+  max-width: 120px;
+  width: 100%;
 }
 </style>

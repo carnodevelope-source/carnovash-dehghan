@@ -300,7 +300,13 @@ def build_services_sms_summary(job):
             or getattr(line, 'service_name', '')
             or 'خدمت'
         ).strip()
-        lines.append(title)
+        amount = _service_line_list_total(line)
+        if amount <= 0:
+            amount = _decimal_value(getattr(line, 'line_total', 0))
+        if amount > 0:
+            lines.append(f'{title} : {format_toman(amount)}')
+        else:
+            lines.append(title)
     return '\n'.join(lines) if lines else 'خدمات ثبت شده است: مبلغ هنگام نهایی‌سازی اعلام می‌شود'
 
 

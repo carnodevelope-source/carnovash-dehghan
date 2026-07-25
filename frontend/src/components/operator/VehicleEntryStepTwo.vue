@@ -58,61 +58,6 @@
       </section>
     </div>
 
-    <div v-if="preInvoiceModalOpen" class="service-picker-overlay" role="dialog" aria-modal="true" @click.self="closePreInvoiceModal">
-      <section class="pre-invoice-panel">
-        <header class="service-picker-head">
-          <div>
-            <h4>پیش‌فاکتور فیش</h4>
-            <p>پیش‌نمایش مخصوص فیش پرینتر {{ preInvoicePaperWidthLabel }}</p>
-          </div>
-          <button type="button" class="icon-btn" aria-label="بستن" @click="closePreInvoiceModal">×</button>
-        </header>
-        <div class="pre-invoice-toolbar">
-          <button type="button" class="invoice-format-chip" :class="{ active: preInvoicePaperWidth === '58mm' }" @click="preInvoicePaperWidth = '58mm'">
-            <strong>58mm</strong>
-            <span>فیش باریک</span>
-          </button>
-          <button type="button" class="invoice-format-chip" :class="{ active: preInvoicePaperWidth === '80mm' }" @click="preInvoicePaperWidth = '80mm'">
-            <strong>80mm</strong>
-            <span>فیش استاندارد</span>
-          </button>
-          <button type="button" class="primary-btn" @click="printPreInvoice">چاپ پیش‌فاکتور</button>
-        </div>
-        <div class="pre-invoice-preview-shell">
-          <article class="pre-invoice-receipt" :style="preInvoiceReceiptStyle">
-            <header>
-              <strong>{{ preInvoiceCarwashTitle }}</strong>
-              <small v-if="preInvoiceHeaderNote">{{ preInvoiceHeaderNote }}</small>
-              <span>خدمات</span>
-            </header>
-            <section class="receipt-info-grid">
-              <p><span>شماره پذیرش</span><strong>{{ preInvoiceAdmissionNumber }}</strong></p>
-              <p><span>زمان</span><strong>{{ preInvoiceIssuedAt }}</strong></p>
-              <p><span>مشتری</span><strong>{{ vehicleDriver || 'مشتری حضوری' }}</strong></p>
-              <p><span>خودرو</span><strong>{{ vehicleTitle }}</strong></p>
-              <p><span>پلاک</span><strong>{{ preInvoicePlateLabel }}</strong></p>
-            </section>
-            <table class="pre-invoice-table">
-              <thead>
-                <tr>
-                  <th>شرح</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(service, index) in selectedServices" :key="`pre-invoice-${service.id || index}`">
-                  <td>{{ toFaNumber(index + 1) }}. {{ service.name }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <footer>
-              <p v-if="receiptFooterNote">{{ receiptFooterNote }}</p>
-              <strong>از اعتماد شما سپاسگزاریم</strong>
-            </footer>
-          </article>
-        </div>
-      </section>
-    </div>
-
     <div class="step-two-grid">
       <section class="col services-col">
         <div class="col-head">
@@ -241,7 +186,6 @@
       <aside class="col summary-col">
         <div class="summary-head">
           <h4>خلاصه تخصیص</h4>
-          <button type="button" class="summary-invoice-btn" :disabled="!selectedServices.length" @click="openPreInvoiceModal">پیش‌فاکتور</button>
         </div>
 
         <div class="summary-body">
@@ -413,11 +357,6 @@ const isServicePickerOpen = ref(false)
 const hasOpenedInitialServicePicker = ref(false)
 const activeVehicleKey = ref('')
 const actionLocked = ref(false)
-const preInvoiceModalOpen = ref(false)
-const preInvoicePaperWidth = ref('80mm')
-const receiptHeaderNote = ref('')
-const receiptFooterNote = ref('')
-const carwashName = ref('کارواش')
 
 const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -520,7 +459,14 @@ const isPlateBlocked = computed(() => Boolean(props.vehicleInfo?.is_plate_blocke
 
 const isWorkerPresent = (worker) => String(worker?.current_status || '').toLowerCase() === 'in'
 const isQueueSelectableWorker = (worker) => isWorkerPresent(worker) && worker?.is_available !== false
-const isWashAssignableWorker = (worker) => String(worker?.role_key || worker?.user?.role || worker?.role || '').trim().toLowerCase() === 'worker'
+const isWashAssignableWorker = (worker) => {
+  const role = String(worker?.role_key || worker?.user?.role || worker?.role || '').trim().toLowerCase()
+  if (role !== 'worker') return false
+  if (worker?.is_available === false) return false
+  if (worker?.is_active === false) return false
+  if (worker?.user?.is_active === false) return false
+  return true
+}
 const queueFrontWorkerId = computed(() => {
   const assignableWorkers = workers.value.filter(isWashAssignableWorker)
   const preferred = assignableWorkers.find(isQueueSelectableWorker) || assignableWorkers.find(isWorkerPresent) || assignableWorkers[0]
@@ -874,104 +820,6 @@ const buildPayload = () => {
   }
 }
 
-const preInvoiceCarwashTitle = computed(() => {
-  const name = String(carwashName.value || '').trim() || 'کارواش'
-  return name.startsWith('کارواش') ? name : `کارواش ${name}`
-})
-const preInvoiceHeaderNote = computed(() => {
-  const phonePattern = /(?:\+?98|0)?9[\d۰-۹٠-٩\s\-()]{8,}|0[1-8][\d۰-۹٠-٩\s\-()]{7,}/
-  return String(receiptHeaderNote.value || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !phonePattern.test(line) && !/(تلفن|تماس|موبایل)/.test(line))
-    .join('\n')
-})
-const preInvoicePaperWidthLabel = computed(() => (preInvoicePaperWidth.value === '58mm' ? '۵۸ میلی‌متر' : '۸۰ میلی‌متر'))
-const preInvoiceReceiptStyle = computed(() => ({ width: preInvoicePaperWidth.value === '58mm' ? '58mm' : '80mm' }))
-const preInvoiceAdmissionNumber = computed(() => {
-  const raw = props.vehicleInfo?.admission_number || props.vehicleInfo?.admissionNumber || props.vehicleInfo?.id || ''
-  return raw ? Number(raw).toLocaleString('fa-IR') : 'بعد از ثبت'
-})
-const preInvoiceIssuedAt = computed(() => new Intl.DateTimeFormat('fa-IR', {
-  dateStyle: 'short',
-  timeStyle: 'short'
-}).format(new Date()))
-const preInvoicePlateLabel = computed(() => {
-  if (isPieceWash.value) return 'قطعه‌شویی'
-  const parts = plateParts.value
-  if (typeof parts === 'string') return parts
-  return `${parts.right} ${parts.letter} ${parts.mid} - ${parts.left}`
-})
-const openPreInvoiceModal = () => {
-  preInvoiceModalOpen.value = true
-}
-const closePreInvoiceModal = () => {
-  preInvoiceModalOpen.value = false
-}
-const escapeHtml = (value) => String(value ?? '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#039;')
-const preInvoiceRowsHtml = computed(() => selectedServices.value.map((service, index) => `
-  <tr>
-    <td>${escapeHtml(toFaNumber(index + 1))}. ${escapeHtml(service.name)}</td>
-  </tr>
-`).join(''))
-const printPreInvoice = () => {
-  const width = preInvoicePaperWidth.value === '58mm' ? '58mm' : '80mm'
-  const popup = window.open('', '_blank', 'width=420,height=720')
-  if (!popup) return
-  popup.document.write(`<!doctype html>
-<html lang="fa" dir="rtl">
-<head>
-  <meta charset="utf-8" />
-  <title>خدمات</title>
-  <style>
-    @page { size: ${width} auto; margin: 3mm; }
-    * { box-sizing: border-box; color: #000 !important; font-weight: 900; }
-    body { margin: 0; background: #fff; color: #000; font-family: Vazirmatn, Tahoma, Arial, sans-serif; direction: rtl; }
-    .receipt { width: ${width}; max-width: ${width}; padding: 3mm; font-size: 11px; line-height: 1.75; }
-    header, footer { text-align: center; display: grid; gap: 2px; padding-bottom: 6px; border-bottom: 1px dashed #111827; }
-    footer { margin-top: 8px; padding-top: 6px; padding-bottom: 0; border-top: 1px dashed #111827; border-bottom: 0; }
-    header strong { font-size: 14px; font-weight: 900; }
-    header span { font-weight: 900; }
-    .info, .totals { display: grid; gap: 3px; padding: 7px 0; border-bottom: 1px dashed #111827; }
-    p { margin: 0; display: flex; justify-content: space-between; gap: 8px; }
-    table { width: 100%; border-collapse: collapse; margin: 7px 0; }
-    th, td { padding: 4px 0; border-bottom: 1px solid #111827; text-align: right; vertical-align: top; }
-  </style>
-</head>
-<body>
-  <article class="receipt">
-    <header>
-      <strong>${escapeHtml(preInvoiceCarwashTitle.value)}</strong>
-      ${preInvoiceHeaderNote.value ? `<small>${escapeHtml(preInvoiceHeaderNote.value)}</small>` : ''}
-      <span>خدمات</span>
-    </header>
-    <section class="info">
-      <p><span>شماره پذیرش</span><strong>${escapeHtml(preInvoiceAdmissionNumber.value)}</strong></p>
-      <p><span>زمان</span><strong>${escapeHtml(preInvoiceIssuedAt.value)}</strong></p>
-      <p><span>مشتری</span><strong>${escapeHtml(vehicleDriver.value || 'مشتری حضوری')}</strong></p>
-      <p><span>خودرو</span><strong>${escapeHtml(vehicleTitle.value)}</strong></p>
-      <p><span>پلاک</span><strong>${escapeHtml(preInvoicePlateLabel.value)}</strong></p>
-    </section>
-    <table>
-      <thead><tr><th>شرح</th></tr></thead>
-      <tbody>${preInvoiceRowsHtml.value}</tbody>
-    </table>
-    <footer>
-      ${receiptFooterNote.value ? `<p>${escapeHtml(receiptFooterNote.value)}</p>` : ''}
-      <strong>از اعتماد شما سپاسگزاریم</strong>
-    </footer>
-  </article>
-  <script>window.onload = () => { window.focus(); window.print(); }<\/script>
-</body>
-</html>`)
-  popup.document.close()
-}
-
 const onAssign = () => {
   if (!canAssign.value || props.submitting || actionLocked.value) return
   actionLocked.value = true
@@ -1068,18 +916,6 @@ const loadInitialData = async () => {
 
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
       .filter(isWashAssignableWorker)
-    try {
-      const settingsResp = await api.get('/services/general-settings/')
-      receiptHeaderNote.value = settingsResp.data?.receipt_header_note || ''
-      receiptFooterNote.value = settingsResp.data?.receipt_footer_note || ''
-      carwashName.value = settingsResp.data?.tenant_name || settingsResp.data?.carwash_name || ''
-      const paperWidth = String(settingsResp.data?.receipt_printer_paper_width || '80mm').toLowerCase()
-      preInvoicePaperWidth.value = paperWidth === '58mm' ? '58mm' : '80mm'
-    } catch {
-      receiptHeaderNote.value = ''
-      receiptFooterNote.value = ''
-    }
-
     const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
     selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
     tempSelectedServiceIds.value = tempSelectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
@@ -1322,103 +1158,21 @@ onMounted(loadInitialData)
   overflow: hidden;
 }
 
-.pre-invoice-panel {
-  width: min(760px, 100%);
-  max-height: calc(100vh - 32px);
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 14px;
-  padding: 18px;
-  border: 1px solid rgba(191, 215, 255, 0.92);
-  border-radius: 24px;
-  background: #f8fafc;
-  box-shadow: 0 16px 42px -28px rgba(15, 23, 42, 0.7);
-  overflow: hidden;
-}
 
-.pre-invoice-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-}
 
-.invoice-format-chip {
-  min-height: 48px;
-  border: 1px solid #dbe7f3;
-  border-radius: 14px;
-  background: #fff;
-  color: #334155;
-  cursor: pointer;
-  padding: 8px 12px;
-  display: grid;
-  gap: 2px;
-  text-align: right;
-}
 
-.invoice-format-chip.active {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
 
 .invoice-format-chip span {
   font-size: 11px;
   color: #64748b;
 }
 
-.pre-invoice-preview-shell {
-  min-height: 0;
-  overflow: auto;
-  display: grid;
-  justify-items: center;
-  padding: 14px;
-  border-radius: 18px;
-  background: #e5e7eb;
-}
 
-.pre-invoice-receipt {
-  max-width: 100%;
-  background: #fff;
-  color: #000;
-  padding: 12px;
-  font-size: 11px;
-  line-height: 1.8;
-  font-weight: 900;
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
-}
 
-.pre-invoice-receipt * {
-  color: #000 !important;
-  font-weight: 900;
-}
 
-.pre-invoice-receipt header,
-.pre-invoice-receipt footer {
-  display: grid;
-  gap: 3px;
-  text-align: center;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed #111827;
-}
 
-.pre-invoice-receipt footer {
-  margin-top: 8px;
-  padding-top: 8px;
-  padding-bottom: 0;
-  border-top: 1px dashed #111827;
-  border-bottom: 0;
-}
 
-.pre-invoice-receipt header strong {
-  font-size: 14px;
-  font-weight: 900;
-}
 
-.pre-invoice-receipt header span {
-  font-weight: 900;
-}
 
 .receipt-info-grid,
 .receipt-total-block {
@@ -1436,25 +1190,8 @@ onMounted(loadInitialData)
   gap: 8px;
 }
 
-.pre-invoice-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 8px 0;
-}
 
-.pre-invoice-table th,
-.pre-invoice-table td {
-  padding: 4px 0;
-  border-bottom: 1px solid #111827;
-  vertical-align: top;
-  font-weight: 900;
-}
 
-.pre-invoice-table th:last-child,
-.pre-invoice-table td:last-child {
-  text-align: left;
-  white-space: nowrap;
-}
 
 .receipt-final {
   font-size: 12px;
@@ -2186,21 +1923,7 @@ onMounted(loadInitialData)
   gap: 10px;
 }
 
-.summary-invoice-btn {
-  height: 38px;
-  border: 1px solid #bfdbfe;
-  border-radius: 12px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-weight: 900;
-  padding: 0 14px;
-  cursor: pointer;
-}
 
-.summary-invoice-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
 
 .summary-body {
   flex: 1;
