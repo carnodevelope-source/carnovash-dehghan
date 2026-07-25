@@ -1919,9 +1919,31 @@ a.btn-primary:visited {
   .pain-grid,
   .workflow-grid,
   .modules-grid,
-  .roles-grid,
-  .why-grid {
+  .roles-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .why-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .why-card {
+    grid-template-columns: 36px 1fr;
+    gap: 12px;
+    padding: 14px 12px;
+  }
+
+  .why-card span {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    font-size: 13px;
+  }
+
+  .why-card p {
+    font-size: 13px;
+    line-height: 1.85;
   }
 
   .compare-head,
