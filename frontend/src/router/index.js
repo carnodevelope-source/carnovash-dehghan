@@ -7,15 +7,31 @@ import { applyRouteSeo } from '../utils/seo'
 
 const routes = [
   {
+    path: '/',
+    name: 'landing',
+    alias: ['/landing'],
+    component: () => import('../views/landing/LandingView.vue'),
+    meta: {
+      public: true,
+      seo: {
+        title: 'نرم افزار مدیریت کارواش | کارنوواش CarnoWash با پلاک‌خوان، گزارش و پیامک',
+        description:
+          'کارنوواش (CarnoWash) سامانه مدیریت کارواش برای پذیرش خودرو، پلاک‌خوان، تخصیص خدمات و نیرو، پرداخت، گزارش مالی، کیف پول، حضور و غیاب و باشگاه مشتریان.',
+        robots: 'index, follow',
+        canonicalPath: '/'
+      }
+    }
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('../views/auth/LoginView.vue'),
     meta: {
       public: true,
       seo: {
-        title: 'کارنواش | کارنوواش | ورود به سامانه مدیریت کارواش',
-        description: 'ورود امن به سامانه کارنواش، کارنوواش یا کارنو واش برای مدیریت پذیرش خودرو، خدمات، گزارش‌ها، کیف پول و باشگاه مشتریان.',
-        robots: 'index, follow',
+        title: 'ورود به پنل | کارنوواش',
+        description: 'ورود به پنل مدیریت کارنوواش.',
+        robots: 'noindex, nofollow',
         canonicalPath: '/login'
       }
     }
@@ -35,7 +51,7 @@ const routes = [
     }
   },
   { path: '/hq', name: 'hq-panel', component: () => import('../views/hq/HqPanelView.vue'), meta: { hqOnly: true } },
-  { path: '/', name: 'operator-dashboard', component: () => import('../views/operator/DashboardView.vue'), meta: { roles: ['admin', 'owner', 'manager', 'operator', 'worker'] } },
+  { path: '/panel', name: 'operator-dashboard', component: () => import('../views/operator/DashboardView.vue'), meta: { roles: ['admin', 'owner', 'manager', 'operator', 'worker'] } },
   { path: '/manager/wallet', name: 'manager-wallet', component: () => import('../views/manager/WalletView.vue'), meta: { roles: ['accountant', 'admin', 'owner', 'manager', 'operator', 'worker'] } },
   { path: '/manager/customer-club', name: 'manager-customer-club', component: () => import('../views/manager/CustomerClubView.vue'), meta: { roles: ['admin', 'manager'] } },
   { path: '/manager/attendance', name: 'manager-attendance', component: () => import('../views/manager/AttendanceView.vue'), meta: { roles: ['manager', 'admin', 'operator'] } },
@@ -47,7 +63,7 @@ const routes = [
     component: () => import('../views/manager/SettingsView.vue'),
     meta: { roles: ['manager', 'admin'] }
   },
-  { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('../views/NotFound.vue') }
+  { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('../views/NotFound.vue'), meta: { public: true } }
 ]
 
 const router = createRouter({
@@ -62,19 +78,24 @@ const paidFeatureRoutes = {
 
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
+  const isPublicRoute =
+    to.meta?.public === true ||
+    to.name === 'landing' ||
+    to.path === '/' ||
+    to.path === '/landing'
 
-  if (to.path === '/login') {
+  if (to.path === '/login' || to.name === 'login') {
     if (!authStore.user) {
       await authStore.fetchMe()
     }
     if (authStore.user) {
       if (authStore.isHq) return '/hq'
-      return defaultRouteByRole[authStore.role] || '/'
+      return defaultRouteByRole[authStore.role] || '/panel'
     }
     return true
   }
 
-  if (to.meta?.public) {
+  if (isPublicRoute) {
     return true
   }
 
@@ -84,7 +105,7 @@ router.beforeEach(async (to) => {
 
   if (to.meta?.hqOnly) {
     if (!authStore.user) return '/login'
-    if (!authStore.isHq) return defaultRouteByRole[authStore.role] || '/'
+    if (!authStore.isHq) return defaultRouteByRole[authStore.role] || '/panel'
     return true
   }
 
@@ -96,7 +117,7 @@ router.beforeEach(async (to) => {
       return '/manager/wallet'
     }
     if (!to.meta.roles.includes(authStore.role)) {
-      return defaultRouteByRole[authStore.role] || '/'
+      return defaultRouteByRole[authStore.role] || '/panel'
     }
   }
 
@@ -111,10 +132,10 @@ router.beforeEach(async (to) => {
 
   if (to.path === ATTENDANCE_ROUTE && !hasAttendanceAccess(authStore.user)) {
     notifyWarning(getAttendanceUpgradeMessage(), { title: 'دسترسی محدود' })
-    return defaultRouteByRole[authStore.role] || '/'
+    return defaultRouteByRole[authStore.role] || '/panel'
   }
 
-  if (to.path === '/' && authStore.isHq) return '/hq'
+  if (to.path === '/panel' && authStore.isHq) return '/hq'
 
   return true
 })

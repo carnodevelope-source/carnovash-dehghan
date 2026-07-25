@@ -18,7 +18,7 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/', 'home'),
+        item('مدیریت خودروها', '/panel', 'home'),
         item('باشگاه مشتریان', '/manager/customer-club', 'users3'),
         item('گزارشات', '/manager/reports', 'graph'),
         item('ورود و خروج', '/manager/attendance', 'calendar'),
@@ -33,7 +33,7 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/', 'home'),
+        item('مدیریت خودروها', '/panel', 'home'),
         item('باشگاه مشتریان', '/manager/customer-club', 'users3'),
         item('گزارشات', '/manager/reports', 'graph'),
         item('ورود و خروج', '/manager/attendance', 'calendar'),
@@ -48,7 +48,7 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/', 'home'),
+        item('مدیریت خودروها', '/panel', 'home'),
         supportItem
       ]
     }
@@ -58,7 +58,7 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/', 'home'),
+        item('مدیریت خودروها', '/panel', 'home'),
         item('کیف پول', '/manager/wallet', 'wallet'),
         supportItem,
         item('ورود و خروج', '/manager/attendance', 'calendar')
@@ -70,7 +70,7 @@ export const navigationByRole = {
       key: 'operations',
       label: 'عملیات',
       items: [
-        item('مدیریت خودروها', '/', 'home'),
+        item('مدیریت خودروها', '/panel', 'home'),
         supportItem
       ]
     }
@@ -87,9 +87,9 @@ export const navigationRouteMeta = Object.values(navigationByRole)
 
 export const defaultRouteByRole = {
   accountant: '/manager/wallet',
-  admin: '/',
-  manager: '/',
-  owner: '/',
-  operator: '/',
-  worker: '/'
+  admin: '/panel',
+  manager: '/panel',
+  owner: '/panel',
+  operator: '/panel',
+  worker: '/panel'
 }

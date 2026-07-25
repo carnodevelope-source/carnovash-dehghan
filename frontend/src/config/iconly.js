@@ -18,6 +18,24 @@ import message from '../assets/iconly/message.svg'
 import show from '../assets/iconly/show.svg'
 import buy from '../assets/iconly/buy.svg'
 import paperPlus from '../assets/iconly/paper-plus.svg'
+import notification from '../assets/iconly/notification.svg'
+import timeCircle from '../assets/iconly/time-circle.svg'
+import play from '../assets/iconly/play.svg'
+import arrowLeft from '../assets/iconly/arrow-left.svg'
+import arrowRight from '../assets/iconly/arrow-right.svg'
+import heart from '../assets/iconly/heart.svg'
+import star from '../assets/iconly/star.svg'
+import shieldDone from '../assets/iconly/shield-done.svg'
+import chart from '../assets/iconly/chart.svg'
+import discovery from '../assets/iconly/discovery.svg'
+import activity from '../assets/iconly/activity.svg'
+import tickSquare from '../assets/iconly/tick-square.svg'
+import call from '../assets/iconly/call.svg'
+import login from '../assets/iconly/login.svg'
+import work from '../assets/iconly/work.svg'
+import infoCircle from '../assets/iconly/info-circle.svg'
+import danger from '../assets/iconly/danger.svg'
+import scan from '../assets/iconly/scan.svg'
 
 export const iconlyIcons = {
   home,
@@ -39,7 +57,25 @@ export const iconlyIcons = {
   message,
   show,
   buy,
-  paperPlus
+  paperPlus,
+  notification,
+  timeCircle,
+  play,
+  arrowLeft,
+  arrowRight,
+  heart,
+  star,
+  shieldDone,
+  chart,
+  discovery,
+  activity,
+  tickSquare,
+  call,
+  login,
+  work,
+  infoCircle,
+  danger,
+  scan
 }
 
 export const iconSrc = (name) => iconlyIcons[name] || ''

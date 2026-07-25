@@ -7,10 +7,10 @@
 
     <header class="topbar">
       <div class="brand">
-        <span class="brand-badge">CW</span>
+        <img class="brand-logo" src="/logo/blue.webp" alt="لوگو کارنوواش" width="48" height="48" />
         <div class="brand-copy">
           <span class="brand-title">CarnoWash</span>
-          <span class="brand-subtitle">ورود مدیران، اپراتورها و ثبت کارواش جدید</span>
+          <span class="brand-subtitle">ورود به پنل مدیریت</span>
         </div>
       </div>
     </header>
@@ -19,8 +19,8 @@
       <section class="login-card">
         <div class="login-head">
           <p class="panel-kicker">ورود به سامانه</p>
-          <h1>ورود به سامانه مدیریت کارواش CarnoWash</h1>
-          <span>با نام کاربری یا شماره موبایل مدیر/کاربر وارد شوید.</span>
+          <h1>ورود به پنل</h1>
+          <span>با نام کاربری یا شماره موبایل وارد شوید.</span>
         </div>
 
         <form class="login-form" @submit.prevent="onSubmit">
@@ -51,6 +51,10 @@
         </div>
       </section>
     </main>
+
+    <footer class="login-credit">
+      <span>Designed By DHS Development Team</span>
+    </footer>
 
     <div v-if="registerModal.open" class="register-modal-overlay" @click.self="closeRegisterModal">
       <section class="register-modal">
@@ -155,14 +159,12 @@
         </form>
       </section>
     </div>
-
-    <footer class="footer">Powered by CarnoWash Platform © 2026</footer>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import api, { ensureCsrfToken } from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { defaultRouteByRole } from '../../config/navigation'
@@ -175,6 +177,7 @@ const registerLoading = ref(false)
 const errorMessage = ref('')
 const registerError = ref('')
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const form = reactive({
@@ -234,6 +237,12 @@ const onRegisterDocumentsChange = (event) => {
   registerForm.business_identity_documents = Array.from(event?.target?.files || [])
 }
 
+onMounted(() => {
+  if (route.query.register === '1') {
+    openRegisterModal()
+  }
+})
+
 const onSubmit = async () => {
   if (isLoading.value) return
   errorMessage.value = ''
@@ -251,7 +260,7 @@ const onSubmit = async () => {
       password: form.password
     })
     authStore.setUser(data)
-    await router.push(authStore.isHq ? '/hq' : (defaultRouteByRole[authStore.role] || '/'))
+    await router.push(authStore.isHq ? '/hq' : (defaultRouteByRole[authStore.role] || '/panel'))
   } catch (error) {
     errorMessage.value = resolveApiErrorMessage(error, 'ورود ناموفق بود. لطفا اطلاعات را بررسی کنید.')
   } finally {
@@ -342,11 +351,21 @@ const submitRegister = async () => {
   gap: 14px;
 }
 
+.brand-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 14px;
+  display: block;
+  flex: 0 0 auto;
+  box-shadow: 0 8px 18px rgba(15, 92, 192, 0.22);
+}
+
 .brand-badge {
   width: 48px;
   height: 48px;
   border-radius: 18px;
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #0f5cc0 0%, #1fb89b 100%);
@@ -394,6 +413,23 @@ const submitRegister = async () => {
 .register-modal {
   position: relative;
   z-index: 2;
+  width: min(460px, 100%);
+}
+
+.login-credit {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 0 20px 14px;
+}
+
+.login-credit span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 8px rgba(15, 23, 42, 0.35);
 }
 
 .panel-kicker {
@@ -405,7 +441,6 @@ const submitRegister = async () => {
 }
 
 .login-card {
-  width: min(460px, 100%);
   border-radius: 32px;
   padding: 28px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.22) 100%);
@@ -805,8 +840,16 @@ const submitRegister = async () => {
     color: rgba(248, 251, 255, 0.9);
   }
 
+  .login-main {
+    padding: 18px 16px 8px;
+  }
+
   .topbar,
   .login-main,
+  .login-credit {
+    position: relative;
+    z-index: 2;
+  }
   .register-modal {
     padding-left: 16px;
     padding-right: 16px;

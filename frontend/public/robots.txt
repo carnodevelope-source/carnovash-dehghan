@@ -1,11 +1,12 @@
 User-agent: *
+Allow: /
 Allow: /about/
-Allow: /login
 Allow: /assets/
 Allow: /font/
 Allow: /iconly/
 Allow: /llms.txt
-Disallow: /
+Disallow: /login
+Disallow: /panel
 Disallow: /hq
 Disallow: /manager/
 Disallow: /support
@@ -14,28 +15,53 @@ Disallow: /Google%20Search.html
 Disallow: /Google%20Search_files/
 
 User-agent: GPTBot
+Allow: /
 Allow: /about/
-Allow: /login
-Disallow: /
+Disallow: /login
+Disallow: /panel
+Disallow: /hq
+Disallow: /manager/
+Disallow: /support
+Disallow: /attendance/
 
 User-agent: OAI-SearchBot
+Allow: /
 Allow: /about/
-Allow: /login
-Disallow: /
+Disallow: /login
+Disallow: /panel
+Disallow: /hq
+Disallow: /manager/
+Disallow: /support
+Disallow: /attendance/
 
 User-agent: ChatGPT-User
+Allow: /
 Allow: /about/
-Allow: /login
-Disallow: /
+Disallow: /login
+Disallow: /panel
+Disallow: /hq
+Disallow: /manager/
+Disallow: /support
+Disallow: /attendance/
 
 User-agent: ClaudeBot
+Allow: /
 Allow: /about/
-Allow: /login
-Disallow: /
+Disallow: /login
+Disallow: /panel
+Disallow: /hq
+Disallow: /manager/
+Disallow: /support
+Disallow: /attendance/
 
 User-agent: PerplexityBot
+Allow: /
 Allow: /about/
-Allow: /login
-Disallow: /
+Disallow: /login
+Disallow: /panel
+Disallow: /hq
+Disallow: /manager/
+Disallow: /support
+Disallow: /attendance/
 
 Sitemap: https://carnowash.ir/sitemap.xml

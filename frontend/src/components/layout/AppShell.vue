@@ -248,7 +248,7 @@ const trialCountdownText = computed(() => {
 const currentPageIconName = computed(() => {
   const routeKey = Object.keys(navigationRouteMeta)
     .sort((a, b) => b.length - a.length)
-    .find((path) => route.path === path || (path !== '/' && route.path.startsWith(path)))
+    .find((path) => route.path === path || (path !== '/panel' && route.path.startsWith(path)))
   return routeKey ? navigationRouteMeta[routeKey]?.iconName || '' : ''
 })
 const tenantName = computed(() => authStore.user?.tenant_name || 'CarWash')
