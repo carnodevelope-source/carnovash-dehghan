@@ -919,7 +919,6 @@ const buildWorkerReceiptElement = () => {
   element.innerHTML = `
     <article class="worker-receipt-pdf" dir="rtl">
       <header>
-        <strong>${escapeHtml(authStore.user?.tenant_name || '-')}</strong>
         <span>صورت‌حساب: ${escapeHtml(selectedWorkerSummary.value?.worker_name || '-')}</span>
         <span>دوره گزارش: ${escapeHtml(reportPeriodLabel.value)}</span>
       </header>
