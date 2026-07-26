@@ -3894,14 +3894,14 @@ td strong {
   display: grid;
   grid-template-columns: 390px minmax(0, 1fr);
   gap: 16px;
-  min-height: calc(100vh - 170px);
+  min-height: calc(100vh - 110px);
   min-width: 0;
 }
 
 .ticket-command-center {
   display: grid;
   gap: 14px;
-  min-height: calc(100vh - 170px);
+  min-height: calc(100vh - 110px);
 }
 
 .hq-page.support-only .ticket-center {
@@ -4578,7 +4578,10 @@ td strong {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.9;
-  font-size: 13px;
+  font-size: 15px;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .chat-bubble small {
@@ -6790,9 +6793,9 @@ td strong {
 .ticket-stage-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px 16px;
+  gap: 10px 14px;
   align-items: start;
-  padding: 16px 18px;
+  padding: 12px 16px;
   background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid rgba(226, 232, 240, 0.95);
 }
@@ -6937,7 +6940,7 @@ td strong {
   padding: 16px 18px;
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 12px;
 }
 
 .ticket-bubble {
@@ -6950,6 +6953,8 @@ td strong {
   background: #fff;
   border: 1px solid rgba(226, 232, 240, 0.95);
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.03);
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .ticket-bubble.mine {
@@ -6981,15 +6986,19 @@ td strong {
 .ticket-bubble p {
   margin: 0;
   color: #1e293b;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.85;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .ticket-stage-composer {
   display: grid;
-  gap: 10px;
-  padding: 12px 18px 16px;
+  gap: 8px;
+  padding: 10px 18px 12px;
   background: rgba(255, 255, 255, 0.96);
   border-top: 1px solid rgba(226, 232, 240, 0.95);
 }
@@ -7016,11 +7025,12 @@ td strong {
 }
 
 .ticket-stage-composer textarea {
-  min-height: 72px;
-  max-height: 120px;
-  height: 84px !important;
+  min-height: 64px;
+  max-height: 110px;
+  height: 72px !important;
   resize: none;
   line-height: 1.8;
+  font-size: 15px;
 }
 
 .ticket-composer-bar {

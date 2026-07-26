@@ -17,23 +17,24 @@
         تیکت‌ها در تایم اداری حداکثر نیم ساعت و در تایم غیر اداری حداکثر ۲۴ ساعت پاسخ داده خواهند شد.
       </section>
 
-      <section class="stats-grid">
-        <article
-          v-for="item in statusTrack"
-          :key="item.key"
-          class="stat-card"
-          :class="[statusClass(item.key), { active: activeStatusTab === item.key }]"
-          @click="activeStatusTab = item.key"
-        >
-          <div class="stat-icon">{{ statusGlyph(item.key) }}</div>
-          <strong>{{ toFa(item.count) }}</strong>
-          <span>{{ item.label }}</span>
-          <small>{{ item.description }}</small>
-        </article>
-      </section>
-
       <section class="workspace-grid">
-        <aside class="surface-card inbox-card">
+        <div class="inbox-column">
+          <section class="stats-grid">
+            <article
+              v-for="item in statusTrack"
+              :key="item.key"
+              class="stat-card"
+              :class="[statusClass(item.key), { active: activeStatusTab === item.key }]"
+              @click="activeStatusTab = item.key"
+            >
+              <div class="stat-icon">{{ statusGlyph(item.key) }}</div>
+              <strong>{{ toFa(item.count) }}</strong>
+              <span>{{ item.label }}</span>
+              <small>{{ item.description }}</small>
+            </article>
+          </section>
+
+          <aside class="surface-card inbox-card">
           <header class="panel-head">
             <div>
               <p class="panel-kicker">Ticket Inbox</p>
@@ -110,7 +111,8 @@
             <p>فیلتر وضعیت یا دسته‌بندی را تغییر دهید، یا یک تیکت تازه ثبت کنید.</p>
             <button type="button" class="primary-btn" @click="openCreateTicketModal">ثبت تیکت</button>
           </div>
-        </aside>
+          </aside>
+        </div>
 
         <section class="surface-card conversation-card">
           <div v-if="detailState.loading" class="loading-state">در حال بارگذاری گفتگو...</div>
@@ -1101,25 +1103,33 @@ onBeforeUnmount(() => {
 }
 
 .stats-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
 }
 
 .stat-card {
-  padding: 18px;
+  min-width: 0;
+  min-height: 108px;
+  height: 100%;
+  padding: 12px 10px;
   display: grid;
-  gap: 6px;
-  border-radius: 26px;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 4px;
+  align-content: start;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid rgba(226, 232, 240, 0.86);
   cursor: pointer;
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
 .stat-card:hover,
 .stat-card.active {
-  transform: translateY(-2px);
-  box-shadow: 0 24px 46px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
 }
 
 .stat-card.open.active { background: linear-gradient(180deg, rgba(219, 234, 254, 0.88), rgba(255, 255, 255, 0.96)); }
@@ -1128,14 +1138,35 @@ onBeforeUnmount(() => {
 .stat-card.closed.active { background: linear-gradient(180deg, rgba(226, 232, 240, 0.82), rgba(255, 255, 255, 0.96)); }
 
 .stat-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 15px;
   font-weight: 800;
+}
+
+.stat-card strong {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.stat-card span {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.stat-card small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #64748b;
 }
 
 .stat-card.open .stat-icon { background: #dbeafe; color: #1d4ed8; }
@@ -1145,7 +1176,15 @@ onBeforeUnmount(() => {
 
 .workspace-grid {
   grid-template-columns: minmax(320px, 400px) minmax(0, 1.35fr);
-  align-items: start;
+  align-items: stretch;
+}
+
+.inbox-column {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
 }
 
 .surface-card {
@@ -1162,17 +1201,22 @@ onBeforeUnmount(() => {
   padding: 20px;
 }
 
+.inbox-card {
+  min-height: 0;
+  align-content: start;
+}
+
 .conversation-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  min-height: 560px;
-  height: calc(100dvh - 148px);
-  max-height: calc(100dvh - 148px);
+  min-height: 720px;
+  height: calc(100dvh - 72px);
+  max-height: calc(100dvh - 72px);
   overflow: hidden;
   position: sticky;
-  top: 18px;
+  top: 8px;
 }
 
 .conversation-card > * {
@@ -1224,7 +1268,7 @@ onBeforeUnmount(() => {
 
 .message-thread {
   flex: 1 1 auto;
-  min-height: 320px;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 16px;
@@ -1234,11 +1278,9 @@ onBeforeUnmount(() => {
 }
 
 .conversation-footer {
-  flex: 0 1 auto;
-  max-height: min(38%, 320px);
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
+  flex: 0 0 auto;
+  max-height: none;
+  overflow: visible;
   display: grid;
   gap: 10px;
   padding-top: 2px;
@@ -1248,9 +1290,9 @@ onBeforeUnmount(() => {
 .feedback-shell {
   flex: 0 0 auto;
   z-index: auto;
-  padding: 14px;
+  padding: 12px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   border-radius: 18px;
   border: 1px solid rgba(226, 232, 240, 0.9);
   background: #fff;
@@ -1269,15 +1311,19 @@ onBeforeUnmount(() => {
   line-height: 1.7;
 }
 
-.feedback-shell textarea {
-  min-height: 64px;
-  max-height: 96px;
-  resize: vertical;
+.reply-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
-.reply-form textarea {
-  min-height: 72px;
-  max-height: 120px;
+.reply-form textarea,
+.feedback-shell textarea {
+  width: 100%;
+  min-height: 88px;
+  max-height: 160px;
+  resize: vertical;
+  box-sizing: border-box;
 }
 
 .chip-row {
@@ -1425,6 +1471,8 @@ onBeforeUnmount(() => {
   padding: 15px 17px;
   border-radius: 24px;
   box-shadow: 0 18px 36px rgba(15, 23, 42, 0.05);
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .message-bubble.support {
@@ -1457,8 +1505,13 @@ onBeforeUnmount(() => {
 
 .message-bubble p {
   margin: 0;
-  line-height: 1.95;
+  font-size: 15px;
+  line-height: 1.9;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .message-meta small {
@@ -1495,7 +1548,7 @@ onBeforeUnmount(() => {
 
 .reply-form textarea,
 .feedback-shell textarea {
-  min-height: 72px;
+  min-height: 88px;
 }
 
 .modal-form textarea {
@@ -1790,9 +1843,12 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .stats-grid,
   .metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
 }
@@ -1828,11 +1884,14 @@ onBeforeUnmount(() => {
     font-size: 30px;
   }
 
-  .stats-grid,
   .hero-mini-grid,
   .inbox-summary-grid,
   .metric-strip {
     grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .modal-form {
@@ -1909,14 +1968,14 @@ onBeforeUnmount(() => {
 }
 
 .stats-grid {
-  gap: 10px;
+  gap: 8px;
 }
 
 .stat-card {
-  min-height: 132px;
-  border-radius: 18px;
-  padding: 14px;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+  min-height: 108px;
+  border-radius: 16px;
+  padding: 12px 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .stat-card:focus-visible,
@@ -1933,6 +1992,7 @@ onBeforeUnmount(() => {
 .workspace-grid {
   grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
   gap: 16px;
+  align-items: stretch;
 }
 
 .surface-card,
@@ -2074,12 +2134,21 @@ onBeforeUnmount(() => {
 }
 
 .reply-form {
-  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
-  align-items: end;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: stretch;
 }
 
 .reply-form textarea {
-  resize: none;
+  width: 100%;
+  min-height: 88px !important;
+  height: 96px;
+  max-height: 180px;
+  resize: vertical;
+  line-height: 1.8;
+  font-size: 15px;
+  padding: 12px 14px;
 }
 
 .reply-actions {
@@ -2087,8 +2156,8 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
-  align-items: end;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .reply-actions .primary-btn {
@@ -2096,12 +2165,18 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.feedback-shell textarea {
+  width: 100%;
+  min-height: 80px !important;
+  max-height: 160px;
+  resize: vertical;
+}
+
 .reply-form textarea,
 .feedback-shell textarea,
 .modal-form input,
 .modal-form textarea,
 .modal-form select {
-  min-height: 48px;
   border-radius: 14px;
 }
 
@@ -2130,19 +2205,20 @@ onBeforeUnmount(() => {
 @media (max-width: 1180px) {
   .conversation-card {
     position: static;
-    height: auto;
-    max-height: none;
-    min-height: 640px;
+    height: min(84dvh, 900px);
+    max-height: min(84dvh, 900px);
+    min-height: 560px;
   }
 
   .message-thread {
-    min-height: 420px;
+    min-height: 0;
     max-height: none;
-    flex: 1 1 420px;
+    flex: 1 1 auto;
   }
 
   .conversation-footer {
     max-height: none;
+    overflow: visible;
   }
 }
 
@@ -2156,23 +2232,27 @@ onBeforeUnmount(() => {
     font-size: 13px;
   }
 
-  .stats-grid {
-    display: flex;
-    overflow-x: auto;
+  .inbox-column {
     gap: 10px;
-    padding: 2px 2px 8px;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
   }
 
-  .stats-grid::-webkit-scrollbar {
-    display: none;
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+    padding: 0;
   }
 
   .stat-card {
-    min-width: 148px;
-    min-height: 118px;
-    scroll-snap-align: start;
+    min-width: 0;
+    min-height: 96px;
+    padding: 10px 8px;
+    scroll-snap-align: unset;
+  }
+
+  .stat-card small {
+    display: none;
   }
 
   .workspace-grid {
@@ -2186,9 +2266,9 @@ onBeforeUnmount(() => {
   }
 
   .conversation-card {
-    min-height: 72dvh;
-    height: auto;
-    max-height: none;
+    height: min(86dvh, 960px);
+    max-height: min(86dvh, 960px);
+    min-height: 580px;
   }
 
   .ticket-list {
@@ -2214,8 +2294,8 @@ onBeforeUnmount(() => {
   }
 
   .message-thread {
-    min-height: 52dvh;
-    flex: 1 1 52dvh;
+    min-height: 0;
+    flex: 1 1 auto;
     padding: 12px;
     border-radius: 16px;
   }
@@ -2227,13 +2307,14 @@ onBeforeUnmount(() => {
 
   .conversation-footer {
     max-height: none;
+    overflow: visible;
     gap: 8px;
   }
 
   .reply-shell,
   .feedback-shell {
     margin: 0;
-    padding: 12px;
+    padding: 10px;
     border-radius: 16px;
   }
 
@@ -2250,12 +2331,13 @@ onBeforeUnmount(() => {
   }
 
   .reply-form textarea {
-    min-height: 72px;
+    min-height: 88px !important;
+    height: 96px;
     font-size: 16px;
   }
 
   .feedback-shell textarea {
-    min-height: 56px;
+    min-height: 72px !important;
     font-size: 16px;
   }
 
