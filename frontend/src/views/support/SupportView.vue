@@ -175,14 +175,13 @@
               </article>
             </section>
 
-            <footer class="conversation-footer">
-              <section class="reply-shell">
+            <footer class="conversation-footer" :class="{ 'is-closed': detailState.ticket.status === 'closed' }">
+              <section v-if="detailState.ticket.status !== 'closed'" class="reply-shell">
                 <div class="reply-head">
-                  <strong>{{ detailState.ticket.status === 'closed' ? 'وضعیت تیکت' : 'ارسال پاسخ' }}</strong>
-                  <small v-if="detailState.ticket.status !== 'closed'">پاسخ کوتاه بنویسید. با Ctrl + Enter هم ارسال می‌شود.</small>
+                  <strong>ارسال پاسخ</strong>
                 </div>
 
-                <div v-if="detailState.ticket.status !== 'closed'" class="reply-form">
+                <div class="reply-form">
                   <textarea
                     v-model.trim="detailState.replyBody"
                     :disabled="detailState.sendingReply"
@@ -202,14 +201,14 @@
                     </button>
                   </div>
                 </div>
+              </section>
 
-                <div v-else class="closed-note">
+              <section v-else class="feedback-shell">
+                <div class="closed-note compact">
                   <span class="status-pill closed">تیکت بسته شده</span>
                   <p>اگر مشکل باقی است، تیکت جدید با ارجاع به #{{ detailState.ticket.id }} ثبت کنید.</p>
                 </div>
-              </section>
 
-              <section v-if="detailState.ticket.status === 'closed'" class="feedback-shell">
                 <div class="reply-head">
                   <strong>امتیازدهی به پشتیبانی</strong>
                   <small v-if="canRateTicket(detailState.ticket)">تجربه رسیدگی را ثبت کنید.</small>
@@ -1176,7 +1175,7 @@ onBeforeUnmount(() => {
 
 .workspace-grid {
   grid-template-columns: minmax(320px, 400px) minmax(0, 1.35fr);
-  align-items: stretch;
+  align-items: start;
 }
 
 .inbox-column {
@@ -1184,7 +1183,9 @@ onBeforeUnmount(() => {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
-  min-height: 0;
+  min-height: 720px;
+  height: calc(100dvh - 72px);
+  max-height: calc(100dvh - 72px);
 }
 
 .surface-card {
@@ -1196,14 +1197,26 @@ onBeforeUnmount(() => {
 
 .inbox-card,
 .conversation-card {
-  display: grid;
   gap: 14px;
   padding: 20px;
 }
 
 .inbox-card {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  align-content: start;
+  height: 100%;
+  overflow: hidden;
+}
+
+.inbox-card > .panel-head,
+.inbox-card > .chip-row,
+.inbox-card > .inbox-summary-grid {
+  flex: 0 0 auto;
+}
+
+.inbox-card > .empty-state {
+  flex: 1 1 auto;
 }
 
 .conversation-card {
@@ -1211,12 +1224,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  min-height: 720px;
-  height: calc(100dvh - 72px);
-  max-height: calc(100dvh - 72px);
-  overflow: hidden;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
   position: sticky;
   top: 8px;
+  align-self: start;
 }
 
 .conversation-card > * {
@@ -1266,49 +1280,80 @@ onBeforeUnmount(() => {
   background: #fff;
 }
 
+/* Fixed chat viewport — never changes with reply/rating height */
 .message-thread {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 520px;
+  min-height: 520px;
+  max-height: 520px;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 16px;
   border-radius: 20px;
   border: 1px solid rgba(226, 232, 240, 0.9);
   background: linear-gradient(180deg, rgba(247, 250, 255, 0.94), rgba(255, 255, 255, 0.98));
+  position: relative;
+  z-index: 1;
 }
 
+/* Reply / rating / closed note sit under chat with natural height, no scroll cage */
 .conversation-footer {
   flex: 0 0 auto;
   max-height: none;
+  min-height: 0;
   overflow: visible;
   display: grid;
-  gap: 10px;
-  padding-top: 2px;
+  gap: 8px;
+  padding-top: 4px;
+  position: relative;
+  z-index: 2;
+  background: transparent;
+  border-top: 0;
+}
+
+.conversation-footer.is-closed {
+  max-height: none;
 }
 
 .reply-shell,
 .feedback-shell {
+  position: relative;
+  z-index: 1;
   flex: 0 0 auto;
-  z-index: auto;
   padding: 12px;
   display: grid;
   gap: 8px;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid rgba(226, 232, 240, 0.9);
   background: #fff;
   box-shadow: none;
+  overflow: visible;
 }
 
 .closed-note {
   display: grid;
+  gap: 6px;
+}
+
+.closed-note.compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
 }
 
 .closed-note p {
   margin: 0;
   color: #64748b;
-  font-size: 13px;
-  line-height: 1.7;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.closed-note.compact p {
+  flex: 1 1 180px;
 }
 
 .reply-form {
@@ -1320,10 +1365,26 @@ onBeforeUnmount(() => {
 .reply-form textarea,
 .feedback-shell textarea {
   width: 100%;
-  min-height: 88px;
-  max-height: 160px;
+  min-height: 96px;
+  max-height: none;
   resize: vertical;
   box-sizing: border-box;
+}
+
+.feedback-shell textarea {
+  min-height: 64px;
+  max-height: none;
+}
+
+.rating-stars {
+  display: flex;
+  gap: 6px;
+}
+
+.rating-star-btn {
+  font-size: 24px;
+  padding: 0;
+  line-height: 1;
 }
 
 .chip-row {
@@ -1357,20 +1418,27 @@ onBeforeUnmount(() => {
 }
 
 .ticket-list {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  max-height: calc(100vh - 380px);
+  overscroll-behavior: contain;
   align-content: start;
+  padding-inline-end: 2px;
+  gap: 8px;
 }
 
 .ticket-row {
   display: grid;
-  gap: 10px;
-  padding: 18px;
-  border-radius: 18px;
+  gap: 4px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 14px;
   border: 1px solid #dbe7f3;
   background: linear-gradient(180deg, #ffffff, #f8fbff);
   cursor: pointer;
+  flex-shrink: 0;
+  min-height: auto;
+  height: auto;
+  overflow: visible;
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color .18s ease;
 }
 
@@ -1389,7 +1457,7 @@ onBeforeUnmount(() => {
 
 .ticket-row p {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1546,9 +1614,12 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.02);
 }
 
-.reply-form textarea,
-.feedback-shell textarea {
+.reply-form textarea {
   min-height: 88px;
+}
+
+.feedback-shell textarea {
+  min-height: 56px;
 }
 
 .modal-form textarea {
@@ -1923,7 +1994,8 @@ onBeforeUnmount(() => {
   }
 
   .ticket-list {
-    max-height: none;
+    overflow: auto;
+    min-height: 0;
   }
 
   .message-thread {
@@ -1992,7 +2064,7 @@ onBeforeUnmount(() => {
 .workspace-grid {
   grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
   gap: 16px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .surface-card,
@@ -2036,20 +2108,23 @@ onBeforeUnmount(() => {
 }
 
 .ticket-row {
-  min-height: 0;
-  border-radius: 18px;
-  padding: 16px;
+  min-height: auto;
+  height: auto;
+  flex-shrink: 0;
+  border-radius: 14px;
+  padding: 10px 12px 10px 14px;
+  gap: 4px;
   touch-action: manipulation;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .ticket-row::before {
   content: "";
   position: absolute;
-  inset-block: 14px;
+  inset-block: 10px;
   inset-inline-start: 0;
-  width: 4px;
+  width: 3px;
   border-radius: 999px;
   background: #2563eb;
 }
@@ -2066,29 +2141,32 @@ onBeforeUnmount(() => {
 .ticket-row-top {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
+  gap: 8px;
+  align-items: center;
 }
 
 .ticket-row-top strong,
 .conversation-title h3 {
-  line-height: 1.55;
+  line-height: 1.4;
 }
 
 .ticket-row-top strong {
   min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
   color: #0f172a;
 }
 
 .ticket-row-tags {
   align-items: center;
+  gap: 6px;
 }
 
 .ticket-row-tags > span:not(.meta-pill) {
   color: #64748b;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -2096,10 +2174,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px;
-  row-gap: 6px;
+  gap: 6px;
+  row-gap: 2px;
   color: #64748b;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -2108,10 +2186,17 @@ onBeforeUnmount(() => {
   color: #475569;
 }
 
+.ticket-row .status-pill,
+.ticket-row .meta-pill {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
 .ticket-row p {
   margin: 0;
-  color: #475569;
-  line-height: 1.8;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
@@ -2142,13 +2227,14 @@ onBeforeUnmount(() => {
 
 .reply-form textarea {
   width: 100%;
-  min-height: 88px !important;
-  height: 96px;
-  max-height: 180px;
+  min-height: 96px !important;
+  height: 104px;
+  max-height: none;
   resize: vertical;
   line-height: 1.8;
   font-size: 15px;
   padding: 12px 14px;
+  overflow: auto;
 }
 
 .reply-actions {
@@ -2167,8 +2253,8 @@ onBeforeUnmount(() => {
 
 .feedback-shell textarea {
   width: 100%;
-  min-height: 80px !important;
-  max-height: 160px;
+  min-height: 64px !important;
+  max-height: none;
   resize: vertical;
 }
 
@@ -2205,18 +2291,20 @@ onBeforeUnmount(() => {
 @media (max-width: 1180px) {
   .conversation-card {
     position: static;
-    height: min(84dvh, 900px);
-    max-height: min(84dvh, 900px);
-    min-height: 560px;
+    height: auto;
+    max-height: none;
+    min-height: 0;
   }
 
   .message-thread {
-    min-height: 0;
-    max-height: none;
-    flex: 1 1 auto;
+    height: 480px;
+    min-height: 480px;
+    max-height: 480px;
+    flex: 0 0 auto;
   }
 
-  .conversation-footer {
+  .conversation-footer,
+  .conversation-footer.is-closed {
     max-height: none;
     overflow: visible;
   }
@@ -2233,7 +2321,30 @@ onBeforeUnmount(() => {
   }
 
   .inbox-column {
-    gap: 10px;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+  }
+
+  .inbox-card {
+    height: auto;
+    max-height: min(70dvh, 720px);
+    overflow: hidden;
+  }
+
+  .ticket-list {
+    flex: 1 1 auto;
+    min-height: 240px;
+    max-height: none;
+    overflow: auto;
+  }
+
+  .ticket-row {
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+    padding: 9px 10px 9px 12px;
+    gap: 3px;
   }
 
   .stats-grid {
@@ -2266,19 +2377,24 @@ onBeforeUnmount(() => {
   }
 
   .conversation-card {
-    height: min(86dvh, 960px);
-    max-height: min(86dvh, 960px);
-    min-height: 580px;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    position: static;
   }
 
   .ticket-list {
     display: grid;
     gap: 10px;
+    overflow: auto;
   }
 
   .ticket-row {
-    min-height: 0;
-    padding: 14px;
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+    padding: 9px 10px 9px 12px;
+    gap: 3px;
   }
 
   .ticket-row-top {
@@ -2294,8 +2410,10 @@ onBeforeUnmount(() => {
   }
 
   .message-thread {
-    min-height: 0;
-    flex: 1 1 auto;
+    height: 420px;
+    min-height: 420px;
+    max-height: 420px;
+    flex: 0 0 auto;
     padding: 12px;
     border-radius: 16px;
   }
@@ -2305,7 +2423,8 @@ onBeforeUnmount(() => {
     padding: 13px 14px;
   }
 
-  .conversation-footer {
+  .conversation-footer,
+  .conversation-footer.is-closed {
     max-height: none;
     overflow: visible;
     gap: 8px;
@@ -2316,6 +2435,7 @@ onBeforeUnmount(() => {
     margin: 0;
     padding: 10px;
     border-radius: 16px;
+    overflow: visible;
   }
 
   .reply-form {
@@ -2331,13 +2451,15 @@ onBeforeUnmount(() => {
   }
 
   .reply-form textarea {
-    min-height: 88px !important;
-    height: 96px;
+    min-height: 96px !important;
+    height: 104px;
+    max-height: none;
     font-size: 16px;
   }
 
   .feedback-shell textarea {
-    min-height: 72px !important;
+    min-height: 64px !important;
+    max-height: none;
     font-size: 16px;
   }
 
@@ -2362,4 +2484,3 @@ onBeforeUnmount(() => {
     font-size: 16px;
   }
 }
-</style>
