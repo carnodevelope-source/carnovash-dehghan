@@ -82,6 +82,8 @@ class VehicleEntry(TimestampedModel):
         TYPE_2 = 'type_2', 'Type 2'
         TYPE_3 = 'type_3', 'Type 3'
         TYPE_4 = 'type_4', 'Type 4'
+        TYPE_5 = 'type_5', 'Type 5'
+        TYPE_6 = 'type_6', 'Type 6'
 
     class PlateType(models.TextChoices):
         CAR = 'car', 'Car'

@@ -82,15 +82,34 @@ class ServiceSerializer(serializers.ModelSerializer):
     def get_resolved_duration_minutes(self, obj):
         return self._resolved_pricing(obj)['duration_minutes']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['pricing_tiers'] = instance.normalized_pricing_tiers(plate_type='car')
+        if instance.motorcycle_enabled:
+            data['motorcycle_pricing_tiers'] = instance.normalized_pricing_tiers(plate_type='motorcycle')
+        else:
+            data['motorcycle_pricing_tiers'] = {}
+        return data
+
     def _normalize_tiers(self, raw_value, *, keys, sale_price, duration_minutes):
         defaults = default_service_tiers(keys, sale_price=sale_price, duration_minutes=duration_minutes)
         source = raw_value if isinstance(raw_value, dict) else {}
+        previous_sale = Decimal(str(defaults[keys[0]]['sale_price'] or 0))
+        previous_list = Decimal(str(defaults[keys[0]]['list_price'] or 0))
+        previous_duration = int(defaults[keys[0]]['duration_minutes'] or 30) or 30
         normalized = {}
         for key in keys:
-            current = source.get(key, {}) if isinstance(source.get(key, {}), dict) else {}
-            list_price = Decimal(str(current.get('list_price', defaults[key]['list_price']) or 0))
-            sale_price_value = Decimal(str(current.get('sale_price', defaults[key]['sale_price']) or 0))
-            duration_value = int(current.get('duration_minutes', defaults[key]['duration_minutes']) or defaults[key]['duration_minutes'])
+            current = source.get(key) if isinstance(source.get(key), dict) else {}
+            if current and ('sale_price' in current or 'list_price' in current):
+                list_price = Decimal(str(current.get('list_price', current.get('sale_price', previous_list)) or 0))
+                sale_price_value = Decimal(str(current.get('sale_price', current.get('list_price', previous_sale)) or 0))
+            else:
+                list_price = previous_list
+                sale_price_value = previous_sale
+            if current and 'duration_minutes' in current:
+                duration_value = int(current.get('duration_minutes') or previous_duration) or previous_duration
+            else:
+                duration_value = previous_duration
             if list_price < 0 or sale_price_value < 0:
                 raise serializers.ValidationError('مبالغ هر تیپ نمی‌توانند منفی باشند.')
             if duration_value < 1:
@@ -100,6 +119,9 @@ class ServiceSerializer(serializers.ModelSerializer):
                 'sale_price': float(sale_price_value),
                 'duration_minutes': duration_value,
             }
+            previous_list = list_price
+            previous_sale = sale_price_value
+            previous_duration = duration_value
         return normalized
 
     def validate(self, attrs):

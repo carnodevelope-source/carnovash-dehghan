@@ -58,7 +58,7 @@
 
         <section v-if="!form.isPieceWash && !isMobileViewport" class="tariff-type-row" aria-label="تیپ نرخنامه">
           <span>تیپ نرخنامه</span>
-          <div class="tariff-bubbles">
+          <div class="tariff-bubbles" :style="tariffBubblesStyle">
             <button
               v-for="option in availableTariffTypeOptions"
               :key="option.value"
@@ -153,7 +153,7 @@
 
         <section v-if="!form.isPieceWash && isMobileViewport" class="tariff-type-row mobile-tariff-row" aria-label="شماره تیپ">
           <span>شماره تیپ:</span>
-          <div class="tariff-bubbles">
+          <div class="tariff-bubbles" :style="mobileTariffBubblesStyle">
             <button
               v-for="option in availableTariffTypeOptions"
               :key="option.value"
@@ -169,7 +169,7 @@
 
         <section v-if="!form.isPieceWash && !isMobileViewport && !showAiPanel" class="tariff-type-row" aria-label="تیپ نرخنامه">
           <span>تیپ نرخنامه</span>
-          <div class="tariff-bubbles">
+          <div class="tariff-bubbles" :style="tariffBubblesStyle">
             <button
               v-for="option in availableTariffTypeOptions"
               :key="option.value"
@@ -203,6 +203,11 @@ import api from '../../services/api'
 import PlateBadge from '../vehicles/PlateBadge.vue'
 import PlateEditor from '../vehicles/PlateEditor.vue'
 import { buildPlateNumber, getAmbiguousLetterSuggestions, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
+import {
+  defaultTariffType,
+  normalizeTariffType,
+  serviceTierOptionsForPlate
+} from '../../utils/serviceTiers'
 
 const emit = defineEmits(['cancel', 'continue', 'refer'])
 const props = defineProps({
@@ -225,21 +230,11 @@ const form = reactive({
   customerLoyaltyVisitCount: 0,
   customerLoyaltyDiscountPercent: 0,
   note: '',
-  tariffType: 'type_1',
+  tariffType: defaultTariffType,
   plateType: 'car',
   isAnonymous: false,
   isPieceWash: false
 })
-const carTariffTypeOptions = [
-  { value: 'type_1', label: 'تیپ ۱' },
-  { value: 'type_2', label: 'تیپ ۲' },
-  { value: 'type_3', label: 'تیپ ۳' },
-  { value: 'type_4', label: 'تیپ ۴' }
-]
-const motorcycleTariffTypeOptions = [
-  { value: 'type_1', label: 'تیپ ۱' },
-  { value: 'type_2', label: 'تیپ ۲' }
-]
 const detectedPlateSnapshot = ref({
   left: '',
   letter: '',
@@ -298,9 +293,17 @@ const isAnonymousVisit = (data = {}) => {
   return Boolean(data.isAnonymous || data.is_anonymous) || (model === '1111' && color === '1111') || plateNumber === '1111'
 }
 const showAiPanel = computed(() => !props.vehicleInfo?.hideAiPanel && (!isMobileViewport.value || !isAiPanelCollapsed.value))
-const availableTariffTypeOptions = computed(() => (
-  form.plateType === 'motorcycle' ? motorcycleTariffTypeOptions : carTariffTypeOptions
-))
+const availableTariffTypeOptions = computed(() => serviceTierOptionsForPlate(form.plateType))
+const tariffBubblesStyle = computed(() => {
+  const count = Math.max(1, availableTariffTypeOptions.value.length)
+  const columns = Math.min(count, count <= 3 ? count : 3)
+  return { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
+})
+const mobileTariffBubblesStyle = computed(() => {
+  const count = Math.max(1, availableTariffTypeOptions.value.length)
+  const columns = Math.min(count, 6)
+  return { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
+})
 
 const syncMobileViewport = (event) => {
   isMobileViewport.value = Boolean(event?.matches ?? mobileViewportQuery.matches)
@@ -349,7 +352,7 @@ const hydrateForm = (data = {}) => {
   form.customerLoyaltyVisitCount = Math.max(0, Number(data.customerLoyaltyVisitCount ?? data.customer_loyalty_visit_count ?? 0))
   form.customerLoyaltyDiscountPercent = Math.max(0, Number(data.customerLoyaltyDiscountPercent ?? data.customer_loyalty_discount_percent ?? 0))
   form.note = String(data.note || data.notes || '')
-  form.tariffType = String(data.tariffType || data.tariff_type || 'type_1').trim() || 'type_1'
+  form.tariffType = normalizeTariffType(data.tariffType || data.tariff_type, form.plateType)
   form.plateType = plateType
   form.isAnonymous = isAnonymousVisit(data)
   form.isPieceWash = Boolean(data.isPieceWash || data.is_piece_wash)
@@ -772,7 +775,7 @@ watch(() => form.plateType, (value) => {
     syncLetterSuggestions(form.plateLetter)
   }
   if (!availableTariffTypeOptions.value.some((option) => option.value === form.tariffType)) {
-    form.tariffType = 'type_1'
+    form.tariffType = defaultTariffType
   }
   detectedPlateSnapshot.value = {
     ...detectedPlateSnapshot.value,
@@ -800,8 +803,7 @@ const applyPlateLookupData = (data = {}) => {
   form.customerLoyaltyDiscountPercent = Math.max(0, Number(data.customer_loyalty_discount_percent ?? data.customerLoyaltyDiscountPercent ?? 0))
   form.plateType = String(data.plate_type || form.plateType || 'car').trim() || 'car'
   if (data.tariff_type || data.tariffType) {
-    const tariffType = String(data.tariff_type || data.tariffType || 'type_1').trim() || 'type_1'
-    form.tariffType = availableTariffTypeOptions.value.some((option) => option.value === tariffType) ? tariffType : 'type_1'
+    form.tariffType = normalizeTariffType(data.tariff_type || data.tariffType, form.plateType)
   }
 }
 
@@ -1120,7 +1122,7 @@ onBeforeUnmount(() => {
 
 .tariff-bubbles {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1592,7 +1594,7 @@ onBeforeUnmount(() => {
     padding: 0;
   }
   .mobile-tariff-row .tariff-bubbles {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .mobile-tariff-row .tariff-bubble {
     border-radius: 999px;

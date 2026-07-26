@@ -150,8 +150,15 @@ def normalize_vehicle_released_sms_template(template):
     return '\n'.join(lines)
 
 
-CAR_SERVICE_TIER_KEYS = ('type_1', 'type_2', 'type_3', 'type_4')
-MOTORCYCLE_SERVICE_TIER_KEYS = ('type_1', 'type_2')
+CAR_SERVICE_TIER_KEYS = ('type_1', 'type_2', 'type_3', 'type_4', 'type_5', 'type_6')
+MOTORCYCLE_SERVICE_TIER_KEYS = ('type_1', 'type_2', 'type_3')
+
+
+def service_tier_keys_for_plate(plate_type='car'):
+    normalized = str(plate_type or 'car').strip().lower()
+    if normalized == 'motorcycle':
+        return MOTORCYCLE_SERVICE_TIER_KEYS
+    return CAR_SERVICE_TIER_KEYS
 
 
 def default_service_tiers(keys, *, sale_price=0, duration_minutes=30):
@@ -257,7 +264,7 @@ class Service(TimestampedModel):
         return self.name
 
     def normalized_pricing_tiers(self, *, plate_type='car'):
-        keys = MOTORCYCLE_SERVICE_TIER_KEYS if plate_type == 'motorcycle' else CAR_SERVICE_TIER_KEYS
+        keys = service_tier_keys_for_plate(plate_type)
         source = self.motorcycle_pricing_tiers if plate_type == 'motorcycle' else self.pricing_tiers
         defaults = default_service_tiers(
             keys,
@@ -267,20 +274,37 @@ class Service(TimestampedModel):
         if not isinstance(source, dict):
             return defaults
 
+        previous_sale = float(defaults[keys[0]]['sale_price'] or 0)
+        previous_list = float(defaults[keys[0]]['list_price'] or 0)
+        previous_duration = int(defaults[keys[0]]['duration_minutes'] or 30) or 30
         normalized = {}
         for key in keys:
-            raw_item = source.get(key, {}) if isinstance(source.get(key, {}), dict) else {}
+            raw_item = source.get(key) if isinstance(source.get(key), dict) else {}
+            if raw_item and ('sale_price' in raw_item or 'list_price' in raw_item):
+                sale_price = float(raw_item.get('sale_price', raw_item.get('list_price', previous_sale)) or 0)
+                list_price = float(raw_item.get('list_price', raw_item.get('sale_price', previous_list)) or 0)
+            else:
+                sale_price = previous_sale
+                list_price = previous_list
+            if raw_item and 'duration_minutes' in raw_item:
+                duration_minutes = int(raw_item.get('duration_minutes') or previous_duration) or previous_duration
+            else:
+                duration_minutes = previous_duration
             normalized[key] = {
-                'list_price': float(raw_item.get('list_price', defaults[key]['list_price']) or 0),
-                'sale_price': float(raw_item.get('sale_price', defaults[key]['sale_price']) or 0),
-                'duration_minutes': int(raw_item.get('duration_minutes', defaults[key]['duration_minutes']) or defaults[key]['duration_minutes']),
+                'list_price': list_price,
+                'sale_price': sale_price,
+                'duration_minutes': duration_minutes,
             }
+            previous_sale = sale_price
+            previous_list = list_price
+            previous_duration = duration_minutes
         return normalized
 
     def resolve_pricing(self, *, tariff_type='type_1', plate_type='car'):
         normalized_plate_type = 'motorcycle' if plate_type == 'motorcycle' else 'car'
         tiers = self.normalized_pricing_tiers(plate_type=normalized_plate_type)
-        fallback_key = MOTORCYCLE_SERVICE_TIER_KEYS[0] if normalized_plate_type == 'motorcycle' else CAR_SERVICE_TIER_KEYS[0]
+        keys = service_tier_keys_for_plate(normalized_plate_type)
+        fallback_key = keys[0]
         tier_key = str(tariff_type or fallback_key).strip().lower() or fallback_key
         if tier_key not in tiers:
             tier_key = fallback_key

@@ -188,10 +188,7 @@
                 <tr>
                   <th>ردیف</th>
                   <th>نام</th>
-                  <th>فروش تیپ ۱</th>
-                  <th>فروش تیپ ۲</th>
-                  <th>فروش تیپ ۳</th>
-                  <th>فروش تیپ ۴</th>
+                  <th v-for="tier in carServiceTierOptions" :key="`head-${tier.key}`">فروش {{ tier.label }}</th>
                   <th>موتور سیکلت</th>
                   <th>تاریخ بروزرسانی</th>
                   <th>فعال</th>
@@ -202,10 +199,9 @@
                 <tr v-for="(item, index) in filteredServices" :key="item.id" class="clickable-row" @click="openServiceHistoryModal(item)">
                   <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
                   <td>{{ item.name }}</td>
-                  <td>{{ money(item.pricing_tiers?.type_1?.sale_price ?? item.base_price) }}</td>
-                  <td>{{ money(item.pricing_tiers?.type_2?.sale_price ?? item.base_price) }}</td>
-                  <td>{{ money(item.pricing_tiers?.type_3?.sale_price ?? item.base_price) }}</td>
-                  <td>{{ money(item.pricing_tiers?.type_4?.sale_price ?? item.base_price) }}</td>
+                  <td v-for="tier in carServiceTierOptions" :key="`${item.id}-${tier.key}`">
+                    {{ money(item.pricing_tiers?.[tier.key]?.sale_price ?? item.base_price) }}
+                  </td>
                   <td>{{ item.motorcycle_enabled ? 'دارد' : 'ندارد' }}</td>
                   <td>{{ formatDate(item.updated_at) }}</td>
                   <td>{{ item.is_active ? 'بله' : 'خیر' }}</td>
@@ -665,7 +661,7 @@
               <div class="service-tier-panel-head">
                 <div>
                   <strong>تیپ‌های موتور سیکلت</strong>
-                  <p class="helper-text">اگر این خدمت برای موتور سیکلت هم فعال است، تیپ ۱ و ۲ را هم جداگانه تعریف کنید.</p>
+                  <p class="helper-text">اگر این خدمت برای موتور سیکلت هم فعال است، تیپ‌های موتور را هم جداگانه تعریف کنید.</p>
                 </div>
                 <label class="row-check service-tier-toggle">
                   <input type="checkbox" v-model="forms.service.motorcycle_enabled" />
@@ -816,6 +812,7 @@ import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import { carServiceTierOptions, motorcycleServiceTierOptions } from '../../utils/serviceTiers'
 
 const authStore = useAuthStore()
 const search = ref('')
@@ -1000,16 +997,6 @@ const serviceChangeSummaryText = (summary) => {
   if (!entries.length) return 'بدون جزئیات'
   return entries.map((item) => `${item.label}: ${item.from ?? '-'} ← ${item.to ?? '-'}`).join(' | ')
 }
-const carServiceTierOptions = [
-  { key: 'type_1', label: 'تیپ ۱' },
-  { key: 'type_2', label: 'تیپ ۲' },
-  { key: 'type_3', label: 'تیپ ۳' },
-  { key: 'type_4', label: 'تیپ ۴' }
-]
-const motorcycleServiceTierOptions = [
-  { key: 'type_1', label: 'تیپ ۱' },
-  { key: 'type_2', label: 'تیپ ۲' }
-]
 const createServiceTierState = (salePrice = 0, durationMinutes = 30) => ({
   list_price: salePrice,
   sale_price: salePrice,
@@ -1017,14 +1004,27 @@ const createServiceTierState = (salePrice = 0, durationMinutes = 30) => ({
 })
 const normalizeServiceTierMap = (rawValue, tierOptions, fallbackSalePrice = 0, fallbackDurationMinutes = 30) => {
   const source = rawValue && typeof rawValue === 'object' ? rawValue : {}
+  let previousSale = fallbackSalePrice
+  let previousList = fallbackSalePrice
+  let previousDuration = Number(fallbackDurationMinutes || 30) || 30
   return tierOptions.reduce((result, tier) => {
     const current = source?.[tier.key] && typeof source[tier.key] === 'object' ? source[tier.key] : {}
+    const hasPrice = current && ('sale_price' in current || 'list_price' in current)
+    const hasDuration = current && 'duration_minutes' in current
+    const salePrice = hasPrice ? (current?.sale_price ?? current?.list_price ?? previousSale) : previousSale
+    const listPrice = hasPrice ? (current?.list_price ?? current?.sale_price ?? previousList) : previousList
+    const durationMinutes = hasDuration
+      ? Number(current?.duration_minutes || previousDuration || 30)
+      : previousDuration
     result[tier.key] = createServiceTierState(
-      toThousandsDisplay(current?.sale_price ?? current?.list_price ?? fallbackSalePrice),
-      Number(current?.duration_minutes || fallbackDurationMinutes || 30)
+      toThousandsDisplay(salePrice),
+      durationMinutes
     )
-    result[tier.key].list_price = toThousandsDisplay(current?.list_price ?? current?.sale_price ?? fallbackSalePrice)
-    result[tier.key].sale_price = toThousandsDisplay(current?.sale_price ?? current?.list_price ?? fallbackSalePrice)
+    result[tier.key].list_price = toThousandsDisplay(listPrice)
+    result[tier.key].sale_price = toThousandsDisplay(salePrice)
+    previousSale = salePrice
+    previousList = listPrice
+    previousDuration = durationMinutes
     return result
   }, {})
 }
@@ -1945,11 +1945,11 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 }
 .service-tier-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 .motorcycle-tier-grid {
-  grid-template-columns: repeat(2, minmax(0, min(320px, 1fr)));
+  grid-template-columns: repeat(3, minmax(0, min(320px, 1fr)));
 }
 .service-tier-card {
   padding: 14px;

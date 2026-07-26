@@ -12,7 +12,7 @@ from .models import PlateLoyaltyProfile
 from .models import VehicleJob, VehicleJobService
 from .models import VehicleStatusLog
 from .models import VehicleJobProduct
-from apps.services.models import GeneralSettings, Service
+from apps.services.models import GeneralSettings, Service, service_tier_keys_for_plate
 from apps.workers.models import WorkerProfile
 from apps.products.models import Product
 from apps.inventory.models import InventoryItem, StockMovement
@@ -426,9 +426,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
     def _normalized_tariff_type(self, value, *, plate_type='car'):
         normalized = str(value or VehicleEntry.TariffType.TYPE_1).strip().lower() or VehicleEntry.TariffType.TYPE_1
-        allowed = {'type_1', 'type_2'} if plate_type == VehicleEntry.PlateType.MOTORCYCLE else {
-            'type_1', 'type_2', 'type_3', 'type_4'
-        }
+        allowed = set(service_tier_keys_for_plate(plate_type))
         if normalized not in allowed:
             return VehicleEntry.TariffType.TYPE_1
         return normalized
