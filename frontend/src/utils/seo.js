@@ -6,7 +6,7 @@ const DEFAULT_META = {
   description:
     'کارنوواش (CarnoWash) سامانه مدیریت کارواش برای پذیرش خودرو، پلاک‌خوان، تخصیص خدمات و نیرو، پرداخت، گزارش مالی، کیف پول، حضور و غیاب و باشگاه مشتریان.',
   robots: 'noindex, nofollow',
-  canonicalPath: '/'
+  canonicalPath: false
 }
 
 function upsertMeta(selector, attrs) {
@@ -56,8 +56,9 @@ export function applyRouteSeo(route) {
   if (typeof document === 'undefined') return
 
   const meta = routeMeta(route)
-  const canonicalPath = meta.canonicalPath || route.path || '/'
-  const canonicalUrl = new URL(canonicalPath, SITE_URL).toString()
+  const canonicalUrl = meta.canonicalPath === false
+    ? null
+    : new URL(meta.canonicalPath || route.path || '/', SITE_URL).toString()
 
   document.title = meta.title
   document.documentElement.lang = 'fa'
@@ -65,7 +66,11 @@ export function applyRouteSeo(route) {
 
   upsertMeta('meta[name="description"]', { name: 'description', content: meta.description })
   upsertMeta('meta[name="robots"]', { name: 'robots', content: meta.robots })
-  upsertCanonical(canonicalUrl)
+  if (canonicalUrl) {
+    upsertCanonical(canonicalUrl)
+  } else {
+    document.head.querySelector('link[rel="canonical"]')?.remove()
+  }
   upsertLink('icon', `${SITE_URL}/favicon.webp`, { type: 'image/webp' })
   upsertLink('icon', `${SITE_URL}/favicon.png`, { type: 'image/png' })
   upsertLink('apple-touch-icon', `${SITE_URL}/apple-touch-icon.png`)
@@ -75,9 +80,14 @@ export function applyRouteSeo(route) {
   upsertMeta('meta[property="og:locale"]', { property: 'og:locale', content: 'fa_IR' })
   upsertMeta('meta[property="og:title"]', { property: 'og:title', content: meta.title })
   upsertMeta('meta[property="og:description"]', { property: 'og:description', content: meta.description })
-  upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonicalUrl })
-  upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${SITE_URL}/logo/blue.webp` })
-  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary' })
+  if (canonicalUrl) {
+    upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonicalUrl })
+  } else {
+    document.head.querySelector('meta[property="og:url"]')?.remove()
+  }
+  upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${SITE_URL}/hero-3d.webp` })
+  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' })
   upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: meta.title })
   upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: meta.description })
+  upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: `${SITE_URL}/hero-3d.webp` })
 }

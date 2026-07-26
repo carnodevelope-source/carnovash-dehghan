@@ -32,7 +32,7 @@ const routes = [
         title: 'ورود به پنل | کارنوواش',
         description: 'ورود به پنل مدیریت کارنوواش.',
         robots: 'noindex, nofollow',
-        canonicalPath: '/login'
+        canonicalPath: false
       }
     }
   },
