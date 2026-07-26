@@ -630,15 +630,23 @@
                     <option value="closed">بستن تیکت</option>
                   </select>
                 </label>
-                <label v-if="authStore.isHqAdmin">
+                <label>
                   <span>ارجاع</span>
                   <select v-model="ticketReply.assign_to_user_id">
-                    <option :value="0">بدون ارجاع</option>
+                    <option :value="0">بدون ارجاع (مالکیت خودم)</option>
                     <option v-for="member in teamAssignable" :key="member.id" :value="member.id">
                       {{ member.full_name || member.username }}
                     </option>
                   </select>
                 </label>
+                <button
+                  type="button"
+                  class="ghost-btn"
+                  :disabled="!ticketReply.assign_to_user_id || ticketAssign.submitting"
+                  @click="referSelectedTicket"
+                >
+                  {{ ticketAssign.submitting ? '...' : 'ارجاع سریع' }}
+                </button>
               </div>
             </header>
 
@@ -1697,6 +1705,9 @@ const ticketReply = reactive({
   assign_to_user_id: 0,
   is_internal: false
 })
+const ticketAssign = reactive({
+  submitting: false
+})
 const walletTransfer = reactive({
   amountText: '',
   submitting: false,
@@ -1774,18 +1785,12 @@ const reportCarwashes = computed(() => filteredCarwashes.value.filter((item) => 
 const selectedCarwashInsight = computed(() => carwashInsight.data)
 
 const teamAssignable = computed(() => hqTeam.value.filter((item) => ['hq_admin', 'hq_support'].includes(item.platform_role)))
-const ticketScopeOptions = computed(() => (authStore.isHqAdmin
-  ? [
-    { key: 'all', label: 'همه' },
-    { key: 'mine', label: 'ارجاع به من' },
-    { key: 'unassigned', label: 'بدون مسئول' },
-    { key: 'urgent', label: 'فوری' }
-  ]
-  : [
-    { key: 'all', label: 'صف فعال' },
-    { key: 'answered', label: 'پاسخ‌داده‌شده' },
-    { key: 'urgent', label: 'فوری' }
-  ]))
+const ticketScopeOptions = computed(() => [
+  { key: 'all', label: 'صف من' },
+  { key: 'unassigned', label: 'بدون مسئول' },
+  { key: 'mine', label: 'ارجاع به من' },
+  { key: 'urgent', label: 'فوری' }
+])
 const ticketSummaryCards = computed(() => {
   const items = Array.isArray(tickets.value) ? tickets.value : []
   const counts = items.reduce((acc, item) => {
@@ -1800,17 +1805,9 @@ const ticketSummaryCards = computed(() => {
     return acc
   }, { total: 0, open: 0, pending: 0, answered: 0, closed: 0, unassigned: 0, mine: 0, urgent: 0 })
   const activeCount = counts.open + counts.pending + counts.answered
-  if (!authStore.isHqAdmin) {
-    return [
-      { key: 'open', label: 'جدید / باز', value: activeCount, tone: 'open' },
-      { key: 'pending', label: 'در حال پیگیری', value: counts.pending, tone: 'pending' },
-      { key: 'answered', label: 'پاسخ داده شده', value: counts.answered, tone: 'mine' },
-      { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' }
-    ]
-  }
   return [
-    { key: 'open', label: 'باز', value: activeCount, tone: 'open' },
-    { key: 'pending', label: 'در انتظار', value: counts.pending, tone: 'pending' },
+    { key: 'open', label: 'باز / مشترک', value: activeCount, tone: 'open' },
+    { key: 'unassigned', label: 'بدون مسئول', value: counts.unassigned, tone: 'pending' },
     { key: 'mine', label: 'ارجاع به من', value: counts.mine, tone: 'mine' },
     { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' }
   ]
@@ -2601,6 +2598,24 @@ const sendTicketReply = async () => {
   await loadOverview()
 }
 
+const referSelectedTicket = async () => {
+  const assignTo = Number(ticketReply.assign_to_user_id || 0)
+  if (!selectedTicket.value?.id || !assignTo || ticketAssign.submitting) return
+  ticketAssign.submitting = true
+  try {
+    const { data } = await api.post(`/auth/hq/tickets/${selectedTicket.value.id}/assign/`, {
+      assign_to_user_id: assignTo,
+      note: `ارجاع تیکت توسط ${authStore.user?.full_name || authStore.user?.username || 'پشتیبان'}`
+    })
+    selectedTicket.value = data
+    ticketReply.assign_to_user_id = Number(data?.assigned_to || assignTo)
+    await loadTickets({ skipSelection: true })
+    await loadOverview()
+  } finally {
+    ticketAssign.submitting = false
+  }
+}
+
 const submitWalletTransfer = async () => {
   walletTransfer.error = ''
   walletTransfer.success = ''
@@ -2811,7 +2826,9 @@ watch(activeTab, async (tab) => {
   }
   if (tab === 'overview') await loadOverview()
   if (tab === 'carwashes') await loadCarwashes()
-  if (tab === 'tickets') await loadTickets()
+  if (tab === 'tickets') {
+    await Promise.all([loadTickets(), loadTeam()])
+  }
   if (tab === 'team' && authStore.isHqAdmin) await loadTeam()
   if (tab === 'reports' && authStore.isHqAdmin) {
     if (!carwashes.value.length) await loadCarwashes()
@@ -2847,6 +2864,7 @@ onMounted(async () => {
     await loadTeam()
   } else {
     activeTab.value = 'tickets'
+    await loadTeam()
   }
   setReportRange('month')
   if (activeTab.value === 'tickets') await loadTickets()

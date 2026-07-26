@@ -120,12 +120,11 @@
               <div class="conversation-copy">
                 <span class="panel-kicker">Conversation</span>
                 <div class="conversation-title">
-                  <h3>{{ detailState.ticket.subject }}</h3>
+                  <h3 :title="detailState.ticket.subject">{{ detailState.ticket.subject }}</h3>
                   <span class="status-pill" :class="statusClass(detailState.ticket.status)">
                     {{ clientStatusLabel(detailState.ticket) }}
                   </span>
                 </div>
-                <p>{{ detailState.ticket.message }}</p>
               </div>
 
               <div class="conversation-tags">
@@ -174,79 +173,79 @@
               </article>
             </section>
 
-            <section class="reply-shell">
-              <div class="reply-head">
-                <strong>ارسال پاسخ</strong>
-                <small v-if="detailState.ticket.status === 'closed'">این تیکت بسته شده و فقط برای مشاهده است.</small>
-                <small v-else>پاسخ کوتاه، شفاف و مستند بنویسید. با `Ctrl + Enter` هم ارسال می‌شود.</small>
-              </div>
-
-              <div v-if="detailState.ticket.status !== 'closed'" class="reply-form">
-                <textarea
-                  v-model.trim="detailState.replyBody"
-                  :disabled="detailState.sendingReply"
-                  rows="4"
-                  placeholder="پاسخ تکمیلی خود را بنویسید..."
-                  @keydown.ctrl.enter.prevent="submitReply"
-                />
-                <div class="reply-actions">
-                  <span class="hint">{{ toFa(detailState.replyBody.length) }} کاراکتر</span>
-                  <button
-                    type="button"
-                    class="primary-btn"
-                    :disabled="detailState.sendingReply || !detailState.replyBody"
-                    @click="submitReply"
-                  >
-                    {{ detailState.sendingReply ? 'در حال ارسال...' : 'ارسال پیام' }}
-                  </button>
+            <footer class="conversation-footer">
+              <section class="reply-shell">
+                <div class="reply-head">
+                  <strong>{{ detailState.ticket.status === 'closed' ? 'وضعیت تیکت' : 'ارسال پاسخ' }}</strong>
+                  <small v-if="detailState.ticket.status !== 'closed'">پاسخ کوتاه بنویسید. با Ctrl + Enter هم ارسال می‌شود.</small>
                 </div>
-              </div>
 
-              <div v-else class="closed-note">
-                <span class="status-pill closed">تیکت بسته شده</span>
-                <p>اگر هنوز مشکل باقی است، یک تیکت جدید با ارجاع به شماره همین تیکت ثبت کنید.</p>
-              </div>
-            </section>
-
-            <section v-if="detailState.ticket.status === 'closed'" class="feedback-shell">
-              <div class="reply-head">
-                <strong>نظر شما درباره این تیکت</strong>
-                <small v-if="canRateTicket(detailState.ticket)">تجربه رسیدگی را ثبت کنید تا کیفیت پشتیبانی بهتر شود.</small>
-                <small v-else>نظر شما قبلا برای این تیکت ثبت شده است.</small>
-              </div>
-
-              <template v-if="canRateTicket(detailState.ticket)">
-                <div class="rating-stars">
-                  <button
-                    v-for="score in 5"
-                    :key="score"
-                    type="button"
-                    class="rating-star-btn"
-                    :class="{ active: detailState.feedbackScore >= score }"
-                    @click="detailState.feedbackScore = score"
-                  >
-                    ★
-                  </button>
+                <div v-if="detailState.ticket.status !== 'closed'" class="reply-form">
+                  <textarea
+                    v-model.trim="detailState.replyBody"
+                    :disabled="detailState.sendingReply"
+                    rows="3"
+                    placeholder="پاسخ تکمیلی خود را بنویسید..."
+                    @keydown.ctrl.enter.prevent="submitReply"
+                  />
+                  <div class="reply-actions">
+                    <span class="hint">{{ toFa(detailState.replyBody.length) }} کاراکتر</span>
+                    <button
+                      type="button"
+                      class="primary-btn"
+                      :disabled="detailState.sendingReply || !detailState.replyBody"
+                      @click="submitReply"
+                    >
+                      {{ detailState.sendingReply ? 'در حال ارسال...' : 'ارسال پیام' }}
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  v-model.trim="detailState.feedbackText"
-                  rows="3"
-                  placeholder="اگر خواستید، خیلی کوتاه تجربه خود از رسیدگی این تیکت را بنویسید..."
-                />
-                <div class="reply-actions">
-                  <span class="hint">امتیاز شما برای ارزیابی کیفیت پشتیبانی استفاده می‌شود.</span>
-                  <button type="button" class="primary-btn" :disabled="!detailState.feedbackScore" @click="submitTicketFeedback">
-                    ثبت نظر
-                  </button>
-                </div>
-              </template>
 
-              <div v-else class="feedback-static">
-                <div class="feedback-score">{{ satisfactionLabel(detailState.ticket.customer_satisfaction) }}</div>
-                <p v-if="detailState.ticket.customer_feedback">{{ detailState.ticket.customer_feedback }}</p>
-                <p v-else>برای این تیکت امتیاز ثبت شده است.</p>
-              </div>
-            </section>
+                <div v-else class="closed-note">
+                  <span class="status-pill closed">تیکت بسته شده</span>
+                  <p>اگر مشکل باقی است، تیکت جدید با ارجاع به #{{ detailState.ticket.id }} ثبت کنید.</p>
+                </div>
+              </section>
+
+              <section v-if="detailState.ticket.status === 'closed'" class="feedback-shell">
+                <div class="reply-head">
+                  <strong>امتیازدهی به پشتیبانی</strong>
+                  <small v-if="canRateTicket(detailState.ticket)">تجربه رسیدگی را ثبت کنید.</small>
+                  <small v-else>نظر شما قبلا ثبت شده است.</small>
+                </div>
+
+                <template v-if="canRateTicket(detailState.ticket)">
+                  <div class="rating-stars">
+                    <button
+                      v-for="score in 5"
+                      :key="score"
+                      type="button"
+                      class="rating-star-btn"
+                      :class="{ active: detailState.feedbackScore >= score }"
+                      @click="detailState.feedbackScore = score"
+                    >
+                      ★
+                    </button>
+                  </div>
+                  <textarea
+                    v-model.trim="detailState.feedbackText"
+                    rows="2"
+                    placeholder="اختیاری: تجربه خود را خیلی کوتاه بنویسید..."
+                  />
+                  <div class="reply-actions">
+                    <button type="button" class="primary-btn" :disabled="!detailState.feedbackScore" @click="submitTicketFeedback">
+                      ثبت امتیاز
+                    </button>
+                  </div>
+                </template>
+
+                <div v-else class="feedback-static">
+                  <div class="feedback-score">{{ satisfactionLabel(detailState.ticket.customer_satisfaction) }}</div>
+                  <p v-if="detailState.ticket.customer_feedback">{{ detailState.ticket.customer_feedback }}</p>
+                  <p v-else>برای این تیکت امتیاز ثبت شده است.</p>
+                </div>
+              </section>
+            </footer>
           </template>
 
           <div v-else class="empty-state conversation-empty">
@@ -1157,10 +1156,128 @@ onBeforeUnmount(() => {
 }
 
 .inbox-card,
-.conversation-card{
+.conversation-card {
   display: grid;
   gap: 14px;
   padding: 20px;
+}
+
+.conversation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 560px;
+  height: calc(100dvh - 148px);
+  max-height: calc(100dvh - 148px);
+  overflow: hidden;
+  position: sticky;
+  top: 18px;
+}
+
+.conversation-card > * {
+  min-width: 0;
+}
+
+.conversation-head,
+.ticket-attachments-shell {
+  flex: 0 0 auto;
+}
+
+.conversation-head {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.conversation-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.conversation-title h3 {
+  margin: 0;
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 18px;
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.ticket-attachments-shell {
+  display: grid;
+  gap: 10px;
+  max-height: 110px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #fff;
+}
+
+.message-thread {
+  flex: 1 1 auto;
+  min-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: linear-gradient(180deg, rgba(247, 250, 255, 0.94), rgba(255, 255, 255, 0.98));
+}
+
+.conversation-footer {
+  flex: 0 1 auto;
+  max-height: min(38%, 320px);
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.reply-shell,
+.feedback-shell {
+  flex: 0 0 auto;
+  z-index: auto;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #fff;
+  box-shadow: none;
+}
+
+.closed-note {
+  display: grid;
+  gap: 8px;
+}
+
+.closed-note p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.feedback-shell textarea {
+  min-height: 64px;
+  max-height: 96px;
+  resize: vertical;
+}
+
+.reply-form textarea {
+  min-height: 72px;
+  max-height: 120px;
 }
 
 .chip-row {
@@ -1193,13 +1310,9 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-.ticket-list,
-.message-thread {
+.ticket-list {
   min-height: 0;
   overflow: auto;
-}
-
-.ticket-list {
   max-height: calc(100vh - 380px);
   align-content: start;
 }
@@ -1279,10 +1392,6 @@ onBeforeUnmount(() => {
   color: #475569;
 }
 
-.conversation-card {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-}
-
 .conversation-copy {
   display: grid;
   gap: 10px;
@@ -1295,12 +1404,6 @@ onBeforeUnmount(() => {
 .metric-card strong {
   font-size: 14px;
   line-height: 1.8;
-}
-
-.message-thread {
-  padding: 18px;
-  border-radius: 28px;
-  background: linear-gradient(180deg, rgba(247, 250, 255, 0.94), rgba(255, 255, 255, 0.98));
 }
 
 .message-row {
@@ -1363,13 +1466,6 @@ onBeforeUnmount(() => {
   opacity: 0.75;
 }
 
-.reply-shell,
-.feedback-shell {
-  padding: 18px;
-  display: grid;
-  gap: 12px;
-}
-
 .reply-head {
   display: grid;
   gap: 6px;
@@ -1399,7 +1495,7 @@ onBeforeUnmount(() => {
 
 .reply-form textarea,
 .feedback-shell textarea {
-  min-height: 100px;
+  min-height: 72px;
 }
 
 .modal-form textarea {
@@ -1564,6 +1660,11 @@ onBeforeUnmount(() => {
 
 .conversation-empty {
   min-height: 100%;
+}
+
+.conversation-card > .empty-state,
+.conversation-card > .loading-state {
+  flex: 1 1 auto;
 }
 
 .empty-icon {
@@ -1954,17 +2055,6 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
 }
 
-.conversation-card {
-  max-height: calc(100dvh - 148px);
-  position: sticky;
-  top: 18px;
-}
-
-.conversation-head {
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
-}
-
 .metric-strip {
   gap: 10px;
 }
@@ -1974,22 +2064,9 @@ onBeforeUnmount(() => {
   padding: 13px 14px;
 }
 
-.message-thread {
-  min-height: 280px;
-  border-radius: 20px;
-  border: 1px solid rgba(226, 232, 240, 0.86);
-}
-
 .message-bubble {
   border-radius: 18px;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-}
-
-.reply-shell {
-  z-index: 3;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(10px);
 }
 
 .reply-shell .reply-head small {
@@ -1997,40 +2074,12 @@ onBeforeUnmount(() => {
 }
 
 .reply-form {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
   align-items: end;
 }
 
 .reply-form textarea {
-  min-height: 54px;
-  max-height: 96px;
   resize: none;
-}
-
-.conversation-card {
-  min-width: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.conversation-card > * {
-  min-width: 0;
-}
-
-.message-thread {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.reply-shell {
-  flex: 0 0 auto;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.reply-form {
-  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
 }
 
 .reply-actions {
@@ -2038,16 +2087,13 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
+  align-items: end;
+  justify-content: flex-end;
 }
 
 .reply-actions .primary-btn {
   max-width: 100%;
   white-space: nowrap;
-}
-
-.reply-actions {
-  align-items: end;
-  justify-content: flex-end;
 }
 
 .reply-form textarea,
@@ -2084,11 +2130,19 @@ onBeforeUnmount(() => {
 @media (max-width: 1180px) {
   .conversation-card {
     position: static;
+    height: auto;
     max-height: none;
+    min-height: 640px;
   }
 
   .message-thread {
-    max-height: 56dvh;
+    min-height: 420px;
+    max-height: none;
+    flex: 1 1 420px;
+  }
+
+  .conversation-footer {
+    max-height: none;
   }
 }
 
@@ -2131,6 +2185,12 @@ onBeforeUnmount(() => {
     border-radius: 20px;
   }
 
+  .conversation-card {
+    min-height: 72dvh;
+    height: auto;
+    max-height: none;
+  }
+
   .ticket-list {
     display: grid;
     gap: 10px;
@@ -2149,20 +2209,15 @@ onBeforeUnmount(() => {
     justify-self: start;
   }
 
-  .conversation-card {
-    max-height: none;
-  }
-
-  .conversation-head {
-    display: grid;
-    gap: 10px;
+  .conversation-title h3 {
+    font-size: 16px;
   }
 
   .message-thread {
-    max-height: none;
-    min-height: 220px;
+    min-height: 52dvh;
+    flex: 1 1 52dvh;
     padding: 12px;
-    border-radius: 18px;
+    border-radius: 16px;
   }
 
   .message-bubble {
@@ -2170,10 +2225,16 @@ onBeforeUnmount(() => {
     padding: 13px 14px;
   }
 
-  .reply-shell {
-    margin-inline: -2px;
-    padding: 14px;
-    border-radius: 18px;
+  .conversation-footer {
+    max-height: none;
+    gap: 8px;
+  }
+
+  .reply-shell,
+  .feedback-shell {
+    margin: 0;
+    padding: 12px;
+    border-radius: 16px;
   }
 
   .reply-form {
@@ -2190,6 +2251,11 @@ onBeforeUnmount(() => {
 
   .reply-form textarea {
     min-height: 72px;
+    font-size: 16px;
+  }
+
+  .feedback-shell textarea {
+    min-height: 56px;
     font-size: 16px;
   }
 

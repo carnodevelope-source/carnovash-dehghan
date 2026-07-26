@@ -1000,16 +1000,9 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
 
     def _create_bank_withdraw_ticket(self, *, tenant, user, source_wallet, amount, iban, holder, description):
         now = timezone.now()
-        assigned_to = None
-        try:
-            from apps.auth.models import User
-            assigned_to = (
-                User.objects.filter(platform_role=User.PlatformRoles.HQ_SUPPORT, is_active=True)
-                .order_by('-id')
-                .first()
-            )
-        except Exception:
-            assigned_to = None
+        from apps.auth.models import SupportTicket, SupportTicketMessage
+        from apps.auth.support_tickets import send_payment_ticket_sms_to_simple_supporters
+
         message = "\n".join([
             "wallet-bank-withdrawal",
             f"wallet_id: {source_wallet.id}",
@@ -1032,7 +1025,7 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
             category=SupportTicket.Category.FINANCIAL,
             priority=SupportTicket.Priority.HIGH,
             status=SupportTicket.Status.OPEN,
-            assigned_to=assigned_to,
+            assigned_to=None,
             last_message_at=now,
         )
         SupportTicketMessage.objects.create(
@@ -1040,6 +1033,7 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
             sender=user if getattr(user, 'is_authenticated', False) else None,
             body=message,
         )
+        send_payment_ticket_sms_to_simple_supporters(ticket)
         return ticket
 
     def post(self, request):
