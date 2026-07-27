@@ -412,7 +412,7 @@
               <div class="general-settings-head">
                 <div>
                   <strong>تنظیمات سرویس پیامک</strong>
-                  <p class="sms-cost-hint">هزینه: هر ۱۰۰ کاراکتر ۱۸۵ تومان (۱–۱۰۰: ۱۸۵، ۱۰۱–۲۰۰: ۳۷۰، …)</p>
+                  <p class="sms-cost-hint">هزینه: هر ۷۰ کاراکتر ۱۸۵ تومان (۱–۷۰: ۱۸۵، ۷۱–۱۴۰: ۳۷۰، …)</p>
                 </div>
               </div>
               <div class="sms-auto-send-panel">
@@ -436,7 +436,7 @@
                   <div class="sms-preview-panel">
                     <div class="sms-preview-head">
                       <small>نمونه خروجی</small>
-                      <span>پیام پذیرش</span>
+                      <span>{{ `پیام پذیرش • ${smsAssignedEstimatedCostLabel}` }}</span>
                     </div>
                     <pre class="sms-preview-box">{{ smsAssignedPreview }}</pre>
                   </div>
@@ -455,7 +455,7 @@
                   <div class="sms-preview-panel">
                     <div class="sms-preview-head">
                       <small>نمونه خروجی</small>
-                      <span>فاکتور ترخیص</span>
+                      <span>{{ `فاکتور ترخیص • ${smsReleasedEstimatedCostLabel}` }}</span>
                     </div>
                     <pre class="sms-preview-box">{{ smsReleasedPreview }}</pre>
                   </div>
@@ -1102,6 +1102,28 @@ const smsTemplateTokens = [
   '[مبلغ نهایی]',
   '[جمع تخفیف]'
 ]
+const SMS_CHARS_PER_SEGMENT = 70
+const SMS_PRICE_PER_SEGMENT = 185
+
+const smsSegmentsForText = (text) => {
+  const length = String(text || '').length
+  if (!length) return 0
+  return Math.ceil(length / SMS_CHARS_PER_SEGMENT)
+}
+
+const smsCostForText = (text) => smsSegmentsForText(text) * SMS_PRICE_PER_SEGMENT
+
+const toPersianDigits = (value) => String(value ?? '').replace(/\d/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)] || digit)
+
+const toPersianMoney = (value) => toPersianDigits(Number(value || 0).toLocaleString('en-US'))
+
+const smsEstimatedCostLabel = (text) => {
+  const segments = smsSegmentsForText(text)
+  if (!segments) return 'بدون هزینه'
+  const amount = smsCostForText(text)
+  return `حدود ${toPersianMoney(amount)} تومان (${toPersianDigits(segments)} پارت)`
+}
+
 const ensureReleasedSmsTemplateDetails = (template) => {
   const text = String(template || '')
     .replaceAll('[خطاب مشتری]', '[نام مشتری]')
@@ -1237,6 +1259,8 @@ const smsAssignedPreview = computed(() => renderSmsPreview(ensureAssignedSmsTemp
 const smsReleasedPreview = computed(() => renderSmsPreview(
   prepareReleasedDiscountPreviewTemplate(ensureReleasedSmsTemplateDetails(generalSettings.sms_vehicle_released_template))
 ))
+const smsAssignedEstimatedCostLabel = computed(() => smsEstimatedCostLabel(smsAssignedPreview.value))
+const smsReleasedEstimatedCostLabel = computed(() => smsEstimatedCostLabel(smsReleasedPreview.value))
 
 watch(() => forms.purchase.product_id, (newProductId) => {
   const selected = products.value.find((item) => Number(item.id) === Number(newProductId))

@@ -28,7 +28,7 @@ ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩'
 
 
 def sms_chars_per_segment():
-    return max(1, int(getattr(settings, 'SMS_CHARS_PER_SEGMENT', 100) or 100))
+    return max(1, int(getattr(settings, 'SMS_CHARS_PER_SEGMENT', 70) or 70))
 
 
 def sms_price_per_segment():
