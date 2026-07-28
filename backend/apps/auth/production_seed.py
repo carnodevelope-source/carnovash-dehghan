@@ -8,20 +8,7 @@ from apps.products.models import Product, ProductCategory
 from apps.services.models import GeneralSettings, Service, ServiceCategory
 
 
-PRODUCTION_CARWASHES = [
-    {
-        "name": "کارواش یک",
-        "slug": "carwash-1",
-        "address": "تهران",
-        "manager": {
-            "username": "manager1",
-            "password": "manager1@123",
-            "full_name": "Manager One",
-            "phone": "09120001001",
-        },
-        "features": list(CarWashFeaturePurchase.FeatureKey.values),
-    },
-]
+PRODUCTION_CARWASHES = []
 
 
 HQ_ADMIN = {

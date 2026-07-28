@@ -58,7 +58,7 @@ class HqReportsShareSplitTests(TestCase):
             balance=0,
             is_active=True,
         )
-        CarWashFeaturePurchase.objects.create(
+        excel_purchase = CarWashFeaturePurchase.objects.create(
             tenant=tenant,
             feature_key=CarWashFeaturePurchase.FeatureKey.EXCEL_IMPORT,
             is_active=True,
@@ -107,6 +107,7 @@ class HqReportsShareSplitTests(TestCase):
             amount=3000000,
             description='feature option purchase',
             reference_type='feature_option_purchase',
+            reference_id=excel_purchase.id,
         )
         CashflowTransaction.objects.create(
             tenant=tenant,
@@ -189,4 +190,45 @@ class HqReportsShareSplitTests(TestCase):
 
         self.assertIn(active.id, tenant_ids)
         self.assertNotIn(inactive.id, tenant_ids)
+        self.assertEqual(int(payload['summary']['paid_amount']), 1000000)
+
+    def test_internal_carwash_is_excluded_from_hq_reports(self):
+        active = CarWash.objects.create(name='فعال', slug='active-visible-hq-report', is_active=True)
+        internal = CarWash.objects.create(
+            name='میلان',
+            slug='milan-internal-hq-report',
+            is_active=True,
+            exclude_from_hq_reports=True,
+        )
+        for tenant, amount in ((active, 1000000), (internal, 9000000)):
+            vehicle = VehicleEntry.objects.create(
+                tenant=tenant,
+                plate_number='12ب34567',
+                plate_left='12',
+                plate_letter='ب',
+                plate_mid='345',
+                plate_right='67',
+                car_model='206',
+                car_color='سفید',
+                driver_name='رضا',
+                driver_phone='09120000000',
+                status=VehicleEntry.Status.RELEASED,
+            )
+            Payment.objects.create(
+                tenant=tenant,
+                vehicle_entry=vehicle,
+                method=Payment.Method.CASH,
+                status=Payment.Status.SUCCESS,
+                amount=amount,
+                service_amount=amount,
+                product_amount=0,
+                tip_amount=0,
+                discount_amount=0,
+            )
+
+        payload = _build_hq_report_snapshot()
+        tenant_ids = {item['tenant_id'] for item in payload['rows']}
+
+        self.assertIn(active.id, tenant_ids)
+        self.assertNotIn(internal.id, tenant_ids)
         self.assertEqual(int(payload['summary']['paid_amount']), 1000000)

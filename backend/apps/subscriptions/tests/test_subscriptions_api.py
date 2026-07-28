@@ -67,6 +67,39 @@ class SubscriptionsApiTests(APITestCase):
         self.assertEqual(listing.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(listing.data['count'], 1)
 
+    def test_hq_summary_and_list_exclude_internal_tenants(self):
+        internal_tenant = CarWash.objects.create(
+            name='میلان',
+            slug='milan-internal-subscription',
+            is_active=True,
+            exclude_from_hq_reports=True,
+        )
+        create_order_and_activate(
+            tenant=self.tenant,
+            product=self.product,
+            plan=self.plan,
+            actor=self.hq_admin,
+            payment_method=ServiceOrder.PaymentMethod.MANUAL_HQ,
+        )
+        create_order_and_activate(
+            tenant=internal_tenant,
+            product=self.product,
+            plan=self.plan,
+            actor=self.hq_admin,
+            payment_method=ServiceOrder.PaymentMethod.MANUAL_HQ,
+        )
+
+        self.client.force_authenticate(self.hq_admin)
+        summary = self.client.get('/api/subscriptions/hq/summary/')
+        self.assertEqual(summary.status_code, status.HTTP_200_OK)
+        self.assertEqual(summary.data['clients_count'], 1)
+
+        listing = self.client.get('/api/subscriptions/hq/subscriptions/')
+        self.assertEqual(listing.status_code, status.HTTP_200_OK)
+        tenant_ids = {item['tenant'] for item in listing.data['results']}
+        self.assertIn(self.tenant.id, tenant_ids)
+        self.assertNotIn(internal_tenant.id, tenant_ids)
+
     def test_support_cannot_see_profit_and_cannot_mutate(self):
         order = create_order_and_activate(
             tenant=self.tenant,

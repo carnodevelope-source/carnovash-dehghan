@@ -796,6 +796,10 @@ class HqBaseView(APIView):
         return Response({'detail': 'دسترسی فقط برای مدیرکل مجاز است.'}, status=status.HTTP_403_FORBIDDEN)
 
 
+def _hq_visible_carwashes():
+    return CarWash.objects.filter(exclude_from_hq_reports=False)
+
+
 class HqOverviewView(HqBaseView):
     def get(self, request):
         forbidden = self.forbid_if_not_hq(request)
@@ -804,18 +808,31 @@ class HqOverviewView(HqBaseView):
 
         close_stale_support_tickets()
         open_statuses = [SupportTicket.Status.OPEN, SupportTicket.Status.PENDING, SupportTicket.Status.ANSWERED]
+        visible_carwashes = _hq_visible_carwashes()
         summary = {
-            'active_carwashes': CarWash.objects.filter(is_active=True).count(),
-            'total_carwashes': CarWash.objects.count(),
-            'open_tickets': SupportTicket.objects.filter(status__in=open_statuses).count(),
-            'urgent_tickets': SupportTicket.objects.filter(status__in=open_statuses, priority=SupportTicket.Priority.URGENT).count(),
+            'active_carwashes': visible_carwashes.filter(is_active=True).count(),
+            'total_carwashes': visible_carwashes.count(),
+            'open_tickets': SupportTicket.objects.filter(
+                status__in=open_statuses,
+                tenant__exclude_from_hq_reports=False,
+            ).count(),
+            'urgent_tickets': SupportTicket.objects.filter(
+                status__in=open_statuses,
+                priority=SupportTicket.Priority.URGENT,
+                tenant__exclude_from_hq_reports=False,
+            ).count(),
             'hq_support_users': User.objects.filter(platform_role=User.PlatformRoles.HQ_SUPPORT, is_active=True).count(),
-            'today_vehicles': VehicleEntry.objects.filter(check_in_at__date=timezone.localdate()).count(),
+            'today_vehicles': VehicleEntry.objects.filter(
+                check_in_at__date=timezone.localdate(),
+                tenant__exclude_from_hq_reports=False,
+            ).count(),
         }
 
-        recent_carwashes = CarWash.objects.order_by('-created_at')[:5]
+        recent_carwashes = visible_carwashes.order_by('-created_at')[:5]
         recent_tickets = apply_hq_ticket_visibility(
-            SupportTicket.objects.select_related('tenant', 'created_by', 'assigned_to'),
+            SupportTicket.objects.select_related('tenant', 'created_by', 'assigned_to').filter(
+                tenant__exclude_from_hq_reports=False,
+            ),
             request.user,
         ).order_by('-last_message_at', '-created_at')[:6]
         return Response(
@@ -833,7 +850,7 @@ class HqCarWashListCreateView(HqBaseView):
         forbidden = self.forbid_if_not_hq(request)
         if forbidden:
             return forbidden
-        rows = CarWash.objects.order_by('-id')
+        rows = _hq_visible_carwashes().order_by('-id')
         return Response(CarWashListSerializer(rows, many=True).data, status=status.HTTP_200_OK)
 
     @transaction.atomic
@@ -910,6 +927,9 @@ class HqCarWashUpdateView(HqBaseView):
         if 'is_active' in data:
             tenant.is_active = data['is_active']
             changed_fields.append('is_active')
+        if 'exclude_from_hq_reports' in data:
+            tenant.exclude_from_hq_reports = data['exclude_from_hq_reports']
+            changed_fields.append('exclude_from_hq_reports')
         if changed_fields:
             changed_fields.append('updated_at')
             tenant.save(update_fields=changed_fields)
@@ -952,7 +972,7 @@ class HqCarWashInsightView(HqBaseView):
         if forbidden:
             return forbidden
 
-        tenant = CarWash.objects.filter(pk=pk).first()
+        tenant = _hq_visible_carwashes().filter(pk=pk).first()
         if not tenant:
             return Response({'detail': 'کارواش یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1271,6 +1291,7 @@ class HqTicketListView(HqBaseView):
             SupportTicket.objects.select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
             .select_related('registration_request__manager')
             .prefetch_related('messages__sender')
+            .filter(tenant__exclude_from_hq_reports=False)
             .order_by('-last_message_at', '-created_at')
         )
         queryset = apply_hq_ticket_visibility(queryset, request.user)
@@ -1302,7 +1323,7 @@ class HqTicketDetailView(HqBaseView):
 
         close_stale_support_tickets()
         queryset = (
-            SupportTicket.objects.filter(pk=pk)
+            SupportTicket.objects.filter(pk=pk, tenant__exclude_from_hq_reports=False)
             .select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
             .select_related('registration_request__manager')
             .prefetch_related('messages__sender', 'attachments')
@@ -1321,7 +1342,10 @@ class HqTicketMessageCreateView(HqBaseView):
         if forbidden:
             return forbidden
 
-        queryset = SupportTicket.objects.filter(pk=pk).select_related('assigned_to', 'tenant')
+        queryset = SupportTicket.objects.filter(
+            pk=pk,
+            tenant__exclude_from_hq_reports=False,
+        ).select_related('assigned_to', 'tenant')
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         ticket = queryset.first()
         if not ticket:
@@ -1392,7 +1416,10 @@ class HqTicketWalletTransferView(HqBaseView):
         if forbidden:
             return forbidden
 
-        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).select_related('tenant', 'assigned_to')
+        queryset = SupportTicket.objects.select_for_update().filter(
+            pk=pk,
+            tenant__exclude_from_hq_reports=False,
+        ).select_related('tenant', 'assigned_to')
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         ticket = queryset.first()
         if not ticket:
@@ -1466,7 +1493,10 @@ class HqTicketWalletWithdrawView(HqBaseView):
         if forbidden:
             return forbidden
 
-        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).select_related('tenant', 'assigned_to')
+        queryset = SupportTicket.objects.select_for_update().filter(
+            pk=pk,
+            tenant__exclude_from_hq_reports=False,
+        ).select_related('tenant', 'assigned_to')
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         ticket = queryset.first()
         if not ticket:
@@ -1556,7 +1586,7 @@ class HqTicketApproveRegistrationView(HqBaseView):
 
         queryset = (
             SupportTicket.objects.select_for_update()
-            .filter(pk=pk, is_registration_request=True)
+            .filter(pk=pk, is_registration_request=True, tenant__exclude_from_hq_reports=False)
             .select_related('tenant', 'assigned_to', 'registration_request__manager')
         )
         queryset = apply_hq_ticket_visibility(queryset, request.user)
@@ -1662,7 +1692,10 @@ class HqTicketAssignView(HqBaseView):
         if forbidden:
             return forbidden
 
-        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).select_related('assigned_to', 'tenant')
+        queryset = SupportTicket.objects.select_for_update().filter(
+            pk=pk,
+            tenant__exclude_from_hq_reports=False,
+        ).select_related('assigned_to', 'tenant')
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         ticket = queryset.first()
         if not ticket:
@@ -1706,7 +1739,12 @@ class HqTicketAssignView(HqBaseView):
 
 
 def _build_hq_report_snapshot(start=None, end=None):
-    tenants = list(CarWash.objects.filter(is_active=True).order_by('name').only('id', 'name', 'is_active'))
+    tenants = list(
+        _hq_visible_carwashes()
+        .filter(is_active=True)
+        .order_by('name')
+        .only('id', 'name', 'is_active', 'exclude_from_hq_reports')
+    )
     grouped = {
         tenant.id: {
             'tenant_id': tenant.id,
@@ -2228,7 +2266,7 @@ class HqCarWashReportsView(HqBaseView):
         if forbidden:
             return forbidden
 
-        tenant = CarWash.objects.filter(pk=pk, is_active=True).first()
+        tenant = _hq_visible_carwashes().filter(pk=pk, is_active=True).first()
         if not tenant:
             return Response({'detail': 'کارواش فعال پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
 

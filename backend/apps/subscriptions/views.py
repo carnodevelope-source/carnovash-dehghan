@@ -148,6 +148,7 @@ class SubscriptionsHqBaseView(APIView):
 
 def _apply_subscription_filters(qs, request):
     params = request.query_params
+    qs = qs.filter(tenant__exclude_from_hq_reports=False)
     # Inactive carwashes are excluded from HQ service reports by default.
     include_inactive = str(params.get('include_inactive') or '').strip().lower() in {'1', 'true', 'yes'}
     if not include_inactive:
@@ -368,7 +369,7 @@ class ClientServicesView(SubscriptionsHqBaseView):
         forbidden = self.forbid(request)
         if forbidden:
             return forbidden
-        tenant = CarWash.objects.filter(pk=tenant_id, is_active=True).first()
+        tenant = CarWash.objects.filter(pk=tenant_id, is_active=True, exclude_from_hq_reports=False).first()
         if not tenant:
             return Response({'detail': 'کلاینت فعال یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         seed_catalog_from_legacy()
@@ -403,7 +404,10 @@ class ManualOrderCreateView(SubscriptionsHqBaseView):
         caps = self.caps(request)
         if not caps.get('mutate_status') and not caps.get('register_payment'):
             return Response({'detail': 'دسترسی ایجاد سفارش ندارید.'}, status=status.HTTP_403_FORBIDDEN)
-        tenant = CarWash.objects.filter(pk=request.data.get('tenant_id')).first()
+        tenant = CarWash.objects.filter(
+            pk=request.data.get('tenant_id'),
+            exclude_from_hq_reports=False,
+        ).first()
         product = ServiceProduct.objects.filter(pk=request.data.get('product_id')).select_related('project').first()
         plan = ServicePlan.objects.filter(pk=request.data.get('plan_id'), product=product).first() if product else None
         if not tenant or not product or not plan:
@@ -463,6 +467,7 @@ class AlertsListView(SubscriptionsHqBaseView):
         qs = ServiceAlert.objects.select_related('tenant', 'subscription', 'subscription__product').filter(
             is_resolved=False,
             tenant__is_active=True,
+            tenant__exclude_from_hq_reports=False,
         )
         if request.query_params.get('tenant_id'):
             qs = qs.filter(tenant_id=request.query_params.get('tenant_id'))

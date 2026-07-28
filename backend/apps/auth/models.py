@@ -8,6 +8,7 @@ class CarWash(models.Model):
     slug = models.SlugField(max_length=160, unique=True, blank=True)
     address = models.CharField(max_length=300, blank=True, default='')
     is_active = models.BooleanField(default=True)
+    exclude_from_hq_reports = models.BooleanField(default=False)
     trial_started_at = models.DateTimeField(null=True, blank=True)
     trial_ends_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
