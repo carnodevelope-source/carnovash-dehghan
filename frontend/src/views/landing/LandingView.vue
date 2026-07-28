@@ -570,40 +570,15 @@ const mountFaqSchema = () => {
   faqSchemaEl.setAttribute('data-landing-faq', '1')
   faqSchemaEl.textContent = JSON.stringify({
     '@context': 'https://schema.org',
-    '@graph': [
-      {
-        '@type': 'BreadcrumbList',
-        itemListElement: [
-          {
-            '@type': 'ListItem',
-            position: 1,
-            name: 'نرم افزار مدیریت کارواش کارنوواش',
-            item: 'https://carnowash.ir/'
-          }
-        ]
-      },
-      {
-        '@type': 'SoftwareApplication',
-        name: 'کارنوواش',
-        alternateName: ['کارنواش', 'کارنو واش', 'CarnoWash'],
-        applicationCategory: 'BusinessApplication',
-        operatingSystem: 'Web',
-        url: 'https://carnowash.ir/',
-        description:
-          'کارنوواش (CarnoWash) سامانه مدیریت کارواش برای پذیرش خودرو، پلاک‌خوان، خدمات، گزارش مالی، پیامک و باشگاه مشتریان.'
-      },
-      {
-        '@type': 'FAQPage',
-        mainEntity: faqs.map((item) => ({
-          '@type': 'Question',
-          name: item.q,
-          acceptedAnswer: {
-            '@type': 'Answer',
-            text: item.a
-          }
-        }))
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((item) => ({
+      '@type': 'Question',
+      name: item.q,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: item.a
       }
-    ]
+    }))
   })
   document.head.appendChild(faqSchemaEl)
 }
