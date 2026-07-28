@@ -17,7 +17,8 @@
           @click="activeTab = tab.key"
         >
           <IconlyIcon :name="tab.icon" size="sm" />
-          {{ tab.label }}
+          <span>{{ tab.label }}</span>
+          <HelpTip v-if="tab.help" :text="tab.help" />
         </button>
       </section>
 
@@ -813,6 +814,8 @@ import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { carServiceTierOptions, motorcycleServiceTierOptions } from '../../utils/serviceTiers'
+import { sectionHelpByPage } from '../../config/pageHelp'
+import HelpTip from '../../components/base/HelpTip.vue'
 
 const authStore = useAuthStore()
 const search = ref('')
@@ -820,11 +823,11 @@ const activeTab = ref('workers')
 const errorMessage = ref('')
 
 const tabs = [
-  { key: 'workers', label: 'پرسنل', icon: 'users3' },
-  { key: 'products', label: 'محصولات', icon: 'buy' },
-  { key: 'expenses', label: 'هزینه‌ها', icon: 'wallet' },
-  { key: 'services', label: 'خدمات', icon: 'paperPlus' },
-  { key: 'general', label: 'تنظیمات عمومی', icon: 'setting' }
+  { key: 'workers', label: 'پرسنل', icon: 'users3', help: sectionHelpByPage.settings.workers },
+  { key: 'products', label: 'محصولات', icon: 'buy', help: sectionHelpByPage.settings.products },
+  { key: 'expenses', label: 'هزینه‌ها', icon: 'wallet', help: sectionHelpByPage.settings.expenses },
+  { key: 'services', label: 'خدمات', icon: 'paperPlus', help: sectionHelpByPage.settings.services },
+  { key: 'general', label: 'تنظیمات عمومی', icon: 'setting', help: sectionHelpByPage.settings.general }
 ]
 
 const workers = ref([])

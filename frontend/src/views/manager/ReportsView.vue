@@ -99,7 +99,17 @@
       </section>
 
       <section class="tabs-bar">
-        <button v-for="tab in tabs" :key="tab.key" class="chip" :class="{ active: activeTab === tab.key }" @click="activeTab = tab.key"><IconlyIcon :name="tab.icon" size="sm" />{{ tab.label }}</button>
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="chip"
+          :class="{ active: activeTab === tab.key }"
+          @click="activeTab = tab.key"
+        >
+          <IconlyIcon :name="tab.icon" size="sm" />
+          <span>{{ tab.label }}</span>
+          <HelpTip v-if="tab.help" :text="tab.help" />
+        </button>
       </section>
 
       <section ref="reportExportRef" class="table-card">
@@ -399,6 +409,8 @@ import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { normalizeDigits, normalizePlateLetter as normalizePlateLetterUtil } from '../../utils/plate'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import { sectionHelpByPage } from '../../config/pageHelp'
+import HelpTip from '../../components/base/HelpTip.vue'
 
 const activeTab = ref('overall')
 const authStore = useAuthStore()
@@ -447,13 +459,13 @@ const reportExportRef = ref(null)
 const exportState = reactive({ csvLoading: false, pdfLoading: false })
 
 const tabs = [
-  { key: 'overall', label: 'گزارش کل', icon: 'document' },
-  { key: 'carwash', label: 'حق کارواش', icon: 'wallet' },
-  { key: 'worker', label: 'حق نیرو', icon: 'users3' },
-  { key: 'tips', label: 'انعام', icon: 'message' },
-  { key: 'revenue', label: 'گزارش درآمد', icon: 'graph' },
-  { key: 'attendance', label: 'ورود و خروج', icon: 'calendar' },
-  { key: 'blacklist', label: 'لیست سیاه', icon: 'danger' }
+  { key: 'overall', label: 'گزارش کل', icon: 'document', help: sectionHelpByPage.reports.overall },
+  { key: 'carwash', label: 'حق کارواش', icon: 'wallet', help: sectionHelpByPage.reports.carwash },
+  { key: 'worker', label: 'حق نیرو', icon: 'users3', help: sectionHelpByPage.reports.worker },
+  { key: 'tips', label: 'انعام', icon: 'message', help: sectionHelpByPage.reports.tips },
+  { key: 'revenue', label: 'گزارش درآمد', icon: 'graph', help: sectionHelpByPage.reports.revenue },
+  { key: 'attendance', label: 'ورود و خروج', icon: 'calendar', help: sectionHelpByPage.reports.attendance },
+  { key: 'blacklist', label: 'لیست سیاه', icon: 'danger', help: sectionHelpByPage.reports.blacklist }
 ]
 const moneyInputValue = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
 const parseMoneyInput = (value) => fromThousandsTomanInput(normalizeDigits(value))

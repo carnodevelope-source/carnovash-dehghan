@@ -26,8 +26,14 @@
 
         <div class="club-hero-actions">
           <div class="mode-switch">
-            <button type="button" :class="{ active: activePlan === 'simple' }" @click="activePlan = 'simple'">ساده</button>
-            <button type="button" :class="{ active: activePlan === 'advanced' }" @click="openAdvancedPlan">پیشرفته</button>
+            <button type="button" :class="{ active: activePlan === 'simple' }" @click="activePlan = 'simple'">
+              <span>ساده</span>
+              <HelpTip :text="sectionHelpByPage.customerClub.simple" />
+            </button>
+            <button type="button" :class="{ active: activePlan === 'advanced' }" @click="openAdvancedPlan">
+              <span>پیشرفته</span>
+              <HelpTip :text="sectionHelpByPage.customerClub.advanced" />
+            </button>
           </div>
 
           <button
@@ -825,6 +831,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
+import HelpTip from '../../components/base/HelpTip.vue'
 import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
@@ -833,6 +840,7 @@ import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInpu
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
 import { hasFeatureAccess } from '../../utils/attendanceAccess'
+import { sectionHelpByPage } from '../../config/pageHelp'
 import actionViewIcon from '../../assets/iconly/show.svg'
 import actionGroupIcon from '../../assets/iconly/category.svg'
 import actionSmsIcon from '../../assets/iconly/message.svg'
@@ -1794,6 +1802,9 @@ onMounted(async () => {
   border-radius: 14px;
   padding: 12px 18px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .mode-switch button.active,

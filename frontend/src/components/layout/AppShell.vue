@@ -148,9 +148,12 @@
             <span class="page-title-icon">
               <IconlyIcon :name="currentPageIconName || 'home'" size="md" />
             </span>
-            <div>
-            <p v-if="subtitle" class="page-subtitle">{{ subtitle }}</p>
-            <h1>{{ title }}</h1>
+            <div class="page-title-copy">
+              <p v-if="subtitle" class="page-subtitle">{{ subtitle }}</p>
+              <div class="page-title-row">
+                <h1>{{ title }}</h1>
+                <HelpTip v-if="resolvedHelpText" :text="resolvedHelpText" />
+              </div>
             </div>
           </div>
 
@@ -173,11 +176,14 @@ import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, getFeatureLockNotice, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
 import { notifyWarning } from '../../utils/notify'
+import { getPageHelp } from '../../config/pageHelp'
 import IconlyIcon from '../base/IconlyIcon.vue'
+import HelpTip from '../base/HelpTip.vue'
 
 const props = defineProps({
   title: { type: String, required: true },
   subtitle: { type: String, default: '' },
+  helpText: { type: String, default: '' },
   hidePageHeader: { type: Boolean, default: false },
   showSearch: { type: Boolean, default: false },
   searchPlaceholder: { type: String, default: 'جستجو...' },
@@ -189,6 +195,7 @@ const emit = defineEmits(['update:searchQuery'])
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const resolvedHelpText = computed(() => String(props.helpText || getPageHelp(route.path) || '').trim())
 const isProfileMenuOpen = ref(false)
 const isLoggingOut = ref(false)
 const profileMenuRef = ref(null)
@@ -973,6 +980,19 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 24px rgba(37, 99, 235, 0.08);
   flex: 0 0 auto;
   --iconly-filter: brightness(0) saturate(100%) invert(31%) sepia(73%) saturate(1584%) hue-rotate(201deg) brightness(96%) contrast(98%);
+}
+
+.page-title-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.page-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .page-head h1 {

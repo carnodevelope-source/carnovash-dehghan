@@ -3,10 +3,14 @@
     <div class="attendance-view">
       <section class="tabs-bar">
         <button class="tab-chip" :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">
-          <IconlyIcon name="home" size="sm" />داشبورد
+          <IconlyIcon name="home" size="sm" />
+          <span>داشبورد</span>
+          <HelpTip :text="sectionHelpByPage.attendance.dashboard" />
         </button>
         <button class="tab-chip" :class="{ active: activeTab === 'reports' }" @click="activeTab = 'reports'">
-          <IconlyIcon name="document" size="sm" />گزارشات
+          <IconlyIcon name="document" size="sm" />
+          <span>گزارشات</span>
+          <HelpTip :text="sectionHelpByPage.attendance.reports" />
         </button>
       </section>
 
@@ -286,6 +290,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
+import HelpTip from '../../components/base/HelpTip.vue'
+import { sectionHelpByPage } from '../../config/pageHelp'
 import api from '../../services/api'
 import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
 import { resolveApiErrorMessage } from '../../utils/apiError'

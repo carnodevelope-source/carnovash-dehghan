@@ -108,9 +108,10 @@ if DB_ENGINE == 'sqlite':
         }
     }
 else:
+    # XAMPP ships MariaDB 10.4; Django 5.1+ stock backend requires 10.5+.
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.mysql',
+            'ENGINE': config('DB_BACKEND', default='config.db.mysql'),
             'NAME': config('DB_NAME', default='carwash'),
             'USER': config('DB_USER', default='root'),
             'PASSWORD': config('DB_PASSWORD', default=''),
