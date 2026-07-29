@@ -189,6 +189,33 @@ def get_or_create_plate_loyalty(
     return profile
 
 
+def preview_next_loyalty_state(profile=None, *, discount_percent_per_half_star=0):
+    """Compute loyalty values for the upcoming visit without writing to DB.
+
+    First visit (no profile / empty profile) => visit_count=1, score=0.5.
+    """
+    current_visit_count = int(getattr(profile, 'visit_count', 0) or 0) if profile else 0
+    current_cycle_visit_count = int(getattr(profile, 'cycle_visit_count', 0) or 0) if profile else 0
+
+    next_cycle_visit_count = current_cycle_visit_count + 1
+    if next_cycle_visit_count > CYCLE_VISIT_LIMIT:
+        next_cycle_visit_count = 1
+
+    earned_score = HALF_STAR * Decimal(str(next_cycle_visit_count))
+    if earned_score > MAX_STARS:
+        earned_score = MAX_STARS
+    cycle_completed = next_cycle_visit_count >= CYCLE_VISIT_LIMIT
+    next_discount_percent = Decimal(str(discount_percent_per_half_star or 0)) * (earned_score * Decimal('2'))
+
+    return {
+        'visit_count': current_visit_count + 1,
+        'cycle_visit_count': 0 if cycle_completed else next_cycle_visit_count,
+        'score': float(Decimal('0') if cycle_completed else earned_score),
+        'visit_score': float(earned_score),
+        'discount_percent': float(Decimal('0') if cycle_completed else next_discount_percent),
+    }
+
+
 def apply_loyalty_visit(profile, *, discount_percent_per_half_star=0, now=None):
     if not profile:
         return None
@@ -226,6 +253,22 @@ def apply_loyalty_visit(profile, *, discount_percent_per_half_star=0, now=None):
         ]
     )
     return profile
+
+
+def count_loyalty_vehicle_entries(profile):
+    if not profile or not profile.tenant_id or not profile.plate_number:
+        return 0
+    from .models import VehicleEntry
+
+    return (
+        VehicleEntry.objects.filter(
+            tenant=profile.tenant,
+            plate_number=profile.plate_number,
+            is_piece_wash=False,
+        )
+        .exclude(status=VehicleEntry.Status.CANCELLED)
+        .count()
+    )
 
 
 def rebuild_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None):
@@ -268,6 +311,30 @@ def rebuild_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None
             now=vehicle.check_in_at,
         )
     return profile
+
+
+def sync_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None):
+    """Rebuild loyalty when stored visit_count/score does not match real vehicle entries."""
+    if not profile:
+        return None
+    current_visits = int(profile.visit_count or 0)
+    current_score = Decimal(str(profile.score or 0))
+    cycle_just_completed = current_visits > 0 and current_visits % CYCLE_VISIT_LIMIT == 0
+    # Healthy profiles skip the extra count query on every serialize.
+    if current_visits > 0 and (current_score > 0 or cycle_just_completed):
+        return profile
+
+    expected_visits = count_loyalty_vehicle_entries(profile)
+    first_visit_missing_score = (
+        expected_visits > 0 and current_visits > 0 and current_score == 0 and not cycle_just_completed
+    )
+    if expected_visits == current_visits and not first_visit_missing_score:
+        return profile
+    return rebuild_plate_loyalty(
+        profile,
+        discount_percent_per_half_star=discount_percent_per_half_star,
+        now=now,
+    )
 
 
 def rebuild_customer_score(customer, *, now=None):

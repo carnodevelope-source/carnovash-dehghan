@@ -828,8 +828,18 @@ watch(
             plate_type: form.plateType
           }
         })
-        if (token !== lookupToken || !data?.found) return
-        applyPlateLookupData(data)
+        if (token !== lookupToken) return
+        if (data?.found) {
+          applyPlateLookupData(data)
+          return
+        }
+        // First-time plate: show visit=1 and score=0.5 from API preview
+        form.customerScore = Math.max(0, Number(data?.customer_score ?? 0.5))
+        form.customerLoyaltyVisitCount = Math.max(1, Number(data?.customer_loyalty_visit_count ?? 1))
+        form.customerLoyaltyDiscountPercent = Math.max(
+          0,
+          Number(data?.customer_loyalty_discount_percent ?? 0)
+        )
       } catch (_error) {
       }
     }, 220)

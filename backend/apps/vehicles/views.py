@@ -23,8 +23,10 @@ from .loyalty import (
     get_or_create_plate_loyalty,
     next_fixed_discount_notice,
     loyalty_snapshot,
+    preview_next_loyalty_state,
     rebuild_customer_score,
     rebuild_plate_loyalty,
+    sync_plate_loyalty,
 )
 from .serializers import VehicleEntrySerializer
 from apps.inventory.models import InventoryItem
@@ -518,34 +520,67 @@ class VehiclePlateLookupView(APIView):
         )
         if not plate_number:
             return Response({'found': False}, status=status.HTTP_200_OK)
+
+        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        discount_percent_per_half_star = Decimal(
+            str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0)
+        )
         latest_vehicle = VehicleEntry.objects.filter(
             tenant=tenant,
             plate_number=plate_number,
-        ).order_by('-check_in_at').first()
+        ).exclude(status=VehicleEntry.Status.CANCELLED).order_by('-check_in_at').first()
+
         if not latest_vehicle:
-            return Response({'found': False, 'plate_number': plate_number}, status=status.HTTP_200_OK)
-        loyalty = loyalty_snapshot(get_or_create_plate_loyalty(
-            tenant=tenant,
-            plate_number=latest_vehicle.plate_number,
-            plate_left=latest_vehicle.plate_left,
-            plate_letter=latest_vehicle.plate_letter,
-            plate_mid=latest_vehicle.plate_mid,
-            plate_right=latest_vehicle.plate_right,
-        ))
-        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
-        loyalty_profile = get_or_create_plate_loyalty(
-            tenant=tenant,
-            plate_number=latest_vehicle.plate_number,
-            plate_left=latest_vehicle.plate_left,
-            plate_letter=latest_vehicle.plate_letter,
-            plate_mid=latest_vehicle.plate_mid,
-            plate_right=latest_vehicle.plate_right,
+            # First visit preview: count=1, score=0.5
+            upcoming = preview_next_loyalty_state(
+                None,
+                discount_percent_per_half_star=discount_percent_per_half_star,
+            )
+            discount_percent, _discount_amount = compute_configured_loyalty_discount(
+                base_amount=0,
+                profile=None,
+                settings_obj=settings_obj,
+                visit_count=upcoming['visit_count'],
+                score=upcoming['visit_score'],
+            )
+            return Response(
+                {
+                    'found': False,
+                    'plate_number': plate_number,
+                    'customer_score': upcoming['score'],
+                    'customer_loyalty_visit_count': upcoming['visit_count'],
+                    'customer_loyalty_discount_percent': float(discount_percent or 0),
+                    'discount_calculation_mode': getattr(settings_obj, 'discount_calculation_mode', 'step') if settings_obj else 'step',
+                    'fixed_discount_notice': next_fixed_discount_notice(settings_obj, upcoming['visit_count']),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        loyalty_profile = sync_plate_loyalty(
+            get_or_create_plate_loyalty(
+                tenant=tenant,
+                plate_number=latest_vehicle.plate_number,
+                plate_left=latest_vehicle.plate_left,
+                plate_letter=latest_vehicle.plate_letter,
+                plate_mid=latest_vehicle.plate_mid,
+                plate_right=latest_vehicle.plate_right,
+            ),
+            discount_percent_per_half_star=discount_percent_per_half_star,
         )
+        loyalty = loyalty_snapshot(loyalty_profile)
+        # If profile is still empty somehow, treat as first visit.
+        if int(loyalty.get('visit_count', 0) or 0) <= 0:
+            loyalty = preview_next_loyalty_state(
+                None,
+                discount_percent_per_half_star=discount_percent_per_half_star,
+            )
+            loyalty['discount_percent'] = loyalty.get('discount_percent', 0)
+
         discount_percent, _discount_amount = compute_configured_loyalty_discount(
             base_amount=0,
             profile=loyalty_profile,
             settings_obj=settings_obj,
-            visit_count=int(loyalty.get('visit_count', 0) or 0) + 1,
+            visit_count=int(loyalty.get('visit_count', 0) or 0),
             score=loyalty.get('score', 0),
         )
         return Response(
@@ -799,13 +834,19 @@ class VehicleReleaseCheckoutView(APIView):
         return self._clamp_percent(discount_percent), self._money(discount_amount)
 
     def _loyalty_profile(self, vehicle):
-        return get_or_create_plate_loyalty(
+        profile = get_or_create_plate_loyalty(
             tenant=getattr(vehicle, 'tenant', None),
             plate_number=getattr(vehicle, 'plate_number', ''),
             plate_left=getattr(vehicle, 'plate_left', ''),
             plate_letter=getattr(vehicle, 'plate_letter', ''),
             plate_mid=getattr(vehicle, 'plate_mid', ''),
             plate_right=getattr(vehicle, 'plate_right', ''),
+        )
+        return sync_plate_loyalty(
+            profile,
+            discount_percent_per_half_star=self._discount_percent_per_half_star(
+                getattr(vehicle, 'tenant', None)
+            ),
         )
 
     def _resolve_assigned_workers(self, job):

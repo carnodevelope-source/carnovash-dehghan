@@ -6,7 +6,11 @@ This wrapper keeps the stock MySQL backend and only skips the hard version gate.
 
 from django.db.backends.mysql.base import DatabaseWrapper as BaseDatabaseWrapper
 
+from .features import DatabaseFeatures
+
 
 class DatabaseWrapper(BaseDatabaseWrapper):
+    features_class = DatabaseFeatures
+
     def check_database_version_supported(self):
         return

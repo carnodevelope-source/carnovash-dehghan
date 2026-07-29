@@ -133,6 +133,9 @@
 
   <div v-if="showVehicleModal" class="modal-overlay" @click.self="closeVehicleModal">
       <section class="modal-panel" :class="{ 'step-one-modal-panel': modalStep === 1, 'step-two-modal-panel': modalStep === 2 }">
+        <div v-if="stepTransitionLoading || stepSubmitting" class="step-transition-overlay">
+          <BaseSpinner size="52px" color="#1d4ed8" ball-color="#60a5fa" label="در حال پردازش..." />
+        </div>
         <template v-if="modalStep === 1">
           <header class="modal-head">
             <div>
@@ -156,7 +159,7 @@
           :vehicle-info="vehicleDraft"
           :submitting="stepSubmitting"
           :submit-label="stepTwoSubmitLabel"
-          @back="modalStep = 1"
+          @back="handleStepTwoBack"
           @close="closeVehicleModal"
           @assign="handleStepTwoAssign"
         />
@@ -436,14 +439,16 @@
                 <small>{{ formatPercent(releaseSummary.taxPercent) }}</small>
               </article>
             </div>
-            <label class="tip-input-row modern-input-row">
-              <span>انعام (تومان)</span>
-              <input :value="moneyInputValue(releaseForm.tipAmount)" type="text" inputmode="numeric" @input="releaseForm.tipAmount = parseMoneyInput($event.target.value)" />
-            </label>
-            <label class="tip-input-row modern-input-row">
-              <span>تخفیف دستی (تومان)</span>
-              <input :value="moneyInputValue(releaseForm.manualDiscountTotal)" type="text" inputmode="numeric" @input="releaseForm.manualDiscountTotal = parseMoneyInput($event.target.value)" />
-            </label>
+            <div class="summary-input-grid">
+              <label class="tip-input-row modern-input-row">
+                <span>انعام (تومان)</span>
+                <input :value="moneyInputValue(releaseForm.tipAmount)" type="text" inputmode="numeric" @input="releaseForm.tipAmount = parseMoneyInput($event.target.value)" />
+              </label>
+              <label class="tip-input-row modern-input-row">
+                <span>تخفیف دستی (تومان)</span>
+                <input :value="moneyInputValue(releaseForm.manualDiscountTotal)" type="text" inputmode="numeric" @input="releaseForm.manualDiscountTotal = parseMoneyInput($event.target.value)" />
+              </label>
+            </div>
             <div class="worker-selection-panel">
               <div class="worker-selection-head">
                 <div>
@@ -518,84 +523,128 @@
               </div>
               <div class="release-secondary-chip">{{ paymentMethodLabel(releaseForm.paymentMethod) }}</div>
             </div>
-            <div class="release-secondary-grid">
-              <label class="tip-input-row detail-field">
-                <span>شیوه پرداخت</span>
-                <select v-model="releaseForm.paymentMethod">
-                  <option value="pos">دستگاه پوز</option>
-                  <option value="cash">نقدی</option>
-                  <option value="transfer">کارت به کارت</option>
-                  <option value="cheque">چک</option>
-                  <option value="credit">نسیه</option>
-                  <option value="manual">اسنادی / ترکیبی</option>
-                </select>
-              </label>
-              <div v-if="releaseForm.paymentMethod === 'manual'" class="detail-field detail-field-wide split-payment-grid">
-                <label class="tip-input-row">
-                  <span>مبلغ نقدی (تومان)</span>
-                  <input :value="moneyInputValue(releaseForm.manualCashAmount)" type="text" inputmode="numeric" @input="releaseForm.manualCashAmount = parseMoneyInput($event.target.value)" />
-                </label>
-                <label class="tip-input-row">
-                  <span>روش بخش دوم</span>
-                  <select v-model="releaseForm.manualSecondaryMethod">
-                    <option value="transfer">کارت به کارت</option>
-                    <option value="pos">دستگاه پوز</option>
-                    <option value="cheque">چک</option>
-                  </select>
-                </label>
-                <label class="tip-input-row">
-                  <span>مبلغ بخش دوم (تومان)</span>
-                  <input :value="moneyInputValue(releaseForm.manualSecondaryAmount)" type="text" inputmode="numeric" @input="releaseForm.manualSecondaryAmount = parseMoneyInput($event.target.value)" />
-                </label>
-                <div class="split-payment-summary">
-                  <strong>جمع پرداخت ترکیبی</strong>
-                  <span>{{ releasePaymentBreakdownLabel || 'هنوز بخشی ثبت نشده است.' }}</span>
-                </div>
-              </div>
-              <div v-if="releaseForm.paymentMethod === 'cheque' || (releaseForm.paymentMethod === 'manual' && releaseForm.manualSecondaryMethod === 'cheque' && Number(releaseForm.manualSecondaryAmount || 0) > 0)" class="cheque-inline-card detail-field-wide">
-                <div class="cheque-inline-head">
-                <div>
-                  <strong>جزئیات چک</strong>
-                  <small>{{ chequeDetailsSummary }}</small>
-                </div>
-                <button type="button" class="secondary-btn" @click="openChequeDetailsModal">ثبت جزئیات چک</button>
-              </div>
-              </div>
-              <label v-if="releaseForm.paymentMethod === 'credit'" class="tip-input-row detail-field">
-                <span>تاریخ سررسید نسیه</span>
-                <BaseDatePicker v-model="releaseForm.creditDueDate" placeholder="1405/01/30" />
-              </label>
-              <div class="detail-field detail-field-wide bonus-penalty-table">
-                <div class="bonus-penalty-table-head">
-                  <span>نیرو برای پاداش/جریمه</span>
-                  <small>برای هر نیروی این سفارش، مبلغ جدا ثبت کنید.</small>
-                </div>
-                <div v-if="releaseForm.bonusPenaltyAdjustments.length" class="bonus-penalty-list">
-                  <div v-for="(adjustment, index) in releaseForm.bonusPenaltyAdjustments" :key="`adjustment-${adjustment.worker_id || index}`" class="bonus-penalty-item">
-                    <strong>{{ adjustment.worker_name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</strong>
+            <div class="release-secondary-grid release-secondary-grid-accordion">
+              <section class="release-mobile-section">
+                <button
+                  v-if="isReleaseMobile"
+                  type="button"
+                  class="release-mobile-toggle"
+                  @click="toggleReleaseSection('payment')"
+                >
+                  <span>پرداخت</span>
+                  <small>{{ paymentMethodLabel(releaseForm.paymentMethod) }}</small>
+                  <strong>{{ isReleaseSectionOpen('payment') ? '▾' : '▸' }}</strong>
+                </button>
+                <div v-show="isReleaseSectionOpen('payment')" class="release-mobile-content">
+                  <label class="tip-input-row detail-field">
+                    <span>شیوه پرداخت</span>
+                    <select v-model="releaseForm.paymentMethod">
+                      <option value="pos">دستگاه پوز</option>
+                      <option value="cash">نقدی</option>
+                      <option value="transfer">کارت به کارت</option>
+                      <option value="cheque">چک</option>
+                      <option value="credit">نسیه</option>
+                      <option value="manual">اسنادی / ترکیبی</option>
+                    </select>
+                  </label>
+                  <div v-if="releaseForm.paymentMethod === 'manual'" class="detail-field detail-field-wide split-payment-grid">
                     <label class="tip-input-row">
-                      <span>پاداش (تومان)</span>
-                      <input :value="moneyInputValue(adjustment.bonus)" type="text" inputmode="numeric" @input="adjustment.bonus = parseMoneyInput($event.target.value)" />
+                      <span>مبلغ نقدی (تومان)</span>
+                      <input :value="moneyInputValue(releaseForm.manualCashAmount)" type="text" inputmode="numeric" @input="releaseForm.manualCashAmount = parseMoneyInput($event.target.value)" />
                     </label>
                     <label class="tip-input-row">
-                      <span>جریمه (تومان)</span>
-                      <input :value="moneyInputValue(adjustment.penalty)" type="text" inputmode="numeric" @input="adjustment.penalty = parseMoneyInput($event.target.value)" />
+                      <span>روش بخش دوم</span>
+                      <select v-model="releaseForm.manualSecondaryMethod">
+                        <option value="transfer">کارت به کارت</option>
+                        <option value="pos">دستگاه پوز</option>
+                        <option value="cheque">چک</option>
+                      </select>
                     </label>
+                    <label class="tip-input-row">
+                      <span>مبلغ بخش دوم (تومان)</span>
+                      <input :value="moneyInputValue(releaseForm.manualSecondaryAmount)" type="text" inputmode="numeric" @input="releaseForm.manualSecondaryAmount = parseMoneyInput($event.target.value)" />
+                    </label>
+                    <div class="split-payment-summary">
+                      <strong>جمع پرداخت ترکیبی</strong>
+                      <span>{{ releasePaymentBreakdownLabel || 'هنوز بخشی ثبت نشده است.' }}</span>
+                    </div>
                   </div>
+                  <div v-if="releaseForm.paymentMethod === 'cheque' || (releaseForm.paymentMethod === 'manual' && releaseForm.manualSecondaryMethod === 'cheque' && Number(releaseForm.manualSecondaryAmount || 0) > 0)" class="cheque-inline-card detail-field-wide">
+                    <div class="cheque-inline-head">
+                      <div>
+                        <strong>جزئیات چک</strong>
+                        <small>{{ chequeDetailsSummary }}</small>
+                      </div>
+                      <button type="button" class="secondary-btn" @click="openChequeDetailsModal">ثبت جزئیات چک</button>
+                    </div>
+                  </div>
+                  <label v-if="releaseForm.paymentMethod === 'credit'" class="tip-input-row detail-field">
+                    <span>تاریخ سررسید نسیه</span>
+                    <BaseDatePicker v-model="releaseForm.creditDueDate" placeholder="1405/01/30" />
+                  </label>
                 </div>
-                <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است.</p>
-              </div>
-              <label v-if="hasReleaseBonusOrPenalty" class="tip-input-row detail-field detail-field-wide">
-                <span>توضیح پاداش/جریمه</span>
-                <textarea v-model.trim="releaseForm.bonusPenaltyNote" rows="3" placeholder="دلیل ثبت پاداش یا جریمه را وارد کنید"></textarea>
-              </label>
-              <label class="release-sms-check detail-field detail-field-wide" :class="{ disabled: !releaseForm.smsAutoSendEnabled }">
-                <input v-model="releaseForm.smsNotificationsEnabled" type="checkbox" :disabled="!releaseForm.smsAutoSendEnabled" />
-                <span>
-                  <strong>SMS</strong>
-                  <small>{{ releaseForm.smsAutoSendEnabled ? 'ارسال پیامک ترخیص برای همین سفارش' : 'ارسال خودکار پیامک در تنظیمات غیرفعال است' }}</small>
-                </span>
-              </label>
+              </section>
+
+              <section class="release-mobile-section">
+                <button
+                  v-if="isReleaseMobile"
+                  type="button"
+                  class="release-mobile-toggle"
+                  @click="toggleReleaseSection('bonus')"
+                >
+                  <span>پاداش / جریمه</span>
+                  <small>ثبت برای پرسنل سفارش</small>
+                  <strong>{{ isReleaseSectionOpen('bonus') ? '▾' : '▸' }}</strong>
+                </button>
+                <div v-show="isReleaseSectionOpen('bonus')" class="release-mobile-content">
+                  <div class="detail-field detail-field-wide bonus-penalty-table">
+                    <div class="bonus-penalty-table-head">
+                      <span>نیرو برای پاداش/جریمه</span>
+                      <small>برای هر نیروی این سفارش، مبلغ جدا ثبت کنید.</small>
+                    </div>
+                    <div v-if="releaseForm.bonusPenaltyAdjustments.length" class="bonus-penalty-list">
+                      <div v-for="(adjustment, index) in releaseForm.bonusPenaltyAdjustments" :key="`adjustment-${adjustment.worker_id || index}`" class="bonus-penalty-item">
+                        <strong>{{ adjustment.worker_name || `نیروی ${Number(index + 1).toLocaleString('fa-IR')}` }}</strong>
+                        <label class="tip-input-row">
+                          <span>پاداش (تومان)</span>
+                          <input :value="moneyInputValue(adjustment.bonus)" type="text" inputmode="numeric" @input="adjustment.bonus = parseMoneyInput($event.target.value)" />
+                        </label>
+                        <label class="tip-input-row">
+                          <span>جریمه (تومان)</span>
+                          <input :value="moneyInputValue(adjustment.penalty)" type="text" inputmode="numeric" @input="adjustment.penalty = parseMoneyInput($event.target.value)" />
+                        </label>
+                      </div>
+                    </div>
+                    <p v-else class="empty-row">برای این سفارش نیرویی ثبت نشده است.</p>
+                  </div>
+                  <label v-if="hasReleaseBonusOrPenalty" class="tip-input-row detail-field detail-field-wide">
+                    <span>توضیح پاداش/جریمه</span>
+                    <textarea v-model.trim="releaseForm.bonusPenaltyNote" rows="3" placeholder="دلیل ثبت پاداش یا جریمه را وارد کنید"></textarea>
+                  </label>
+                </div>
+              </section>
+
+              <section class="release-mobile-section">
+                <button
+                  v-if="isReleaseMobile"
+                  type="button"
+                  class="release-mobile-toggle"
+                  @click="toggleReleaseSection('sms')"
+                >
+                  <span>SMS</span>
+                  <small>ارسال پیامک ترخیص</small>
+                  <strong>{{ isReleaseSectionOpen('sms') ? '▾' : '▸' }}</strong>
+                </button>
+                <div v-show="isReleaseSectionOpen('sms')" class="release-mobile-content">
+                  <label class="release-sms-check detail-field detail-field-wide" :class="{ disabled: !releaseForm.smsAutoSendEnabled }">
+                    <input v-model="releaseForm.smsNotificationsEnabled" type="checkbox" :disabled="!releaseForm.smsAutoSendEnabled" />
+                    <span>
+                      <strong>SMS</strong>
+                      <small>{{ releaseForm.smsAutoSendEnabled ? 'ارسال پیامک ترخیص برای همین سفارش' : 'ارسال خودکار پیامک در تنظیمات غیرفعال است' }}</small>
+                    </span>
+                  </label>
+                </div>
+              </section>
             </div>
           </section>
         </div>
@@ -686,32 +735,18 @@
               </label>
             </div>
             <div class="invoice-modal-actions">
-              <button type="button" class="secondary-btn" :disabled="invoiceGenerating" @click="refreshInvoicePreview">
-                {{ invoiceGenerating ? 'در حال ساخت...' : 'بروزرسانی فاکتور' }}
+              <button type="button" class="secondary-btn" :disabled="invoiceGenerating" @click="downloadInvoicePdf">
+                {{ invoiceGenerating ? 'در حال ساخت PDF...' : 'دانلود PDF' }}
               </button>
-              <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="downloadInvoicePdf">
-                دانلود PDF
-              </button>
-              <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="printInvoicePdf">
+              <button type="button" class="secondary-btn" @click="printInvoiceHtml">
                 چاپ
               </button>
             </div>
           </div>
-          <div v-if="invoiceGenerating" class="invoice-preview-loading">
-            <BaseSpinner size="56px" color="#1d4ed8" ball-color="#60a5fa" label="در حال ساخت فایل PDF فاکتور..." />
-          </div>
-          <div v-else-if="invoicePdfUrl" class="invoice-preview-frame-wrap">
-            <iframe ref="invoicePreviewFrameRef" :src="invoicePreviewUrl" title="invoice-pdf-preview" class="invoice-preview-frame"></iframe>
-          </div>
-          <div v-else class="invoice-preview-empty">
-            {{ invoiceErrorMessage || 'فاکتور هنوز ساخته نشده است.' }}
-          </div>
-        </div>
-      </section>
-    </div>
-    <div class="invoice-print-stage" :style="invoiceStageStyle">
-      <div ref="invoiceTemplateRef" class="invoice-template" :style="invoiceTemplateStyle">
-        <div class="invoice-sheet" :class="invoiceSheetClass" :style="invoiceSheetStyle">
+          <div class="invoice-preview-frame-wrap">
+            <div class="invoice-live-preview" :style="invoiceStageStyle">
+              <div ref="invoiceTemplateRef" class="invoice-template" :style="invoiceTemplateStyle">
+                <div class="invoice-sheet" :class="invoiceSheetClass" :style="invoiceSheetStyle">
           <template v-if="invoiceIsThermal">
             <header class="thermal-sheet-head">
               <strong>{{ invoiceCarwashTitle }}</strong>
@@ -885,8 +920,13 @@
             <p>از اعتماد شما سپاسگزاریم</p>
           </footer>
           </template>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p v-if="invoiceErrorMessage" class="invoice-preview-error">{{ invoiceErrorMessage }}</p>
         </div>
-      </div>
+      </section>
     </div>
 </template>
 
@@ -934,6 +974,7 @@ const releaseCheckoutLoading = ref(false)
 const releaseSubmitting = ref(false)
 const plateEditSubmitting = ref(false)
 const stepSubmitting = ref(false)
+const stepTransitionLoading = ref(false)
 const invoiceGenerating = ref(false)
 const invoicePdfUrl = ref('')
 const invoiceErrorMessage = ref('')
@@ -950,13 +991,18 @@ const plateEditForm = ref({
   plateType: 'car'
 })
 const invoiceTemplateRef = ref(null)
-const invoicePreviewFrameRef = ref(null)
 const tempReleaseServiceIds = ref([])
 const tempReleaseWorkerRows = ref([])
 const releaseWorkerSearch = ref('')
 const invoiceRenderTimer = ref(null)
 const vehicleAutoSmsEnabled = ref(true)
 const jobEditMode = ref('')
+const isReleaseMobile = ref(false)
+const releaseSectionOpen = ref({
+  payment: false,
+  bonus: false,
+  sms: false
+})
 const invoiceLayout = ref({
   preset: 'a4',
   thermalWidthMm: 80,
@@ -1023,6 +1069,26 @@ const stepTwoSubmitLabel = computed(() => {
   if (vehicleEditFlow.value) return 'ثبت'
   return 'تایید و تخصیص کار'
 })
+const syncReleaseMobileState = () => {
+  const mobile = window.innerWidth <= 768
+  if (mobile === isReleaseMobile.value) return
+  isReleaseMobile.value = mobile
+  if (!mobile) {
+    releaseSectionOpen.value = { payment: true, bonus: true, sms: true }
+  } else {
+    releaseSectionOpen.value = { payment: false, bonus: false, sms: false }
+  }
+}
+const isReleaseSectionOpen = (key) => (
+  !isReleaseMobile.value || Boolean(releaseSectionOpen.value?.[key])
+)
+const toggleReleaseSection = (key) => {
+  if (!isReleaseMobile.value) return
+  releaseSectionOpen.value = {
+    ...releaseSectionOpen.value,
+    [key]: !releaseSectionOpen.value?.[key],
+  }
+}
 
 const openVehicleModal = () => {
   modalStep.value = 1
@@ -2309,11 +2375,6 @@ const invoiceCarwashContactLine = computed(() => {
   return parts.join(' | ')
 })
 const invoiceReceiptHeaderNote = computed(() => String(releaseForm.value.receiptHeaderNote || '').trim())
-const invoicePreviewUrl = computed(() => (
-  invoicePdfUrl.value
-    ? `${invoicePdfUrl.value}#view=FitH&zoom=page-width`
-    : ''
-))
 const invoiceProductLines = computed(() => (
   Array.isArray(releaseForm.value.availableProducts)
     ? releaseForm.value.availableProducts
@@ -2670,7 +2731,7 @@ watch(() => releaseForm.value.paymentMethod, (value) => {
   }
 })
 const buildInvoicePdf = async () => {
-  if (!invoiceTemplateRef.value) return
+  if (!invoiceTemplateRef.value) return false
   invoiceGenerating.value = true
   invoiceErrorMessage.value = ''
   revokeInvoicePdfUrl()
@@ -2683,7 +2744,16 @@ const buildInvoicePdf = async () => {
         margin: invoicePageMetrics.value.margin,
         filename: `${invoiceFileLabel.value}.pdf`,
         image: { type: 'png', quality: 1 },
-        html2canvas: { scale: invoiceIsThermal.value ? 4 : 3, useCORS: true, backgroundColor: '#ffffff' },
+        html2canvas: {
+          scale: invoiceIsThermal.value ? 4 : 3,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: invoiceTemplateRef.value.scrollWidth,
+          windowHeight: invoiceTemplateRef.value.scrollHeight
+        },
         jsPDF: { unit: 'mm', format: invoicePageMetrics.value.format, orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       })
@@ -2692,22 +2762,22 @@ const buildInvoicePdf = async () => {
     const pdf = await worker.get('pdf')
     const blob = pdf.output('blob')
     invoicePdfUrl.value = URL.createObjectURL(blob)
+    return true
   } catch (error) {
     console.error('buildInvoicePdf error:', error)
     invoiceErrorMessage.value = 'ساخت فایل فاکتور ناموفق بود.'
+    return false
   } finally {
     invoiceGenerating.value = false
   }
 }
 const openInvoicePreviewModal = async () => {
   showInvoicePreviewModal.value = true
-  await buildInvoicePdf()
+  await nextTick()
 }
-const refreshInvoicePreview = async () => {
-  await buildInvoicePdf()
-}
-const downloadInvoicePdf = () => {
-  if (!invoicePdfUrl.value) return
+const downloadInvoicePdf = async () => {
+  const ready = invoicePdfUrl.value ? true : await buildInvoicePdf()
+  if (!ready || !invoicePdfUrl.value) return
   const anchor = document.createElement('a')
   anchor.href = invoicePdfUrl.value
   anchor.download = `${invoiceFileLabel.value}.pdf`
@@ -2715,21 +2785,46 @@ const downloadInvoicePdf = () => {
   anchor.click()
   anchor.remove()
 }
-const printInvoicePdf = () => {
-  const frame = invoicePreviewFrameRef.value
-  if (frame?.contentWindow) {
-    frame.contentWindow.focus()
-    frame.contentWindow.print()
+const collectPrintStyles = () => Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+  .map((node) => node.outerHTML)
+  .join('\n')
+const printInvoiceHtml = () => {
+  const source = invoiceTemplateRef.value
+  if (!source) return
+  const popup = window.open('', '_blank', 'noopener,noreferrer,width=920,height=1100')
+  if (!popup) {
+    invoiceErrorMessage.value = 'پنجره چاپ مسدود شد. اجازه پاپ‌آپ مرورگر را فعال کنید.'
     return
   }
-  if (!invoicePdfUrl.value) return
-  const popup = window.open(invoicePdfUrl.value, '_blank', 'noopener,noreferrer')
-  if (popup) {
-    window.setTimeout(() => {
+  const pageSize = invoiceIsThermal.value
+    ? `${invoiceLayout.value.thermalWidthMm}mm ${invoiceLayout.value.thermalHeightMm}mm`
+    : (invoiceLayout.value.preset === 'a5' ? 'A5' : 'A4')
+  const margins = Array.isArray(invoicePageMetrics.value.margin)
+    ? invoicePageMetrics.value.margin.map((value) => `${value}mm`).join(' ')
+    : '8mm'
+  popup.document.open()
+  popup.document.write(`<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>${invoiceFileLabel.value}</title>
+  ${collectPrintStyles()}
+  <style>
+    @page { size: ${pageSize}; margin: ${margins}; }
+    html, body { margin: 0; padding: 12px; background: #fff; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .invoice-template { margin: 0 auto; }
+  </style>
+</head>
+<body>${source.outerHTML}</body>
+</html>`)
+  popup.document.close()
+  window.setTimeout(() => {
+    try {
       popup.focus()
       popup.print()
-    }, 400)
-  }
+    } catch (_error) {}
+  }, 350)
 }
 const confirmReleaseVehicle = async () => {
   if (!releaseCandidate.value?.id) return
@@ -2901,6 +2996,7 @@ const editSelectedVehicleTip = async () => {
 const handleStepOneContinue = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
+  stepTransitionLoading.value = true
   try {
     const payloadWithSmsDefault = {
       ...payload,
@@ -2969,6 +3065,7 @@ const handleStepOneContinue = async (payload) => {
     notifyError(apiErrorText(error, 'ذخیره اطلاعات مرحله اول ناموفق بود.'), { title: 'خطا در ثبت خودرو' })
   } finally {
     stepSubmitting.value = false
+    window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
   }
 }
 const buildCreateOrUpdatePayload = (payload, status) => {
@@ -3093,6 +3190,7 @@ const refreshVehicleBoard = async () => {
 const handleStepOneRefer = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
+  stepTransitionLoading.value = true
   try {
     const plateStatus = await fetchPlateBlockedStatus(payload)
     if (plateStatus.is_blocked) {
@@ -3107,12 +3205,22 @@ const handleStepOneRefer = async (payload) => {
     notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
   } finally {
     stepSubmitting.value = false
+    window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
   }
+}
+
+const handleStepTwoBack = async () => {
+  if (stepSubmitting.value) return
+  stepTransitionLoading.value = true
+  await nextTick()
+  modalStep.value = 1
+  window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
 }
 
 const handleStepTwoAssign = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
+  stepTransitionLoading.value = true
   try {
     if (vehicleEditFlow.value) {
       const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || 'ready_to_settle'
@@ -3143,6 +3251,7 @@ const handleStepTwoAssign = async (payload) => {
     notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
   } finally {
     stepSubmitting.value = false
+    window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
   }
 }
 const cars = computed(() => vehicles.value.map((item) => ({
@@ -3351,6 +3460,8 @@ onMounted(() => {
   fetchVehiclesForActiveRange()
   startVehicleCardsAutoRefresh()
   loadVehicleSmsSettings()
+  syncReleaseMobileState()
+  window.addEventListener('resize', syncReleaseMobileState)
 })
 watch(
   () => [dateRangeMode.value, customDateRange.value.startJalali, customDateRange.value.endJalali],
@@ -3366,10 +3477,7 @@ watch(
   () => [invoiceLayout.value.preset, invoiceLayout.value.thermalWidthMm, invoiceLayout.value.thermalHeightMm],
   () => {
     if (!showInvoicePreviewModal.value) return
-    if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
-    invoiceRenderTimer.value = window.setTimeout(() => {
-      buildInvoicePdf()
-    }, 220)
+    revokeInvoicePdfUrl()
   }
 )
 onBeforeUnmount(() => {
@@ -3378,6 +3486,7 @@ onBeforeUnmount(() => {
   if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
   if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
   revokeInvoicePdfUrl()
+  window.removeEventListener('resize', syncReleaseMobileState)
 })
 </script>
 
@@ -3615,6 +3724,11 @@ onBeforeUnmount(() => {
 .release-secondary-head small{display:block;margin-top:4px;color:#64748b;font-size:12px}
 .release-secondary-chip{padding:8px 12px;border-radius:999px;background:#eaf5ff;color:#0f4c81;font-size:12px;font-weight:700;border:1px solid #c7dcff}
 .release-secondary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.summary-input-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.release-secondary-grid-accordion{grid-template-columns:1fr}
+.release-mobile-section{border:1px solid #dbe7f5;border-radius:14px;background:#fff;padding:10px}
+.release-mobile-content{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.release-mobile-toggle{display:none}
 .detail-field{margin-top:0;padding:14px;border:1px solid #d6e6ff;border-radius:18px;background:rgba(255,255,255,.8)}
 .detail-field-wide{grid-column:span 2}
 .release-sms-check{display:flex;align-items:center;gap:12px}
@@ -3657,9 +3771,10 @@ onBeforeUnmount(() => {
 .invoice-modal-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:nowrap;align-items:center}
 .invoice-modal-actions .secondary-btn{border-radius:12px;min-height:36px;padding:0 11px;background:linear-gradient(180deg,#fff,#f1f7ff);border:1px solid #d7e5f8;box-shadow:0 6px 14px rgba(15,23,42,.05);white-space:nowrap}
 .invoice-preview-loading,.invoice-preview-empty{min-height:380px;border:1px dashed #bfd7ff;border-radius:18px;background:#fff;display:flex;align-items:center;justify-content:center;color:#64748b;padding:20px}
-.invoice-preview-frame-wrap{min-height:0;min-width:0;border-radius:18px;overflow:auto;border:1px solid #dbe7f5;background:#fff;box-shadow:0 16px 36px rgba(15,23,42,.08);height:100%}
+.invoice-preview-error{margin:10px 2px 0;color:#b91c1c;font-size:13px}
+.invoice-preview-frame-wrap{min-height:0;min-width:0;border-radius:18px;overflow:auto;border:1px solid #dbe7f5;background:#eef3f8;box-shadow:0 16px 36px rgba(15,23,42,.08);height:100%;padding:18px;display:flex;justify-content:center;align-items:flex-start}
+.invoice-live-preview{margin:0 auto;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.12)}
 .invoice-preview-frame{display:block;width:100%;height:100%;min-height:0;min-width:0;border:0;background:#fff}
-.invoice-print-stage{position:fixed;left:-99999px;top:0;pointer-events:none}
 .invoice-template{background:#fff;padding:0;box-sizing:border-box;overflow:hidden}
 .invoice-template *,.invoice-template *::before,.invoice-template *::after{box-sizing:border-box}
 .invoice-sheet{direction:rtl;background:#fff;color:#0f172a;font-family:Tahoma,Arial,sans-serif;display:grid;box-sizing:border-box;overflow:hidden;max-width:100%;contain:layout paint}
@@ -3736,7 +3851,7 @@ onBeforeUnmount(() => {
 .thermal-sheet-footer .receipt-custom-note{padding-top:6px;border-top:1px dashed #000}
 .thermal-sheet-footer strong{display:block;margin-top:8px;text-align:center;font-size:14px;font-weight:900;line-height:1.7}
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, .35); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-.modal-panel { width: min(1280px, 100%); max-width: 100%; max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 16px 42px -24px rgba(15,23,42,.45); contain: content; }
+.modal-panel { position: relative; width: min(1280px, 100%); max-width: 100%; max-height: calc(100vh - 40px); background: #fff; border-radius: 20px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; min-height: 0; box-shadow: 0 16px 42px -24px rgba(15,23,42,.45); contain: content; }
 .plate-edit-overlay { z-index: 120; }
 .plate-edit-panel { width: min(720px, 100%); overflow: hidden; background: linear-gradient(180deg,#ffffff,#f5f9ff); }
 .plate-edit-head { background: #fff; }
@@ -3767,6 +3882,7 @@ onBeforeUnmount(() => {
   -webkit-overflow-scrolling: touch;
 }
 .step-two-modal-panel { width: min(1440px, 100%); max-width: 100%; height: calc(100vh - 40px); max-height: calc(100vh - 40px); overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; min-height: 0; }
+.step-transition-overlay{position:absolute;inset:0;z-index:25;background:rgba(255,255,255,.78);backdrop-filter:blur(1px);display:flex;align-items:center;justify-content:center}
 .modal-head { padding: 18px 22px; border-bottom: 1px solid #e3e6ed; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .modal-head h2 { margin: 0; font-size: 22px; }
 .modal-step { margin: 0 0 6px; color: #64748b; font-size: 12px; }
@@ -3779,6 +3895,7 @@ onBeforeUnmount(() => {
   .release-col { min-height: auto; }
   .bonus-penalty-row { grid-template-columns: 1fr; }
   .release-secondary-grid,.cheque-fields-grid,.split-payment-grid { grid-template-columns: 1fr; }
+  .release-mobile-content { grid-template-columns: 1fr; }
   .detail-field-wide,.cheque-field-wide { grid-column: auto; }
   .release-secondary-section { margin: 14px 20px 20px; }
 }
@@ -3983,6 +4100,13 @@ onBeforeUnmount(() => {
     padding: 14px;
     border-radius: 20px;
   }
+  .summary-input-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .release-mobile-section{padding:0;border:none;background:transparent}
+  .release-mobile-toggle{width:100%;border:1px solid #dbe7f5;border-radius:14px;background:#f8fbff;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;padding:10px 12px;text-align:right;align-items:center}
+  .release-mobile-toggle span{font-weight:800;color:#0f172a}
+  .release-mobile-toggle small{grid-column:1/2;color:#64748b;font-size:11px}
+  .release-mobile-toggle strong{grid-row:1/3;grid-column:2/3;font-size:15px;color:#0f4c81}
+  .release-mobile-content{margin-top:8px;grid-template-columns:1fr}
   .plus-btn { width: 100%; }
   .worker-share-input, .worker-share-controls { grid-template-columns: 1fr; }
   .bonus-penalty-item { grid-template-columns: 1fr; }

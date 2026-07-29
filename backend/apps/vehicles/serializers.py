@@ -24,6 +24,7 @@ from .loyalty import (
     loyalty_snapshot,
     rebuild_customer_score,
     rebuild_plate_loyalty,
+    sync_plate_loyalty,
 )
 
 
@@ -455,13 +456,19 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         return min(Decimal('100'), max(Decimal('0'), Decimal(str(getattr(settings_obj, 'tax_percent', 0) or 0))))
 
     def _plate_loyalty(self, instance):
-        return get_or_create_plate_loyalty(
+        profile = get_or_create_plate_loyalty(
             tenant=getattr(instance, 'tenant', None),
             plate_number=getattr(instance, 'plate_number', ''),
             plate_left=getattr(instance, 'plate_left', ''),
             plate_letter=getattr(instance, 'plate_letter', ''),
             plate_mid=getattr(instance, 'plate_mid', ''),
             plate_right=getattr(instance, 'plate_right', ''),
+        )
+        return sync_plate_loyalty(
+            profile,
+            discount_percent_per_half_star=self._discount_percent_per_half_star(
+                getattr(instance, 'tenant', None)
+            ),
         )
 
     def _compute_job_financials(

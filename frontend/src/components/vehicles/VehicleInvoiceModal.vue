@@ -34,37 +34,26 @@
             </label>
           </div>
           <div class="invoice-modal-actions">
-            <button type="button" class="secondary-btn" :disabled="invoiceGenerating || loadingContext" @click="refreshInvoicePreview">
-              {{ invoiceGenerating ? 'در حال ساخت...' : 'بروزرسانی فاکتور' }}
+            <button type="button" class="secondary-btn" :disabled="loadingContext || invoiceGenerating" @click="downloadInvoicePdf">
+              {{ invoiceGenerating ? 'در حال ساخت PDF...' : 'دانلود PDF' }}
             </button>
-            <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="downloadInvoicePdf">
-              دانلود PDF
-            </button>
-            <button type="button" class="secondary-btn" :disabled="!invoicePdfUrl || invoiceGenerating" @click="printInvoicePdf">
+            <button type="button" class="secondary-btn" :disabled="loadingContext" @click="printInvoiceHtml">
               چاپ
             </button>
           </div>
         </div>
-        <div v-if="loadingContext || invoiceGenerating" class="invoice-preview-loading">
+        <div v-if="loadingContext" class="invoice-preview-loading">
           <BaseSpinner
             size="56px"
             color="#1d4ed8"
             ball-color="#60a5fa"
-            :label="loadingContext ? 'در حال بارگذاری اطلاعات فاکتور...' : 'در حال ساخت فایل PDF فاکتور...'"
+            label="در حال بارگذاری اطلاعات فاکتور..."
           />
         </div>
-        <div v-else-if="invoicePdfUrl" class="invoice-preview-frame-wrap">
-          <iframe ref="invoicePreviewFrameRef" :src="invoicePreviewUrl" title="invoice-pdf-preview" class="invoice-preview-frame"></iframe>
-        </div>
-        <div v-else class="invoice-preview-empty">
-          {{ invoiceErrorMessage || 'فاکتور هنوز ساخته نشده است.' }}
-        </div>
-      </div>
-    </section>
-
-    <div class="invoice-print-stage" :style="invoiceStageStyle" aria-hidden="true">
-      <div ref="invoiceTemplateRef" class="invoice-template" :style="invoiceTemplateStyle">
-        <div class="invoice-sheet" :class="invoiceSheetClass" :style="invoiceSheetStyle">
+        <div v-show="!loadingContext" class="invoice-preview-frame-wrap">
+          <div class="invoice-live-preview" :style="invoiceStageStyle">
+            <div ref="invoiceTemplateRef" class="invoice-template" :style="invoiceTemplateStyle">
+              <div class="invoice-sheet" :class="invoiceSheetClass" :style="invoiceSheetStyle">
           <template v-if="invoiceIsThermal">
             <header class="thermal-sheet-head">
               <strong>{{ invoiceCarwashTitle }}</strong>
@@ -238,9 +227,13 @@
               <p>از اعتماد شما سپاسگزاریم</p>
             </footer>
           </template>
+              </div>
+            </div>
+          </div>
         </div>
+        <p v-if="invoiceErrorMessage" class="invoice-preview-error">{{ invoiceErrorMessage }}</p>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -265,7 +258,6 @@ const loadingContext = ref(false)
 const invoicePdfUrl = ref('')
 const invoiceErrorMessage = ref('')
 const invoiceTemplateRef = ref(null)
-const invoicePreviewFrameRef = ref(null)
 const invoiceRenderTimer = ref(null)
 const invoiceLayout = reactive({
   preset: 'a4',
@@ -375,11 +367,6 @@ const invoiceCarwashContactLine = computed(() => {
   return parts.join(' | ')
 })
 const invoiceReceiptHeaderNote = computed(() => String(invoiceMeta.receiptHeaderNote || '').trim())
-const invoicePreviewUrl = computed(() => (
-  invoicePdfUrl.value
-    ? `${invoicePdfUrl.value}#view=FitH&zoom=page-width`
-    : ''
-))
 
 const invoiceServiceLines = computed(() => {
   const lines = Array.isArray(invoiceMeta.serviceLines) ? invoiceMeta.serviceLines : []
@@ -702,7 +689,7 @@ const revokeInvoicePdfUrl = () => {
 }
 
 const buildInvoicePdf = async () => {
-  if (!invoiceTemplateRef.value) return
+  if (!invoiceTemplateRef.value) return false
   invoiceGenerating.value = true
   invoiceErrorMessage.value = ''
   revokeInvoicePdfUrl()
@@ -715,7 +702,16 @@ const buildInvoicePdf = async () => {
         margin: invoicePageMetrics.value.margin,
         filename: `${invoiceFileLabel.value}.pdf`,
         image: { type: 'png', quality: 1 },
-        html2canvas: { scale: invoiceIsThermal.value ? 4 : 3, useCORS: true, backgroundColor: '#ffffff' },
+        html2canvas: {
+          scale: invoiceIsThermal.value ? 4 : 3,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: invoiceTemplateRef.value.scrollWidth,
+          windowHeight: invoiceTemplateRef.value.scrollHeight
+        },
         jsPDF: { unit: 'mm', format: invoicePageMetrics.value.format, orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       })
@@ -724,20 +720,19 @@ const buildInvoicePdf = async () => {
     const pdf = await worker.get('pdf')
     const blob = pdf.output('blob')
     invoicePdfUrl.value = URL.createObjectURL(blob)
+    return true
   } catch (error) {
     console.error('VehicleInvoiceModal buildInvoicePdf error:', error)
     invoiceErrorMessage.value = 'ساخت فایل فاکتور ناموفق بود.'
+    return false
   } finally {
     invoiceGenerating.value = false
   }
 }
 
-const refreshInvoicePreview = async () => {
-  await buildInvoicePdf()
-}
-
-const downloadInvoicePdf = () => {
-  if (!invoicePdfUrl.value) return
+const downloadInvoicePdf = async () => {
+  const ready = invoicePdfUrl.value ? true : await buildInvoicePdf()
+  if (!ready || !invoicePdfUrl.value) return
   const anchor = document.createElement('a')
   anchor.href = invoicePdfUrl.value
   anchor.download = `${invoiceFileLabel.value}.pdf`
@@ -746,21 +741,48 @@ const downloadInvoicePdf = () => {
   anchor.remove()
 }
 
-const printInvoicePdf = () => {
-  const frame = invoicePreviewFrameRef.value
-  if (frame?.contentWindow) {
-    frame.contentWindow.focus()
-    frame.contentWindow.print()
+const collectPrintStyles = () => Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+  .map((node) => node.outerHTML)
+  .join('\n')
+
+const printInvoiceHtml = () => {
+  const source = invoiceTemplateRef.value
+  if (!source) return
+  const popup = window.open('', '_blank', 'noopener,noreferrer,width=920,height=1100')
+  if (!popup) {
+    invoiceErrorMessage.value = 'پنجره چاپ مسدود شد. اجازه پاپ‌آپ مرورگر را فعال کنید.'
     return
   }
-  if (!invoicePdfUrl.value) return
-  const popup = window.open(invoicePdfUrl.value, '_blank', 'noopener,noreferrer')
-  if (popup) {
-    window.setTimeout(() => {
+  const pageSize = invoiceIsThermal.value
+    ? `${invoiceThermalWidthMm.value}mm ${invoiceThermalHeightMm.value}mm`
+    : (invoiceLayout.preset === 'a5' ? 'A5' : 'A4')
+  const margins = Array.isArray(invoicePageMetrics.value.margin)
+    ? invoicePageMetrics.value.margin.map((value) => `${value}mm`).join(' ')
+    : '8mm'
+  popup.document.open()
+  popup.document.write(`<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>${invoiceFileLabel.value}</title>
+  ${collectPrintStyles()}
+  <style>
+    @page { size: ${pageSize}; margin: ${margins}; }
+    html, body { margin: 0; padding: 12px; background: #fff; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .invoice-template { margin: 0 auto; }
+  </style>
+</head>
+<body>${source.outerHTML}</body>
+</html>`)
+  popup.document.close()
+  const triggerPrint = () => {
+    try {
       popup.focus()
       popup.print()
-    }, 400)
+    } catch (_error) {}
   }
+  window.setTimeout(triggerPrint, 350)
 }
 
 watch(
@@ -776,18 +798,14 @@ watch(
     }
     await loadInvoiceContext()
     await nextTick()
-    await buildInvoicePdf()
   }
 )
 
 watch(
   () => [invoiceLayout.preset, invoiceLayout.thermalWidthMm, invoiceLayout.thermalHeightMm],
   () => {
-    if (!props.open || loadingContext.value) return
-    if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
-    invoiceRenderTimer.value = window.setTimeout(() => {
-      buildInvoicePdf()
-    }, 220)
+    if (!props.open) return
+    revokeInvoicePdfUrl()
   }
 )
 
@@ -974,15 +992,29 @@ onBeforeUnmount(() => {
   color: #64748b;
   padding: 20px;
 }
+.invoice-preview-error {
+  margin: 10px 2px 0;
+  color: #b91c1c;
+  font-size: 13px;
+}
 .invoice-preview-frame-wrap {
   min-height: 0;
   min-width: 0;
   border-radius: 18px;
   overflow: auto;
   border: 1px solid #dbe7f5;
-  background: #fff;
+  background: #eef3f8;
   box-shadow: 0 16px 36px rgba(15, 23, 42, .08);
   height: 100%;
+  padding: 18px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.invoice-live-preview {
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, .12);
 }
 .invoice-preview-frame {
   display: block;
@@ -992,12 +1024,6 @@ onBeforeUnmount(() => {
   min-width: 0;
   border: 0;
   background: #fff;
-}
-.invoice-print-stage {
-  position: fixed;
-  left: -99999px;
-  top: 0;
-  pointer-events: none;
 }
 .invoice-template {
   background: #fff;
