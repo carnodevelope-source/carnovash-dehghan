@@ -21,7 +21,7 @@
         </div>
 
         <div class="camera-actions">
-          <button type="button" class="camera-action primary-camera" :disabled="cameraState.loading" @click="startCamera">
+          <button type="button" class="camera-action primary-camera" :disabled="cameraState.loading" @click="startCamera()">
             {{ cameraState.active ? 'راه‌اندازی مجدد دوربین' : 'باز کردن دوربین' }}
           </button>
           <button type="button" class="camera-action" :disabled="cameraState.loading || !cameraState.active" @click="captureFromVideo">
@@ -313,7 +313,7 @@ const syncMobileViewport = (event) => {
 const toggleAiPanel = () => {
   isAiPanelCollapsed.value = !isAiPanelCollapsed.value
   if (!isAiPanelCollapsed.value && !cameraState.active && !form.isAnonymous && !form.isPieceWash && navigator.mediaDevices?.getUserMedia && canUseLiveCamera) {
-    startCamera().catch(() => {})
+    startCamera({ silent: false }).catch(() => {})
   }
 }
 
@@ -409,39 +409,86 @@ const stopCamera = () => {
   if (cameraVideoRef.value) cameraVideoRef.value.srcObject = null
 }
 
-const startCamera = async () => {
-  if (cameraState.loading) return
-  setCameraMessage('')
-  try {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraMessage('دسترسی مستقیم به دوربین در این مرورگر فعال نیست. از گزینه دوربین گوشی / عکس استفاده کنید.', true)
-      return
-    }
-    stopCamera()
-    const stream = await navigator.mediaDevices.getUserMedia({
+const cameraErrorMessage = (error) => {
+  if (!canUseLiveCamera) {
+    return 'برای دوربین زنده روی گوشی باید سایت با HTTPS باز شود. فعلاً از گزینه دوربین گوشی / عکس استفاده کنید.'
+  }
+  const name = String(error?.name || '')
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return 'اجازه دسترسی به دوربین داده نشد. از تنظیمات مرورگر اجازه دوربین را برای این سایت فعال کنید، یا از گزینه دوربین گوشی / عکس استفاده کنید.'
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return 'دوربینی روی این دستگاه پیدا نشد. از گزینه دوربین گوشی / عکس استفاده کنید.'
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return 'دوربین در دسترس نیست؛ شاید برنامه دیگری در حال استفاده از آن باشد.'
+  }
+  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+    return 'تنظیمات دوربین پشتیبانی نمی‌شود. دوباره تلاش کنید یا از گزینه دوربین گوشی / عکس استفاده کنید.'
+  }
+  if (name === 'SecurityError') {
+    return 'مرورگر به دلایل امنیتی دسترسی به دوربین را مسدود کرده است.'
+  }
+  return 'باز کردن دوربین ممکن نشد. دکمه «باز کردن دوربین» را بزنید یا از گزینه دوربین گوشی / عکس استفاده کنید.'
+}
+
+const requestCameraStream = async () => {
+  const attempts = [
+    {
       video: {
         facingMode: { ideal: 'environment' },
         width: { ideal: 1280 },
         height: { ideal: 720 }
       },
       audio: false
-    })
+    },
+    { video: { facingMode: 'environment' }, audio: false },
+    { video: true, audio: false }
+  ]
+  let lastError = null
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints)
+    } catch (error) {
+      lastError = error
+      if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(error?.name)) {
+        throw error
+      }
+    }
+  }
+  throw lastError || new Error('camera_unavailable')
+}
+
+const startCamera = async ({ silent = false } = {}) => {
+  if (cameraState.loading) return
+  if (!silent) setCameraMessage('')
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      if (!silent) {
+        setCameraMessage('دسترسی مستقیم به دوربین در این مرورگر فعال نیست. از گزینه دوربین گوشی / عکس استفاده کنید.', true)
+      }
+      return
+    }
+    if (!canUseLiveCamera) {
+      if (!silent) {
+        setCameraMessage('برای دوربین زنده روی گوشی باید سایت با HTTPS باز شود. فعلاً از گزینه دوربین گوشی / عکس استفاده کنید.', true)
+      }
+      return
+    }
+    stopCamera()
+    const stream = await requestCameraStream()
     cameraStream.value = stream
     if (cameraVideoRef.value) {
       cameraVideoRef.value.srcObject = stream
+      cameraVideoRef.value.setAttribute('playsinline', 'true')
+      cameraVideoRef.value.muted = true
       await cameraVideoRef.value.play()
     }
     cameraState.active = true
     setCameraMessage('دوربین آماده است. هر وقت روی تصویر کلیک کنید همان لحظه پلاک خوانده می‌شود.')
   } catch (error) {
     stopCamera()
-    const isInsecure = !canUseLiveCamera
-    setCameraMessage(
-      isInsecure
-        ? 'برای دوربین زنده روی گوشی باید سایت با HTTPS باز شود. فعلاً از گزینه دوربین گوشی / عکس استفاده کنید.'
-        : 'اجازه دسترسی به دوربین داده نشد یا دوربین در دسترس نیست.',
-      true
-    )
+    if (!silent) setCameraMessage(cameraErrorMessage(error), true)
   }
 }
 
@@ -858,7 +905,11 @@ onMounted(async () => {
     setCameraMessage('برای فعال شدن دوربین زنده در موبایل باید سایت را با HTTPS باز کنید. در این حالت از گزینه دوربین گوشی / عکس استفاده کنید.', true)
     return
   }
-  await startCamera()
+  // Auto-open only silently: many mobile browsers need a tap before they show the permission prompt.
+  await startCamera({ silent: true })
+  if (!cameraState.active) {
+    setCameraMessage('برای فعال شدن دوربین، دکمه «باز کردن دوربین» را بزنید.')
+  }
 })
 
 onBeforeUnmount(() => {

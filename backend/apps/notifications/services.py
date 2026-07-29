@@ -1,5 +1,7 @@
 import json
+import logging
 import math
+import threading
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
@@ -7,10 +9,12 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from django.conf import settings
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.db.models import Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from apps.services.models import (
     DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE,
@@ -721,7 +725,7 @@ def send_provider_sms(tenant, text, recipients, *, provider_config=None):
     }
 
 
-def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extra_context=None):
+def _send_vehicle_event_sms_sync(event_code, tenant, vehicle, *, created_by=None, extra_context=None):
     from apps.notifications.models import NotificationLog
 
     if (
@@ -886,6 +890,88 @@ def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extr
         )
         sent_count += 1
     return {'ok': True, 'sent_count': sent_count}
+
+
+def _run_vehicle_event_sms_job(event_code, vehicle_id, tenant_id, created_by_id, extra_context):
+    from django.contrib.auth import get_user_model
+
+    from apps.auth.models import CarWash
+    from apps.vehicles.models import VehicleEntry
+
+    close_old_connections()
+    try:
+        vehicle = (
+            VehicleEntry.objects.select_related('tenant', 'job', 'customer')
+            .prefetch_related('job__service_lines__service')
+            .filter(id=vehicle_id)
+            .first()
+        )
+        if not vehicle:
+            return
+        tenant = vehicle.tenant
+        if tenant_id and (not tenant or int(tenant.id) != int(tenant_id)):
+            tenant = CarWash.objects.filter(id=tenant_id).first() or tenant
+        created_by = None
+        if created_by_id:
+            created_by = get_user_model().objects.filter(id=created_by_id).first()
+        _send_vehicle_event_sms_sync(
+            event_code,
+            tenant,
+            vehicle,
+            created_by=created_by,
+            extra_context=extra_context or {},
+        )
+    except Exception:
+        logger.exception(
+            'Background vehicle SMS failed event=%s vehicle_id=%s',
+            event_code,
+            vehicle_id,
+        )
+    finally:
+        close_old_connections()
+
+
+def send_vehicle_event_sms(event_code, tenant, vehicle, *, created_by=None, extra_context=None, background=None):
+    """Send assignment/release SMS. By default queues after DB commit so UI isn't blocked."""
+    if background is None:
+        background = bool(getattr(settings, 'SMS_SEND_IN_BACKGROUND', True))
+
+    if not background:
+        return _send_vehicle_event_sms_sync(
+            event_code,
+            tenant,
+            vehicle,
+            created_by=created_by,
+            extra_context=extra_context,
+        )
+
+    vehicle_id = getattr(vehicle, 'id', None) or getattr(vehicle, 'pk', None)
+    if not vehicle_id:
+        return _send_vehicle_event_sms_sync(
+            event_code,
+            tenant,
+            vehicle,
+            created_by=created_by,
+            extra_context=extra_context,
+        )
+
+    tenant_id = getattr(tenant, 'id', None) or getattr(vehicle, 'tenant_id', None)
+    created_by_id = None
+    if created_by and getattr(created_by, 'is_authenticated', False):
+        created_by_id = getattr(created_by, 'id', None)
+    job_extra = dict(extra_context or {})
+
+    def enqueue():
+        worker = threading.Thread(
+            target=_run_vehicle_event_sms_job,
+            args=(event_code, int(vehicle_id), tenant_id, created_by_id, job_extra),
+            name=f'vehicle-sms-{event_code}-{vehicle_id}',
+            daemon=True,
+        )
+        worker.start()
+
+    transaction.on_commit(enqueue)
+    return {'ok': True, 'queued': True}
 
 
 def customer_key_for(customer_id=None, phone='', name=''):

@@ -38,6 +38,19 @@ export const useVehicleStore = defineStore('vehicle', {
         this.vehicles.splice(index, 0, nextItem)
       })
     },
+    upsertVehicle(vehicle) {
+      if (!vehicle?.id) return vehicle
+      const idx = this.vehicles.findIndex((item) => Number(item.id) === Number(vehicle.id))
+      if (idx >= 0) {
+        this.vehicles[idx] = { ...this.vehicles[idx], ...vehicle }
+      } else {
+        this.vehicles.unshift(vehicle)
+      }
+      if (this.selectedVehicle && Number(this.selectedVehicle.id) === Number(vehicle.id)) {
+        this.selectedVehicle = { ...this.selectedVehicle, ...vehicle }
+      }
+      return vehicle
+    },
     async fetchVehicles(params = {}, options = {}) {
       const trackLoading = options.trackLoading === true
       if (trackLoading) this.loading = true

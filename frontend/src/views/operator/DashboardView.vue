@@ -3170,13 +3170,26 @@ const saveVehicle = async (payload, status) => {
   const body = buildCreateOrUpdatePayload(payload, status)
   const editingId = payload?.vehicle?.id || vehicleDraft.value?.id || null
   if (editingId) {
+    // Image/OCR audit already ran on create; re-uploading slows assign/refer a lot.
+    delete body.ai_image_base64
+    delete body.ai_raw_text
+    delete body.ai_persian_text
+    delete body.ai_converted_plate
+    delete body.ai_converted_plate_left
+    delete body.ai_converted_plate_letter
+    delete body.ai_converted_plate_mid
+    delete body.ai_converted_plate_right
+    delete body.ai_converted_plate_type
+    delete body.ai_session_id
+    delete body.ai_confidence
+    delete body.ai_latency_ms
+    delete body.intake_source
     const { data } = await api.patch(`/vehicles/${editingId}/`, body, { meta: { trackLoading: false } })
-    const idx = vehicleStore.vehicles.findIndex((item) => item.id === editingId)
-    if (idx >= 0) vehicleStore.vehicles[idx] = data
+    vehicleStore.upsertVehicle(data)
     return data
   }
   const { data } = await api.post('/vehicles/', body, { meta: { trackLoading: false } })
-  await fetchVehiclesForActiveRange()
+  vehicleStore.upsertVehicle(data)
   return data
 }
 
@@ -3200,6 +3213,7 @@ const handleStepOneRefer = async (payload) => {
     }
     await saveVehicle({ vehicle: payload }, 'entered')
     closeVehicleModal({ force: true })
+    void refreshVehicleCardsFromDatabase()
   } catch (error) {
     console.error('refer step one error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
@@ -3225,7 +3239,6 @@ const handleStepTwoAssign = async (payload) => {
     if (vehicleEditFlow.value) {
       const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || 'ready_to_settle'
       const savedVehicle = await saveVehicle(payload, currentStatus)
-      await refreshVehicleBoard()
       if (vehicleEditFlow.value === 'released') {
         closeVehicleModal({ force: true })
         await openReleaseModal({
@@ -3240,12 +3253,13 @@ const handleStepTwoAssign = async (payload) => {
         })
       } else {
         closeVehicleModal({ force: true })
+        void refreshVehicleCardsFromDatabase()
       }
       return
     }
     await saveVehicle(payload, 'ready_to_settle')
-    await refreshVehicleBoard()
     closeVehicleModal({ force: true })
+    void refreshVehicleCardsFromDatabase()
   } catch (error) {
     console.error('assign step two error:', error?.response?.data || error)
     notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
