@@ -80,16 +80,30 @@
             @paste="onDigitPaste($event, 'plateRight', 2)"
             @input="handleCarPartInput('plateRight', $event)"
           />
-          <select
-            ref="plateLetterInputRef"
-            :value="plateLetter"
-            class="plate-input letter plate-letter-select"
-            :disabled="disabled"
-            @change="handleCarPartInput('plateLetter', $event)"
+          <div
+            class="plate-letter-slot plate-input letter"
+            :class="{ open: showLetterKeyboard, filled: Boolean(plateLetter) }"
           >
-            <option value="">حرف</option>
-            <option v-for="letter in plateLetterOptions" :key="letter" :value="letter">{{ letter }}</option>
-          </select>
+            <span class="plate-letter-display" aria-hidden="true">
+              {{ plateLetter || 'حرف' }}
+            </span>
+            <input
+              ref="plateLetterInputRef"
+              class="plate-letter-capture"
+              type="text"
+              maxlength="3"
+              autocomplete="off"
+              enterkeyhint="next"
+              :disabled="disabled"
+              :aria-expanded="showLetterKeyboard"
+              aria-haspopup="dialog"
+              aria-label="انتخاب حرف پلاک"
+              @focus="onLetterCaptureFocus"
+              @click="onLetterCaptureFocus"
+              @keydown="onLetterKeydown"
+              @input="onLetterCaptureInput"
+            />
+          </div>
           <input
             ref="plateMidInputRef"
             :value="plateMid"
@@ -130,6 +144,37 @@
     </div>
 
     <div
+      v-if="plateKind === 'car' && !anonymous && !pieceWash && showLetterKeyboard"
+      class="plate-letter-keyboard"
+      role="dialog"
+      aria-label="صفحه‌کلید حرف پلاک"
+    >
+      <div class="plate-letter-keyboard-head">
+        <strong>انتخاب حرف پلاک</strong>
+        <span class="plate-letter-keyboard-hint">کیبورد لپ‌تاپ هم فعال است</span>
+        <div class="plate-letter-keyboard-actions">
+          <button type="button" class="keyboard-action-btn" :disabled="disabled || !plateLetter" @click="clearPlateLetter">
+            پاک کردن
+          </button>
+          <button type="button" class="keyboard-action-btn" @click="closeLetterKeyboard">بستن</button>
+        </div>
+      </div>
+      <div class="plate-letter-keyboard-grid">
+        <button
+          v-for="letter in plateLetterOptions"
+          :key="letter"
+          type="button"
+          class="keyboard-key"
+          :class="{ active: plateLetter === letter }"
+          :disabled="disabled"
+          @click="pickPlateLetter(letter)"
+        >
+          {{ letter }}
+        </button>
+      </div>
+    </div>
+
+    <div
       v-if="plateKind === 'car' && letterSuggestions.length > 1"
       class="letter-suggestions-panel"
       role="group"
@@ -156,7 +201,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { normalizeDigits, normalizePlateLetter } from '../../utils/plate'
 
 const emit = defineEmits([
@@ -189,6 +234,7 @@ const plateRightInputRef = ref(null)
 const plateLetterInputRef = ref(null)
 const plateMidInputRef = ref(null)
 const plateLeftInputRef = ref(null)
+const showLetterKeyboard = ref(false)
 
 const plateLetterOptions = ['الف', 'ب', 'پ', 'ت', 'ث', 'ج', 'چ', 'ح', 'خ', 'د', 'ذ', 'ر', 'ز', 'ژ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ک', 'گ', 'ل', 'م', 'ن', 'و', 'ه', 'ی']
 const plateKind = computed(() => (props.plateType === 'motorcycle' ? 'motorcycle' : 'car'))
@@ -218,6 +264,8 @@ const setPlateType = (value) => {
   const nextType = value === 'motorcycle' ? 'motorcycle' : 'car'
   emit('update:plateType', nextType)
   emit('update:plateMid', digitPart(props.plateMid, 3))
+  showLetterKeyboard.value = false
+  clearLetterCaptureValue()
   if (nextType === 'motorcycle') {
     emit('update:plateLeft', '')
     emit('update:plateRight', '')
@@ -233,29 +281,30 @@ const selectFieldText = (event) => {
   requestAnimationFrame(() => element.select())
 }
 
+const focusElement = (element) => {
+  if (!element || typeof element.focus !== 'function') return
+  element.focus({ preventScroll: true })
+}
+
 const focusNextPlatePart = (key, nextValue) => {
   if (plateKind.value === 'motorcycle') return
+  if (key === 'plateRight' && String(nextValue || '').length >= 2) {
+    openLetterKeyboard(true)
+    return
+  }
   const target = {
-    plateRight: String(nextValue || '').length >= 2 ? plateLetterInputRef.value : null,
     plateLetter: String(nextValue || '').trim() ? plateMidInputRef.value : null,
     plateMid: String(nextValue || '').length >= 3 ? plateLeftInputRef.value : null
   }[key]
-  if (!target || typeof target.focus !== 'function') return
-  requestAnimationFrame(() => target.focus())
+  focusElement(target)
 }
 
 const handleCarPartInput = (key, event) => {
   const rawValue = event?.target?.value || ''
-  let nextValue = ''
-  if (key === 'plateLetter') {
-    nextValue = normalizePlateLetter(rawValue)
-    emit('update:plateLetter', nextValue)
-  } else {
-    const limits = { plateLeft: 2, plateMid: 3, plateRight: 2 }
-    nextValue = digitPart(rawValue, limits[key] || 2)
-    emit(`update:${key}`, nextValue)
-    if (event?.target) event.target.value = nextValue
-  }
+  const limits = { plateLeft: 2, plateMid: 3, plateRight: 2 }
+  const nextValue = digitPart(rawValue, limits[key] || 2)
+  emit(`update:${key}`, nextValue)
+  if (event?.target) event.target.value = nextValue
   focusNextPlatePart(key, nextValue)
 }
 
@@ -268,8 +317,128 @@ const handleMotorPartInput = (key, event) => {
 
 const selectLetterSuggestion = (letter) => {
   if (plateKind.value !== 'car') return
-  emit('update:plateLetter', normalizePlateLetter(letter))
+  pickPlateLetter(letter)
 }
+
+const clearLetterCaptureValue = () => {
+  const input = plateLetterInputRef.value
+  if (input) input.value = ''
+}
+
+const focusLetterCapture = () => {
+  const input = plateLetterInputRef.value
+  if (!input || props.disabled) return
+  clearLetterCaptureValue()
+  focusElement(input)
+}
+
+const openLetterKeyboard = (shouldFocus = false) => {
+  if (props.disabled || plateKind.value !== 'car' || props.anonymous || props.pieceWash) return
+  showLetterKeyboard.value = true
+  if (shouldFocus) {
+    focusLetterCapture()
+    nextTick(focusLetterCapture)
+  }
+}
+
+const closeLetterKeyboard = () => {
+  showLetterKeyboard.value = false
+  clearLetterCaptureValue()
+}
+
+const onLetterCaptureFocus = () => {
+  openLetterKeyboard(false)
+}
+
+const resolveTypedPlateLetter = (raw) => {
+  const nextValue = normalizePlateLetter(raw)
+  if (!nextValue) return ''
+  return plateLetterOptions.includes(nextValue) ? nextValue : ''
+}
+
+const onLetterKeydown = (event) => {
+  if (props.disabled || plateKind.value !== 'car') return
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeLetterKeyboard()
+    return
+  }
+
+  if (event.key === 'Backspace' || event.key === 'Delete') {
+    event.preventDefault()
+    clearPlateLetter()
+    clearLetterCaptureValue()
+    return
+  }
+
+  if (event.key === 'Enter' || event.key === 'Tab') {
+    if (props.plateLetter) {
+      event.preventDefault()
+      closeLetterKeyboard()
+      focusNextPlatePart('plateLetter', props.plateLetter)
+    }
+    return
+  }
+
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.key.length !== 1) return
+
+  const nextValue = resolveTypedPlateLetter(event.key)
+  if (!nextValue) return
+  event.preventDefault()
+  pickPlateLetter(nextValue)
+}
+
+const onLetterCaptureInput = (event) => {
+  if (props.disabled || plateKind.value !== 'car') return
+  const rawValue = event?.target?.value || ''
+  const nextValue = resolveTypedPlateLetter(rawValue)
+  clearLetterCaptureValue()
+  if (!nextValue) return
+  pickPlateLetter(nextValue)
+}
+
+const pickPlateLetter = (letter) => {
+  if (plateKind.value !== 'car' || props.disabled) return
+  const nextValue = normalizePlateLetter(letter)
+  if (!nextValue) return
+  emit('update:plateLetter', nextValue)
+  showLetterKeyboard.value = false
+  clearLetterCaptureValue()
+  focusNextPlatePart('plateLetter', nextValue)
+}
+
+const clearPlateLetter = () => {
+  if (props.disabled) return
+  emit('update:plateLetter', '')
+}
+
+const onDocumentPointerDown = (event) => {
+  if (!showLetterKeyboard.value) return
+  const trigger = plateLetterInputRef.value
+  if (trigger && (event.target === trigger || trigger.contains?.(event.target))) return
+  if (event.target?.closest?.('.plate-letter-slot')) return
+  if (event.target?.closest?.('.plate-letter-keyboard')) return
+  closeLetterKeyboard()
+}
+
+watch(
+  () => [props.anonymous, props.pieceWash, props.disabled, plateKind.value],
+  () => {
+    if (props.anonymous || props.pieceWash || props.disabled || plateKind.value !== 'car') {
+      closeLetterKeyboard()
+    }
+  }
+)
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+})
 </script>
 
 <style scoped>
@@ -413,7 +582,7 @@ const selectLetterSuggestion = (letter) => {
 .manual-plate-car .plate-input.letter {
   width: 88px;
   min-width: 68px;
-  padding: 0 18px 0 8px;
+  padding: 0 8px;
 }
 
 .blue-input {
@@ -439,13 +608,155 @@ const selectLetterSuggestion = (letter) => {
   font-size: 24px;
 }
 
-.plate-letter-select {
-  appearance: auto;
-  -webkit-appearance: menulist;
+.plate-letter-slot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   direction: rtl;
-  cursor: pointer;
+  cursor: text;
   color: #0f172a;
-  background-color: rgba(255, 255, 255, 0.2) !important;
+  background-color: rgba(255, 255, 255, 0.35) !important;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.plate-letter-slot:not(.filled) .plate-letter-display {
+  color: #94a3b8;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.plate-letter-slot.open,
+.plate-letter-slot:focus-within {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.14);
+  background-color: rgba(255, 255, 255, 0.65) !important;
+}
+
+.plate-letter-display {
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
+}
+
+.plate-letter-capture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  color: transparent;
+  caret-color: transparent;
+  background: transparent;
+  font: inherit;
+  text-align: center;
+  cursor: text;
+}
+
+.plate-letter-capture:disabled {
+  cursor: not-allowed;
+}
+
+.plate-letter-capture:focus {
+  outline: none;
+}
+
+.plate-letter-keyboard {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(236, 244, 255, 0.94));
+  border: 1px solid #c9daf0;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  animation: letter-suggest-in 0.22s ease-out;
+  direction: rtl;
+}
+
+.plate-letter-keyboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.plate-letter-keyboard-head strong {
+  color: #1e3a5f;
+  font-size: 13px;
+}
+
+.plate-letter-keyboard-hint {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  margin-inline-end: auto;
+}
+
+.plate-letter-keyboard-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.keyboard-action-btn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #c8d7ea;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.keyboard-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plate-letter-keyboard-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.keyboard-key {
+  min-height: 42px;
+  border: 1px solid #c5d7ee;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.keyboard-key:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: #7eb0e4;
+  background: #f7fbff;
+}
+
+.keyboard-key.active {
+  background: linear-gradient(135deg, #1d4f91, #2f6fad);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 6px 14px rgba(29, 79, 145, 0.22);
+}
+
+.keyboard-key:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .manual-plate-motorcycle .plate-input.mid {
@@ -622,7 +933,21 @@ const selectLetterSuggestion = (letter) => {
   .manual-plate-car .plate-input.letter {
     width: 54px;
     min-width: 48px;
-    padding: 0 12px 0 2px;
+    padding: 0 2px;
+  }
+
+  .plate-letter-slot:not(.filled) .plate-letter-display {
+    font-size: 10px;
+  }
+
+  .plate-letter-keyboard-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .keyboard-key {
+    min-height: 38px;
+    font-size: 14px;
+    border-radius: 10px;
   }
 
   .manual-plate-blue {
@@ -677,7 +1002,11 @@ const selectLetterSuggestion = (letter) => {
   .manual-plate-car .plate-input.letter {
     width: 50px;
     min-width: 46px;
-    padding: 0 10px 0 2px;
+    padding: 0 2px;
+  }
+
+  .plate-letter-keyboard-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .manual-plate-motorcycle .plate-input.mid {
