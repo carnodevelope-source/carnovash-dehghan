@@ -92,11 +92,12 @@
               class="plate-letter-capture"
               type="text"
               maxlength="3"
+              :inputmode="isMobileViewport ? 'text' : 'none'"
               autocomplete="off"
               enterkeyhint="next"
               :disabled="disabled"
-              :aria-expanded="showLetterKeyboard"
-              aria-haspopup="dialog"
+              :aria-expanded="isMobileViewport ? undefined : showLetterKeyboard"
+              :aria-haspopup="isMobileViewport ? undefined : 'dialog'"
               aria-label="انتخاب حرف پلاک"
               @focus="onLetterCaptureFocus"
               @click="onLetterCaptureFocus"
@@ -144,7 +145,7 @@
     </div>
 
     <div
-      v-if="plateKind === 'car' && !anonymous && !pieceWash && showLetterKeyboard"
+      v-if="plateKind === 'car' && !anonymous && !pieceWash && showLetterKeyboard && !isMobileViewport"
       class="plate-letter-keyboard"
       role="dialog"
       aria-label="صفحه‌کلید حرف پلاک"
@@ -235,9 +236,15 @@ const plateLetterInputRef = ref(null)
 const plateMidInputRef = ref(null)
 const plateLeftInputRef = ref(null)
 const showLetterKeyboard = ref(false)
+const isMobileViewport = ref(false)
 
 const plateLetterOptions = ['الف', 'ب', 'پ', 'ت', 'ث', 'ج', 'چ', 'ح', 'خ', 'د', 'ذ', 'ر', 'ز', 'ژ', 'س', 'ش', 'ص', 'ض', 'ط', 'ظ', 'ع', 'غ', 'ف', 'ق', 'ک', 'گ', 'ل', 'م', 'ن', 'و', 'ه', 'ی']
 const plateKind = computed(() => (props.plateType === 'motorcycle' ? 'motorcycle' : 'car'))
+
+let mobileMediaQuery = null
+const syncMobileViewport = () => {
+  isMobileViewport.value = Boolean(mobileMediaQuery?.matches)
+}
 
 const digitPart = (value, limit) => normalizeDigits(value).replace(/\D/g, '').slice(0, limit)
 
@@ -289,6 +296,11 @@ const focusElement = (element) => {
 const focusNextPlatePart = (key, nextValue) => {
   if (plateKind.value === 'motorcycle') return
   if (key === 'plateRight' && String(nextValue || '').length >= 2) {
+    if (isMobileViewport.value) {
+      focusLetterCapture()
+      nextTick(focusLetterCapture)
+      return
+    }
     openLetterKeyboard(true)
     return
   }
@@ -334,6 +346,14 @@ const focusLetterCapture = () => {
 
 const openLetterKeyboard = (shouldFocus = false) => {
   if (props.disabled || plateKind.value !== 'car' || props.anonymous || props.pieceWash) return
+  if (isMobileViewport.value) {
+    showLetterKeyboard.value = false
+    if (shouldFocus) {
+      focusLetterCapture()
+      nextTick(focusLetterCapture)
+    }
+    return
+  }
   showLetterKeyboard.value = true
   if (shouldFocus) {
     focusLetterCapture()
@@ -347,6 +367,10 @@ const closeLetterKeyboard = () => {
 }
 
 const onLetterCaptureFocus = () => {
+  if (isMobileViewport.value) {
+    showLetterKeyboard.value = false
+    return
+  }
   openLetterKeyboard(false)
 }
 
@@ -423,6 +447,10 @@ const onDocumentPointerDown = (event) => {
   closeLetterKeyboard()
 }
 
+watch(isMobileViewport, (mobile) => {
+  if (mobile) showLetterKeyboard.value = false
+})
+
 watch(
   () => [props.anonymous, props.pieceWash, props.disabled, plateKind.value],
   () => {
@@ -433,10 +461,26 @@ watch(
 )
 
 onMounted(() => {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    mobileMediaQuery = window.matchMedia('(max-width: 768px), (pointer: coarse)')
+    syncMobileViewport()
+    if (typeof mobileMediaQuery.addEventListener === 'function') {
+      mobileMediaQuery.addEventListener('change', syncMobileViewport)
+    } else if (typeof mobileMediaQuery.addListener === 'function') {
+      mobileMediaQuery.addListener(syncMobileViewport)
+    }
+  }
   document.addEventListener('pointerdown', onDocumentPointerDown)
 })
 
 onBeforeUnmount(() => {
+  if (mobileMediaQuery) {
+    if (typeof mobileMediaQuery.removeEventListener === 'function') {
+      mobileMediaQuery.removeEventListener('change', syncMobileViewport)
+    } else if (typeof mobileMediaQuery.removeListener === 'function') {
+      mobileMediaQuery.removeListener(syncMobileViewport)
+    }
+  }
   document.removeEventListener('pointerdown', onDocumentPointerDown)
 })
 </script>
