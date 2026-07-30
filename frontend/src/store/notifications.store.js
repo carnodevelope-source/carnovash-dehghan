@@ -22,7 +22,13 @@ export const useNotificationsStore = defineStore('notifications', {
         type,
         message: text,
         title: String(options.title || '').trim(),
-        duration: normalizeDuration(options.duration, type === 'error' ? 4800 : 3200)
+        duration: normalizeDuration(
+          options.duration,
+          Array.isArray(options.actions) && options.actions.length
+            ? 12000
+            : (type === 'error' ? 4800 : 3200)
+        ),
+        actions: Array.isArray(options.actions) ? options.actions : []
       }
 
       this.items.push(item)

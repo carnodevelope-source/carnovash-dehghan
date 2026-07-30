@@ -1,0 +1,16 @@
+{
+  "name": "carnowash-print-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local silent printer bridge for CarnoWash receipt printing on Windows",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "pdf-to-printer": "^5.6.0"
+  }
+}

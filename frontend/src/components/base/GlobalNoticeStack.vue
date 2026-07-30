@@ -11,6 +11,18 @@
         <div class="notice-body">
           <strong v-if="item.title">{{ item.title }}</strong>
           <p>{{ item.message }}</p>
+          <div v-if="item.actions?.length" class="notice-actions">
+            <button
+              v-for="action in item.actions"
+              :key="`${item.id}-${action.label}`"
+              type="button"
+              class="notice-action-btn"
+              :class="action.tone || 'primary'"
+              @click="runAction(item, action)"
+            >
+              {{ action.label }}
+            </button>
+          </div>
         </div>
         <button type="button" class="notice-close" @click="dismiss(item.id)">×</button>
       </article>
@@ -38,6 +50,16 @@ const clearTimer = (id) => {
 const dismiss = (id) => {
   clearTimer(id)
   notificationsStore.remove(id)
+}
+
+const runAction = async (item, action) => {
+  try {
+    if (typeof action?.onClick === 'function') {
+      await action.onClick()
+    }
+  } finally {
+    dismiss(item.id)
+  }
 }
 
 watch(items, (list) => {
@@ -88,6 +110,18 @@ onBeforeUnmount(() => {
 .notice-body{padding:14px 12px 14px 14px;display:grid;gap:6px}
 .notice-body strong{font-size:13px;color:#0f172a}
 .notice-body p{margin:0;font-size:13px;line-height:1.9;color:#334155}
+.notice-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.notice-action-btn{
+  border:0;
+  border-radius:10px;
+  padding:7px 12px;
+  font:inherit;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer
+}
+.notice-action-btn.primary{background:#1d4ed8;color:#fff}
+.notice-action-btn.secondary{background:#e2e8f0;color:#0f172a}
 .notice-close{
   width:40px;
   height:40px;

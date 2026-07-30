@@ -188,6 +188,5 @@ export const isAnonymousPlate = (vehicle = {}) => (
   && String(vehicle?.car_color || vehicle?.color || '').trim() === '1111'
 )
 
-export const normalizePhone = (value) => normalizeDigits(value).replace(/\D/g, '').slice(0, 11)
-
-export const isValidIranMobile = (value) => /^09\d{9}$/.test(normalizePhone(value))
+export { normalizeIranMobile, isValidIranMobile, iranMobileErrorMessage, assertIranMobile } from './phone'
+export { normalizeIranMobile as normalizePhone } from './phone'

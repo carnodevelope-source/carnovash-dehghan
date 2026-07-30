@@ -356,10 +356,11 @@
             </template>
 
             <template v-else-if="ticketModal.category === 'account'">
-              <label>
-                <span>موبایل حساب</span>
-                <input v-model.trim="ticketModal.context.account_phone" placeholder="09xxxxxxxxx" />
-              </label>
+              <BasePhoneInput
+                v-model="ticketModal.context.account_phone"
+                label="موبایل حساب"
+                :allow-empty="true"
+              />
               <label>
                 <span>موضوع حساب</span>
                 <input v-model.trim="ticketModal.context.account_issue" placeholder="مثلا ورود یا تغییر شماره" />
@@ -393,8 +394,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
+import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
 import api from '../../services/api'
 import { formatJalaliDateTime } from '../../utils/date'
+import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
+import { notifyError } from '../../utils/notify'
 
 const route = useRoute()
 const router = useRouter()
@@ -824,6 +828,17 @@ const refreshTicketsQuietly = async () => {
 }
 
 const submitTicket = async () => {
+  if (ticketModal.category === 'account' && ticketModal.context.account_phone) {
+    ticketModal.context.account_phone = normalizeIranMobile(ticketModal.context.account_phone)
+    const phoneError = iranMobileErrorMessage(ticketModal.context.account_phone, {
+      allowEmpty: true,
+      label: 'موبایل حساب'
+    })
+    if (phoneError) {
+      notifyError(phoneError, { title: 'شماره موبایل' })
+      return
+    }
+  }
   const payload = new FormData()
   payload.append('subject', ticketModal.subject)
   payload.append('message', buildStructuredMessage())

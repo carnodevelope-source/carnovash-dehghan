@@ -375,7 +375,7 @@
               <div class="general-settings-head">
                 <div>
                   <strong>تنظیمات فیش پرینتر</strong>
-                  <p class="helper-text">متن هدر زیر آدرس مجموعه و متن پایین فیش برای هر کارواش جداگانه قابل تغییر است.</p>
+                  <p class="helper-text">پرینتر را از لیست دستگاه‌های سیستم انتخاب کنید. برای چاپ مستقیم بدون صفحه پرینت مرورگر، پرینت‌ایجنت باید روی همین سیستم در حال اجرا باشد.</p>
                 </div>
                 <label class="settings-toggle">
                   <input v-model="generalSettings.receipt_printer_enabled" type="checkbox" />
@@ -383,9 +383,26 @@
                 </label>
               </div>
               <div class="printer-settings-grid">
-                <label class="general-setting-label">
-                  <span>نام پرینتر</span>
-                  <input v-model.trim="generalSettings.receipt_printer_name" type="text" placeholder="مثلا XP-80C" />
+                <label class="general-setting-label full-width">
+                  <span>پرینتر سیستم</span>
+                  <div class="printer-select-row">
+                    <select v-model="generalSettings.receipt_printer_name">
+                      <option value="">انتخاب پرینتر...</option>
+                      <option
+                        v-if="generalSettings.receipt_printer_name && !systemPrinterOptions.includes(generalSettings.receipt_printer_name)"
+                        :value="generalSettings.receipt_printer_name"
+                      >
+                        {{ generalSettings.receipt_printer_name }} (ذخیره‌شده)
+                      </option>
+                      <option v-for="printer in systemPrinters" :key="printer.name" :value="printer.name">
+                        {{ printer.name }}{{ printer.isDefault ? ' (پیش‌فرض سیستم)' : '' }}
+                      </option>
+                    </select>
+                    <button type="button" class="secondary-btn printer-refresh-btn" :disabled="systemPrintersLoading" @click="loadSystemPrinters">
+                      {{ systemPrintersLoading ? 'در حال خواندن...' : 'بروزرسانی لیست' }}
+                    </button>
+                  </div>
+                  <small class="field-file-note">{{ printerAgentHint }}</small>
                 </label>
                 <label class="general-setting-label">
                   <span>عرض کاغذ</span>
@@ -394,10 +411,6 @@
                     <option value="80mm">80mm</option>
                     <option value="a4">A4</option>
                   </select>
-                </label>
-                <label class="general-setting-label">
-                  <span>تعداد نسخه چاپ</span>
-                  <input v-model.number="generalSettings.receipt_print_copies" type="number" min="1" max="5" />
                 </label>
                 <label class="general-setting-label full-width">
                   <span>متن بالای فیش</span>
@@ -505,7 +518,7 @@
               </label>
             </template>
             <p v-else class="full helper-text modal-helper-text">نیرو نام کاربری و رمز عبور ندارد و فقط برای تخصیص کار و حضور و غیاب ثبت می‌شود.</p>
-            <label><span>شماره موبایل</span><input v-model="forms.worker.phone" required /></label>
+            <BasePhoneInput v-model="forms.worker.phone" label="شماره موبایل" :required="true" :force-show-error="workerPhoneTouched" />
             <label class="full"><span>آدرس</span><textarea v-model.trim="forms.worker.address" rows="3" placeholder="آدرس نیرو را وارد کنید" /></label>
             <label>
               <span>نوع پرداخت پرسنل</span>
@@ -816,11 +829,32 @@ import { resolveApiErrorMessage } from '../../utils/apiError'
 import { carServiceTierOptions, motorcycleServiceTierOptions } from '../../utils/serviceTiers'
 import { sectionHelpByPage } from '../../config/pageHelp'
 import HelpTip from '../../components/base/HelpTip.vue'
+import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
+import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
+import {
+  checkPrintAgentHealth,
+  fetchSystemPrinters,
+  resolveSilentPrintErrorMessage
+} from '../../utils/receiptPrinter'
 
 const authStore = useAuthStore()
 const search = ref('')
 const activeTab = ref('workers')
 const errorMessage = ref('')
+const systemPrinters = ref([])
+const systemPrintersLoading = ref(false)
+const printAgentOnline = ref(false)
+const printerAgentHint = computed(() => {
+  if (systemPrintersLoading.value) return 'در حال خواندن پرینترهای شناخته‌شده سیستم...'
+  if (printAgentOnline.value) {
+    const count = systemPrinters.value.length
+    return count
+      ? `${count.toLocaleString('fa-IR')} پرینتر پیدا شد. دستگاه را انتخاب کنید و ثبت تنظیمات را بزنید.`
+      : 'پرینت‌ایجنت آنلاین است ولی پرینتری پیدا نشد.'
+  }
+  return 'برای دیدن لیست پرینترها، فایل tools/print-agent/start-print-agent.bat را روی همین سیستم اجرا کنید.'
+})
+const systemPrinterOptions = computed(() => systemPrinters.value.map((item) => item.name))
 
 const tabs = [
   { key: 'workers', label: 'پرسنل', icon: 'users3', help: sectionHelpByPage.settings.workers },
@@ -851,7 +885,6 @@ const generalSettings = reactive({
   receipt_printer_enabled: false,
   receipt_printer_name: '',
   receipt_printer_paper_width: '80mm',
-  receipt_print_copies: 1,
   receipt_auto_print: false,
   receipt_show_logo: false,
   receipt_show_qr: false,
@@ -870,6 +903,7 @@ const generalSettings = reactive({
   sms_vehicle_released_template: ''
 })
 const generalSettingsSaving = ref(false)
+const workerPhoneTouched = ref(false)
 const fixedDiscountVisitItems = [
   { key: '2', label: 'مراجعه دوم' },
   { key: '5', label: 'مراجعه پنجم' },
@@ -1102,6 +1136,7 @@ const smsTemplateTokens = [
   '[تخفیف مجموعه]',
   '[تخفیف امتیاز مشتری]',
   '[تخفیف دستی]',
+  '[مالیات]',
   '[مبلغ نهایی]',
   '[جمع تخفیف]'
 ]
@@ -1138,6 +1173,7 @@ const ensureReleasedSmsTemplateDetails = (template) => {
   const insertions = []
   if (!text.includes('[تعداد مراجعات]')) insertions.push('تعداد دفعات مراجعه: [تعداد مراجعات]')
   if (!text.includes('[انعام]')) insertions.push('انعام: [انعام]')
+  if (!text.includes('[مالیات]')) insertions.push('مالیات: [مالیات]')
   if (!insertions.length) return orderAssignedFinancialLines(lines.join('\n'))
   const anchorIndex = lines.findIndex((line) => line.includes('[درصد تخفیف مراجعه بعد]') || line.includes('[درصد تخفیف سفارش بعد]'))
   const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : Math.max(1, lines.length - 3)
@@ -1148,18 +1184,19 @@ const orderAssignedFinancialLines = (template) => {
   const lines = String(template || '').split('\n')
   const servicesIndex = lines.findIndex((line) => line.includes('[خلاصه خدمات]'))
   if (servicesIndex < 0) return lines.join('\n')
-  const financialLines = { total: null, discount: null, final: null }
+  const financialLines = { total: null, discount: null, tax: null, final: null }
   const remaining = []
   lines.forEach((line) => {
     if (line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]')) financialLines.total = line
     else if (line.includes('[جمع تخفیف]')) financialLines.discount = line
+    else if (line.includes('[مالیات]')) financialLines.tax = line
     else if (line.includes('[مبلغ نهایی]')) financialLines.final = line
     else remaining.push(line)
   })
   const nextServicesIndex = remaining.findIndex((line) => line.includes('[خلاصه خدمات]'))
   let insertAt = nextServicesIndex + 1
   if (remaining[insertAt]?.trim() === '---------------') insertAt += 1
-  remaining.splice(insertAt, 0, ...[financialLines.total, financialLines.discount, financialLines.final].filter(Boolean))
+  remaining.splice(insertAt, 0, ...[financialLines.total, financialLines.discount, financialLines.tax, financialLines.final].filter(Boolean))
   return remaining.join('\n')
 }
 const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true } = {}) => {
@@ -1194,6 +1231,7 @@ const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true }
   }
   if (includeFinancials && !text.includes('[جمع کل]') && !text.includes('[جمع نرخ نامه]')) insertions.push('جمع کل: [جمع کل]')
   if (includeFinancials && !text.includes('[جمع تخفیف]')) insertions.push('تخفیف این سفارش: [جمع تخفیف]')
+  if (includeFinancials && !text.includes('[مالیات]')) insertions.push('مالیات: [مالیات]')
   if (includeFinancials && !text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی: [مبلغ نهایی]')
   if (!text.includes('آماده ترخیص')) insertions.push('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
   if (!text.includes('از اعتماد شما سپاسگزاریم')) insertions.push('از اعتماد شما سپاسگزاریم')
@@ -1237,7 +1275,8 @@ const smsPreviewContext = computed(() => {
     '[تخفیف امتیاز مشتری]': '35،000 تومان',
     '[تخفیف دستی]': '20،000 تومان',
     '[جمع تخفیف]': '135،000 تومان',
-    '[مبلغ نهایی]': '265،000 تومان'
+    '[مالیات]': '26،500 تومان',
+    '[مبلغ نهایی]': '291،500 تومان'
   }
 })
 const prepareReleasedDiscountPreviewTemplate = (template) => {
@@ -1318,7 +1357,6 @@ const loadAll = async () => {
       generalSettings.receipt_printer_enabled = Boolean(gs.data?.receipt_printer_enabled)
       generalSettings.receipt_printer_name = gs.data?.receipt_printer_name || ''
       generalSettings.receipt_printer_paper_width = gs.data?.receipt_printer_paper_width || '80mm'
-      generalSettings.receipt_print_copies = Number(gs.data?.receipt_print_copies || 1)
       generalSettings.receipt_auto_print = Boolean(gs.data?.receipt_auto_print)
       generalSettings.receipt_show_logo = Boolean(gs.data?.receipt_show_logo)
       generalSettings.receipt_show_qr = Boolean(gs.data?.receipt_show_qr)
@@ -1354,7 +1392,6 @@ const loadAll = async () => {
       generalSettings.receipt_printer_enabled = false
       generalSettings.receipt_printer_name = ''
       generalSettings.receipt_printer_paper_width = '80mm'
-      generalSettings.receipt_print_copies = 1
       generalSettings.receipt_auto_print = false
       generalSettings.receipt_show_logo = false
       generalSettings.receipt_show_qr = false
@@ -1396,7 +1433,7 @@ const saveGeneralSettings = async () => {
       receipt_printer_enabled: Boolean(generalSettings.receipt_printer_enabled),
       receipt_printer_name: generalSettings.receipt_printer_name || '',
       receipt_printer_paper_width: generalSettings.receipt_printer_paper_width || '80mm',
-      receipt_print_copies: Number(generalSettings.receipt_print_copies || 1),
+      receipt_print_copies: 1,
       receipt_auto_print: Boolean(generalSettings.receipt_auto_print),
       receipt_show_logo: Boolean(generalSettings.receipt_show_logo),
       receipt_show_qr: Boolean(generalSettings.receipt_show_qr),
@@ -1426,7 +1463,6 @@ const saveGeneralSettings = async () => {
     generalSettings.receipt_printer_enabled = Boolean(response.data?.receipt_printer_enabled)
     generalSettings.receipt_printer_name = response.data?.receipt_printer_name || ''
     generalSettings.receipt_printer_paper_width = response.data?.receipt_printer_paper_width || '80mm'
-    generalSettings.receipt_print_copies = Number(response.data?.receipt_print_copies || 1)
     generalSettings.receipt_auto_print = Boolean(response.data?.receipt_auto_print)
     generalSettings.receipt_show_logo = Boolean(response.data?.receipt_show_logo)
     generalSettings.receipt_show_qr = Boolean(response.data?.receipt_show_qr)
@@ -1469,7 +1505,8 @@ const openWorkerModal = (item = null) => {
   forms.worker.role = item?.role_key || 'worker'
   forms.worker.username = (item?.role_key || 'worker') === 'worker' ? '' : (item?.username || '')
   forms.worker.password = ''
-  forms.worker.phone = item?.phone || ''
+  forms.worker.phone = normalizeIranMobile(item?.phone || '')
+  workerPhoneTouched.value = false
   forms.worker.address = item?.address || ''
   forms.worker.payment_type = item?.payment_type || 'percent'
   forms.worker.payment_value = ['fixed', 'hourly'].includes(forms.worker.payment_type)
@@ -1632,6 +1669,13 @@ const dateTime = (value) => formatJalaliDate(value)
 const submitModal = async () => {
   try {
     if (modal.type === 'workers') {
+      workerPhoneTouched.value = true
+      forms.worker.phone = normalizeIranMobile(forms.worker.phone)
+      const phoneError = iranMobileErrorMessage(forms.worker.phone, { label: 'شماره موبایل' })
+      if (phoneError) {
+        t(phoneError, 'error')
+        return
+      }
       const paymentValueNormalized = ['fixed', 'hourly'].includes(forms.worker.payment_type)
         ? fromThousandsInput(forms.worker.payment_value)
         : Number(forms.worker.payment_value || 0)
@@ -1749,9 +1793,38 @@ const deleteProduct = async (item) => { if (!confirm('حذف شود؟')) return;
 const deleteExpense = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/inventory/expenses/${item.id}/`); t('حذف شد'); await loadAll() }
 const deleteService = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/services/${item.id}/`); t('حذف شد'); await loadAll() }
 
+const loadSystemPrinters = async () => {
+  systemPrintersLoading.value = true
+  try {
+    const health = await checkPrintAgentHealth()
+    printAgentOnline.value = Boolean(health.online)
+    if (!health.online) {
+      systemPrinters.value = []
+      return
+    }
+    const printers = await fetchSystemPrinters()
+    systemPrinters.value = Array.isArray(printers) ? printers : []
+    if (!generalSettings.receipt_printer_name) {
+      const defaultPrinter = systemPrinters.value.find((item) => item.isDefault)
+      if (defaultPrinter?.name) generalSettings.receipt_printer_name = defaultPrinter.name
+    }
+  } catch (error) {
+    printAgentOnline.value = false
+    systemPrinters.value = []
+    t(resolveSilentPrintErrorMessage(error), 'error')
+  } finally {
+    systemPrintersLoading.value = false
+  }
+}
+
+watch(activeTab, async (tab) => {
+  if (tab === 'general') await loadSystemPrinters()
+})
+
 onMounted(async () => {
   await authStore.fetchMe()
   await loadAll()
+  if (activeTab.value === 'general') await loadSystemPrinters()
 })
 </script>
 
@@ -2160,6 +2233,16 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   height: 48px;
   font: inherit;
 }
+.printer-select-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.printer-refresh-btn {
+  height: 48px;
+  white-space: nowrap;
+}
 .printer-toggle {
   grid-column: 1 / -1;
   padding: 14px 16px;
@@ -2210,6 +2293,7 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .fixed-discount-grid,
   .settings-hero-stats,
   .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .printer-select-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .settings-hero { display: none; }

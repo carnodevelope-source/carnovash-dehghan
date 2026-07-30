@@ -119,7 +119,7 @@
           <h3>گزارش کل</h3>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ردیف</th><th>نام راننده</th><th>جنسیت</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
+              <thead><tr><th>ردیف</th><th>نام راننده</th><th>جنسیت</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>مالیات</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
               <tbody>
                 <template v-for="row in data.overall_report" :key="`o-${serviceRowKey(row)}`">
                   <tr class="clickable-row" :class="{ expanded: isServicesExpanded(row) }" @click="openVehicleDetail(row.vehicle_id)">
@@ -131,10 +131,10 @@
                       :plate-right="row.plate_right"
                       :plate-type="row.plate_type || 'car'"
                       compact
-                    /></span></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
+                    /></span></td><td>{{ formatStatus(row.status) }}</td><td>{{ money(row.carwash_share) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.tax_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td><div class="services-preview-cell"><span class="services-preview-text">{{ servicesPreview(row.services) }}</span><button v-if="hasExpandableServices(row.services)" type="button" class="services-toggle-btn" :class="{ active: isServicesExpanded(row) }" @click.stop="toggleServicesRow(row)"><span class="services-toggle-dots">•••</span></button></div></td><td>{{ dateTime(row.created_at) }}</td>
                   </tr>
                   <tr v-if="isServicesExpanded(row)" class="services-expanded-row">
-                    <td colspan="15">
+                    <td colspan="16">
                       <div class="services-expanded-box">
                         <strong>همه خدمات انجام‌شده</strong>
                         <p>{{ normalizeServicesValue(row.services) }}</p>
@@ -229,7 +229,7 @@
 
         <template v-else-if="activeTab === 'revenue'">
           <h3>گزارش درآمد</h3>
-          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>تاریخ</th><th>راننده</th><th>شماره</th><th>مدل خودرو</th><th>رنگ</th><th class="col-plate">پلاک</th><th>روش پرداخت</th><th>وضعیت پرداخت</th><th>خدمات</th><th>محصولات</th><th>تخفیف</th><th>انعام</th><th>مبلغ نهایی</th><th>وصول شده</th><th>مانده</th><th>شماره چک</th><th>سررسید</th></tr></thead><tbody>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>تاریخ</th><th>راننده</th><th>شماره</th><th>مدل خودرو</th><th>رنگ</th><th class="col-plate">پلاک</th><th>روش پرداخت</th><th>وضعیت پرداخت</th><th>خدمات</th><th>محصولات</th><th>تخفیف</th><th>انعام</th><th>مالیات</th><th>مبلغ نهایی</th><th>وصول شده</th><th>مانده</th><th>شماره چک</th><th>سررسید</th></tr></thead><tbody>
             <tr v-for="row in data.revenue_report" :key="`r-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
                       :plate-number="row.plate_number"
                       :plate-left="row.plate_left"
@@ -238,7 +238,7 @@
                       :plate-right="row.plate_right"
                       :plate-type="row.plate_type || 'car'"
                       compact
-                    /></span></td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
+                    /></span></td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.tax_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
           </tbody></table></div>
         </template>
 
@@ -443,7 +443,7 @@ const filters = reactive({
   plateMid: '',
   plateRight: ''
 })
-const summary = reactive({ vehicles_count: 0, carwash_total: 0, worker_total: 0, tips_total: 0, discount_total: 0, final_total: 0, before_discount_total: 0, payable_worker_total: 0, bonus_total: 0, penalty_total: 0 })
+const summary = reactive({ vehicles_count: 0, carwash_total: 0, worker_total: 0, tips_total: 0, discount_total: 0, tax_total: 0, final_total: 0, before_discount_total: 0, payable_worker_total: 0, bonus_total: 0, penalty_total: 0 })
 const sectionTotals = reactive({ overall: {}, carwash: {}, worker: {}, tips: {}, revenue: {}, attendance: {}, blacklist: {} })
 const data = reactive({ overall_report: [], carwash_report: [], worker_report: [], tips_report: [], attendance_report: [], blacklist_report: [], revenue_report: [] })
 const expandedServiceRows = ref({})
@@ -536,6 +536,7 @@ const visibleSummaryCards = computed(() => {
       { key: 'worker_total', label: 'حق نیرو', value: money(overallAmount('worker_total')) },
       { key: 'tips_total', label: 'انعام', value: money(overallAmount('tips_total')) },
       { key: 'discount_total', label: 'جمع تخفیف', value: money(overallAmount('discount_total')) },
+      { key: 'tax_total', label: 'مالیات', value: money(overallAmount('tax_total')) },
       { key: 'before_discount_total', label: 'قبل از تخفیف', value: money(overallBeforeDiscountAmount()) }
     ]
   }

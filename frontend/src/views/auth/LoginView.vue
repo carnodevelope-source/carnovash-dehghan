@@ -111,10 +111,12 @@
                 <span>نام کاربری</span>
                 <input v-model.trim="registerForm.manager_username" type="text" placeholder="مثلا amiran-manager" required />
               </label>
-              <label class="field field-soft">
-                <span>شماره موبایل مدیر</span>
-                <input v-model.trim="registerForm.manager_phone" type="text" inputmode="numeric" placeholder="0912xxxxxxx" required />
-              </label>
+              <BasePhoneInput
+                v-model="registerForm.manager_phone"
+                label="شماره موبایل مدیر"
+                :required="true"
+                :force-show-error="registerPhoneTouched"
+              />
               <label class="field field-soft">
                 <span>رمز عبور اولیه</span>
                 <input v-model="registerForm.manager_password" :type="showRegisterPassword ? 'text' : 'password'" placeholder="حداقل 6 کاراکتر" required />
@@ -169,11 +171,14 @@ import api, { ensureCsrfToken } from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { defaultRouteByRole } from '../../config/navigation'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
+import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
 
 const showPassword = ref(false)
 const showRegisterPassword = ref(false)
 const isLoading = ref(false)
 const registerLoading = ref(false)
+const registerPhoneTouched = ref(false)
 const errorMessage = ref('')
 const registerError = ref('')
 const router = useRouter()
@@ -221,6 +226,7 @@ const resetRegisterForm = () => {
   registerForm.manager_phone = ''
   registerForm.manager_password = ''
   registerForm.business_identity_documents = []
+  registerPhoneTouched.value = false
 }
 
 const openRegisterModal = () => {
@@ -271,6 +277,13 @@ const onSubmit = async () => {
 const submitRegister = async () => {
   if (registerLoading.value) return
   resetRegisterState()
+  registerPhoneTouched.value = true
+  registerForm.manager_phone = normalizeIranMobile(registerForm.manager_phone)
+  const phoneError = iranMobileErrorMessage(registerForm.manager_phone, { label: 'شماره موبایل مدیر' })
+  if (phoneError) {
+    registerError.value = phoneError
+    return
+  }
   if (!registerForm.business_identity_documents.length) {
     registerError.value = 'بارگذاری حداقل یک مدرک شناسایی کسب‌وکار الزامی است.'
     return
