@@ -430,6 +430,12 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
     registration_status = serializers.SerializerMethodField()
     registration_manager_username = serializers.SerializerMethodField()
     registration_manager_phone = serializers.SerializerMethodField()
+    is_wallet_card_payment = serializers.SerializerMethodField()
+    is_wallet_bank_withdrawal = serializers.SerializerMethodField()
+    can_wallet_transfer = serializers.SerializerMethodField()
+    can_wallet_withdraw = serializers.SerializerMethodField()
+    suggested_wallet_amount = serializers.SerializerMethodField()
+    wallet_id = serializers.SerializerMethodField()
 
     class Meta:
         model = SupportTicket
@@ -460,6 +466,12 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
             'registration_status',
             'registration_manager_username',
             'registration_manager_phone',
+            'is_wallet_card_payment',
+            'is_wallet_bank_withdrawal',
+            'can_wallet_transfer',
+            'can_wallet_withdraw',
+            'suggested_wallet_amount',
+            'wallet_id',
             'created_at',
             'updated_at',
         ]
@@ -509,6 +521,28 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
             return ''
         return request.manager.phone
 
+    def get_is_wallet_card_payment(self, obj):
+        from .support_tickets import is_wallet_card_payment_ticket
+        return is_wallet_card_payment_ticket(obj)
+
+    def get_is_wallet_bank_withdrawal(self, obj):
+        from .support_tickets import is_wallet_bank_withdrawal_ticket
+        return is_wallet_bank_withdrawal_ticket(obj)
+
+    def get_can_wallet_transfer(self, obj):
+        return bool(self.get_is_wallet_card_payment(obj) and obj.status != SupportTicket.Status.CLOSED)
+
+    def get_can_wallet_withdraw(self, obj):
+        return bool(self.get_is_wallet_bank_withdrawal(obj) and obj.status != SupportTicket.Status.CLOSED)
+
+    def get_suggested_wallet_amount(self, obj):
+        from .support_tickets import parse_wallet_amount_from_ticket
+        amount = parse_wallet_amount_from_ticket(obj)
+        return float(amount) if amount > 0 else 0
+
+    def get_wallet_id(self, obj):
+        from .support_tickets import parse_wallet_id_from_ticket
+        return parse_wallet_id_from_ticket(obj)
 
 class SupportTicketDetailSerializer(SupportTicketListSerializer):
     messages = SupportTicketMessageSerializer(many=True, read_only=True)

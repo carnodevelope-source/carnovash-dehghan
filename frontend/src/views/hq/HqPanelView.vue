@@ -681,6 +681,7 @@
                   <div>
                     <strong>{{ walletOperationButtonLabel }}</strong>
                     <p>{{ walletOperationHint }}</p>
+                    <small v-if="selectedTicket.wallet_id">کیف پول #{{ selectedTicket.wallet_id }}</small>
                   </div>
                   <label class="ticket-amount-field">
                     <span>مبلغ (تومان)</span>
@@ -1687,7 +1688,7 @@ const createForm = reactive({
 const tickets = ref([])
 const selectedTicket = ref(null)
 const ticketQuery = ref('')
-const ticketStatus = ref('open')
+const ticketStatus = ref('all')
 const ticketPriority = ref('all')
 const ticketTenantId = ref('')
 const ticketScope = ref('all')
@@ -1780,10 +1781,14 @@ const selectedCarwashInsight = computed(() => carwashInsight.data)
 
 const teamAssignable = computed(() => hqTeam.value.filter((item) => ['hq_admin', 'hq_support'].includes(item.platform_role)))
 const isWalletCardPaymentTicket = (ticket) => {
+  if (!ticket) return false
+  if (ticket.is_wallet_card_payment === true || ticket.can_wallet_transfer === true) return true
   const text = `${ticket?.subject || ''}\n${ticket?.message || ''}`.toLowerCase()
   return text.includes('wallet-card-payment') || (text.includes('کارت به کارت') && text.includes('کیف پول'))
 }
 const isWalletBankWithdrawalTicket = (ticket) => {
+  if (!ticket) return false
+  if (ticket.is_wallet_bank_withdrawal === true || ticket.can_wallet_withdraw === true) return true
   const text = [
     ticket?.subject || '',
     ticket?.message || '',
@@ -1832,15 +1837,20 @@ const activeTicketScopeLabel = computed(() => {
 const visibleTickets = computed(() => {
   const items = Array.isArray(tickets.value) ? tickets.value : []
   const filtered = items.filter((item) => {
-    if (!authStore.isHqAdmin && item.status === 'closed') return false
-    if (!authStore.isHqAdmin && ticketScope.value === 'answered') return item.status === 'answered'
+    if (!item) return false
     if (ticketScope.value === 'mine') return Number(item.assigned_to || 0) === Number(authStore.user?.id || 0)
-    if (ticketScope.value === 'urgent') return ['urgent', 'high'].includes(item.priority)
-    if (ticketScope.value === 'unassigned') return !item.assigned_to
-    if (ticketScope.value === 'wallet') return isWalletOperationTicket(item)
+    if (ticketScope.value === 'urgent') return ['urgent', 'high'].includes(item.priority) && item.status !== 'closed'
+    if (ticketScope.value === 'unassigned') return !item.assigned_to && item.status !== 'closed'
+    if (ticketScope.value === 'wallet') return isWalletOperationTicket(item) && item.status !== 'closed'
+    if (ticketScope.value === 'answered') return item.status === 'answered'
+    // Default "all": keep closed tickets visible for HQ admin, hide for support agents.
+    if (!authStore.isHqAdmin && item.status === 'closed') return false
     return true
   })
   return filtered.sort((a, b) => {
+    const aOpen = a.status !== 'closed' ? 1 : 0
+    const bOpen = b.status !== 'closed' ? 1 : 0
+    if (bOpen !== aOpen) return bOpen - aOpen
     const aWallet = isWalletOperationTicket(a) && a.status !== 'closed' ? 1 : 0
     const bWallet = isWalletOperationTicket(b) && b.status !== 'closed' ? 1 : 0
     if (bWallet !== aWallet) return bWallet - aWallet
@@ -2494,30 +2504,36 @@ const ticketActivitySignature = (ticket) => [
 
 const loadTickets = async (options = {}) => {
   if (authStore.isHqAdmin && !carwashes.value.length && !options.silent) await loadCarwashes()
-  const { data } = await api.get('/auth/hq/tickets/', {
-    params: {
-      q: ticketQuery.value || undefined,
-      status: ticketStatus.value,
-      priority: ticketPriority.value,
-      tenant_id: authStore.isHqAdmin ? (ticketTenantId.value || undefined) : undefined
-    },
-    meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
-  })
-  const nextTickets = Array.isArray(data) ? data : []
-  if (knownTicketIds.size && options.notifyNew) {
-    const hasMessageActivity = nextTickets.some((item) => {
-      if (item.status === 'closed') return false
-      const id = Number(item.id)
-      if (!knownTicketIds.has(id)) return false
-      return knownTicketActivity.get(id) !== ticketActivitySignature(item)
+  try {
+    const { data } = await api.get('/auth/hq/tickets/', {
+      params: {
+        q: ticketQuery.value || undefined,
+        status: ticketStatus.value || 'all',
+        priority: ticketPriority.value || 'all',
+        tenant_id: authStore.isHqAdmin ? (ticketTenantId.value || undefined) : undefined
+      },
+      meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
     })
-    // Soft chime for customer replies on existing tickets (new tickets handled by pollTicketAlerts).
-    if (hasMessageActivity) playTicketAlertSound()
+    const nextTickets = Array.isArray(data) ? data : []
+    if (knownTicketIds.size && options.notifyNew) {
+      const hasMessageActivity = nextTickets.some((item) => {
+        if (item.status === 'closed') return false
+        const id = Number(item.id)
+        if (!knownTicketIds.has(id)) return false
+        return knownTicketActivity.get(id) !== ticketActivitySignature(item)
+      })
+      if (hasMessageActivity) playTicketAlertSound()
+    }
+    knownTicketIds = new Set(nextTickets.map((item) => Number(item.id)))
+    knownTicketActivity = new Map(nextTickets.map((item) => [Number(item.id), ticketActivitySignature(item)]))
+    tickets.value = nextTickets
+    if (!options.skipSelection) await ensureSelectedTicket(options)
+  } catch (error) {
+    if (!options.silent) {
+      tickets.value = []
+    }
+    console.error('loadTickets failed', error)
   }
-  knownTicketIds = new Set(nextTickets.map((item) => Number(item.id)))
-  knownTicketActivity = new Map(nextTickets.map((item) => [Number(item.id), ticketActivitySignature(item)]))
-  tickets.value = nextTickets
-  if (!options.skipSelection) await ensureSelectedTicket(options)
 }
 
 const pollTicketAlerts = async () => {
@@ -2570,7 +2586,7 @@ const selectTicket = async (ticketId, options = {}) => {
     ticketReply.assign_to_user_id = Number(data?.assigned_to || 0)
     ticketReply.is_internal = false
     const suggestedTransferAmount = isWalletOperationTicket(data) && !walletTransfer.skipNextSuggestedAmount
-      ? extractWalletTransferAmount(data)
+      ? (Number(data?.suggested_wallet_amount || 0) || extractWalletTransferAmount(data))
       : 0
     walletTransfer.amountText = suggestedTransferAmount > 0 ? String(suggestedTransferAmount) : ''
     walletTransfer.skipNextSuggestedAmount = false
@@ -2660,7 +2676,10 @@ const submitWalletTransfer = async () => {
     const endpoint = isWalletBankWithdrawalTicket(selectedTicket.value)
       ? `/auth/hq/tickets/${selectedTicket.value.id}/wallet-withdraw/`
       : `/auth/hq/tickets/${selectedTicket.value.id}/wallet-transfer/`
-    await api.post(endpoint, { amount })
+    await api.post(endpoint, {
+      amount,
+      wallet_id: Number(selectedTicket.value.wallet_id || 0) || undefined
+    })
     walletTransfer.amountText = ''
     walletTransfer.success = 'انتقال وجه ثبت شد و کیف پول مقصد شارژ شد.'
     walletTransfer.skipNextSuggestedAmount = true

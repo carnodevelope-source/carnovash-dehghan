@@ -34,6 +34,8 @@ from .support_tickets import (
     is_payment_support_ticket,
     is_wallet_bank_withdrawal_ticket as _is_wallet_bank_withdrawal_ticket,
     is_wallet_card_payment_ticket as _is_wallet_card_payment_ticket,
+    parse_wallet_amount_from_ticket as _parse_wallet_amount_from_ticket,
+    parse_wallet_id_from_ticket as _parse_wallet_id_from_ticket,
     refer_ticket_to_user,
     send_payment_ticket_sms_to_simple_supporters,
 )
@@ -181,26 +183,8 @@ def _default_hq_support_user():
     )
 
 
-def _parse_wallet_id_from_ticket(ticket):
-    message = getattr(ticket, 'message', '') or ''
-    match = re.search(r'wallet_id\s*:\s*(\d+)', message, flags=re.IGNORECASE)
-    if not match:
-        match = re.search(r'شناسه کیف پول مقصد\s*:\s*(\d+)', message)
-    if not match:
-        return None
-    return int(match.group(1))
-
-
 def _parse_wallet_withdraw_amount_from_ticket(ticket):
-    message = getattr(ticket, 'message', '') or ''
-    match = re.search(r'withdraw_amount\s*:\s*([0-9.,]+)', message, flags=re.IGNORECASE)
-    if not match:
-        return Decimal('0')
-    raw = match.group(1).replace(',', '')
-    try:
-        return Decimal(raw)
-    except Exception:
-        return Decimal('0')
+    return _parse_wallet_amount_from_ticket(ticket)
 
 
 def _auth_payload(user):

@@ -1114,7 +1114,9 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
                         'ticket': {
                             'id': ticket.id,
                             'subject': ticket.subject,
-                            'status': ticket.status,
+                            'status': str(ticket.status),
+                            'is_wallet_bank_withdrawal': True,
+                            'can_wallet_withdraw': True,
                         },
                     },
                     status=status.HTTP_201_CREATED,

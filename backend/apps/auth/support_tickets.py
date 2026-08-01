@@ -1,4 +1,6 @@
 from datetime import timedelta
+import re
+from decimal import Decimal
 
 from django.db.models import Q
 from django.utils import timezone
@@ -44,6 +46,45 @@ def is_wallet_bank_withdrawal_ticket(ticket):
         and 'کیف پول' in text
         and ('شبا' in text or 'بانک' in text or 'iban' in text)
     )
+
+
+def parse_wallet_id_from_ticket(ticket):
+    message = getattr(ticket, 'message', '') or ''
+    match = re.search(r'wallet_id\s*:\s*(\d+)', message, flags=re.IGNORECASE)
+    if not match:
+        match = re.search(r'شناسه کیف پول مقصد\s*:\s*(\d+)', message)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def parse_wallet_amount_from_ticket(ticket):
+    message = getattr(ticket, 'message', '') or ''
+    patterns = [
+        r'withdraw_amount\s*:\s*([0-9.,]+)',
+        r'مبلغ\s*پرداخت\s*[:：]?\s*([0-9٬،,\s]+)',
+        r'مبلغ\s*واریز\s*[:：]?\s*([0-9٬،,\s]+)',
+        r'مبلغ\s*شارژ\s*[:：]?\s*([0-9٬،,\s]+)',
+        r'amount\s*[:：]?\s*([0-9.,]+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if not match:
+            continue
+        raw = (
+            match.group(1)
+            .replace(',', '')
+            .replace('٬', '')
+            .replace('،', '')
+            .replace(' ', '')
+        )
+        try:
+            value = Decimal(raw)
+        except Exception:
+            continue
+        if value > 0:
+            return value
+    return Decimal('0')
 
 
 def is_payment_support_ticket(ticket):
