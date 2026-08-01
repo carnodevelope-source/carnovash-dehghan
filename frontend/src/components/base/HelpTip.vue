@@ -117,14 +117,14 @@ onBeforeUnmount(() => {
 }
 
 .help-tip-btn {
-  width: 22px;
-  height: 22px;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
   border: 1px solid #bfdbfe;
   background: linear-gradient(180deg, #ffffff, #eff6ff);
   color: #1d4ed8;
   font: inherit;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 900;
   line-height: 1;
   cursor: pointer;
@@ -132,7 +132,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   padding: 0;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.1);
   transition: transform .16s ease, background .16s ease, border-color .16s ease, color .16s ease;
 }
 

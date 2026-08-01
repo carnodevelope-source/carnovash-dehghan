@@ -53,13 +53,22 @@ def simple_support_users():
 
 def hq_ticket_visibility_q(user):
     """
-    Unassigned tickets (pool) are visible to every active HQ support + HQ admin.
-    After claim/referral, the ticket is only visible to the assignee.
+    Non-HQ users only see unassigned tickets or tickets assigned to them.
+    HQ roles bypass this filter in apply_hq_ticket_visibility.
     """
     return Q(assigned_to__isnull=True) | Q(assigned_to=user)
 
 
 def apply_hq_ticket_visibility(queryset, user):
+    """
+    All HQ admins and HQ support agents can see every ticket (for shared supervision).
+    Claim/referral only marks who is responsible to reply; it does not hide the ticket.
+    """
+    if getattr(user, 'platform_role', None) in (
+        User.PlatformRoles.HQ_ADMIN,
+        User.PlatformRoles.HQ_SUPPORT,
+    ):
+        return queryset
     return queryset.filter(hq_ticket_visibility_q(user)).distinct()
 
 

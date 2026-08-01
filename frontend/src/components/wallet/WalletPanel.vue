@@ -77,10 +77,6 @@
     </section>
 
     <section class="wallet-summary-board">
-      <article class="summary-tile">
-        <small>موجودی عادی</small>
-        <strong :class="{ danger: regularLow }">{{ moneyWithUnit(state.summary.regular_balance) }}</strong>
-      </article>
       <article class="summary-tile sms-tile" :class="{ low: smsLow }">
         <div class="sms-tile-head">
           <small>موجودی پیامک</small>
@@ -89,6 +85,24 @@
         <strong :class="{ danger: smsLow }">{{ moneyWithUnit(state.summary.sms_balance) }}</strong>
         <p class="sms-balance-caption">{{ smsBalanceHint }}</p>
         <span class="sms-topup-chip">{{ suggestedSmsTopUpLabel }}</span>
+        <div class="sms-quick-topup">
+          <input
+            :value="smsTopUpAmountText"
+            type="text"
+            inputmode="numeric"
+            placeholder="مبلغ (تومان)"
+            :disabled="smsTopUpSubmitting || !canWithdrawWalletAction"
+            @input="onSmsTopUpAmountInput"
+          />
+          <button
+            type="button"
+            class="sms-quick-topup-btn"
+            :disabled="smsTopUpDisabled"
+            @click="submitSmsTopUpFromMain"
+          >
+            {{ smsTopUpSubmitting ? 'در حال انتقال...' : 'برداشت از کیف پول اصلی' }}
+          </button>
+        </div>
       </article>
       <article class="summary-tile accent-tile">
         <small>جمع واریزی‌ها</small>
@@ -354,17 +368,36 @@
                 inputmode="numeric"
                 placeholder="مثلاً 500,000"
               />
-              <div v-else class="gateway-amounts">
-                <button
-                  v-for="amount in dynamicDepositAmounts"
-                  :key="`deposit-${amount.value}`"
-                  type="button"
-                  :class="{ active: selectedDepositAmount === amount.value }"
-                  @click="setQuickAmount(amount.value)"
-                >
-                  <strong>{{ moneyWithUnit(amount.value) }}</strong>
-                  <span>{{ amount.caption }}</span>
-                </button>
+              <div v-else class="deposit-amount-block">
+                <div class="gateway-amounts">
+                  <button
+                    v-for="amount in dynamicDepositAmounts"
+                    :key="`deposit-${amount.value}`"
+                    type="button"
+                    :class="{ active: !depositCustomAmount && selectedDepositAmount === amount.value }"
+                    @click="setQuickAmount(amount.value)"
+                  >
+                    <strong>{{ moneyWithUnit(amount.value) }}</strong>
+                    <span>{{ amount.caption }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="deposit-custom-amount-btn"
+                    :class="{ active: depositCustomAmount }"
+                    @click="enableCustomDepositAmount"
+                  >
+                    <strong>مبلغ دلخواه</strong>
+                    <span>ورود دستی و ثبت تیکت</span>
+                  </button>
+                </div>
+                <input
+                  v-if="depositCustomAmount"
+                  v-model="actionModal.amountText"
+                  type="text"
+                  inputmode="numeric"
+                  class="deposit-custom-amount-input"
+                  placeholder="مثلاً 1,540,000"
+                />
               </div>
             </label>
 
@@ -649,6 +682,9 @@ const optionModal = reactive({
 
 const selectedWalletId = ref(0)
 const selectedDepositAmount = ref(1000000)
+const depositCustomAmount = ref(false)
+const smsTopUpAmountText = ref('')
+const smsTopUpSubmitting = ref(false)
 const payingInstallmentFeatureKey = ref('')
 const companyCardNumber = '6274121774209571'
 const companyCardHolder = 'امید کریمی'
@@ -725,6 +761,17 @@ const primaryDepositWallet = computed(() => (
   || state.wallets[0]
   || null
 ))
+const smsWallet = computed(() => state.wallets.find((wallet) => wallet.wallet_type === 'sms') || null)
+const primaryWalletBalance = computed(() => Math.max(0, Number(primaryDepositWallet.value?.balance || 0)))
+const smsTopUpAmount = computed(() => parseAmount(smsTopUpAmountText.value))
+const smsTopUpDisabled = computed(() => {
+  if (smsTopUpSubmitting.value) return true
+  if (!canWithdrawWalletAction.value) return true
+  if (!primaryDepositWallet.value || !smsWallet.value) return true
+  if (smsTopUpAmount.value <= 0) return true
+  if (smsTopUpAmount.value > primaryWalletBalance.value) return true
+  return false
+})
 const selectableWallets = computed(() => (
   actionModal.type === 'withdraw'
     ? state.wallets
@@ -803,11 +850,13 @@ const dynamicWithdrawAmounts = computed(() => {
     { value: roundDownToStep(balance), label: 'کل موجودی' }
   ]).filter((item) => item.value <= balance)
 })
-const selectedActionAmount = computed(() => (
-  actionModal.type === 'deposit'
-    ? Number(selectedDepositAmount.value || 0)
-    : parseAmount(actionModal.amountText)
-))
+const selectedActionAmount = computed(() => {
+  if (actionModal.type === 'deposit') {
+    if (depositCustomAmount.value) return parseAmount(actionModal.amountText)
+    return Number(selectedDepositAmount.value || 0)
+  }
+  return parseAmount(actionModal.amountText)
+})
 const balanceAfterAction = computed(() => (
   actionModal.type === 'deposit'
     ? activeWalletBalance.value + selectedActionAmount.value
@@ -945,8 +994,10 @@ const openActionModal = (type) => {
     : wallets[0]
   actionModal.walletId = fallbackWallet ? Number(fallbackWallet.id) : null
   actionModal.destinationWalletId = transferDestinationWallets.value[0]?.id ? Number(transferDestinationWallets.value[0].id) : null
+  depositCustomAmount.value = false
   if (type === 'deposit') {
     selectedDepositAmount.value = dynamicDepositAmounts.value[0]?.value || 0
+    actionModal.amountText = ''
   } else if (dynamicWithdrawAmounts.value.length) {
     actionModal.amountText = money(dynamicWithdrawAmounts.value[0].value)
   }
@@ -988,14 +1039,75 @@ const closeActionModal = () => {
   actionModal.amountText = ''
   actionModal.description = ''
   actionModal.submitting = false
+  depositCustomAmount.value = false
 }
 
 const setQuickAmount = (amount) => {
   if (actionModal.type === 'deposit') {
+    depositCustomAmount.value = false
     selectedDepositAmount.value = Number(amount || 0)
+    actionModal.amountText = ''
     return
   }
   actionModal.amountText = money(amount)
+}
+
+const enableCustomDepositAmount = () => {
+  depositCustomAmount.value = true
+  if (!actionModal.amountText && selectedDepositAmount.value) {
+    actionModal.amountText = money(selectedDepositAmount.value)
+  }
+}
+
+const onSmsTopUpAmountInput = (event) => {
+  const digits = normalizeDigits(event?.target?.value)
+  smsTopUpAmountText.value = digits ? money(parseAmount(digits)) : ''
+}
+
+const submitSmsTopUpFromMain = async () => {
+  clearMessages()
+  if (!canWithdrawWalletAction.value) {
+    state.error = 'برداشت از کیف پول فقط برای مدیران مجاز است.'
+    return
+  }
+  const sourceWallet = primaryDepositWallet.value
+  const destinationWallet = smsWallet.value
+  const amount = smsTopUpAmount.value
+  if (!sourceWallet || !destinationWallet) {
+    state.error = 'کیف پول اصلی یا پیامک پیدا نشد.'
+    return
+  }
+  if (amount <= 0) {
+    state.error = 'مبلغ باید بزرگ‌تر از صفر باشد.'
+    return
+  }
+  if (amount > Number(sourceWallet.balance || 0)) {
+    state.error = 'مبلغ از موجودی کیف پول اصلی بیشتر است.'
+    return
+  }
+  if (Number(sourceWallet.id) === Number(destinationWallet.id)) {
+    state.error = 'کیف پول مقصد نمی‌تواند با مبدا یکی باشد.'
+    return
+  }
+
+  smsTopUpSubmitting.value = true
+  try {
+    const { data } = await api.post('/payments/wallet/withdraw/', {
+      wallet_id: sourceWallet.id,
+      source_wallet_id: sourceWallet.id,
+      destination_type: 'wallet',
+      destination_wallet_id: destinationWallet.id,
+      amount,
+      description: 'شارژ موجودی پیامک از کیف پول اصلی'
+    })
+    state.successMessage = data?.detail || 'موجودی پیامک با موفقیت شارژ شد.'
+    smsTopUpAmountText.value = ''
+    await loadWalletDashboard()
+  } catch (error) {
+    state.error = resolveApiErrorMessage(error, 'انتقال به موجودی پیامک ناموفق بود.')
+  } finally {
+    smsTopUpSubmitting.value = false
+  }
 }
 
 const openPaymentSupportTicket = () => {
@@ -1052,9 +1164,17 @@ const submitAction = async () => {
       window.location.href = data.payment_url
       return
     }
+    const isBankWithdraw = actionModal.type === 'withdraw' && actionModal.destinationType === 'bank'
+    const ticketId = data?.ticket?.id
     state.successMessage = data?.detail || (actionModal.type === 'deposit' ? 'واریز ثبت شد.' : 'برداشت ثبت شد.')
     closeActionModal()
     await loadWalletDashboard()
+    if (isBankWithdraw) {
+      router.push({
+        path: '/support',
+        query: ticketId ? { ticket: String(ticketId) } : undefined
+      })
+    }
   } catch (error) {
     state.error = resolveApiErrorMessage(error, 'ثبت تراکنش ناموفق بود.')
   } finally {
@@ -1123,6 +1243,7 @@ watch(() => props.searchQuery, async () => {
 watch(() => [actionModal.walletId, actionModal.type, actionModal.destinationType], () => {
   if (!actionModal.open) return
   if (actionModal.type === 'deposit') {
+    if (depositCustomAmount.value) return
     const exists = dynamicDepositAmounts.value.some((item) => item.value === Number(selectedDepositAmount.value))
     if (!exists) selectedDepositAmount.value = dynamicDepositAmounts.value[0]?.value || 0
     return
@@ -1202,7 +1323,7 @@ onMounted(async () => {
 .hero-action:hover{transform:translateY(-2px)}
 .hero-action-light{background:linear-gradient(180deg,#ffffff,#eef2f7);color:#35506b;box-shadow:0 14px 28px rgba(15,23,42,.12)}
 .hero-action-ghost{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(10px)}
-.wallet-summary-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.wallet-summary-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .summary-tile{background:linear-gradient(180deg,#ffffff,#f8fafc);border:1px solid var(--wallet-border);border-radius:20px;padding:16px 18px;box-shadow:0 10px 24px rgba(15,23,42,.04);position:relative;overflow:hidden;min-height:132px}
 .summary-tile::before{content:'';position:absolute;top:0;right:0;left:0;height:3px;background:linear-gradient(90deg,#7aa2c7,#8db6a9)}
 .summary-tile small{display:block;color:#64748b;font-size:12px}
@@ -1220,6 +1341,11 @@ onMounted(async () => {
 .sms-state-pill{height:28px;padding:0 10px;border-radius:999px;background:rgba(15,92,192,.1);color:#0f5cc0;font-size:11px;font-weight:900}
 .sms-state-pill.low{background:rgba(234,88,12,.12);color:#c2410c}
 .sms-topup-chip{margin-top:12px;padding:7px 11px;border-radius:999px;background:rgba(255,255,255,.86);border:1px solid rgba(148,163,184,.22);color:#35506b;font-size:11px;font-weight:800}
+.sms-quick-topup{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:14px;position:relative;z-index:1}
+.sms-quick-topup input{height:40px;border:1px solid #cfe0f7;border-radius:12px;padding:0 12px;background:#fff;color:#0f172a;font:inherit;font-size:13px;font-weight:700;min-width:0}
+.sms-quick-topup input:disabled{opacity:.6;cursor:not-allowed}
+.sms-quick-topup-btn{height:40px;border:0;border-radius:12px;padding:0 12px;background:linear-gradient(180deg,#315f9f,#3f74b8);color:#fff;font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+.sms-quick-topup-btn:disabled{opacity:.55;cursor:not-allowed}
 .warning-strip{display:flex;align-items:center;gap:12px;background:#fff7ed;border:1px solid #fdba74;border-radius:18px;padding:14px 16px;color:#c2410c}
 .warning-dot{width:10px;height:10px;border-radius:50%;background:#f97316;box-shadow:0 0 0 6px rgba(249,115,22,.14)}
 .options-panel{background:linear-gradient(180deg,#ffffff,#f8fbfc);border:1px solid var(--wallet-border);border-radius:28px;padding:22px;box-shadow:0 14px 34px rgba(15,23,42,.05)}
@@ -1370,7 +1496,10 @@ onMounted(async () => {
 .wallet-balance-preview.danger{border-color:transparent;background:#fff1f2;color:#9f1239}
 .wallet-balance-preview span{font-size:12px;font-weight:800}
 .wallet-balance-preview strong{font-size:16px}
-.gateway-amounts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.gateway-amounts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.deposit-amount-block{display:grid;gap:10px;width:100%}
+.deposit-custom-amount-btn{border-style:dashed}
+.deposit-custom-amount-input{height:44px;border:1px solid #dbe5f0;border-radius:14px;padding:0 14px;background:#fff;color:#0f172a;font:inherit;font-size:14px;font-weight:700}
 .gateway-amounts button{min-height:86px;border:1px solid #efe4ff;border-radius:16px;background:#fbf8ff;color:#0f172a;font-weight:800;cursor:pointer;padding:15px 14px;display:grid;gap:8px;justify-items:start;text-align:right;transition:border-color .2s ease,transform .2s ease,background .2s ease}
 .gateway-amounts button strong{font-size:18px;line-height:1;color:#0f172a}
 .gateway-amounts button span{font-size:12px;color:#64748b}

@@ -17,7 +17,7 @@
         تیکت‌ها در تایم اداری حداکثر نیم ساعت و در تایم غیر اداری حداکثر ۲۴ ساعت پاسخ داده خواهند شد.
       </section>
 
-      <section class="workspace-grid">
+      <section class="workspace-grid" :class="{ 'ticket-detail-open': Boolean(detailState.ticket) }">
         <div class="inbox-column">
           <section class="stats-grid">
             <article
@@ -119,6 +119,9 @@
 
           <template v-else-if="detailState.ticket">
             <header class="conversation-head">
+              <button type="button" class="support-back-btn" @click="resetDetailState">
+                بازگشت به لیست
+              </button>
               <div class="conversation-copy">
                 <span class="panel-kicker">Conversation</span>
                 <div class="conversation-title">
@@ -325,7 +328,13 @@
               </label>
               <label>
                 <span>مبلغ پرداخت</span>
-                <input v-model.trim="ticketModal.context.payment_amount" placeholder="مثلا 250000" />
+                <input
+                  :value="moneyInputValue(ticketModal.context.payment_amount)"
+                  type="text"
+                  inputmode="numeric"
+                  placeholder="مثلا 1,540,000"
+                  @input="ticketModal.context.payment_amount = fromThousandsInput($event.target.value)"
+                />
               </label>
               <label>
                 <span>تاریخ پرداخت</span>
@@ -395,6 +404,7 @@ import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import api from '../../services/api'
 import { formatJalaliDateTime } from '../../utils/date'
+import { formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 
 const route = useRoute()
 const router = useRouter()
@@ -418,6 +428,16 @@ const getEmptyContext = () => ({
   account_phone: '',
   account_issue: ''
 })
+
+const moneyInputValue = (value) => {
+  if (value === '' || value === null || value === undefined) return ''
+  return formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
+}
+const fromThousandsInput = (value) => {
+  const digits = String(value || '').replace(/[^\d۰-۹٠-٩]/g, '')
+  if (!digits) return ''
+  return fromThousandsTomanInput(value)
+}
 
 const getTodayJalaliString = () => {
   const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
@@ -649,8 +669,11 @@ const buildStructuredMessage = () => {
 
   Object.entries(ticketModal.context).forEach(([key, value]) => {
     if (key === 'order_number') return
-    const text = String(value || '').trim()
+    let text = String(value ?? '').trim()
     if (!text) return
+    if (key === 'payment_amount') {
+      text = moneyInputValue(value) || text
+    }
     contextLines.push(`${fieldMap[key]}: ${text}`)
   })
 
@@ -685,7 +708,7 @@ const openWalletPaymentTicketModal = () => {
     'شماره یا کد تراکنش و مشخصات رسید واریز را در این تیکت تکمیل می‌کنم.'
   ].filter(Boolean).join('\n')
   Object.assign(ticketModal.context, getEmptyContext(), {
-    payment_amount: amount,
+    payment_amount: amount ? fromThousandsInput(amount) : '',
     payment_date: getTodayJalaliString(),
     order_number: walletName
   })
@@ -862,6 +885,12 @@ onMounted(async () => {
   if (route.query.prefill === 'wallet-card-payment') {
     openWalletPaymentTicketModal()
     router.replace({ path: route.path, query: {} })
+  } else {
+    const ticketId = Number(route.query.ticket || 0)
+    if (ticketId > 0) {
+      await openTicketDetail(ticketId)
+      router.replace({ path: route.path, query: {} })
+    }
   }
   supportPollingTimer = window.setInterval(refreshTicketsQuietly, 10000)
 })
@@ -1247,6 +1276,10 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.support-back-btn {
+  display: none;
 }
 
 .conversation-title {
@@ -1945,6 +1978,30 @@ onBeforeUnmount(() => {
   .conversation-card,
   .modal-layout {
     padding: 16px;
+  }
+
+  .support-back-btn {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid #dbe3ef;
+    border-radius: 12px;
+    background: #fff;
+    color: #334155;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    margin-bottom: 10px;
+  }
+
+  .workspace-grid:not(.ticket-detail-open) .conversation-card {
+    display: none;
+  }
+
+  .workspace-grid.ticket-detail-open .inbox-column {
+    display: none;
   }
 
   .modal-head {

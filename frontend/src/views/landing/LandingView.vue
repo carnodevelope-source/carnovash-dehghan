@@ -69,10 +69,10 @@
             از پذیرش خودرو و پلاک‌خوان تا پرداخت، گزارش مالی، پیامک و باشگاه مشتریان.
           </p>
           <div class="hero-actions">
-            <a class="btn btn-outline btn-lg" href="#features" @click.prevent="scrollTo('features')">
+            <button class="btn btn-outline btn-lg" type="button" @click="openTrainingVideo">
               <IconlyIcon name="play" size="lg" tone="brand" />
-              مشاهده امکانات
-            </a>
+              ویدیو آموزشی
+            </button>
             <RouterLink class="btn btn-primary btn-lg" to="/login">
               ورود به پنل
               <IconlyIcon name="arrowLeft" size="md" tone="white" />
@@ -105,6 +105,39 @@
           </picture>
         </div>
       </section>
+
+      <Teleport to="body">
+        <div
+          v-if="trainingVideoOpen"
+          class="training-video-overlay"
+          @click.self="closeTrainingVideo"
+        >
+          <div class="training-video-modal" role="dialog" aria-modal="true" aria-label="ویدیو آموزشی کارنوواش">
+            <div class="training-video-head">
+              <strong>ویدیو آموزشی کارنوواش</strong>
+              <button type="button" class="training-video-close" aria-label="بستن" @click="closeTrainingVideo">×</button>
+            </div>
+            <div class="training-video-frame">
+              <iframe
+                title="ویدیو آموزشی نرم‌افزار کارنوواش"
+                src="https://www.aparat.com/video/video/embed/videohash/rotp2s5/vt/frame"
+                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen="true"
+                webkitallowfullscreen="true"
+                mozallowfullscreen="true"
+              />
+            </div>
+            <a
+              class="training-video-link"
+              href="https://www.aparat.com/v/rotp2s5"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              مشاهده در آپارات
+            </a>
+          </div>
+        </div>
+      </Teleport>
 
       <section class="features-section" id="features">
         <div class="section-heading">
@@ -370,6 +403,7 @@ import mobileImg from '../../assets/landing/mobile-app-platform.webp'
 import ctaImg from '../../assets/landing/automatic-carwash-station.webp'
 
 const mobileOpen = ref(false)
+const trainingVideoOpen = ref(false)
 const activeSection = ref('home')
 
 const navItems = [
@@ -542,6 +576,15 @@ const toFaDigit = (value) => String(value).replace(/\d/g, (digit) => '۰۱۲۳۴
 let observer = null
 let faqSchemaEl = null
 
+const openTrainingVideo = () => {
+  trainingVideoOpen.value = true
+  mobileOpen.value = false
+}
+
+const closeTrainingVideo = () => {
+  trainingVideoOpen.value = false
+}
+
 const scrollTo = (id) => {
   mobileOpen.value = false
   activeSection.value = id
@@ -561,7 +604,13 @@ const onNavClick = (event, item) => {
 }
 
 const onKeydown = (event) => {
-  if (event.key === 'Escape') mobileOpen.value = false
+  if (event.key === 'Escape') {
+    if (trainingVideoOpen.value) {
+      closeTrainingVideo()
+      return
+    }
+    mobileOpen.value = false
+  }
 }
 
 const mountFaqSchema = () => {
@@ -814,6 +863,79 @@ a.btn-primary:visited {
   height: auto;
   filter: drop-shadow(0 28px 48px rgba(8, 70, 170, 0.18));
   transform: translateY(8px);
+}
+
+.training-video-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.training-video-modal {
+  width: min(920px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 24px;
+  background: #0b1220;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.35);
+}
+
+.training-video-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #fff;
+}
+
+.training-video-head strong {
+  font-size: 15px;
+}
+
+.training-video-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.training-video-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+}
+
+.training-video-frame iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.training-video-link {
+  color: #93c5fd;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  width: max-content;
+}
+
+.training-video-link:hover {
+  text-decoration: underline;
 }
 
 .hero-copy {

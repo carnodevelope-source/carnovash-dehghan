@@ -575,6 +575,7 @@
               <p>{{ item.last_message_preview || item.message }}</p>
               <div class="ticket-row-foot">
                 <span>{{ item.tenant_name || 'بدون کارواش' }}</span>
+                <span>{{ item.assigned_to_name || 'بدون مسئول' }}</span>
                 <span>{{ priorityLabel(item.priority) }}</span>
                 <span>{{ ticketRelativeTime(item.last_message_at || item.updated_at || item.created_at) }}</span>
               </div>
@@ -604,7 +605,8 @@
           <div v-if="selectedTicket" class="ticket-stage-body">
             <header class="ticket-stage-head">
               <button type="button" class="ticket-back-btn" @click="clearSelectedTicket">
-                بازگشت به لیست
+                <span aria-hidden="true">→</span>
+                بازگشت به لیست تیکت‌ها
               </button>
               <div class="ticket-stage-title">
                 <div class="ticket-stage-title-row">
@@ -615,6 +617,7 @@
                 </div>
                 <div class="ticket-stage-meta">
                   <span>{{ selectedTicket.tenant_name || 'بدون کارواش' }}</span>
+                  <span>{{ selectedTicket.assigned_to_name || 'بدون مسئول' }}</span>
                   <span>{{ categoryLabel(selectedTicket.category) }}</span>
                   <span>{{ priorityLabel(selectedTicket.priority) }}</span>
                   <span class="mono">#{{ selectedTicket.id }}</span>
@@ -650,68 +653,70 @@
               </div>
             </header>
 
-            <div v-if="canApproveRegistration || isWalletOperationTicket(selectedTicket) || selectedTicket.attachments?.length" class="ticket-stage-actions">
-              <section v-if="canApproveRegistration" class="ticket-action-card approve">
-                <div>
-                  <strong>تایید ثبت‌نام کارواش</strong>
-                  <p>مدارک را بررسی کنید و حساب را فعال کنید.</p>
-                </div>
-                <button type="button" class="primary-btn" :disabled="registrationApproval.submitting" @click="approveRegistrationTicket">
-                  {{ registrationApproval.submitting ? 'در حال تایید...' : 'تایید و فعال‌سازی' }}
-                </button>
-                <small v-if="registrationApproval.message" class="transfer-feedback success">{{ registrationApproval.message }}</small>
-                <small v-if="registrationApproval.error" class="transfer-feedback error">{{ registrationApproval.error }}</small>
-              </section>
+            <div class="ticket-stage-scroll">
+              <div v-if="canApproveRegistration || isWalletOperationTicket(selectedTicket) || selectedTicket.attachments?.length" class="ticket-stage-actions">
+                <section v-if="canApproveRegistration" class="ticket-action-card approve">
+                  <div>
+                    <strong>تایید ثبت‌نام کارواش</strong>
+                    <p>مدارک را بررسی کنید و حساب را فعال کنید.</p>
+                  </div>
+                  <button type="button" class="primary-btn" :disabled="registrationApproval.submitting" @click="approveRegistrationTicket">
+                    {{ registrationApproval.submitting ? 'در حال تایید...' : 'تایید و فعال‌سازی' }}
+                  </button>
+                  <small v-if="registrationApproval.message" class="transfer-feedback success">{{ registrationApproval.message }}</small>
+                  <small v-if="registrationApproval.error" class="transfer-feedback error">{{ registrationApproval.error }}</small>
+                </section>
 
-              <section v-if="isWalletOperationTicket(selectedTicket)" class="ticket-action-card wallet">
-                <div>
-                  <strong>{{ walletOperationButtonLabel }}</strong>
-                  <p>مبلغ تاییدشده را وارد کنید تا به کیف پول مقصد اعمال شود.</p>
-                </div>
-                <label class="ticket-amount-field">
-                  <span>مبلغ (تومان)</span>
-                  <input v-model="walletTransfer.amountText" inputmode="numeric" placeholder="مثلا ۲۵۰۰۰۰" />
-                </label>
-                <button type="button" class="primary-btn" :disabled="walletTransfer.submitting" @click="submitWalletTransfer">
-                  {{ walletTransfer.submitting ? walletOperationSubmittingLabel : walletOperationButtonLabel }}
-                </button>
-                <small v-if="walletTransfer.error" class="transfer-feedback error">{{ walletTransfer.error }}</small>
-                <small v-if="walletTransfer.success" class="transfer-feedback success">{{ walletTransfer.success }}</small>
-              </section>
+                <section v-if="isWalletOperationTicket(selectedTicket)" class="ticket-action-card wallet">
+                  <div>
+                    <strong>{{ walletOperationButtonLabel }}</strong>
+                    <p>مبلغ تاییدشده را وارد کنید تا به کیف پول مقصد اعمال شود.</p>
+                  </div>
+                  <label class="ticket-amount-field">
+                    <span>مبلغ (تومان)</span>
+                    <input v-model="walletTransfer.amountText" inputmode="numeric" placeholder="مثلا ۲۵۰۰۰۰" />
+                  </label>
+                  <button type="button" class="primary-btn" :disabled="walletTransfer.submitting" @click="submitWalletTransfer">
+                    {{ walletTransfer.submitting ? walletOperationSubmittingLabel : walletOperationButtonLabel }}
+                  </button>
+                  <small v-if="walletTransfer.error" class="transfer-feedback error">{{ walletTransfer.error }}</small>
+                  <small v-if="walletTransfer.success" class="transfer-feedback success">{{ walletTransfer.success }}</small>
+                </section>
 
-              <section v-if="selectedTicket.attachments?.length" class="ticket-action-card files">
-                <strong>پیوست‌ها</strong>
-                <div class="ticket-file-row">
-                  <a
-                    v-for="attachment in selectedTicket.attachments"
-                    :key="attachment.id"
-                    class="ticket-file-chip"
-                    :href="attachment.file_url"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {{ attachment.original_name || 'فایل' }}
-                  </a>
-                </div>
-              </section>
-            </div>
+                <section v-if="selectedTicket.attachments?.length" class="ticket-action-card files">
+                  <strong>پیوست‌ها</strong>
+                  <div class="ticket-file-row">
+                    <a
+                      v-for="attachment in selectedTicket.attachments"
+                      :key="attachment.id"
+                      class="ticket-file-chip"
+                      :href="attachment.file_url"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {{ attachment.original_name || 'فایل' }}
+                    </a>
+                  </div>
+                </section>
+              </div>
 
-            <div ref="ticketStreamEl" class="ticket-stage-stream">
-              <div
-                v-for="message in selectedTicket.messages"
-                :key="message.id"
-                class="ticket-bubble"
-                :class="{
-                  mine: message.sender === authStore.user?.id,
-                  internal: message.is_internal
-                }"
-              >
-                <div class="ticket-bubble-meta">
-                  <strong>{{ message.sender_name }}</strong>
-                  <span>{{ roleLabel(message) }}</span>
-                  <small>{{ ticketRelativeTime(message.created_at) }}</small>
+              <div ref="ticketStreamEl" class="ticket-stage-stream">
+                <div
+                  v-for="message in selectedTicket.messages"
+                  :key="message.id"
+                  class="ticket-bubble"
+                  :class="{
+                    mine: message.sender === authStore.user?.id,
+                    internal: message.is_internal
+                  }"
+                >
+                  <div class="ticket-bubble-meta">
+                    <strong>{{ message.sender_name }}</strong>
+                    <span>{{ roleLabel(message) }}</span>
+                    <small>{{ ticketRelativeTime(message.created_at) }}</small>
+                  </div>
+                  <p>{{ message.body }}</p>
                 </div>
-                <p>{{ message.body }}</p>
               </div>
             </div>
 
@@ -748,8 +753,8 @@
           </div>
 
           <div v-else class="ticket-stage-empty">
-            <strong>یک تیکت انتخاب کنید</strong>
-            <span>از لیست سمت راست گفتگو را باز کنید و مستقیم پاسخ بدهید.</span>
+            <strong>لیست تیکت‌ها</strong>
+            <span>ابتدا یک تیکت از لیست انتخاب کنید تا جزئیات و گفتگو نمایش داده شود. همه پشتیبان‌ها به همه تیکت‌ها دسترسی نظارتی دارند.</span>
           </div>
         </section>
       </section>
@@ -825,28 +830,10 @@
       </section>
 
       <section v-else-if="activeTab === 'reports'" class="glass-card report-shell hq-report-pro">
-        <div class="report-command-hero">
+        <div class="report-command-hero report-command-hero-compact">
           <div class="report-command-copy">
-            <span class="report-eyebrow">HQ Financial Intelligence</span>
-            <h2>گزارشات مرکزی کارنوواش</h2>
-            <p>مرکز گزارشات HQ با تفکیک سهم کارنو، سهم آراکار، ریز واریزی‌های کیف پول و گزارش کامل هر کارواش داخل مجموعه.</p>
-          </div>
-          <div class="report-command-metrics">
-            <article>
-              <small>سهم کارنو</small>
-              <strong>{{ money(reports.summary.hq_share_total || 0) }}</strong>
-              <span>کیف پول پیامک و ورود مشتریان با اکسل</span>
-            </article>
-            <article>
-              <small>سهم آراکار</small>
-              <strong>{{ money(reports.summary.rah_share_total || 0) }}</strong>
-              <span>عملیات، درآمد و هزینه‌های شعب</span>
-            </article>
-            <article>
-              <small>درآمد نهایی</small>
-              <strong>{{ money(hqFinalAmount()) }}</strong>
-              <span>قبل از تخفیف: {{ money(hqBeforeDiscountAmount()) }}</span>
-            </article>
+            <h2>گزارشات مرکزی</h2>
+            <p>سهم کارنو، سهم آراکار، کیف پول و عملکرد شعب در یک نگاه.</p>
           </div>
         </div>
 
@@ -1786,7 +1773,7 @@ const selectedCarwashInsight = computed(() => carwashInsight.data)
 
 const teamAssignable = computed(() => hqTeam.value.filter((item) => ['hq_admin', 'hq_support'].includes(item.platform_role)))
 const ticketScopeOptions = computed(() => [
-  { key: 'all', label: 'صف من' },
+  { key: 'all', label: 'همه تیکت‌ها' },
   { key: 'unassigned', label: 'بدون مسئول' },
   { key: 'mine', label: 'ارجاع به من' },
   { key: 'urgent', label: 'فوری' }
@@ -2556,8 +2543,14 @@ const selectTicket = async (ticketId, options = {}) => {
     registrationApproval.message = ''
   }
   await nextTick()
-  if (ticketStreamEl.value) {
-    ticketStreamEl.value.scrollTop = ticketStreamEl.value.scrollHeight
+  const scrollBox = ticketStreamEl.value?.closest?.('.ticket-stage-scroll') || ticketStreamEl.value
+  if (scrollBox) {
+    const hasActions = Boolean(
+      canApproveRegistration.value
+      || isWalletOperationTicket(data)
+      || (Array.isArray(data?.attachments) && data.attachments.length)
+    )
+    scrollBox.scrollTop = hasActions ? 0 : scrollBox.scrollHeight
   }
 }
 
@@ -6078,6 +6071,20 @@ td strong {
   box-shadow: 0 28px 70px rgba(15, 23, 42, 0.18);
 }
 
+.report-command-hero-compact {
+  grid-template-columns: 1fr;
+  padding: 18px 22px;
+}
+
+.report-command-hero-compact .report-command-copy h2 {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3vw, 32px);
+}
+
+.report-command-hero-compact .report-command-copy p {
+  line-height: 1.8;
+}
+
 .report-command-copy h2 {
   margin: 10px 0;
   font-size: clamp(28px, 4vw, 46px);
@@ -6785,9 +6792,17 @@ td strong {
 }
 
 .ticket-stage-head,
-.ticket-stage-actions,
 .ticket-stage-composer {
   flex: 0 0 auto;
+}
+
+.ticket-stage-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ticket-stage-head {
@@ -6804,6 +6819,8 @@ td strong {
   display: none;
   grid-column: 1 / -1;
   justify-self: start;
+  align-items: center;
+  gap: 8px;
   padding-inline: 0;
 }
 
@@ -6858,6 +6875,7 @@ td strong {
 }
 
 .ticket-stage-actions {
+  flex: 0 0 auto;
   display: grid;
   gap: 10px;
   padding: 12px 18px 0;
@@ -6935,8 +6953,8 @@ td strong {
 
 .ticket-stage-stream {
   flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
+  min-height: 280px;
+  overflow: visible;
   padding: 16px 18px;
   display: grid;
   align-content: start;
@@ -7065,12 +7083,30 @@ td strong {
 }
 
 @media (max-width: 980px) {
+  .hq-page.ticket-focus-mode,
+  .hq-page.ticket-focus-mode.support-only {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .hq-page.ticket-focus-mode .hq-main,
+  .hq-page.ticket-focus-mode.support-only .hq-main {
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    padding: 0;
+  }
+
   .ticket-menu-mobile {
     display: inline-grid;
   }
 
   .ticket-desk {
     grid-template-columns: 1fr !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    min-height: 100dvh !important;
   }
 
   .ticket-desk:not(.ticket-desk-open) .ticket-desk-stage,
@@ -7078,16 +7114,91 @@ td strong {
     display: none;
   }
 
+  .ticket-desk-inbox,
+  .ticket-desk-stage,
+  .ticket-stage-body {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .ticket-desk-inbox-top {
+    gap: 10px;
+    padding: 12px 12px 10px;
+  }
+
+  .ticket-desk-brand strong {
+    font-size: 15px;
+  }
+
   .ticket-back-btn {
     display: inline-flex;
+    width: 100%;
+    justify-content: flex-start;
+    justify-self: stretch;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #eff6ff, #dbeafe);
+    border: 1px solid rgba(59, 130, 246, 0.28);
+    color: #1d4ed8;
+    font-size: 14px;
+    font-weight: 800;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+  }
+
+  .ticket-desk-scopes {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 4px;
+  }
+
+  .ticket-scope {
+    flex: 0 0 auto;
+  }
+
+  .ticket-desk-stats {
+    gap: 8px;
+  }
+
+  .ticket-stat {
+    min-height: 58px;
+    padding: 8px 10px;
+  }
+
+  .ticket-row {
+    padding: 14px 12px;
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.03);
+  }
+
+  .ticket-row.active {
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.1);
   }
 
   .ticket-stage-head {
     grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(10px);
+  }
+
+  .ticket-stage-title h2 {
+    font-size: 16px;
   }
 
   .ticket-stage-controls {
     width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
   }
 
   .ticket-stage-controls label {
@@ -7095,9 +7206,46 @@ td strong {
     min-width: 0;
   }
 
+  .ticket-stage-controls .ghost-btn {
+    grid-column: 1 / -1;
+  }
+
+  .ticket-stage-actions {
+    padding: 12px 12px 0;
+    gap: 12px;
+  }
+
   .ticket-action-card,
   .ticket-action-card.wallet {
     grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .ticket-amount-field {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .ticket-stage-stream {
+    min-height: 360px;
+    padding: 14px 12px 18px;
+  }
+
+  .ticket-stage-composer {
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid rgba(226, 232, 240, 0.95);
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(10px);
+  }
+
+  .ticket-template-row {
+    display: none;
+  }
+
+  .ticket-desk-support-nav {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 
@@ -7110,8 +7258,16 @@ td strong {
     font-size: 16px;
   }
 
+  .ticket-stage-stream {
+    min-height: 420px;
+  }
+
   .ticket-stage-composer textarea {
-    min-height: 76px;
+    min-height: 88px;
+  }
+
+  .ticket-bubble {
+    max-width: 96%;
   }
 }
 </style>

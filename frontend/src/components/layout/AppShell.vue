@@ -152,7 +152,6 @@
               <p v-if="subtitle" class="page-subtitle">{{ subtitle }}</p>
               <div class="page-title-row">
                 <h1>{{ title }}</h1>
-                <HelpTip v-if="resolvedHelpText" :text="resolvedHelpText" />
               </div>
             </div>
           </div>
@@ -176,9 +175,7 @@ import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, getFeatureLockNotice, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
 import { notifyWarning } from '../../utils/notify'
-import { getPageHelp } from '../../config/pageHelp'
 import IconlyIcon from '../base/IconlyIcon.vue'
-import HelpTip from '../base/HelpTip.vue'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -195,7 +192,6 @@ const emit = defineEmits(['update:searchQuery'])
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const resolvedHelpText = computed(() => String(props.helpText || getPageHelp(route.path) || '').trim())
 const isProfileMenuOpen = ref(false)
 const isLoggingOut = ref(false)
 const profileMenuRef = ref(null)
