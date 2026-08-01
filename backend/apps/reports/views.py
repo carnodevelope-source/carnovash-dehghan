@@ -204,11 +204,11 @@ def _export_row_value(row, field):
 
 def _build_export_config(tab_key):
     configs = {
-        'overall': {'filename': 'overall-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_gender', 'جنسیت'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('status', 'وضعیت'), ('carwash_share', 'حق کارواش'), ('worker_share', 'حق نیرو'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('services', 'خدمات'), ('created_at', 'تاریخ')], 'rows_key': 'overall_report'},
+        'overall': {'filename': 'overall-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_gender', 'جنسیت'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('status', 'وضعیت'), ('carwash_share', 'حق کارواش'), ('worker_share', 'حق نیرو'), ('discount_total', 'تخفیف'), ('tax_total', 'مالیات'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('services', 'خدمات'), ('created_at', 'تاریخ')], 'rows_key': 'overall_report'},
         'carwash': {'filename': 'carwash-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('carwash_share', 'حق کارواش'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'carwash_report'},
         'worker': {'filename': 'worker-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('final_total_without_tip', 'مبلغ سفارش بدون انعام'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_share', 'حق نیرو'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'worker_report'},
         'tips': {'filename': 'tips-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('products', 'کالا'), ('created_at', 'تاریخ')], 'rows_key': 'tips_report'},
-        'revenue': {'filename': 'revenue-report', 'headers': [('row', 'ردیف'), ('created_at', 'تاریخ'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل خودرو'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('payment_method', 'روش پرداخت'), ('payment_status', 'وضعیت پرداخت'), ('service_amount', 'خدمات'), ('product_amount', 'محصولات'), ('discount_amount', 'تخفیف'), ('tip_amount', 'انعام'), ('final_total', 'مبلغ نهایی'), ('received_amount', 'وصول شده'), ('outstanding_amount', 'مانده'), ('cheque_number', 'شماره چک'), ('reminder_due_at', 'سررسید')], 'rows_key': 'revenue_report'},
+        'revenue': {'filename': 'revenue-report', 'headers': [('row', 'ردیف'), ('created_at', 'تاریخ'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل خودرو'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('payment_method', 'روش پرداخت'), ('payment_status', 'وضعیت پرداخت'), ('service_amount', 'خدمات'), ('product_amount', 'محصولات'), ('discount_amount', 'تخفیف'), ('tip_amount', 'انعام'), ('tax_amount', 'مالیات'), ('final_total', 'مبلغ نهایی'), ('received_amount', 'وصول شده'), ('outstanding_amount', 'مانده'), ('cheque_number', 'شماره چک'), ('reminder_due_at', 'سررسید')], 'rows_key': 'revenue_report'},
         'attendance': {'filename': 'attendance-report', 'headers': [('row', 'ردیف'), ('worker_name', 'نام پرسنل'), ('event_type', 'نوع رویداد'), ('source', 'منبع ثبت'), ('event_at', 'زمان')], 'rows_key': 'attendance_report'},
         'blacklist': {'filename': 'blacklist-report', 'headers': [('row', 'ردیف'), ('plate_number', 'پلاک'), ('plate_type', 'نوع وسیله'), ('note', 'توضیح'), ('blocked_by_name', 'ثبت کننده'), ('created_at', 'تاریخ ثبت')], 'rows_key': 'blacklist_report'},
     }
@@ -685,6 +685,7 @@ class ReportsDashboardView(APIView):
                 'bonus_total': float(job_adjustments['bonus_total']),
                 'penalty_total': float(job_adjustments['penalty_total']),
                 'discount_total': float(job.discount_total) if job else 0,
+                'tax_total': float(job.tax_total) if job else 0,
                 'service_total': float(job.services_total) if job else 0,
                 'final_total': float(job.final_total) if job else 0,
                 'final_total_without_tip': float(max(Decimal('0'), _normalize_decimal(job.final_total) - _normalize_decimal(job.tip_amount))) if job else 0,
@@ -704,6 +705,7 @@ class ReportsDashboardView(APIView):
         all_jobs = [vehicle.job for vehicle in vehicles if getattr(vehicle, 'job', None)]
         total_carwash = sum((_normalize_decimal(getattr(job, 'carwash_share_amount', 0)) for job in all_jobs), Decimal('0'))
         total_discount = sum((_normalize_decimal(getattr(job, 'discount_total', 0)) for job in all_jobs), Decimal('0'))
+        total_tax = sum((_normalize_decimal(getattr(job, 'tax_total', 0)) for job in all_jobs), Decimal('0'))
         total_final = sum((_normalize_decimal(getattr(job, 'final_total', 0)) for job in all_jobs), Decimal('0'))
         total_before_discount = total_final + total_discount
         if worker_id:
@@ -832,6 +834,11 @@ class ReportsDashboardView(APIView):
                 'product_amount': float(payment.product_amount or 0),
                 'discount_amount': float(payment.discount_amount or 0),
                 'tip_amount': float(payment.tip_amount or 0),
+                'tax_amount': float(
+                    getattr(payment, 'tax_amount', 0)
+                    or getattr(getattr(vehicle, 'job', None), 'tax_total', 0)
+                    or 0
+                ),
                 'final_total': float(payment.amount or 0),
                 'received_amount': float(received_amount),
                 'outstanding_amount': float(outstanding_amount),
@@ -974,6 +981,7 @@ class ReportsDashboardView(APIView):
                 'worker_total': float(total_worker),
                 'tips_total': float(total_tip),
                 'discount_total': float(total_discount),
+                'tax_total': float(total_tax),
                 'final_total': float(total_final),
                 'before_discount_total': float(total_before_discount),
                 'payable_worker_total': float(all_workers_totals['payable_total']),
@@ -989,6 +997,7 @@ class ReportsDashboardView(APIView):
                     'worker_total': float(total_worker),
                     'tips_total': float(total_tip),
                     'discount_total': float(total_discount),
+                    'tax_total': float(total_tax),
                     'final_total': float(total_final),
                     'before_discount_total': float(total_before_discount),
                 },

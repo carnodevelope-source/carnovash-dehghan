@@ -449,6 +449,7 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
                         'loyalty_discount_total': float(getattr(job, 'loyalty_discount_total', 0) or 0),
                         'manual_discount_total': float(getattr(job, 'manual_discount_total', 0) or 0),
                         'tip_amount': float(getattr(job, 'tip_amount', 0) or 0),
+                        'tax_total': float(getattr(job, 'tax_total', 0) or 0),
                     },
                 )
 
@@ -1279,7 +1280,10 @@ class VehicleReleaseCheckoutView(APIView):
             service_list_subtotal,
             facility_discount_total + loyalty_discount_total + manual_discount_total,
         )
-        final_total = max(Decimal('0'), service_list_subtotal - discount_total) + products_total + tip_amount
+        taxable_total = max(Decimal('0'), service_list_subtotal - discount_total) + products_total
+        tax_percent = self._tax_percent(tenant)
+        tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
+        final_total = taxable_total + tax_total + tip_amount
         assigned_workers = self._resolve_assigned_workers(vehicle.job)
         worker_share_distribution, distributed_worker_share_total = self._normalize_worker_share_distribution(
             assigned_workers=assigned_workers,
@@ -1340,6 +1344,8 @@ class VehicleReleaseCheckoutView(APIView):
                     'discount_total': discount_total,
                     'manual_discount_total': manual_discount_total,
                     'total_discount': discount_total,
+                    'tax_total': tax_total,
+                    'tax_percent': float(tax_percent),
                     'tip_amount': tip_amount,
                     'final_total': final_total,
                     'worker_share_amount': vehicle.job.worker_share_amount,
@@ -1831,7 +1837,7 @@ class VehicleReleaseCheckoutView(APIView):
             'service_amount': completed_service_totals,
             'product_amount': product_totals,
             'discount_amount': discount_total,
-            'tax_amount': Decimal('0'),
+            'tax_amount': tax_total,
             'gateway_payload': {'payment_breakdown': normalized_payment_breakdown} if normalized_payment_breakdown else {},
             'paid_at': paid_at,
             'payer_name': vehicle.driver_name or '',
@@ -1942,6 +1948,7 @@ class VehicleReleaseCheckoutView(APIView):
                 'loyalty_discount_total': float(loyalty_discount_total or 0),
                 'manual_discount_total': float(manual_discount_total or 0),
                 'tip_amount': float(tip_amount or 0),
+                'tax_total': float(tax_total or 0),
             },
         )
         return Response(serializer.data, status=status.HTTP_200_OK)

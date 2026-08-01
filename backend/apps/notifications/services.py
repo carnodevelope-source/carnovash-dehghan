@@ -291,8 +291,17 @@ def assignment_invoice_final_total(job):
     final_total = _decimal_value(getattr(job, 'final_total', 0))
     if final_total > 0:
         return final_total
-    total = assignment_invoice_total(job) - assignment_discount_total(job)
+    total = assignment_invoice_total(job) - assignment_discount_total(job) + assignment_tax_total(job)
     return total if total > 0 else Decimal('0')
+
+
+def assignment_tax_total(job):
+    if not job:
+        return Decimal('0')
+    stored = _decimal_value(getattr(job, 'tax_total', 0))
+    if stored > 0:
+        return stored
+    return Decimal('0')
 
 
 def build_services_sms_summary(job):
@@ -344,13 +353,15 @@ def order_assignment_financial_lines(text):
     if services_index < 0:
         return '\n'.join(lines)
 
-    financial_lines = {'total': None, 'discount': None, 'final': None}
+    financial_lines = {'total': None, 'discount': None, 'tax': None, 'final': None}
     remaining = []
     for line in lines:
         if '[جمع کل]' in line or '[جمع نرخ نامه]' in line:
             financial_lines['total'] = line
         elif '[جمع تخفیف]' in line:
             financial_lines['discount'] = line
+        elif '[مالیات]' in line:
+            financial_lines['tax'] = line
         elif '[مبلغ نهایی]' in line:
             financial_lines['final'] = line
         else:
@@ -364,6 +375,7 @@ def order_assignment_financial_lines(text):
     ordered_financials = [line for line in (
         financial_lines['total'],
         financial_lines['discount'],
+        financial_lines['tax'],
         financial_lines['final'],
     ) if line]
     remaining[insert_at:insert_at] = ordered_financials
@@ -387,6 +399,8 @@ def normalize_vehicle_assignment_sms_template(template):
         insertions.append('جمع کل: [جمع کل]')
     if '[جمع تخفیف]' not in text:
         insertions.append('تخفیف این سفارش: [جمع تخفیف]')
+    if '[مالیات]' not in text:
+        insertions.append('مالیات: [مالیات]')
     if '[مبلغ نهایی]' not in text:
         insertions.append('مبلغ نهایی: [مبلغ نهایی]')
     if 'آماده ترخیص' not in text:
@@ -427,6 +441,7 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
         '[جمع کل]': format_toman(assignment_invoice_total(job)),
         '[جمع نرخ نامه]': format_toman(assignment_invoice_total(job)),
         '[جمع تخفیف]': format_toman(assignment_discount_total(job)),
+        '[مالیات]': format_toman(assignment_tax_total(job)),
         '[مبلغ نهایی]': format_toman(assignment_invoice_final_total(job)),
     }
     intro_template = str(
@@ -460,6 +475,7 @@ def build_vehicle_assignment_sms_messages(settings_obj, vehicle, *, assigned_at=
         '[جمع کل]': format_toman(assignment_invoice_total(job)),
         '[جمع نرخ نامه]': format_toman(assignment_invoice_total(job)),
         '[جمع تخفیف]': format_toman(assignment_discount_total(job)),
+        '[مالیات]': format_toman(assignment_tax_total(job)),
         '[مبلغ نهایی]': format_toman(assignment_invoice_final_total(job)),
     }
     assigned_enabled = getattr(settings_obj, 'sms_vehicle_assigned_enabled', True) if settings_obj is not None else True
@@ -522,6 +538,7 @@ def build_vehicle_released_sms(
     facility_discount_total=0,
     loyalty_discount_total=0,
     manual_discount_total=0,
+    tax_total=0,
 ):
     released_at = released_at or getattr(vehicle, 'released_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
     plate_label = format_plate_for_sms(vehicle)
@@ -533,6 +550,10 @@ def build_vehicle_released_sms(
     else:
         next_discount_sms_value = next_discount_label
     driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
+    job = getattr(vehicle, 'job', None)
+    resolved_tax_total = _decimal_value(tax_total)
+    if resolved_tax_total <= 0:
+        resolved_tax_total = assignment_tax_total(job)
     context = {
         '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
         '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', ''), driver_gender),
@@ -554,6 +575,7 @@ def build_vehicle_released_sms(
         '[تخفیف مجموعه]': format_toman(facility_discount_total),
         '[تخفیف امتیاز مشتری]': format_toman(loyalty_discount_total),
         '[تخفیف دستی]': format_toman(manual_discount_total),
+        '[مالیات]': format_toman(resolved_tax_total),
         '[مبلغ نهایی]': format_toman(final_total),
     }
     template = prepare_released_discount_template(
@@ -796,6 +818,7 @@ def _send_vehicle_event_sms_sync(event_code, tenant, vehicle, *, created_by=None
             facility_discount_total=extra_context.get('facility_discount_total', 0),
             loyalty_discount_total=extra_context.get('loyalty_discount_total', 0),
             manual_discount_total=extra_context.get('manual_discount_total', 0),
+            tax_total=extra_context.get('tax_total', 0),
         )
         message_items = [{
             'text': text,

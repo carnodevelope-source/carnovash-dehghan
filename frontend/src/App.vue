@@ -1,6 +1,7 @@
 <template>
   <router-view />
   <GlobalNoticeStack />
+  <PermissionPromptModal />
   <BaseSpinner
     v-if="isLoading"
     overlay
@@ -16,6 +17,7 @@ import { onBeforeUnmount, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import BaseSpinner from './components/base/BaseSpinner.vue'
 import GlobalNoticeStack from './components/base/GlobalNoticeStack.vue'
+import PermissionPromptModal from './components/base/PermissionPromptModal.vue'
 import { useLoadingStore } from './store/loading.store'
 import { notifyError } from './utils/notify'
 

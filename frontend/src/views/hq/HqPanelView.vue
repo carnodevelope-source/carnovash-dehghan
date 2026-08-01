@@ -239,10 +239,7 @@
               <span>نام کاربری مدیر</span>
               <input v-model.trim="createForm.manager_username" required placeholder="manager.amiran" />
             </label>
-            <label>
-              <span>موبایل مدیر</span>
-              <input v-model.trim="createForm.manager_phone" required placeholder="09xxxxxxxxx" />
-            </label>
+            <BasePhoneInput v-model="createForm.manager_phone" label="موبایل مدیر" :required="true" />
             <label class="wide">
               <span>رمز عبور اولیه</span>
               <input v-model="createForm.manager_password" type="password" required placeholder="حداقل 6 کاراکتر" />
@@ -778,10 +775,7 @@
               <span>نام کاربری</span>
               <input v-model.trim="supportForm.username" required placeholder="milad.dehestani" />
             </label>
-            <label>
-              <span>موبایل</span>
-              <input v-model.trim="supportForm.phone" required placeholder="09xxxxxxxxx" />
-            </label>
+            <BasePhoneInput v-model="supportForm.phone" label="موبایل" :required="true" />
             <label class="wide">
               <span>رمز عبور</span>
               <input v-model="supportForm.password" type="password" minlength="6" required placeholder="حداقل 6 کاراکتر" />
@@ -1501,10 +1495,7 @@
             <span>نام کاربری</span>
             <input v-model.trim="editSupportModal.username" required />
           </label>
-          <label>
-            <span>موبایل</span>
-            <input v-model.trim="editSupportModal.phone" required />
-          </label>
+          <BasePhoneInput v-model="editSupportModal.phone" label="موبایل" :required="true" />
           <div class="wide support-scope-note">
             <span>حوزه پوشش</span>
             <strong>همه کارواش‌ها</strong>
@@ -1532,10 +1523,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRouter } from 'vue-router'
 import api from '../../services/api'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
+import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
 import HqServicesPanel from './HqServicesPanel.vue'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman } from '../../utils/money'
+import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
+import { notifyError } from '../../utils/notify'
 import {
   notifyNewSupportTickets,
   playTicketAlertSound,
@@ -2053,7 +2047,7 @@ const tenantReportRows = computed(() => {
 })
 const tenantReportColumns = computed(() => ({
   overall: [
-    ['row', 'ردیف'], ['driver_name', 'راننده'], ['driver_gender', 'جنسیت'], ['driver_phone', 'شماره'], ['plate_number', 'پلاک'], ['status', 'وضعیت'], ['final_total', 'مبلغ نهایی', 'money'], ['before_discount_total', 'قبل از تخفیف', 'money'], ['carwash_share', 'حق کارواش', 'money'], ['worker_share', 'حق نیرو', 'money'], ['discount_total', 'جمع تخفیف', 'money'], ['tip_amount', 'انعام', 'money'], ['worker_name', 'نیرو'], ['services', 'خدمات'], ['created_at', 'تاریخ', 'date']
+    ['row', 'ردیف'], ['driver_name', 'راننده'], ['driver_gender', 'جنسیت'], ['driver_phone', 'شماره'], ['plate_number', 'پلاک'], ['status', 'وضعیت'], ['final_total', 'مبلغ نهایی', 'money'], ['before_discount_total', 'قبل از تخفیف', 'money'], ['carwash_share', 'حق کارواش', 'money'], ['worker_share', 'حق نیرو', 'money'], ['discount_total', 'جمع تخفیف', 'money'], ['tax_total', 'مالیات', 'money'], ['tip_amount', 'انعام', 'money'], ['worker_name', 'نیرو'], ['services', 'خدمات'], ['created_at', 'تاریخ', 'date']
   ],
   carwash: [
     ['row', 'ردیف'], ['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['carwash_share', 'حق کارواش', 'money'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ', 'date']
@@ -2065,7 +2059,7 @@ const tenantReportColumns = computed(() => ({
     ['row', 'ردیف'], ['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['tip_amount', 'انعام', 'money'], ['worker_name', 'نیرو'], ['products', 'کالا'], ['created_at', 'تاریخ', 'date']
   ],
   revenue: [
-    ['row', 'ردیف'], ['created_at', 'تاریخ', 'date'], ['driver_name', 'راننده'], ['payment_method', 'روش پرداخت'], ['payment_status', 'وضعیت'], ['service_amount', 'خدمات', 'money'], ['product_amount', 'محصولات', 'money'], ['final_total', 'مبلغ نهایی', 'money'], ['received_amount', 'وصول شده', 'money'], ['outstanding_amount', 'مانده', 'money']
+    ['row', 'ردیف'], ['created_at', 'تاریخ', 'date'], ['driver_name', 'راننده'], ['payment_method', 'روش پرداخت'], ['payment_status', 'وضعیت'], ['service_amount', 'خدمات', 'money'], ['product_amount', 'محصولات', 'money'], ['tax_amount', 'مالیات', 'money'], ['final_total', 'مبلغ نهایی', 'money'], ['received_amount', 'وصول شده', 'money'], ['outstanding_amount', 'مانده', 'money']
   ],
   attendance: [
     ['row', 'ردیف'], ['worker_name', 'پرسنل'], ['event_type', 'رویداد'], ['source', 'منبع'], ['event_at', 'زمان', 'date']
@@ -2422,6 +2416,12 @@ const openTicketFromOverview = async (ticketId) => {
 }
 
 const createCarwash = async () => {
+  createForm.manager_phone = normalizeIranMobile(createForm.manager_phone)
+  const phoneError = iranMobileErrorMessage(createForm.manager_phone, { label: 'موبایل مدیر' })
+  if (phoneError) {
+    notifyError(phoneError, { title: 'شماره موبایل' })
+    return
+  }
   await api.post('/auth/hq/carwashes/', createForm)
   Object.assign(createForm, {
     carwash_name: '',
@@ -2709,6 +2709,12 @@ const loadTeam = async () => {
 
 const createSupportUser = async () => {
   supportFormError.value = ''
+  supportForm.phone = normalizeIranMobile(supportForm.phone)
+  const phoneError = iranMobileErrorMessage(supportForm.phone, { label: 'موبایل' })
+  if (phoneError) {
+    supportFormError.value = phoneError
+    return
+  }
   try {
     await api.post('/auth/hq/team/', {
       first_name: supportForm.first_name,
@@ -2770,6 +2776,12 @@ const closeEditSupportModal = () => {
 
 const updateSupportUser = async () => {
   editSupportModal.error = ''
+  editSupportModal.phone = normalizeIranMobile(editSupportModal.phone)
+  const phoneError = iranMobileErrorMessage(editSupportModal.phone, { label: 'موبایل' })
+  if (phoneError) {
+    editSupportModal.error = phoneError
+    return
+  }
   try {
     await api.patch(`/auth/hq/team/${editSupportModal.id}/`, {
       first_name: editSupportModal.first_name,

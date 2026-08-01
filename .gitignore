@@ -5,6 +5,7 @@ Desktop.ini
 
 # Node
 frontend/node_modules/
+tools/print-agent/node_modules/
 frontend/dist/
 frontend/.vite/
 .seo-cache/

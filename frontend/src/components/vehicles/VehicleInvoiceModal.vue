@@ -37,8 +37,8 @@
             <button type="button" class="secondary-btn" :disabled="loadingContext || invoiceGenerating" @click="downloadInvoicePdf">
               {{ invoiceGenerating ? 'در حال ساخت PDF...' : 'دانلود PDF' }}
             </button>
-            <button type="button" class="secondary-btn" :disabled="loadingContext" @click="printInvoiceHtml">
-              چاپ
+            <button type="button" class="secondary-btn" :disabled="loadingContext || invoiceGenerating" @click="printInvoiceHtml">
+              {{ invoiceGenerating ? 'در حال چاپ...' : 'چاپ' }}
             </button>
           </div>
         </div>
@@ -65,7 +65,7 @@
               <p><span>تاریخ:</span><strong>{{ invoiceIssuedAt }}</strong></p>
               <p><span>تعداد مراجعه:</span><strong>{{ Number(invoiceMeta.customerLoyaltyVisitCount || 0).toLocaleString('fa-IR') }}</strong></p>
               <p><span>امتیاز:</span><strong>{{ invoiceCustomerScoreLabel }}</strong></p>
-              <p><span>شماره تیپ:</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
+              <p><span>تیپ نرخنامه:</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
               <p><span>مدل خودرو:</span><strong>{{ invoiceVehicleTitle }}</strong></p>
               <p><span>پلاک:</span><strong>{{ invoicePlateLabel }}</strong></p>
               <p><span>مشتری:</span><strong>{{ invoiceCustomerDisplayName }}</strong></p>
@@ -96,7 +96,7 @@
               <p><span>جمع کل</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
               <p><span>جمع تخفیف</span><strong>{{ formatMoney(invoiceSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(invoiceSummary.tipAmount) }}</strong></p>
-              <p><span>مالیات</span><strong>{{ formatMoney(invoiceSummary.taxAmount) }}</strong></p>
+              <p v-if="invoiceSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(invoiceSummary.taxAmount) }}</strong></p>
               <p class="thermal-payable-total"><span>قیمت نهایی</span><strong>{{ formatMoney(invoiceSummary.finalTotal) }}</strong></p>
             </section>
 
@@ -119,7 +119,7 @@
               <div class="invoice-sheet-meta">
                 <strong>{{ invoiceCarwashTitle }}</strong>
                 <span>تاریخ صدور: {{ invoiceIssuedAt }}</span>
-                <span>شماره تیپ: {{ invoiceTariffTypeNumber }}</span>
+                <span>تیپ نرخنامه: {{ invoiceTariffTypeNumber }}</span>
               </div>
             </header>
 
@@ -197,7 +197,7 @@
                 <strong>جزئیات پرداخت</strong>
               </div>
               <div class="invoice-payment-grid">
-                <p><span>شماره تیپ</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
+                <p><span>تیپ نرخنامه</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
                 <p><span>وضعیت</span><strong>{{ invoicePaymentStatusLabel }}</strong></p>
                 <p v-if="paymentBreakdownLabel"><span>پرداخت ترکیبی</span><strong>{{ paymentBreakdownLabel }}</strong></p>
                 <p v-if="invoiceDueDateLabel"><span>سررسید</span><strong>{{ invoiceDueDateLabel }}</strong></p>
@@ -216,7 +216,7 @@
                 <p v-if="invoiceSummary.manualDiscountAmount > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(invoiceSummary.manualDiscountAmount) }}</strong></p>
                 <p><span>جمع تخفیف</span><strong>{{ formatMoney(invoiceSummary.discountAmount) }}</strong></p>
                 <p><span>انعام</span><strong>{{ formatMoney(invoiceSummary.tipAmount) }}</strong></p>
-                <p><span>مالیات</span><strong>{{ formatMoney(invoiceSummary.taxAmount) }}</strong></p>
+                <p v-if="invoiceSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(invoiceSummary.taxAmount) }}</strong></p>
                 <p class="invoice-grand-total"><span>قیمت نهایی</span><strong>{{ formatMoney(invoiceSummary.finalTotal) }}</strong></p>
               </div>
             </section>
@@ -244,6 +244,7 @@ import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { formatThousandsToman, formatThousandsTomanValue } from '../../utils/money'
 import { buildPlateNumber } from '../../utils/plate'
+import { printPdfBlobSilent, resolveSilentPrintErrorMessage } from '../../utils/receiptPrinter'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -274,6 +275,7 @@ const invoiceMeta = reactive({
   receiptFooterNote: '',
   carwashAddress: '',
   managerPhone: '',
+  receiptPrinterName: '',
   creditDueDate: '',
   chequeLabel: '',
   paymentBreakdownLabel: '',
@@ -497,6 +499,7 @@ const resetInvoiceMeta = () => {
   invoiceMeta.receiptFooterNote = ''
   invoiceMeta.carwashAddress = ''
   invoiceMeta.managerPhone = ''
+  invoiceMeta.receiptPrinterName = ''
   invoiceMeta.creditDueDate = ''
   invoiceMeta.chequeLabel = ''
   invoiceMeta.paymentBreakdownLabel = ''
@@ -660,6 +663,7 @@ const loadInvoiceContext = async () => {
       || authStore.user?.tenant?.address
       || ''
     invoiceMeta.managerPhone = releaseVehicle.manager_phone || authStore.user?.phone || ''
+    invoiceMeta.receiptPrinterName = settings.receipt_printer_name || ''
     invoiceMeta.facilityDiscountAmount = facilityDiscountAmount
     invoiceMeta.customerDiscountAmount = customerDiscountAmount
     invoiceMeta.manualDiscountAmount = manualDiscountAmount
@@ -741,48 +745,29 @@ const downloadInvoicePdf = async () => {
   anchor.remove()
 }
 
-const collectPrintStyles = () => Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-  .map((node) => node.outerHTML)
-  .join('\n')
-
-const printInvoiceHtml = () => {
-  const source = invoiceTemplateRef.value
-  if (!source) return
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=920,height=1100')
-  if (!popup) {
-    invoiceErrorMessage.value = 'پنجره چاپ مسدود شد. اجازه پاپ‌آپ مرورگر را فعال کنید.'
+const printInvoiceHtml = async () => {
+  const printerName = String(invoiceMeta.receiptPrinterName || '').trim()
+  if (!printerName) {
+    invoiceErrorMessage.value = 'ابتدا در تنظیمات عمومی، پرینتر سیستم را انتخاب و ثبت کنید.'
     return
   }
-  const pageSize = invoiceIsThermal.value
-    ? `${invoiceThermalWidthMm.value}mm ${invoiceThermalHeightMm.value}mm`
-    : (invoiceLayout.preset === 'a5' ? 'A5' : 'A4')
-  const margins = Array.isArray(invoicePageMetrics.value.margin)
-    ? invoicePageMetrics.value.margin.map((value) => `${value}mm`).join(' ')
-    : '8mm'
-  popup.document.open()
-  popup.document.write(`<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-<head>
-  <meta charset="utf-8" />
-  <title>${invoiceFileLabel.value}</title>
-  ${collectPrintStyles()}
-  <style>
-    @page { size: ${pageSize}; margin: ${margins}; }
-    html, body { margin: 0; padding: 12px; background: #fff; }
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .invoice-template { margin: 0 auto; }
-  </style>
-</head>
-<body>${source.outerHTML}</body>
-</html>`)
-  popup.document.close()
-  const triggerPrint = () => {
-    try {
-      popup.focus()
-      popup.print()
-    } catch (_error) {}
+  invoiceErrorMessage.value = ''
+  const ready = invoicePdfUrl.value ? true : await buildInvoicePdf()
+  if (!ready || !invoicePdfUrl.value) {
+    invoiceErrorMessage.value = invoiceErrorMessage.value || 'ساخت فایل چاپ ناموفق بود.'
+    return
   }
-  window.setTimeout(triggerPrint, 350)
+  try {
+    invoiceGenerating.value = true
+    const response = await fetch(invoicePdfUrl.value)
+    const blob = await response.blob()
+    await printPdfBlobSilent(blob, printerName, `${invoiceFileLabel.value}.pdf`)
+  } catch (error) {
+    console.error('VehicleInvoiceModal silent print error:', error)
+    invoiceErrorMessage.value = resolveSilentPrintErrorMessage(error)
+  } finally {
+    invoiceGenerating.value = false
+  }
 }
 
 watch(

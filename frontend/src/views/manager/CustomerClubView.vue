@@ -840,6 +840,7 @@ import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInpu
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
 import { hasFeatureAccess } from '../../utils/attendanceAccess'
+import { normalizeIranMobile as normalizePhone } from '../../utils/phone'
 import { sectionHelpByPage } from '../../config/pageHelp'
 import actionViewIcon from '../../assets/iconly/show.svg'
 import actionGroupIcon from '../../assets/iconly/category.svg'
@@ -1188,10 +1189,6 @@ const confirmCustomerImport = async () => {
     customerImport.submitting = false
   }
 }
-
-const normalizePhone = (value) => String(value || '')
-  .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
-  .replace(/[^\d+]/g, '')
 
 const unique = (items) => [...new Set(items.filter(Boolean))]
 

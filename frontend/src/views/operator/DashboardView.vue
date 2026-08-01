@@ -505,7 +505,7 @@
                 <strong>{{ formatMoney(releaseSummary.carwashShare) }}</strong>
               </p>
             </div>
-            <p class="summary-final"><span>جمع کل</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
+            <p class="summary-final"><span>مبلغ نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             
             <div class="release-actions">
               <button type="button" class="back-btn" @click="closeReleaseModal">انصراف</button>
@@ -738,8 +738,8 @@
               <button type="button" class="secondary-btn" :disabled="invoiceGenerating" @click="downloadInvoicePdf">
                 {{ invoiceGenerating ? 'در حال ساخت PDF...' : 'دانلود PDF' }}
               </button>
-              <button type="button" class="secondary-btn" @click="printInvoiceHtml">
-                چاپ
+              <button type="button" class="secondary-btn" :disabled="invoiceGenerating" @click="printInvoiceHtml">
+                {{ invoiceGenerating ? 'در حال چاپ...' : 'چاپ' }}
               </button>
             </div>
           </div>
@@ -758,7 +758,7 @@
               <p><span>تاریخ:</span><strong>{{ invoiceIssuedAt }}</strong></p>
               <p><span>تعداد مراجعه:</span><strong>{{ Number(releaseForm.customerLoyaltyVisitCount || 0).toLocaleString('fa-IR') }}</strong></p>
               <p><span>امتیاز:</span><strong>{{ invoiceCustomerScoreLabel }}</strong></p>
-              <p><span>شماره تیپ:</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
+              <p><span>تیپ نرخنامه:</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
               <p><span>مدل خودرو:</span><strong>{{ invoiceVehicleTitle }}</strong></p>
               <p><span>پلاک:</span><strong>{{ invoicePlateLabel }}</strong></p>
               <p><span>مشتری:</span><strong>{{ invoiceCustomerDisplayName }}</strong></p>
@@ -789,7 +789,7 @@
               <p><span>جمع کل</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
               <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
-              <p><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
+              <p v-if="releaseSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
               <p class="thermal-payable-total"><span>قیمت نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </section>
 
@@ -812,7 +812,7 @@
             <div class="invoice-sheet-meta">
               <strong>{{ invoiceCarwashTitle }}</strong>
               <span>تاریخ صدور: {{ invoiceIssuedAt }}</span>
-              <span>شماره تیپ: {{ invoiceTariffTypeNumber }}</span>
+              <span>تیپ نرخنامه: {{ invoiceTariffTypeNumber }}</span>
             </div>
           </header>
 
@@ -890,7 +890,7 @@
               <strong>جزئیات پرداخت</strong>
             </div>
             <div class="invoice-payment-grid">
-              <p><span>شماره تیپ</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
+              <p><span>تیپ نرخنامه</span><strong>{{ invoiceTariffTypeNumber }}</strong></p>
               <p><span>وضعیت</span><strong>{{ invoicePaymentStatusLabel }}</strong></p>
               <p v-if="releasePaymentBreakdownLabel"><span>پرداخت ترکیبی</span><strong>{{ releasePaymentBreakdownLabel }}</strong></p>
               <p v-if="invoiceDueDateLabel"><span>سررسید</span><strong>{{ invoiceDueDateLabel }}</strong></p>
@@ -909,7 +909,7 @@
               <p v-if="releaseSummary.manualDiscountAmount > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(releaseSummary.manualDiscountAmount) }}</strong></p>
               <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
-              <p><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
+              <p v-if="releaseSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
               <p class="invoice-grand-total"><span>قیمت نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </div>
           </section>
@@ -947,7 +947,8 @@ import api from '../../services/api'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
-import { buildPlateNumber, isAnonymousPlate, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
+import { buildPlateNumber, isAnonymousPlate, isValidIranMobile, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
+import { printPdfBlobSilent, resolveSilentPrintErrorMessage } from '../../utils/receiptPrinter'
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -1040,7 +1041,8 @@ const releaseForm = ref({
   carwashAddress: '',
   managerPhone: '',
   receiptPrinterPaperWidth: '80mm',
-  receiptPrintCopies: 1,
+  receiptPrinterName: '',
+  receiptPrinterEnabled: false,
   bonusPenaltyAdjustments: [],
   bonusPenaltyNote: '',
   smsNotificationsEnabled: true,
@@ -1600,7 +1602,7 @@ const assignedWorkersLabel = (job) => {
 const hasCompletedStepOneData = (source = {}) => {
   const isPieceWash = Boolean(source.is_piece_wash)
   const isAnonymous = isAnonymousPlate(source)
-  const hasPhone = normalizeDigits(source.driver_phone).length === 11
+  const hasPhone = isValidIranMobile(source.driver_phone)
   if (isPieceWash) return hasPhone
   if (isAnonymous) {
     return hasPhone
@@ -2277,7 +2279,8 @@ const openReleaseModal = async (car) => {
       carwashAddress: data?.vehicle?.tenant_address || authStore.user?.tenant?.address || '',
       managerPhone: data?.vehicle?.manager_phone || authStore.user?.phone || '',
       receiptPrinterPaperWidth: settingsResponse?.data?.receipt_printer_paper_width || '80mm',
-      receiptPrintCopies: Math.max(1, Number(settingsResponse?.data?.receipt_print_copies || 1)),
+      receiptPrinterName: settingsResponse?.data?.receipt_printer_name || '',
+      receiptPrinterEnabled: Boolean(settingsResponse?.data?.receipt_printer_enabled),
       taxEnabled: Boolean(settingsResponse?.data?.tax_enabled),
       taxPercent: Number(settingsResponse?.data?.tax_percent || 0),
       bonusPenaltyAdjustments: [],
@@ -2785,46 +2788,32 @@ const downloadInvoicePdf = async () => {
   anchor.click()
   anchor.remove()
 }
-const collectPrintStyles = () => Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-  .map((node) => node.outerHTML)
-  .join('\n')
-const printInvoiceHtml = () => {
-  const source = invoiceTemplateRef.value
-  if (!source) return
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=920,height=1100')
-  if (!popup) {
-    invoiceErrorMessage.value = 'پنجره چاپ مسدود شد. اجازه پاپ‌آپ مرورگر را فعال کنید.'
+const printInvoiceHtml = async () => {
+  const printerName = String(releaseForm.value.receiptPrinterName || '').trim()
+  if (!printerName) {
+    invoiceErrorMessage.value = 'ابتدا در تنظیمات عمومی، پرینتر سیستم را انتخاب و ثبت کنید.'
+    notifyWarning(invoiceErrorMessage.value, { title: 'پرینتر انتخاب نشده' })
     return
   }
-  const pageSize = invoiceIsThermal.value
-    ? `${invoiceLayout.value.thermalWidthMm}mm ${invoiceLayout.value.thermalHeightMm}mm`
-    : (invoiceLayout.value.preset === 'a5' ? 'A5' : 'A4')
-  const margins = Array.isArray(invoicePageMetrics.value.margin)
-    ? invoicePageMetrics.value.margin.map((value) => `${value}mm`).join(' ')
-    : '8mm'
-  popup.document.open()
-  popup.document.write(`<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-<head>
-  <meta charset="utf-8" />
-  <title>${invoiceFileLabel.value}</title>
-  ${collectPrintStyles()}
-  <style>
-    @page { size: ${pageSize}; margin: ${margins}; }
-    html, body { margin: 0; padding: 12px; background: #fff; }
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .invoice-template { margin: 0 auto; }
-  </style>
-</head>
-<body>${source.outerHTML}</body>
-</html>`)
-  popup.document.close()
-  window.setTimeout(() => {
-    try {
-      popup.focus()
-      popup.print()
-    } catch (_error) {}
-  }, 350)
+  invoiceErrorMessage.value = ''
+  const ready = invoicePdfUrl.value ? true : await buildInvoicePdf()
+  if (!ready || !invoicePdfUrl.value) {
+    invoiceErrorMessage.value = invoiceErrorMessage.value || 'ساخت فایل چاپ ناموفق بود.'
+    return
+  }
+  try {
+    invoiceGenerating.value = true
+    const response = await fetch(invoicePdfUrl.value)
+    const blob = await response.blob()
+    await printPdfBlobSilent(blob, printerName, `${invoiceFileLabel.value}.pdf`)
+    notifySuccess(`فیش روی «${printerName}» ارسال شد.`, { title: 'چاپ مستقیم' })
+  } catch (error) {
+    console.error('printInvoiceHtml silent error:', error)
+    invoiceErrorMessage.value = resolveSilentPrintErrorMessage(error)
+    notifyError(invoiceErrorMessage.value, { title: 'چاپ مستقیم ناموفق' })
+  } finally {
+    invoiceGenerating.value = false
+  }
 }
 const confirmReleaseVehicle = async () => {
   if (!releaseCandidate.value?.id) return

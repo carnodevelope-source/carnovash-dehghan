@@ -20,6 +20,7 @@ DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE = (
     '---------------\n'
     'جمع کل: [جمع کل]\n'
     'تخفیف این سفارش: [جمع تخفیف]\n'
+    'مالیات: [مالیات]\n'
     'مبلغ نهایی: [مبلغ نهایی]\n'
     'خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.\n'
     'از اعتماد شما سپاسگزاریم'
@@ -34,6 +35,7 @@ DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE = (
     'تعداد دفعات مراجعه: [تعداد مراجعات]\n'
     'انعام: [انعام]\n'
     'جمع تخفیف: [جمع تخفیف]\n'
+    'مالیات: [مالیات]\n'
     'مبلغ نهایی: [مبلغ نهایی]\n'
     'به امید دیدار مجدد'
 )
@@ -45,13 +47,15 @@ def order_assignment_financial_lines(text):
     if services_index < 0:
         return '\n'.join(lines)
 
-    financial_lines = {'total': None, 'discount': None, 'final': None}
+    financial_lines = {'total': None, 'discount': None, 'tax': None, 'final': None}
     remaining = []
     for line in lines:
         if '[جمع کل]' in line or '[جمع نرخ نامه]' in line:
             financial_lines['total'] = line
         elif '[جمع تخفیف]' in line:
             financial_lines['discount'] = line
+        elif '[مالیات]' in line:
+            financial_lines['tax'] = line
         elif '[مبلغ نهایی]' in line:
             financial_lines['final'] = line
         else:
@@ -65,6 +69,7 @@ def order_assignment_financial_lines(text):
     ordered_financials = [line for line in (
         financial_lines['total'],
         financial_lines['discount'],
+        financial_lines['tax'],
         financial_lines['final'],
     ) if line]
     remaining[insert_at:insert_at] = ordered_financials
@@ -109,6 +114,8 @@ def normalize_vehicle_assigned_sms_template(template):
         insertions.append('جمع کل: [جمع کل]')
     if '[جمع تخفیف]' not in text:
         insertions.append('تخفیف این سفارش: [جمع تخفیف]')
+    if '[مالیات]' not in text:
+        insertions.append('مالیات: [مالیات]')
     if '[مبلغ نهایی]' not in text:
         insertions.append('مبلغ نهایی: [مبلغ نهایی]')
     if 'آماده ترخیص' not in text:
@@ -138,6 +145,8 @@ def normalize_vehicle_released_sms_template(template):
         insertions.append('تعداد دفعات مراجعه: [تعداد مراجعات]')
     if '[انعام]' not in text:
         insertions.append('انعام: [انعام]')
+    if '[مالیات]' not in text:
+        insertions.append('مالیات: [مالیات]')
     if not insertions:
         return text
 

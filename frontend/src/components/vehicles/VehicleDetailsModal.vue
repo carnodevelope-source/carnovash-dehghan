@@ -78,7 +78,8 @@
             <p><span>تخفیف دستی</span><strong>{{ formatMoney(vehicle.job?.manual_discount_total) }}</strong></p>
             <p><span>جمع تخفیف</span><strong>{{ formatMoney(vehicle.job?.total_discount || vehicle.job?.discount_total) }}</strong></p>
             <p><span>انعام</span><strong>{{ formatMoney(vehicle.job?.tip_amount) }}</strong></p>
-            <p><span>مالیات</span><strong>{{ formatMoney(vehicle.job?.tax_total) }}</strong></p>
+            <p v-if="Number(vehicle.job?.tax_total || 0) > 0"><span>مالیات</span><strong>{{ formatMoney(vehicle.job?.tax_total) }}</strong></p>
+            <p><span>مبلغ نهایی</span><strong>{{ formatMoney(vehicle.job?.final_total) }}</strong></p>
           </div>
         </section>
 

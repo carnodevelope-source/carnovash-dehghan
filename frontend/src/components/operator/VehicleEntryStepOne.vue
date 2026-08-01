@@ -144,11 +144,12 @@
               </button>
             </div>
           </label>
-          <label class="field">
-            <span>شماره تماس</span>
-            <input v-model="form.mobile" dir="ltr" placeholder="0912..." @input="onlyDigits('mobile')" />
-            <small v-if="form.mobile && !isPhoneValid" class="field-error">شماره تماس باید دقیقا 11 رقم و با 09 شروع شود.</small>
-          </label>
+          <BasePhoneInput
+            v-model="form.mobile"
+            label="شماره تماس"
+            :required="true"
+            hint="برای ادامه، شماره باید با ۰۹ شروع شود و ۱۱ رقم باشد"
+          />
         </div>
 
         <section v-if="!form.isPieceWash && isMobileViewport" class="tariff-type-row mobile-tariff-row" aria-label="شماره تیپ">
@@ -202,7 +203,10 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
 import PlateBadge from '../vehicles/PlateBadge.vue'
 import PlateEditor from '../vehicles/PlateEditor.vue'
+import BasePhoneInput from '../base/BasePhoneInput.vue'
 import { buildPlateNumber, getAmbiguousLetterSuggestions, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
+import { askCameraDeniedHelp, askCameraPermission } from '../../utils/permissionPrompt'
+import { notifyWarning } from '../../utils/notify'
 import {
   defaultTariffType,
   normalizeTariffType,
@@ -466,15 +470,30 @@ const startCamera = async ({ silent = false } = {}) => {
     if (!navigator.mediaDevices?.getUserMedia) {
       if (!silent) {
         setCameraMessage('دسترسی مستقیم به دوربین در این مرورگر فعال نیست. از گزینه دوربین گوشی / عکس استفاده کنید.', true)
+        notifyWarning('این مرورگر دوربین زنده را پشتیبانی نمی‌کند. از گزینه عکس استفاده کنید.', { title: 'دوربین' })
       }
       return
     }
     if (!canUseLiveCamera) {
       if (!silent) {
         setCameraMessage('برای دوربین زنده روی گوشی باید سایت با HTTPS باز شود. فعلاً از گزینه دوربین گوشی / عکس استفاده کنید.', true)
+        notifyWarning('برای دوربین زنده، سایت باید با HTTPS باز شود.', { title: 'دوربین' })
       }
       return
     }
+
+    if (!silent) {
+      const decision = await askCameraPermission()
+      if (decision.secondary) {
+        cameraFileInputRef.value?.click()
+        return
+      }
+      if (!decision.confirmed) {
+        setCameraMessage('برای فعال شدن دوربین، دکمه «باز کردن دوربین» را بزنید و دسترسی را تأیید کنید.')
+        return
+      }
+    }
+
     stopCamera()
     const stream = await requestCameraStream()
     cameraStream.value = stream
@@ -487,8 +506,39 @@ const startCamera = async ({ silent = false } = {}) => {
     cameraState.active = true
     setCameraMessage('دوربین آماده است. هر وقت روی تصویر کلیک کنید همان لحظه پلاک خوانده می‌شود.')
   } catch (error) {
-    stopCamera()
-    if (!silent) setCameraMessage(cameraErrorMessage(error), true)
+    console.error('startCamera error:', error)
+    if (silent) return
+    const denied = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(String(error?.name || ''))
+    setCameraMessage(cameraErrorMessage(error), true)
+    if (denied) {
+      const decision = await askCameraDeniedHelp()
+      if (decision.confirmed) {
+        await startCamera({ silent: false })
+        return
+      }
+      if (decision.secondary) {
+        cameraFileInputRef.value?.click()
+        return
+      }
+      notifyWarning(cameraErrorMessage(error), {
+        title: 'دسترسی دوربین',
+        duration: 12000,
+        actions: [
+          {
+            label: 'تلاش دوباره',
+            tone: 'primary',
+            onClick: () => startCamera({ silent: false })
+          },
+          {
+            label: 'انتخاب عکس',
+            tone: 'secondary',
+            onClick: () => cameraFileInputRef.value?.click()
+          }
+        ]
+      })
+      return
+    }
+    notifyWarning(cameraErrorMessage(error), { title: 'دوربین' })
   }
 }
 
@@ -905,10 +955,9 @@ onMounted(async () => {
     setCameraMessage('برای فعال شدن دوربین زنده در موبایل باید سایت را با HTTPS باز کنید. در این حالت از گزینه دوربین گوشی / عکس استفاده کنید.', true)
     return
   }
-  // Auto-open only silently: many mobile browsers need a tap before they show the permission prompt.
-  await startCamera({ silent: true })
+  // Don't auto-request camera: browsers only show permission after a real user click.
   if (!cameraState.active) {
-    setCameraMessage('برای فعال شدن دوربین، دکمه «باز کردن دوربین» را بزنید.')
+    setCameraMessage('برای تشخیص پلاک، روی «باز کردن دوربین» بزنید؛ پنجره تأیید دسترسی نمایش داده می‌شود.')
   }
 })
 
