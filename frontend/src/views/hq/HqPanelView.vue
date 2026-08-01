@@ -473,6 +473,15 @@
               <button
                 type="button"
                 class="ticket-stat urgent"
+                :class="{ active: ticketScope === 'wallet' }"
+                @click="ticketScope = 'wallet'"
+              >
+                <small>برداشت/شارژ</small>
+                <strong>{{ toFa(ticketSummaryCards.find((item) => item.key === 'wallet')?.value || 0) }}</strong>
+              </button>
+              <button
+                type="button"
+                class="ticket-stat urgent"
                 :class="{ active: ticketScope === 'urgent' }"
                 @click="ticketScope = 'urgent'"
               >
@@ -569,7 +578,11 @@
                 <strong>{{ item.subject }}</strong>
                 <span class="ticket-row-status" :class="`is-${item.status}`">{{ statusLabel(item.status) }}</span>
               </div>
-              <p>{{ item.last_message_preview || item.message }}</p>
+              <p>
+                <span v-if="isWalletBankWithdrawalTicket(item)" class="ticket-wallet-flag withdraw">برداشت</span>
+                <span v-else-if="isWalletCardPaymentTicket(item)" class="ticket-wallet-flag charge">شارژ</span>
+                {{ item.last_message_preview || item.message }}
+              </p>
               <div class="ticket-row-foot">
                 <span>{{ item.tenant_name || 'بدون کارواش' }}</span>
                 <span>{{ item.assigned_to_name || 'بدون مسئول' }}</span>
@@ -1674,7 +1687,7 @@ const createForm = reactive({
 const tickets = ref([])
 const selectedTicket = ref(null)
 const ticketQuery = ref('')
-const ticketStatus = ref('all')
+const ticketStatus = ref('open')
 const ticketPriority = ref('all')
 const ticketTenantId = ref('')
 const ticketScope = ref('all')
@@ -1766,8 +1779,24 @@ const reportCarwashes = computed(() => filteredCarwashes.value.filter((item) => 
 const selectedCarwashInsight = computed(() => carwashInsight.data)
 
 const teamAssignable = computed(() => hqTeam.value.filter((item) => ['hq_admin', 'hq_support'].includes(item.platform_role)))
+const isWalletCardPaymentTicket = (ticket) => {
+  const text = `${ticket?.subject || ''}\n${ticket?.message || ''}`.toLowerCase()
+  return text.includes('wallet-card-payment') || (text.includes('کارت به کارت') && text.includes('کیف پول'))
+}
+const isWalletBankWithdrawalTicket = (ticket) => {
+  const text = [
+    ticket?.subject || '',
+    ticket?.message || '',
+    ...(Array.isArray(ticket?.messages) ? ticket.messages.map((item) => item?.body || '') : [])
+  ].join('\n').toLowerCase()
+  if (text.includes('wallet-bank-withdrawal')) return true
+  if (text.includes('درخواست برداشت از کیف پول')) return true
+  return text.includes('برداشت') && text.includes('کیف پول') && (text.includes('شبا') || text.includes('بانک') || text.includes('iban'))
+}
+const isWalletOperationTicket = (ticket) => isWalletCardPaymentTicket(ticket) || isWalletBankWithdrawalTicket(ticket)
 const ticketScopeOptions = computed(() => [
   { key: 'all', label: 'همه تیکت‌ها' },
+  { key: 'wallet', label: 'برداشت / شارژ' },
   { key: 'unassigned', label: 'بدون مسئول' },
   { key: 'mine', label: 'ارجاع به من' },
   { key: 'urgent', label: 'فوری' }
@@ -1783,11 +1812,13 @@ const ticketSummaryCards = computed(() => {
     if (!item.assigned_to) acc.unassigned += 1
     if (Number(item.assigned_to || 0) === Number(authStore.user?.id || 0)) acc.mine += 1
     if (['urgent', 'high'].includes(item.priority)) acc.urgent += 1
+    if (isWalletOperationTicket(item)) acc.wallet += 1
     return acc
-  }, { total: 0, open: 0, pending: 0, answered: 0, closed: 0, unassigned: 0, mine: 0, urgent: 0 })
+  }, { total: 0, open: 0, pending: 0, answered: 0, closed: 0, unassigned: 0, mine: 0, urgent: 0, wallet: 0 })
   const activeCount = counts.open + counts.pending + counts.answered
   return [
     { key: 'open', label: 'باز / مشترک', value: activeCount, tone: 'open' },
+    { key: 'wallet', label: 'برداشت / شارژ', value: counts.wallet, tone: 'urgent' },
     { key: 'unassigned', label: 'بدون مسئول', value: counts.unassigned, tone: 'pending' },
     { key: 'mine', label: 'ارجاع به من', value: counts.mine, tone: 'mine' },
     { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' }
@@ -1800,13 +1831,23 @@ const activeTicketScopeLabel = computed(() => {
 })
 const visibleTickets = computed(() => {
   const items = Array.isArray(tickets.value) ? tickets.value : []
-  return items.filter((item) => {
+  const filtered = items.filter((item) => {
     if (!authStore.isHqAdmin && item.status === 'closed') return false
     if (!authStore.isHqAdmin && ticketScope.value === 'answered') return item.status === 'answered'
     if (ticketScope.value === 'mine') return Number(item.assigned_to || 0) === Number(authStore.user?.id || 0)
     if (ticketScope.value === 'urgent') return ['urgent', 'high'].includes(item.priority)
     if (ticketScope.value === 'unassigned') return !item.assigned_to
+    if (ticketScope.value === 'wallet') return isWalletOperationTicket(item)
     return true
+  })
+  return filtered.sort((a, b) => {
+    const aWallet = isWalletOperationTicket(a) && a.status !== 'closed' ? 1 : 0
+    const bWallet = isWalletOperationTicket(b) && b.status !== 'closed' ? 1 : 0
+    if (bWallet !== aWallet) return bWallet - aWallet
+    const aUrgent = ['urgent', 'high'].includes(a.priority) ? 1 : 0
+    const bUrgent = ['urgent', 'high'].includes(b.priority) ? 1 : 0
+    if (bUrgent !== aUrgent) return bUrgent - aUrgent
+    return new Date(b.last_message_at || b.created_at || 0) - new Date(a.last_message_at || a.created_at || 0)
   })
 })
 const selectedTicketLastResponder = computed(() => {
@@ -2129,18 +2170,6 @@ const extractWalletTransferAmount = (ticket) => {
   }
   return 0
 }
-const isWalletCardPaymentTicket = (ticket) => {
-  const text = `${ticket?.subject || ''}\n${ticket?.message || ''}`.toLowerCase()
-  return text.includes('wallet-card-payment') || (text.includes('کارت به کارت') && text.includes('کیف پول'))
-}
-const isWalletBankWithdrawalTicket = (ticket) => {
-  const text = `${ticket?.subject || ''}\n${ticket?.message || ''}`.toLowerCase()
-  return (
-    text.includes('wallet-bank-withdrawal')
-    || (text.includes('برداشت') && text.includes('کیف پول') && (text.includes('شبا') || text.includes('بانک') || text.includes('iban')))
-  )
-}
-const isWalletOperationTicket = (ticket) => isWalletCardPaymentTicket(ticket) || isWalletBankWithdrawalTicket(ticket)
 const walletOperationButtonLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'تایید و کسر از کیف پول' : 'انتقال پول')
 const walletOperationSubmittingLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'در حال کسر...' : 'در حال انتقال...')
 const walletOperationHint = computed(() => (
@@ -6730,6 +6759,27 @@ td strong {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.ticket-wallet-flag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
+.ticket-wallet-flag.withdraw {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+.ticket-wallet-flag.charge {
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
 }
 
 .ticket-row-foot {

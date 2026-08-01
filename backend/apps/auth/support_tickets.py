@@ -35,10 +35,16 @@ def is_wallet_card_payment_ticket(ticket):
 
 def is_wallet_bank_withdrawal_ticket(ticket):
     text = f'{getattr(ticket, "subject", "")}\n{getattr(ticket, "message", "")}'.lower()
+    if 'wallet-bank-withdrawal' in text:
+        return True
+    if 'درخواست برداشت از کیف پول' in text:
+        return True
     return (
-        'wallet-bank-withdrawal' in text
-        or ('برداشت' in text and 'کیف پول' in text and ('شبا' in text or 'بانک' in text or 'iban' in text))
+        'برداشت' in text
+        and 'کیف پول' in text
+        and ('شبا' in text or 'بانک' in text or 'iban' in text)
     )
+
 
 def is_payment_support_ticket(ticket):
     """Payment deposit (card-to-card) or bank withdrawal tickets that need SMS alerts."""
@@ -63,13 +69,17 @@ def hq_ticket_visibility_q(user):
 
 def apply_hq_ticket_visibility(queryset, user):
     """
-    All HQ admins and HQ support agents can see every ticket (for shared supervision).
+    All HQ staff can see every ticket (for shared supervision).
     Claim/referral only marks who is responsible to reply; it does not hide the ticket.
     """
-    if getattr(user, 'platform_role', None) in (
+    role = getattr(user, 'platform_role', None) or ''
+    username = getattr(user, 'username', '') or ''
+    if role in (
         User.PlatformRoles.HQ_ADMIN,
         User.PlatformRoles.HQ_SUPPORT,
-    ):
+        User.PlatformRoles.HQ_PROJECT_MANAGER,
+        User.PlatformRoles.HQ_FINANCE,
+    ) or username in {'karimi', 'dehestani'}:
         return queryset
     return queryset.filter(hq_ticket_visibility_q(user)).distinct()
 

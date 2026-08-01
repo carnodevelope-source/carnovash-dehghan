@@ -1024,7 +1024,7 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
             subject='درخواست برداشت از کیف پول به حساب بانکی',
             message=message,
             category=SupportTicket.Category.FINANCIAL,
-            priority=SupportTicket.Priority.HIGH,
+            priority=SupportTicket.Priority.URGENT,
             status=SupportTicket.Status.OPEN,
             assigned_to=None,
             last_message_at=now,
@@ -1034,7 +1034,17 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
             sender=user if getattr(user, 'is_authenticated', False) else None,
             body=message,
         )
-        send_payment_ticket_sms_to_simple_supporters(ticket)
+        ticket_id = ticket.id
+
+        def _notify():
+            try:
+                fresher = SupportTicket.objects.filter(pk=ticket_id).first()
+                if fresher:
+                    send_payment_ticket_sms_to_simple_supporters(fresher)
+            except Exception as exc:
+                print(f'withdraw ticket sms failed: {exc}')
+
+        transaction.on_commit(_notify)
         return ticket
 
     def post(self, request):

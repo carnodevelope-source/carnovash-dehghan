@@ -1295,7 +1295,9 @@ class HqTicketListView(HqBaseView):
             .order_by('-last_message_at', '-created_at')
         )
         queryset = apply_hq_ticket_visibility(queryset, request.user)
-        if status_filter == SupportTicket.Status.OPEN:
+        if status_filter == 'active':
+            queryset = queryset.exclude(status=SupportTicket.Status.CLOSED)
+        elif status_filter == SupportTicket.Status.OPEN:
             queryset = queryset.exclude(status=SupportTicket.Status.CLOSED)
         elif status_filter in {choice[0] for choice in SupportTicket.Status.choices}:
             queryset = queryset.filter(status=status_filter)
