@@ -211,8 +211,36 @@ def _build_export_config(tab_key):
         'revenue': {'filename': 'revenue-report', 'headers': [('row', 'ردیف'), ('created_at', 'تاریخ'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل خودرو'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('payment_method', 'روش پرداخت'), ('payment_status', 'وضعیت پرداخت'), ('service_amount', 'خدمات'), ('product_amount', 'محصولات'), ('discount_amount', 'تخفیف'), ('tip_amount', 'انعام'), ('tax_amount', 'مالیات'), ('final_total', 'مبلغ نهایی'), ('received_amount', 'وصول شده'), ('outstanding_amount', 'مانده'), ('cheque_number', 'شماره چک'), ('reminder_due_at', 'سررسید')], 'rows_key': 'revenue_report'},
         'attendance': {'filename': 'attendance-report', 'headers': [('row', 'ردیف'), ('worker_name', 'نام پرسنل'), ('event_type', 'نوع رویداد'), ('source', 'منبع ثبت'), ('event_at', 'زمان')], 'rows_key': 'attendance_report'},
         'blacklist': {'filename': 'blacklist-report', 'headers': [('row', 'ردیف'), ('plate_number', 'پلاک'), ('plate_type', 'نوع وسیله'), ('note', 'توضیح'), ('blocked_by_name', 'ثبت کننده'), ('created_at', 'تاریخ ثبت')], 'rows_key': 'blacklist_report'},
+        'discount': {
+            'filename': 'discount-report',
+            'headers': [
+                ('row', 'ردیف'),
+                ('driver_name', 'نام راننده'),
+                ('driver_phone', 'شماره'),
+                ('plate_number', 'پلاک'),
+                ('facility_discount_total', 'تخفیف مجموعه'),
+                ('loyalty_discount_total', 'تخفیف امتیاز مشتری'),
+                ('manual_discount_total', 'تخفیف دستی'),
+                ('discount_total', 'جمع تخفیف'),
+                ('created_at', 'تاریخ'),
+            ],
+            'rows_key': 'discount_report',
+        },
     }
     return configs.get(tab_key, configs['overall'])
+
+
+def _job_discount_total(job):
+    if not job:
+        return Decimal('0')
+    total = _normalize_decimal(getattr(job, 'total_discount', 0) or getattr(job, 'discount_total', 0))
+    if total > 0:
+        return total
+    return (
+        _normalize_decimal(getattr(job, 'facility_discount_total', 0))
+        + _normalize_decimal(getattr(job, 'loyalty_discount_total', 0))
+        + _normalize_decimal(getattr(job, 'manual_discount_total', 0))
+    )
 
 
 def _worker_name(worker):
@@ -684,12 +712,15 @@ class ReportsDashboardView(APIView):
                 'worker_share': float(job.worker_share_amount) if job else 0,
                 'bonus_total': float(job_adjustments['bonus_total']),
                 'penalty_total': float(job_adjustments['penalty_total']),
-                'discount_total': float(job.discount_total) if job else 0,
+                'discount_total': float(_job_discount_total(job)),
+                'facility_discount_total': float(_normalize_decimal(getattr(job, 'facility_discount_total', 0))) if job else 0,
+                'loyalty_discount_total': float(_normalize_decimal(getattr(job, 'loyalty_discount_total', 0))) if job else 0,
+                'manual_discount_total': float(_normalize_decimal(getattr(job, 'manual_discount_total', 0))) if job else 0,
                 'tax_total': float(job.tax_total) if job else 0,
                 'service_total': float(job.services_total) if job else 0,
                 'final_total': float(job.final_total) if job else 0,
                 'final_total_without_tip': float(max(Decimal('0'), _normalize_decimal(job.final_total) - _normalize_decimal(job.tip_amount))) if job else 0,
-                'before_discount_total': float((job.final_total or 0) + (job.discount_total or 0)) if job else 0,
+                'before_discount_total': float((_normalize_decimal(job.final_total) + _job_discount_total(job))) if job else 0,
                 'tip_amount': float(job.tip_amount) if job else 0,
                 'worker_name': _job_worker_names(job),
                 'products': ', '.join(product_names),
@@ -704,7 +735,13 @@ class ReportsDashboardView(APIView):
 
         all_jobs = [vehicle.job for vehicle in vehicles if getattr(vehicle, 'job', None)]
         total_carwash = sum((_normalize_decimal(getattr(job, 'carwash_share_amount', 0)) for job in all_jobs), Decimal('0'))
-        total_discount = sum((_normalize_decimal(getattr(job, 'discount_total', 0)) for job in all_jobs), Decimal('0'))
+        total_discount = sum((_job_discount_total(job) for job in all_jobs), Decimal('0'))
+        total_facility_discount = sum((_normalize_decimal(getattr(job, 'facility_discount_total', 0)) for job in all_jobs), Decimal('0'))
+        total_loyalty_discount = sum((_normalize_decimal(getattr(job, 'loyalty_discount_total', 0)) for job in all_jobs), Decimal('0'))
+        total_manual_discount = sum((_normalize_decimal(getattr(job, 'manual_discount_total', 0)) for job in all_jobs), Decimal('0'))
+        loyalty_discount_count = sum(
+            1 for job in all_jobs if _normalize_decimal(getattr(job, 'loyalty_discount_total', 0)) > 0
+        )
         total_tax = sum((_normalize_decimal(getattr(job, 'tax_total', 0)) for job in all_jobs), Decimal('0'))
         total_final = sum((_normalize_decimal(getattr(job, 'final_total', 0)) for job in all_jobs), Decimal('0'))
         total_before_discount = total_final + total_discount
@@ -804,6 +841,35 @@ class ReportsDashboardView(APIView):
             'products': r['products'],
             'created_at': r['created_at'],
         } for i, r in enumerate(rows)]
+
+        discount_report = []
+        for r in rows:
+            if (
+                _normalize_decimal(r.get('discount_total')) <= 0
+                and _normalize_decimal(r.get('loyalty_discount_total')) <= 0
+                and _normalize_decimal(r.get('facility_discount_total')) <= 0
+                and _normalize_decimal(r.get('manual_discount_total')) <= 0
+            ):
+                continue
+            discount_report.append({
+                'row': len(discount_report) + 1,
+                'vehicle_id': r['vehicle_id'],
+                'driver_name': r['driver_name'],
+                'driver_phone': r['driver_phone'],
+                'car_model': r['car_model'],
+                'car_color': r['car_color'],
+                'plate_number': r['plate_number'],
+                'plate_left': r['plate_left'],
+                'plate_letter': r['plate_letter'],
+                'plate_mid': r['plate_mid'],
+                'plate_right': r['plate_right'],
+                'plate_type': r['plate_type'],
+                'facility_discount_total': r['facility_discount_total'],
+                'loyalty_discount_total': r['loyalty_discount_total'],
+                'manual_discount_total': r['manual_discount_total'],
+                'discount_total': r['discount_total'],
+                'created_at': r['created_at'],
+            })
 
         revenue_report = []
         revenue_total = Decimal('0')
@@ -981,6 +1047,10 @@ class ReportsDashboardView(APIView):
                 'worker_total': float(total_worker),
                 'tips_total': float(total_tip),
                 'discount_total': float(total_discount),
+                'facility_discount_total': float(total_facility_discount),
+                'loyalty_discount_total': float(total_loyalty_discount),
+                'manual_discount_total': float(total_manual_discount),
+                'loyalty_discount_count': int(loyalty_discount_count),
                 'tax_total': float(total_tax),
                 'final_total': float(total_final),
                 'before_discount_total': float(total_before_discount),
@@ -997,6 +1067,10 @@ class ReportsDashboardView(APIView):
                     'worker_total': float(total_worker),
                     'tips_total': float(total_tip),
                     'discount_total': float(total_discount),
+                    'facility_discount_total': float(total_facility_discount),
+                    'loyalty_discount_total': float(total_loyalty_discount),
+                    'manual_discount_total': float(total_manual_discount),
+                    'loyalty_discount_count': int(loyalty_discount_count),
                     'tax_total': float(total_tax),
                     'final_total': float(total_final),
                     'before_discount_total': float(total_before_discount),
@@ -1010,6 +1084,14 @@ class ReportsDashboardView(APIView):
                     'penalty_total': float(all_workers_totals['penalty_total']),
                 },
                 'tips': {'tips_total': float(total_tip)},
+                'discount': {
+                    'discount_total': float(total_discount),
+                    'facility_discount_total': float(total_facility_discount),
+                    'loyalty_discount_total': float(total_loyalty_discount),
+                    'manual_discount_total': float(total_manual_discount),
+                    'loyalty_discount_count': int(loyalty_discount_count),
+                    'count': len(discount_report),
+                },
                 'attendance': {'count': len(attendance_rows)},
                 'blacklist': {'count': len(blacklist_rows)},
                 'revenue': {'revenue_total': float(revenue_total), 'count': len(revenue_report)},
@@ -1018,6 +1100,7 @@ class ReportsDashboardView(APIView):
             'carwash_report': carwash_report,
             'worker_report': worker_report,
             'tips_report': tips_report,
+            'discount_report': discount_report,
             'attendance_report': attendance_rows,
             'blacklist_report': blacklist_rows,
             'revenue_report': revenue_report,

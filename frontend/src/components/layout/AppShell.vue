@@ -1109,15 +1109,43 @@ onBeforeUnmount(() => {
   .sidebar nav,
   .premium-actions {
     display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     overflow: visible;
     padding-bottom: 0;
+  }
+
+  .premium-actions-label {
+    grid-column: 1 / -1;
+    margin: 4px 4px 0;
   }
 
   .menu-item,
   .menu-button {
     flex: unset;
     white-space: normal;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 88px;
+    padding: 12px 10px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  }
+
+  .menu-item-label {
+    flex: unset;
+    width: 100%;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .menu-warning-badge,
+  .menu-count-badge,
+  .locked-soon-badge {
+    align-self: flex-start;
   }
 
   .sidebar.mobile-open {
@@ -1148,8 +1176,8 @@ onBeforeUnmount(() => {
   }
 
   .menu-item {
-    padding: 10px 10px;
-    font-size: 13px;
+    padding: 12px 10px;
+    font-size: 12px;
   }
 
   .profile-button {
@@ -1297,7 +1325,7 @@ onBeforeUnmount(() => {
   }
 
   .menu-item {
-    padding: 10px 12px;
+    padding: 12px 10px;
     font-size: 12px;
   }
 

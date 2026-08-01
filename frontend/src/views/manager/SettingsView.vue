@@ -2293,11 +2293,23 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .settings-hero,
   .head-row,
   .head-actions,
-  .tabs-bar,
   .modal-actions,
   .general-settings-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .tabs-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .tabs-bar .chip {
+    width: 100%;
+    justify-content: center;
+    min-height: 42px;
+    border-radius: 12px;
   }
 
   .modal-form, .history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2319,6 +2331,6 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 @media (max-width: 640px) {
   .settings-hero { display: none; }
   .template-title-row { align-items: flex-start; }
-  .fixed-discount-grid { grid-template-columns: 1fr; }
+  .fixed-discount-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

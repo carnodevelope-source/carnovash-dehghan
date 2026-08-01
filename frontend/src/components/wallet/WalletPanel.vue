@@ -8,7 +8,7 @@
       <span v-if="state.licenseStatus.amount_due">مبلغ سررسید: {{ moneyWithUnit(state.licenseStatus.amount_due) }}</span>
     </section>
 
-    <section class="wallet-hero-shell">
+    <section class="wallet-overview">
       <aside class="wallet-shortcuts">
         <div class="shortcut-head">
           <h3>دسترسی سریع</h3>
@@ -24,16 +24,6 @@
             <span class="shortcut-icon">↗</span>
             <strong>{{ withdrawButtonTitle }}</strong>
             <small>{{ withdrawButtonCaption }}</small>
-          </button>
-          <button class="shortcut-card" type="button" @click="setFilter('deposit')">
-            <span class="shortcut-icon">↓</span>
-            <strong>واریزی‌ها</strong>
-            <small>{{ moneyWithUnit(state.summary.deposits_total) }}</small>
-          </button>
-          <button class="shortcut-card" type="button" @click="setFilter('withdraw')">
-            <span class="shortcut-icon">↑</span>
-            <strong>برداشت‌ها</strong>
-            <small>{{ moneyWithUnit(state.summary.withdrawals_total) }}</small>
           </button>
         </div>
       </aside>
@@ -59,27 +49,11 @@
           </div>
           <div class="hero-orb"></div>
         </div>
-
-        <div class="hero-actions">
-          <button class="hero-action hero-action-light" type="button" :disabled="!canDepositWalletAction || !hasDepositWallet" @click="openActionModal('deposit')">
-            شارژ حساب / واریز
-          </button>
-          <button
-            class="hero-action hero-action-ghost"
-            type="button"
-            :disabled="withdrawButtonDisabled"
-            @click="openActionModal('withdraw')"
-          >
-            {{ withdrawButtonTitle }}
-          </button>
-        </div>
       </section>
-    </section>
 
-    <section class="wallet-summary-board">
       <article class="summary-tile sms-tile" :class="{ low: smsLow }">
         <div class="sms-tile-head">
-          <small>موجودی پیامک</small>
+          <small><span class="sms-tile-mark">✉</span> موجودی پیامک</small>
           <span class="sms-state-pill" :class="{ low: smsLow }">{{ smsBalanceStateLabel }}</span>
         </div>
         <strong :class="{ danger: smsLow }">{{ moneyWithUnit(state.summary.sms_balance) }}</strong>
@@ -104,14 +78,17 @@
           </button>
         </div>
       </article>
-      <article class="summary-tile accent-tile">
-        <small>جمع واریزی‌ها</small>
-        <strong>{{ moneyWithUnit(state.summary.deposits_total) }}</strong>
-      </article>
-      <article class="summary-tile soft-tile">
-        <small>جمع برداشت‌ها</small>
-        <strong>{{ moneyWithUnit(state.summary.withdrawals_total) }}</strong>
-      </article>
+
+      <div class="summary-money-row">
+        <article class="summary-tile accent-tile">
+          <small>جمع واریزی‌ها</small>
+          <strong>{{ moneyWithUnit(state.summary.deposits_total) }}</strong>
+        </article>
+        <article class="summary-tile soft-tile">
+          <small>جمع برداشت‌ها</small>
+          <strong>{{ moneyWithUnit(state.summary.withdrawals_total) }}</strong>
+        </article>
+      </div>
     </section>
 
     <section v-if="regularLow || smsLow" class="warning-strip">
@@ -132,27 +109,53 @@
 
       <div class="options-grid">
         <article
-          v-for="option in state.options"
+          v-for="option in sortedWalletOptions"
           :key="option.feature_key"
           class="option-card"
-          :class="{ active: option.is_active, unavailable: option.is_available === false, locked: option.installment_is_locked }"
+          :class="{
+            active: option.is_active,
+            unavailable: option.is_available === false,
+            locked: option.installment_is_locked,
+            purchased: option.is_active && option.is_available !== false,
+            'not-purchased': !option.is_active && option.is_available !== false
+          }"
           :style="{ '--option-accent': option.accent || '#315f9f' }"
+          role="button"
+          tabindex="0"
+          @click="onOptionCardActivate(option)"
+          @keydown.enter.prevent="onOptionCardActivate(option)"
         >
           <div class="option-card-head">
             <div>
               <span class="option-kicker">{{ option.personalized_title }}</span>
               <h3>{{ option.title }}</h3>
             </div>
-            <span class="option-status" :class="{ enabled: option.is_active }">
-              {{ option.status_label || (option.is_active ? 'فعال' : 'قابل خرید') }}
+            <span
+              class="option-status"
+              :class="{
+                enabled: option.is_active && option.is_available !== false,
+                locked: option.installment_is_locked,
+                buyable: !option.is_active && option.is_available !== false
+              }"
+            >
+              {{ optionStatusText(option) }}
             </span>
           </div>
-          <p>{{ option.description }}</p>
-          <div v-if="option.is_available === false" class="option-unavailable-box">
+          <p class="option-card-desc">{{ option.description }}</p>
+          <div class="option-card-compact-meta">
+            <span v-if="option.is_active && option.is_available !== false">
+              پرداخت‌شده {{ moneyWithUnit(option.paid_amount) }}
+            </span>
+            <span v-else-if="option.is_available !== false">
+              از {{ moneyWithUnit(option.cash_amount || option.total_amount) }}
+            </span>
+            <span v-else>{{ option.unavailable_message || 'فعلا ارائه نمی‌شود' }}</span>
+          </div>
+          <div v-if="option.is_available === false" class="option-unavailable-box option-card-details">
             <strong>{{ option.status_label || 'در دسترس نمی‌باشد' }}</strong>
             <small>{{ option.unavailable_message || 'این آپشن هنوز ارائه نمی‌شود.' }}</small>
           </div>
-          <div v-if="option.is_active && option.is_available !== false" class="option-live-grid">
+          <div v-if="option.is_active && option.is_available !== false" class="option-live-grid option-card-details">
             <article class="option-live-stat">
               <span>شیوه پرداخت</span>
               <strong>{{ option.payment_plan_label || 'ثبت نشده' }}</strong>
@@ -173,7 +176,7 @@
                   type="button"
                   class="option-inline-pay-btn"
                   :disabled="payingInstallmentFeatureKey === option.feature_key"
-                  @click="submitNextInstallmentPayment(option)"
+                  @click.stop="submitNextInstallmentPayment(option)"
                 >
                   {{ payingInstallmentFeatureKey === option.feature_key ? 'در حال پرداخت...' : 'پرداخت' }}
                 </button>
@@ -181,7 +184,7 @@
               <strong>{{ option.next_installment_due_at ? formatShortDate(option.next_installment_due_at) : formatShortDate(option.purchased_at) }}</strong>
             </article>
           </div>
-          <div v-else-if="option.is_available !== false" class="option-price-stack">
+          <div v-else-if="option.is_available !== false" class="option-price-stack option-card-details">
             <div class="option-price-row">
               <span>قیمت نقدی</span>
               <strong>{{ moneyWithUnit(option.cash_amount) }}</strong>
@@ -192,11 +195,11 @@
               <small>پیش‌پرداخت: {{ moneyWithUnit(option.installment_upfront_amount) }}</small>
             </div>
           </div>
-          <div v-if="option.installment_is_locked" class="option-lock-note">
+          <div v-if="option.installment_is_locked" class="option-lock-note option-card-details">
             <strong>این بخش قفل شده است</strong>
             <small>{{ option.installment_lock_notice || 'قسط سررسید این آپشن پرداخت نشده است. برای باز شدن دسترسی، قسط را پرداخت کنید.' }}</small>
           </div>
-          <div v-if="option.is_active && option.is_available !== false" class="option-progress-block">
+          <div v-if="option.is_active && option.is_available !== false" class="option-progress-block option-card-details">
             <div class="option-progress-head">
               <span>پیشرفت پرداخت</span>
               <strong>{{ toFaPercent(option.progress_percent) }}</strong>
@@ -212,10 +215,10 @@
             <small v-else>این قابلیت برای این کارواش فعال است و از روی دیتابیس همین شعبه خوانده می‌شود.</small>
           </div>
           <button
-            class="option-buy-btn"
+            class="option-buy-btn option-card-details"
             type="button"
             :disabled="option.is_active || option.is_available === false"
-            @click="openOptionModal(option)"
+            @click.stop="openOptionModal(option)"
           >
             {{ option.is_available === false ? 'فعلا ارائه نمی‌شود' : option.is_active ? 'فعال شده' : 'انتخاب و خرید' }}
           </button>
@@ -252,7 +255,9 @@
 
       <div v-else class="tx-list">
         <article v-for="tx in filteredTransactions" :key="tx.id" class="tx-item">
-          <button class="tx-expand" type="button">‹</button>
+          <div class="tx-icon-box" :class="tx.direction === 'in' ? 'tx-icon-box-in' : 'tx-icon-box-out'">
+            {{ tx.direction === 'in' ? '↓' : '↑' }}
+          </div>
 
           <div class="tx-main">
             <div class="tx-title-row">
@@ -270,14 +275,9 @@
             </p>
           </div>
 
-          <div class="tx-value-col">
-            <strong class="tx-value" :class="tx.direction === 'in' ? 'tx-value-in' : 'tx-value-out'">
-              {{ tx.direction === 'in' ? '+' : '-' }}{{ moneyWithUnit(tx.amount) }}
-            </strong>
-            <div class="tx-icon-box" :class="tx.direction === 'in' ? 'tx-icon-box-in' : 'tx-icon-box-out'">
-              {{ tx.direction === 'in' ? '↓' : '↑' }}
-            </div>
-          </div>
+          <strong class="tx-value" :class="tx.direction === 'in' ? 'tx-value-in' : 'tx-value-out'">
+            {{ tx.direction === 'in' ? '+' : '-' }}{{ moneyWithUnit(tx.amount) }}
+          </strong>
         </article>
       </div>
     </section>
@@ -304,9 +304,6 @@
               <strong>{{ moneyWithUnit(activeWallet.balance) }}</strong>
               <p>موجودی فعلی کیف پول انتخاب‌شده</p>
             </div>
-            <span class="wallet-modal-highlight-badge">
-              {{ actionModal.type === 'deposit' ? 'شارژ' : 'برداشت' }}
-            </span>
           </div>
 
           <div v-if="actionModal.type === 'withdraw'" class="wallet-modal-section">
@@ -356,62 +353,35 @@
           <div class="wallet-modal-section">
             <div class="wallet-modal-section-head">
               <strong>{{ actionModal.type === 'deposit' ? 'انتخاب مبلغ واریز' : 'ثبت مبلغ برداشت' }}</strong>
-              <span>{{ actionModal.type === 'deposit' ? 'یکی از مبالغ پیشنهادی را انتخاب کنید' : 'می‌توانید مبلغ را دستی یا سریع وارد کنید' }}</span>
+              <span>ابتدا مبلغ دلخواه را وارد کنید، سپس در صورت نیاز از مبالغ سریع استفاده کنید</span>
             </div>
 
-            <label>
-              <span>{{ actionModal.type === 'deposit' ? 'مبلغ واریز (تومان)' : 'مبلغ (تومان)' }}</span>
-              <input
-                v-if="actionModal.type === 'withdraw'"
-                v-model="actionModal.amountText"
-                type="text"
-                inputmode="numeric"
-                placeholder="مثلاً 500,000"
-              />
-              <div v-else class="deposit-amount-block">
-                <div class="gateway-amounts">
-                  <button
-                    v-for="amount in dynamicDepositAmounts"
-                    :key="`deposit-${amount.value}`"
-                    type="button"
-                    :class="{ active: !depositCustomAmount && selectedDepositAmount === amount.value }"
-                    @click="setQuickAmount(amount.value)"
-                  >
-                    <strong>{{ moneyWithUnit(amount.value) }}</strong>
-                    <span>{{ amount.caption }}</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="deposit-custom-amount-btn"
-                    :class="{ active: depositCustomAmount }"
-                    @click="enableCustomDepositAmount"
-                  >
-                    <strong>مبلغ دلخواه</strong>
-                    <span>ورود دستی و ثبت تیکت</span>
-                  </button>
-                </div>
+            <label class="amount-field">
+              <span>مبلغ دلخواه</span>
+              <div class="amount-input-shell">
                 <input
-                  v-if="depositCustomAmount"
-                  v-model="actionModal.amountText"
+                  :value="actionModal.amountText"
                   type="text"
                   inputmode="numeric"
-                  class="deposit-custom-amount-input"
-                  placeholder="مثلاً 1,540,000"
+                  placeholder="مثلاً ۱٬۵۴۰٬۰۰۰"
+                  @input="onActionAmountInput"
                 />
+                <span class="amount-input-unit">تومان</span>
               </div>
             </label>
 
-            <div v-if="actionModal.type === 'withdraw'" class="quick-amounts">
+            <div class="quick-amounts">
               <button
-                v-for="amount in dynamicWithdrawAmounts"
-                :key="`withdraw-${amount.value}`"
+                v-for="amount in actionQuickAmounts"
+                :key="`quick-${actionModal.type}-${amount.value}`"
                 type="button"
+                :class="{ active: selectedActionAmount === amount.value }"
                 @click="setQuickAmount(amount.value)"
               >
-                <small>{{ amount.label }}</small>
+                <small>{{ amount.label || amount.caption }}</small>
                 <strong>{{ moneyWithUnit(amount.value) }}</strong>
               </button>
-              <span v-if="!dynamicWithdrawAmounts.length" class="wallet-inline-warning">موجودی قابل برداشت برای این کیف پول وجود ندارد.</span>
+              <span v-if="actionModal.type === 'withdraw' && !actionQuickAmounts.length" class="wallet-inline-warning">موجودی قابل برداشت برای این کیف پول وجود ندارد.</span>
             </div>
           </div>
 
@@ -612,6 +582,87 @@
         </div>
       </section>
     </div>
+
+    <div v-if="optionDetailModal.open && detailOption" class="wallet-modal-overlay" @click.self="closeOptionDetail">
+      <section class="wallet-modal option-detail-modal" :style="{ '--option-accent': detailOption.accent || '#315f9f' }">
+        <header class="wallet-modal-head">
+          <div class="wallet-modal-title-wrap">
+            <p>{{ detailOption.personalized_title }}</p>
+            <h3>{{ detailOption.title }}</h3>
+          </div>
+          <button class="close-btn" type="button" @click="closeOptionDetail">×</button>
+        </header>
+        <div class="wallet-modal-body">
+          <div class="option-detail-status" :class="optionStatusClass(detailOption)">
+            {{ optionStatusText(detailOption) }}
+          </div>
+          <p class="option-detail-desc">{{ detailOption.description }}</p>
+          <div v-if="detailOption.is_available === false" class="option-unavailable-box">
+            <strong>{{ detailOption.status_label || 'در دسترس نمی‌باشد' }}</strong>
+            <small>{{ detailOption.unavailable_message || 'این آپشن هنوز ارائه نمی‌شود.' }}</small>
+          </div>
+          <div v-else-if="detailOption.is_active" class="option-live-grid">
+            <article class="option-live-stat">
+              <span>شیوه پرداخت</span>
+              <strong>{{ detailOption.payment_plan_label || 'ثبت نشده' }}</strong>
+            </article>
+            <article class="option-live-stat">
+              <span>پرداخت‌شده</span>
+              <strong>{{ moneyWithUnit(detailOption.paid_amount) }}</strong>
+            </article>
+            <article class="option-live-stat">
+              <span>مانده</span>
+              <strong>{{ moneyWithUnit(detailOption.remaining_amount) }}</strong>
+            </article>
+            <article class="option-live-stat">
+              <span>{{ detailOption.next_installment_due_at ? 'سررسید بعدی' : 'فعال‌سازی' }}</span>
+              <strong>{{ detailOption.next_installment_due_at ? formatShortDate(detailOption.next_installment_due_at) : formatShortDate(detailOption.purchased_at) }}</strong>
+            </article>
+          </div>
+          <div v-else class="option-price-stack">
+            <div class="option-price-row">
+              <span>قیمت نقدی</span>
+              <strong>{{ moneyWithUnit(detailOption.cash_amount) }}</strong>
+            </div>
+            <div class="option-installment-row">
+              <span>{{ detailOption.cash_only ? 'فقط نقدی' : `اقساط ${Number(detailOption.installment_months || 0).toLocaleString('fa-IR')} ماهه` }}</span>
+              <strong>{{ moneyWithUnit(detailOption.monthly_installment_amount) }}</strong>
+              <small>پیش‌پرداخت: {{ moneyWithUnit(detailOption.installment_upfront_amount) }}</small>
+            </div>
+          </div>
+          <div v-if="detailOption.installment_is_locked" class="option-lock-note">
+            <strong>این بخش قفل شده است</strong>
+            <small>{{ detailOption.installment_lock_notice || 'قسط سررسید این آپشن پرداخت نشده است.' }}</small>
+          </div>
+          <div v-if="detailOption.is_active && detailOption.is_available !== false" class="option-progress-block">
+            <div class="option-progress-head">
+              <span>پیشرفت پرداخت</span>
+              <strong>{{ toFaPercent(detailOption.progress_percent) }}</strong>
+            </div>
+            <div class="option-progress-bar">
+              <span :style="{ width: `${detailOption.progress_percent || 0}%` }"></span>
+            </div>
+          </div>
+          <button
+            v-if="detailOption.can_pay_next_installment"
+            class="submit-btn submit-deposit"
+            type="button"
+            :disabled="payingInstallmentFeatureKey === detailOption.feature_key"
+            @click="submitNextInstallmentPayment(detailOption)"
+          >
+            {{ payingInstallmentFeatureKey === detailOption.feature_key ? 'در حال پرداخت...' : 'پرداخت قسط بعدی' }}
+          </button>
+          <button
+            v-else-if="!detailOption.is_active && detailOption.is_available !== false"
+            class="submit-btn submit-deposit"
+            type="button"
+            @click="openPurchaseFromDetail"
+          >
+            انتخاب و خرید
+          </button>
+        </div>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -680,9 +731,12 @@ const optionModal = reactive({
   submitting: false
 })
 
+const optionDetailModal = reactive({
+  open: false,
+  featureKey: ''
+})
+
 const selectedWalletId = ref(0)
-const selectedDepositAmount = ref(1000000)
-const depositCustomAmount = ref(false)
 const smsTopUpAmountText = ref('')
 const smsTopUpSubmitting = ref(false)
 const payingInstallmentFeatureKey = ref('')
@@ -789,7 +843,15 @@ const filteredTransactions = computed(() => {
 const actionModalTitle = computed(() => actionModal.type === 'deposit' ? 'ثبت واریز به کیف پول' : 'ثبت برداشت از کیف پول')
 const actionModalSubmitLabel = computed(() => actionModal.type === 'deposit' ? 'تایید و ثبت واریز' : 'تایید و ثبت برداشت')
 const optionsTenantName = computed(() => state.optionsTenant?.name || 'کارواش شما')
+const sortedWalletOptions = computed(() => (
+  [...state.options].sort((a, b) => {
+    const aUnavailable = a?.is_available === false ? 1 : 0
+    const bUnavailable = b?.is_available === false ? 1 : 0
+    return aUnavailable - bUnavailable
+  })
+))
 const selectedOption = computed(() => state.options.find((option) => option.feature_key === optionModal.featureKey) || null)
+const detailOption = computed(() => state.options.find((option) => option.feature_key === optionDetailModal.featureKey) || null)
 const optionWallets = computed(() => state.wallets.filter((wallet) => wallet.wallet_type !== 'sms'))
 const selectedOptionWallet = computed(() => optionWallets.value.find((wallet) => Number(wallet.id) === Number(optionModal.walletId)) || null)
 const optionUpfrontAmount = computed(() => parseAmount(optionModal.upfrontAmountText))
@@ -815,6 +877,49 @@ const optionPurchaseError = computed(() => {
   return ''
 })
 const canSubmitOptionPurchase = computed(() => !optionModal.submitting && !optionPurchaseError.value)
+
+const optionStatusText = (option) => {
+  if (!option) return ''
+  if (option.is_available === false) return option.status_label || 'غیرفعال'
+  if (option.installment_is_locked) return 'قفل‌شده'
+  if (option.is_active) return option.status_label || 'خریداری‌شده'
+  return option.status_label || 'قابل خرید'
+}
+
+const optionStatusClass = (option) => {
+  if (!option) return ''
+  if (option.is_available === false) return 'unavailable'
+  if (option.installment_is_locked) return 'locked'
+  if (option.is_active) return 'purchased'
+  return 'buyable'
+}
+
+const isMobileWalletViewport = () => window.matchMedia('(max-width: 768px)').matches
+
+const onOptionCardActivate = (option) => {
+  if (!option) return
+  if (isMobileWalletViewport()) {
+    openOptionDetail(option)
+    return
+  }
+  if (!option.is_active && option.is_available !== false) openOptionModal(option)
+}
+
+const openOptionDetail = (option) => {
+  optionDetailModal.open = true
+  optionDetailModal.featureKey = option?.feature_key || ''
+}
+
+const closeOptionDetail = () => {
+  optionDetailModal.open = false
+  optionDetailModal.featureKey = ''
+}
+
+const openPurchaseFromDetail = () => {
+  const option = detailOption.value
+  closeOptionDetail()
+  if (option) openOptionModal(option)
+}
 const roundUpToStep = (value, step = 50000) => Math.ceil(Math.max(0, Number(value || 0)) / step) * step
 const roundDownToStep = (value, step = 1000) => Math.floor(Math.max(0, Number(value || 0)) / step) * step
 const uniquePositiveAmounts = (items) => {
@@ -844,19 +949,15 @@ const dynamicWithdrawAmounts = computed(() => {
   const balance = activeWalletBalance.value
   if (actionModal.type !== 'withdraw' || !activeWallet.value || balance <= 0) return []
   return uniquePositiveAmounts([
-    { value: Math.min(100000, balance), label: 'سریع' },
     { value: roundDownToStep(balance * 0.25), label: '۲۵٪ موجودی' },
     { value: roundDownToStep(balance * 0.5), label: '۵۰٪ موجودی' },
     { value: roundDownToStep(balance), label: 'کل موجودی' }
   ]).filter((item) => item.value <= balance)
 })
-const selectedActionAmount = computed(() => {
-  if (actionModal.type === 'deposit') {
-    if (depositCustomAmount.value) return parseAmount(actionModal.amountText)
-    return Number(selectedDepositAmount.value || 0)
-  }
-  return parseAmount(actionModal.amountText)
-})
+const actionQuickAmounts = computed(() => (
+  actionModal.type === 'deposit' ? dynamicDepositAmounts.value : dynamicWithdrawAmounts.value
+))
+const selectedActionAmount = computed(() => parseAmount(actionModal.amountText))
 const balanceAfterAction = computed(() => (
   actionModal.type === 'deposit'
     ? activeWalletBalance.value + selectedActionAmount.value
@@ -994,10 +1095,8 @@ const openActionModal = async (type) => {
     : wallets[0]
   actionModal.walletId = fallbackWallet ? Number(fallbackWallet.id) : null
   actionModal.destinationWalletId = transferDestinationWallets.value[0]?.id ? Number(transferDestinationWallets.value[0].id) : null
-  depositCustomAmount.value = false
   if (type === 'deposit') {
-    selectedDepositAmount.value = dynamicDepositAmounts.value[0]?.value || 0
-    actionModal.amountText = ''
+    actionModal.amountText = dynamicDepositAmounts.value[0]?.value ? money(dynamicDepositAmounts.value[0].value) : ''
   } else if (dynamicWithdrawAmounts.value.length) {
     actionModal.amountText = money(dynamicWithdrawAmounts.value[0].value)
   }
@@ -1048,24 +1147,15 @@ const closeActionModal = () => {
   actionModal.amountText = ''
   actionModal.description = ''
   actionModal.submitting = false
-  depositCustomAmount.value = false
 }
 
 const setQuickAmount = (amount) => {
-  if (actionModal.type === 'deposit') {
-    depositCustomAmount.value = false
-    selectedDepositAmount.value = Number(amount || 0)
-    actionModal.amountText = ''
-    return
-  }
   actionModal.amountText = money(amount)
 }
 
-const enableCustomDepositAmount = () => {
-  depositCustomAmount.value = true
-  if (!actionModal.amountText && selectedDepositAmount.value) {
-    actionModal.amountText = money(selectedDepositAmount.value)
-  }
+const onActionAmountInput = (event) => {
+  const digits = normalizeDigits(event?.target?.value)
+  actionModal.amountText = digits ? money(parseAmount(digits)) : ''
 }
 
 const onSmsTopUpAmountInput = (event) => {
@@ -1251,17 +1341,16 @@ watch(() => props.searchQuery, async () => {
 
 watch(() => [actionModal.walletId, actionModal.type, actionModal.destinationType], () => {
   if (!actionModal.open) return
-  if (actionModal.type === 'deposit') {
-    if (depositCustomAmount.value) return
-    const exists = dynamicDepositAmounts.value.some((item) => item.value === Number(selectedDepositAmount.value))
-    if (!exists) selectedDepositAmount.value = dynamicDepositAmounts.value[0]?.value || 0
-    return
-  }
   if (actionModal.destinationType === 'wallet') {
     const exists = transferDestinationWallets.value.some((wallet) => Number(wallet.id) === Number(actionModal.destinationWalletId))
     if (!exists) actionModal.destinationWalletId = transferDestinationWallets.value[0]?.id ? Number(transferDestinationWallets.value[0].id) : null
   }
   const currentAmount = parseAmount(actionModal.amountText)
+  if (actionModal.type === 'deposit') {
+    const firstDeposit = dynamicDepositAmounts.value[0]?.value
+    if (currentAmount <= 0 && firstDeposit) actionModal.amountText = money(firstDeposit)
+    return
+  }
   if (currentAmount <= 0 || currentAmount > activeWalletBalance.value) {
     actionModal.amountText = dynamicWithdrawAmounts.value.length ? money(dynamicWithdrawAmounts.value[0].value) : ''
   }
@@ -1295,8 +1384,16 @@ onMounted(async () => {
 .license-lock-banner strong{font-size:16px;color:inherit}
 .license-lock-banner p{margin:0;line-height:1.8;color:inherit}
 .license-lock-banner span{font-size:12px;font-weight:900;color:inherit}
-.wallet-hero-shell{display:grid;grid-template-columns:370px minmax(0,1fr);gap:22px;align-items:stretch}
-.wallet-shortcuts{background:linear-gradient(180deg,#ffffff 0%,#f8fbfe 60%,#f3f7fb 100%);border:1px solid var(--wallet-border);border-radius:30px;padding:22px;box-shadow:0 18px 42px rgba(15,23,42,.05);position:relative;overflow:hidden}
+.wallet-overview{
+  display:grid;
+  grid-template-columns:370px minmax(0,1fr) minmax(0,1fr);
+  grid-template-areas:
+    "shortcuts hero hero"
+    "sms money money";
+  gap:14px;
+  align-items:stretch
+}
+.wallet-shortcuts{grid-area:shortcuts;background:linear-gradient(180deg,#ffffff 0%,#f8fbfe 60%,#f3f7fb 100%);border:1px solid var(--wallet-border);border-radius:30px;padding:22px;box-shadow:0 18px 42px rgba(15,23,42,.05);position:relative;overflow:hidden}
 .wallet-shortcuts::before{content:'';position:absolute;inset:-90px auto auto -80px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(99,132,171,.10),rgba(99,132,171,0) 70%)}
 .wallet-shortcuts::after{content:'';position:absolute;left:18px;bottom:-48px;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle,rgba(148,163,184,.09),rgba(148,163,184,0) 72%)}
 .shortcut-head{position:relative;z-index:1}
@@ -1307,12 +1404,17 @@ onMounted(async () => {
 .shortcut-card:hover{transform:translateY(-2px);box-shadow:0 14px 28px rgba(15,23,42,.06);border-color:#c8d5e2;background:linear-gradient(180deg,#ffffff,#f6f9fc)}
 .shortcut-card:disabled,.hero-action:disabled{opacity:.55;cursor:not-allowed;filter:saturate(.72)}
 .shortcut-card:disabled:hover,.hero-action:disabled:hover{transform:none;box-shadow:none}
-.shortcut-primary{background:linear-gradient(135deg,#466b9f,#5d8bb8 58%,#7ca7bf);color:#fff;border-color:transparent}
-.shortcut-primary strong,.shortcut-primary small,.shortcut-primary .shortcut-icon{color:#fff}
+.shortcut-primary{background:linear-gradient(145deg,#e7faf4 0%,#e8f6ff 55%,#f0fbff 100%);color:#0f766e;border-color:#b7e4d6;box-shadow:0 10px 22px rgba(45,158,133,.10)}
+.shortcut-primary:hover{background:linear-gradient(145deg,#dff7ef,#e2f3ff 55%,#eef9ff);border-color:#9fd8c6;box-shadow:0 14px 26px rgba(45,158,133,.14)}
+.shortcut-primary strong{color:#0f5c52}
+.shortcut-primary small{color:#3d8f82}
+.shortcut-primary .shortcut-icon{background:linear-gradient(180deg,#ffffff,#e8faf4);color:#14b8a6;box-shadow:0 4px 10px rgba(20,184,166,.18)}
 .shortcut-icon{width:42px;height:42px;border-radius:14px;background:linear-gradient(180deg,#edf3f8,#e2e8f0);color:#315f9f;display:inline-flex;align-items:center;justify-content:center;font-size:21px;font-weight:800;box-shadow:inset 0 1px 0 rgba(255,255,255,.7)}
 .shortcut-card strong{font-size:16px;color:var(--wallet-text);font-weight:800}
 .shortcut-card small{color:var(--wallet-muted);font-size:12px}
-.wallet-hero{position:relative;overflow:hidden;border-radius:30px;padding:24px 28px;background:linear-gradient(135deg,#415a77 0%,#557a95 38%,#6b96a8 100%);box-shadow:0 20px 46px rgba(65,90,119,.18);display:grid;gap:22px;min-height:290px;border:1px solid rgba(255,255,255,.14)}
+.wallet-hero{grid-area:hero;position:relative;overflow:hidden;border-radius:30px;padding:24px 28px;background:linear-gradient(135deg,#415a77 0%,#557a95 38%,#6b96a8 100%);box-shadow:0 20px 46px rgba(65,90,119,.18);display:grid;gap:22px;min-height:290px;border:1px solid rgba(255,255,255,.14)}
+.sms-tile{grid-area:sms}
+.summary-money-row{grid-area:money;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .wallet-hero::before{content:'';position:absolute;inset:auto auto -120px -80px;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.08);filter:blur(8px)}
 .wallet-hero::after{content:'';position:absolute;top:-70px;left:22%;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.06)}
 .hero-top,.hero-main,.hero-actions{position:relative;z-index:1}
@@ -1332,8 +1434,34 @@ onMounted(async () => {
 .hero-action:hover{transform:translateY(-2px)}
 .hero-action-light{background:linear-gradient(180deg,#ffffff,#eef2f7);color:#35506b;box-shadow:0 14px 28px rgba(15,23,42,.12)}
 .hero-action-ghost{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(10px)}
-.wallet-summary-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.summary-tile{background:linear-gradient(180deg,#ffffff,#f8fafc);border:1px solid var(--wallet-border);border-radius:20px;padding:16px 18px;box-shadow:0 10px 24px rgba(15,23,42,.04);position:relative;overflow:hidden;min-height:132px}
+.summary-tile{background:linear-gradient(180deg,#ffffff,#f8fafc);border:1px solid var(--wallet-border);border-radius:20px;padding:16px 18px;box-shadow:0 10px 24px rgba(15,23,42,.04);position:relative;overflow:hidden;min-height:0}
+.option-card-compact-meta{display:none}
+.option-status.buyable{background:#fff7ed;color:#c2410c}
+.option-status.locked{background:#fee2e2;color:#991b1b}
+.option-card.purchased{background:linear-gradient(180deg,#f3fdf7,#ecfdf3);border-color:#86efac}
+.option-card.not-purchased{background:linear-gradient(180deg,#fffaf5,#fff7ed);border-color:#fdba74}
+.option-detail-status{display:inline-flex;align-items:center;height:32px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:900;width:max-content}
+.option-detail-status.purchased{background:#dcfce7;color:#166534}
+.option-detail-status.buyable{background:#ffedd5;color:#c2410c}
+.option-detail-status.locked{background:#fee2e2;color:#991b1b}
+.option-detail-status.unavailable{background:#e2e8f0;color:#475569}
+.option-detail-desc{margin:0;color:#64748b;font-size:13px;line-height:1.9}
+.tx-list{display:grid;gap:10px}
+.tx-item{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:16px;background:linear-gradient(180deg,#fff,#fafcfd);box-shadow:0 8px 18px rgba(15,23,42,.03);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.tx-item:hover{transform:translateY(-1px);box-shadow:0 12px 22px rgba(15,23,42,.05);border-color:#d4dee8}
+.tx-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.tx-title-row h3{margin:0;color:#0f172a;font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tx-chip{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;font-size:10px;font-weight:800;flex-shrink:0}
+.tx-chip-in{background:#dcfce7;color:#166534}
+.tx-chip-out{background:#fee2e2;color:#b91c1c}
+.tx-meta{margin:6px 0 0;color:#94a3b8;font-size:11px;display:flex;gap:6px;flex-wrap:wrap;line-height:1.4}
+.tx-meta .separate{opacity:.55}
+.tx-value{font-size:14px;font-weight:800;white-space:nowrap}
+.tx-value-in{color:#0f766e}
+.tx-value-out{color:#dc2626}
+.tx-icon-box{width:40px;height:40px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0}
+.tx-icon-box-in{background:linear-gradient(180deg,#e7f7f1,#d9f1ea);color:#2f7d6b}
+.tx-icon-box-out{background:linear-gradient(180deg,#fce8e8,#f9dddd);color:#c85b5b}
 .summary-tile::before{content:'';position:absolute;top:0;right:0;left:0;height:3px;background:linear-gradient(90deg,#7aa2c7,#8db6a9)}
 .summary-tile small{display:block;color:#64748b;font-size:12px}
 .summary-tile strong{display:block;margin-top:10px;color:#0f172a;font-size:24px;line-height:1.15}
@@ -1341,19 +1469,38 @@ onMounted(async () => {
 .summary-tile span{display:block;margin-top:6px;color:#94a3b8;font-size:12px}
 .accent-tile{background:linear-gradient(135deg,#f3f8fd,#edf7f2)}
 .soft-tile{background:linear-gradient(135deg,#fcfaf7,#f8f4f4)}
-.sms-tile{background:radial-gradient(circle at top left,rgba(59,130,246,.16),transparent 34%),linear-gradient(135deg,#f8fbff,#eef6ff);border-color:#cfe0f7}
-.sms-tile.low{background:radial-gradient(circle at top left,rgba(249,115,22,.18),transparent 34%),linear-gradient(135deg,#fff8f1,#fff2e8);border-color:#fdc48b}
-.sms-tile strong{font-size:30px;margin-top:14px}
+.sms-tile{background:
+  radial-gradient(circle at 12% 0%,rgba(139,92,246,.22),transparent 42%),
+  radial-gradient(circle at 88% 100%,rgba(45,212,191,.18),transparent 40%),
+  linear-gradient(145deg,#f7f3ff 0%,#eef6ff 48%,#eafaf6 100%);
+  border:1.5px solid #c4b5fd;
+  box-shadow:0 14px 30px rgba(124,58,237,.10)
+}
+.sms-tile::before{height:4px;background:linear-gradient(90deg,#8b5cf6,#38bdf8,#2dd4bf)}
+.sms-tile.low{background:
+  radial-gradient(circle at 12% 0%,rgba(249,115,22,.22),transparent 42%),
+  radial-gradient(circle at 88% 100%,rgba(251,191,36,.16),transparent 40%),
+  linear-gradient(145deg,#fff8f1,#fff3e8 55%,#fff7ed);
+  border-color:#fdba74;
+  box-shadow:0 14px 30px rgba(234,88,12,.10)
+}
+.sms-tile.low::before{background:linear-gradient(90deg,#f97316,#fb923c,#fbbf24)}
+.sms-tile strong{font-size:30px;margin-top:14px;color:#5b21b6}
+.sms-tile.low strong,.sms-tile strong.danger{color:#c2410c}
 .sms-tile-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.sms-tile-head small{color:#6d28d9;font-weight:800;display:inline-flex;align-items:center;gap:6px}
+.sms-tile-mark{width:22px;height:22px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;font-size:11px;box-shadow:0 6px 12px rgba(99,102,241,.25)}
+.sms-tile.low .sms-tile-head small{color:#c2410c}
+.sms-tile.low .sms-tile-mark{background:linear-gradient(135deg,#f97316,#fb923c);box-shadow:0 6px 12px rgba(249,115,22,.22)}
 .sms-balance-caption{margin:10px 0 0;color:#516072;font-size:12px;line-height:1.9;max-width:28ch}
 .sms-state-pill,.sms-topup-chip{display:inline-flex;align-items:center;justify-content:center;width:max-content}
-.sms-state-pill{height:28px;padding:0 10px;border-radius:999px;background:rgba(15,92,192,.1);color:#0f5cc0;font-size:11px;font-weight:900}
+.sms-state-pill{height:28px;padding:0 10px;border-radius:999px;background:rgba(139,92,246,.14);color:#6d28d9;font-size:11px;font-weight:900}
 .sms-state-pill.low{background:rgba(234,88,12,.12);color:#c2410c}
-.sms-topup-chip{margin-top:12px;padding:7px 11px;border-radius:999px;background:rgba(255,255,255,.86);border:1px solid rgba(148,163,184,.22);color:#35506b;font-size:11px;font-weight:800}
+.sms-topup-chip{margin-top:12px;padding:7px 11px;border-radius:999px;background:rgba(255,255,255,.9);border:1px solid rgba(167,139,250,.35);color:#5b21b6;font-size:11px;font-weight:800}
 .sms-quick-topup{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:14px;position:relative;z-index:1}
-.sms-quick-topup input{height:40px;border:1px solid #cfe0f7;border-radius:12px;padding:0 12px;background:#fff;color:#0f172a;font:inherit;font-size:13px;font-weight:700;min-width:0}
+.sms-quick-topup input{height:40px;border:1px solid #d8b4fe;border-radius:12px;padding:0 12px;background:#fff;color:#0f172a;font:inherit;font-size:13px;font-weight:700;min-width:0}
 .sms-quick-topup input:disabled{opacity:.6;cursor:not-allowed}
-.sms-quick-topup-btn{height:40px;border:0;border-radius:12px;padding:0 12px;background:linear-gradient(180deg,#315f9f,#3f74b8);color:#fff;font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+.sms-quick-topup-btn{height:40px;border:0;border-radius:12px;padding:0 12px;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;box-shadow:0 8px 16px rgba(99,102,241,.22)}
 .sms-quick-topup-btn:disabled{opacity:.55;cursor:not-allowed}
 .warning-strip{display:flex;align-items:center;gap:12px;background:#fff7ed;border:1px solid #fdba74;border-radius:18px;padding:14px 16px;color:#c2410c}
 .warning-dot{width:10px;height:10px;border-radius:50%;background:#f97316;box-shadow:0 0 0 6px rgba(249,115,22,.14)}
@@ -1365,6 +1512,8 @@ onMounted(async () => {
 .option-card{--option-accent:#315f9f;display:grid;gap:14px;padding:18px;border:1px solid #dbe5f0;border-radius:22px;background:linear-gradient(180deg,#fff,#f8fafc);box-shadow:0 12px 26px rgba(15,23,42,.04);position:relative;overflow:hidden}
 .option-card::before{content:'';position:absolute;inset:0 0 auto 0;height:4px;background:var(--option-accent)}
 .option-card.active{background:linear-gradient(180deg,#f7fffb,#f2fbf8);border-color:color-mix(in srgb,var(--option-accent) 35%,#dbe5f0)}
+.option-card.purchased,.option-card.active.purchased{background:linear-gradient(180deg,#f3fdf7,#ecfdf3);border-color:#86efac}
+.option-card.not-purchased{background:linear-gradient(180deg,#fffaf5,#fff7ed);border-color:#fdba74}
 .option-card.unavailable{background:linear-gradient(180deg,#fcfcfd,#f5f7fa);border-color:#d8e0ea}
 .option-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .option-kicker{display:block;color:var(--option-accent);font-size:11px;font-weight:900;margin-bottom:6px}
@@ -1428,24 +1577,7 @@ onMounted(async () => {
 .filter-pill button.active{background:linear-gradient(180deg,#ffffff,#f8fafc);color:#35506b;box-shadow:0 8px 18px rgba(148,163,184,.12)}
 .refresh-btn{height:42px;padding:0 18px;border-radius:14px;background:linear-gradient(180deg,#f1f5f9,#e2e8f0);color:#35506b;font-weight:800;box-shadow:inset 0 1px 0 rgba(255,255,255,.65)}
 .history-state{padding:42px 12px;text-align:center;color:#64748b}
-.tx-list{display:grid;gap:16px}
-.tx-item{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:18px;padding:18px 20px;border:1px solid #e2e8f0;border-radius:22px;background:linear-gradient(180deg,#fff,#fafcfd);box-shadow:0 12px 24px rgba(15,23,42,.04);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
-.tx-item:hover{transform:translateY(-1px);box-shadow:0 16px 28px rgba(15,23,42,.06);border-color:#d4dee8}
-.tx-expand{width:36px;height:36px;border:0;border-radius:50%;background:linear-gradient(180deg,#f8fafc,#eef2f6);color:#1e293b;font-size:30px;line-height:1;cursor:pointer}
-.tx-title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.tx-title-row h3{margin:0;color:#0f172a;font-size:15px}
-.tx-chip{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:999px;font-size:11px;font-weight:800}
-.tx-chip-in{background:#dcfce7;color:#166534}
-.tx-chip-out{background:#fee2e2;color:#b91c1c}
-.tx-meta{margin:10px 0 0;color:#94a3b8;font-size:12px;display:flex;gap:8px;flex-wrap:wrap}
 .separate{color:#cbd5e1}
-.tx-value-col{display:flex;align-items:center;gap:16px}
-.tx-value{font-size:17px;font-weight:800;white-space:nowrap}
-.tx-value-in{color:#0f766e}
-.tx-value-out{color:#dc2626}
-.tx-icon-box{width:58px;height:58px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;font-size:28px;font-weight:800}
-.tx-icon-box-in{background:linear-gradient(180deg,#e7f7f1,#d9f1ea);color:#2f7d6b}
-.tx-icon-box-out{background:linear-gradient(180deg,#fce8e8,#f9dddd);color:#c85b5b}
 .wallet-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.44);backdrop-filter:blur(12px);display:flex;align-items:flex-start;justify-content:center;z-index:120;padding:20px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .wallet-modal{width:min(560px,100%);max-height:calc(100dvh - 40px);background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 18px 34px rgba(15,23,42,.10);border:none;display:flex;flex-direction:column;min-height:0;margin:auto 0}
 .financial-action-modal{width:min(720px,100%)}
@@ -1493,12 +1625,20 @@ onMounted(async () => {
 .wallet-inline-select{margin-top:-4px}
 .wallet-modal-body input,.wallet-modal-body select{height:52px;border:1px solid #efe4ff;border-radius:16px;padding:0 16px;background:#fbf8ff;color:#0f172a;font-size:14px;outline:none;transition:border-color .2s ease,box-shadow .2s ease,background .2s ease}
 .wallet-modal-body input:focus,.wallet-modal-body select:focus{border-color:#c9adff;box-shadow:0 0 0 4px rgba(201,173,255,.18);background:#fff}
-.quick-amounts{display:flex;gap:8px;flex-wrap:wrap}
-.quick-amounts button{min-width:132px;min-height:60px;padding:10px 14px;border-radius:16px;background:#fff;color:#0f4aa8;font-weight:800;border:none;display:grid;gap:4px;text-align:right;justify-items:start;transition:border-color .2s ease,transform .2s ease,background .2s ease}
+.amount-field{display:grid;gap:8px}
+.amount-input-shell{display:flex;align-items:center;gap:10px;min-height:52px;border:1px solid #efe4ff;border-radius:16px;padding:0 14px;background:#fbf8ff;transition:border-color .2s ease,box-shadow .2s ease,background .2s ease}
+.amount-input-shell:focus-within{border-color:#c9adff;box-shadow:0 0 0 4px rgba(201,173,255,.18);background:#fff}
+.amount-input-shell input{flex:1;min-width:0;height:auto;border:0;padding:0;background:transparent;box-shadow:none;font-size:16px;font-weight:800;color:#0f172a}
+.amount-input-shell input:focus{border:0;box-shadow:none;background:transparent}
+.amount-input-unit{flex:0 0 auto;color:#64748b;font-size:13px;font-weight:900}
+.quick-amounts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.quick-amounts button{min-width:0;min-height:60px;width:100%;padding:10px 14px;border-radius:16px;background:#fff;color:#0f4aa8;font-weight:800;border:1px solid #efe4ff;display:grid;gap:4px;text-align:right;justify-items:start;transition:border-color .2s ease,transform .2s ease,background .2s ease}
 .quick-amounts button small{color:#64748b;font-size:11px;font-weight:800}
 .quick-amounts button strong{color:#0f172a;font-size:15px;line-height:1.4}
 .quick-amounts button:hover{background:#eff6ff;border-color:transparent;transform:translateY(-1px)}
-.wallet-inline-warning{display:block;padding:11px 13px;border:none;border-radius:14px;background:#fff1f2;color:#9f1239;font-size:12px;font-weight:800;line-height:1.7}
+.quick-amounts button.active{background:#f1e8ff;border-color:#c9adff}
+.quick-amounts button.active small,.quick-amounts button.active strong{color:var(--wallet-modal-accent)}
+.wallet-inline-warning{display:block;padding:11px 13px;border:none;border-radius:14px;background:#fff1f2;color:#9f1239;font-size:12px;font-weight:800;line-height:1.7;grid-column:1 / -1}
 .wallet-balance-preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .wallet-balance-preview{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 16px;border:none;border-radius:16px;background:#f0fdf4;color:#166534}
 .wallet-balance-preview.destination{border-color:transparent;background:#eff6ff;color:#1d4ed8}
@@ -1532,7 +1672,132 @@ onMounted(async () => {
 .submit-btn:disabled{opacity:.7;cursor:not-allowed}
 .submit-deposit{background:linear-gradient(135deg,#3b7f71,#6ca69a)}
 .submit-withdraw{background:linear-gradient(135deg,#b85b5b,#d98383)}
-@media (max-width:1200px){.wallet-hero-shell{grid-template-columns:1fr}.wallet-summary-board{grid-template-columns:repeat(2,minmax(0,1fr))}.options-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:900px){.history-head,.options-head,.wallet-modal-section-head{flex-direction:column;align-items:stretch}.history-head h2,.options-head h2{font-size:28px}.hero-main{flex-direction:column}.hero-main h2{font-size:44px}.hero-action{min-width:0;width:100%;font-size:22px;height:60px}.gateway-amounts,.deposit-method-grid,.payment-plan-grid,.wallet-choice-grid,.installment-live-preview,.option-live-grid,.destination-toggle,.bank-withdraw-fields,.wallet-balance-preview-grid{grid-template-columns:1fr}}
-@media (max-width:640px){.shortcut-grid,.wallet-summary-board,.options-grid{grid-template-columns:1fr}.tx-item{grid-template-columns:1fr;justify-items:start}.tx-value-col{width:100%;justify-content:space-between}.history-controls,.hero-actions,.hero-top,.tx-title-row,.wallet-modal-title-row{flex-direction:column;align-items:stretch}.filter-pill{width:100%;justify-content:space-between;flex-wrap:wrap}.wallet-modal-overlay{padding:12px}.wallet-modal{max-height:calc(100dvh - 24px)}.wallet-modal-head,.wallet-modal-body{padding:16px}.wallet-modal-highlight{align-items:flex-start;flex-direction:column}.wallet-modal-highlight strong{font-size:21px}.wallet-modal-symbol{width:46px;height:46px;border-radius:15px;font-size:20px}.wallet-modal-section{padding:14px;border-radius:20px}.quick-amounts button{width:100%}.tx-value{white-space:normal}.hero-main h2{font-size:34px}.wallet-shortcuts,.wallet-hero,.history-panel,.options-panel{padding:16px}.option-progress-head{align-items:flex-start;flex-direction:column}}
+@media (max-width:1200px){
+  .wallet-overview{
+    grid-template-columns:1fr 1fr;
+    grid-template-areas:
+      "hero hero"
+      "sms sms"
+      "shortcuts shortcuts"
+      "money money";
+    gap:12px
+  }
+  .summary-money-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .options-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:900px){
+  .history-head,.options-head,.wallet-modal-section-head{flex-direction:column;align-items:stretch}
+  .history-head h2,.options-head h2{font-size:24px}
+  .hero-main{flex-direction:column}
+  .hero-main h2{font-size:36px}
+  .hero-orb{display:none}
+  .wallet-hero{min-height:0;padding:18px;gap:14px}
+  .payment-plan-grid,.installment-live-preview,.option-live-grid,.bank-withdraw-fields,.wallet-balance-preview-grid{grid-template-columns:1fr}
+  .deposit-method-grid,.wallet-choice-grid,.destination-toggle,.quick-amounts{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:768px){
+  .wallet-page{gap:8px;font-size:11px}
+  .wallet-alert{padding:10px 12px;border-radius:14px;font-size:11px;font-weight:700}
+  .shortcut-head{display:none}
+  .shortcut-grid{margin-top:0;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wallet-shortcuts{padding:8px;border-radius:14px;box-shadow:0 8px 18px rgba(15,23,42,.04)}
+  .shortcut-card{padding:9px 9px;gap:3px;border-radius:12px}
+  .shortcut-icon{width:24px;height:24px;border-radius:8px;font-size:13px}
+  .shortcut-card strong{font-size:11px;font-weight:700}
+  .shortcut-card small{font-size:8px;line-height:1.3;font-weight:600;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+  .wallet-hero{min-height:0;padding:10px 12px;border-radius:14px;gap:0;box-shadow:0 10px 24px rgba(65,90,119,.12)}
+  .hero-top{display:none}
+  .hero-label{font-size:9px;letter-spacing:.02em;opacity:.9}
+  .hero-main{gap:0}
+  .hero-main h2{margin:3px 0 2px;font-size:17px !important;line-height:1.15;font-weight:700}
+  .hero-sub{font-size:9px;line-height:1.35;max-width:none;opacity:.88}
+  .hero-orb{display:none}
+  .wallet-overview{
+    grid-template-columns:1fr;
+    grid-template-areas:
+      "hero"
+      "sms"
+      "shortcuts"
+      "money";
+    gap:8px
+  }
+  .summary-money-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .summary-tile{padding:9px 10px;border-radius:12px;box-shadow:0 6px 14px rgba(15,23,42,.03)}
+  .summary-tile::before{height:2px}
+  .summary-tile small{font-size:9px;font-weight:700}
+  .summary-tile strong{margin-top:3px;font-size:12px;font-weight:700}
+  .sms-tile{padding:11px 12px;border-radius:14px;border-width:1.5px}
+  .sms-tile strong{font-size:15px !important;margin-top:4px;font-weight:700}
+  .sms-tile-head small{font-size:9px}
+  .sms-tile-mark{width:18px;height:18px;border-radius:6px;font-size:9px}
+  .sms-state-pill{height:20px;padding:0 7px;font-size:8px}
+  .sms-balance-caption{margin-top:4px;font-size:9px;line-height:1.45;max-width:none}
+  .sms-topup-chip{margin-top:6px;padding:4px 8px;font-size:8px;border-radius:999px}
+  .sms-quick-topup{margin-top:8px;grid-template-columns:1fr;gap:6px}
+  .sms-quick-topup-btn{width:100%;height:32px;font-size:10px;border-radius:10px;box-shadow:0 6px 12px rgba(99,102,241,.18)}
+  .sms-quick-topup input{height:32px;font-size:11px;border-radius:10px}
+  .warning-strip{padding:10px 12px;border-radius:12px;gap:8px;font-size:10px}
+  .warning-strip strong{font-size:10px;font-weight:700}
+  .options-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .option-card{gap:5px;padding:9px;border-radius:12px;cursor:pointer;box-shadow:0 6px 14px rgba(15,23,42,.03)}
+  .option-card::before{height:2px}
+  .option-card h3{font-size:11px !important;line-height:1.3;font-weight:700;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .option-kicker{font-size:8px;margin-bottom:1px;font-weight:800}
+  .option-status{height:18px;padding:0 6px;font-size:8px;font-weight:800}
+  .option-card-desc,.option-card-details{display:none}
+  .option-card-compact-meta{display:block;color:#64748b;font-size:9px;line-height:1.35}
+  .options-panel,.history-panel{padding:10px;border-radius:14px;box-shadow:0 8px 18px rgba(15,23,42,.04)}
+  .options-head{margin-bottom:10px;gap:8px}
+  .options-head p,.history-title-wrap p{margin:0 0 4px;font-size:9px;font-weight:700}
+  .options-head h2,.history-head h2{font-size:14px !important;font-weight:700;line-height:1.25}
+  .history-head{margin-bottom:10px}
+  .history-controls{flex-direction:column;align-items:stretch;gap:8px}
+  .filter-pill{width:100%;justify-content:space-between;flex-wrap:wrap;padding:3px;gap:2px}
+  .filter-pill button{height:30px;padding:0 10px;font-size:10px;font-weight:700}
+  .wallet-switch,.refresh-btn{height:32px;font-size:10px;border-radius:10px;padding:0 12px}
+  .tx-list{gap:5px}
+  .tx-item{grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;padding:7px 9px;border-radius:10px;align-items:center;box-shadow:none}
+  .tx-icon-box{display:none}
+  .tx-title-row{gap:4px}
+  .tx-title-row h3{font-size:10px !important;line-height:1.3;font-weight:700;-webkit-line-clamp:1}
+  .tx-chip{display:none}
+  .tx-meta{margin:1px 0 0;font-size:8px;gap:3px;line-height:1.3}
+  .tx-meta span:nth-child(n+4){display:none}
+  .tx-value{font-size:10px;font-weight:700;white-space:nowrap}
+  .history-state{padding:28px 10px;font-size:11px}
+  .deposit-method-grid,.wallet-choice-grid,.destination-toggle,.quick-amounts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wallet-modal-overlay{padding:12px}
+  .wallet-modal{max-height:calc(100dvh - 24px)}
+  .wallet-modal-head,.wallet-modal-body{padding:14px}
+  .wallet-modal-head h3{font-size:15px !important}
+  .wallet-modal-title-wrap p{font-size:10px}
+  .wallet-modal-highlight{align-items:flex-start;flex-direction:column;padding:12px;border-radius:14px}
+  .wallet-modal-highlight strong{font-size:16px !important}
+  .wallet-modal-highlight small,.wallet-modal-highlight p{font-size:10px}
+  .wallet-modal-symbol{width:40px;height:40px;border-radius:12px;font-size:18px}
+  .wallet-modal-section{padding:12px;border-radius:14px;gap:10px}
+  .wallet-modal-section-head strong{font-size:12px}
+  .wallet-modal-section-head span{font-size:10px}
+  .wallet-modal-title-row{flex-direction:column;align-items:stretch}
+  .submit-btn{height:44px;font-size:12px;border-radius:12px}
+}
+@media (max-width:480px){
+  .wallet-page{gap:7px;font-size:10px}
+  .shortcut-card{padding:8px}
+  .shortcut-card strong{font-size:10px}
+  .shortcut-card small{font-size:7.5px}
+  .wallet-hero{padding:9px 11px}
+  .hero-main h2{font-size:15px !important}
+  .hero-label,.hero-sub{font-size:8px}
+  .summary-tile strong{font-size:11px}
+  .sms-tile strong{font-size:13px !important}
+  .sms-balance-caption,.sms-topup-chip,.sms-tile-head small{font-size:8px}
+  .option-card{padding:8px;gap:4px}
+  .option-card h3{font-size:10px !important}
+  .option-card-compact-meta,.option-status,.option-kicker{font-size:8px}
+  .options-head h2,.history-head h2{font-size:13px !important}
+  .tx-item{padding:6px 8px}
+  .tx-title-row h3,.tx-value{font-size:9px !important}
+  .tx-meta{font-size:7.5px}
+}
 </style>

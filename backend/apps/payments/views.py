@@ -61,6 +61,16 @@ FEATURE_OPTION_CATALOG = {
         'monthly_installment_amount': Decimal('500000'),
         'accent': '#db2777',
     },
+    CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE: {
+        'title': 'فضای ابری',
+        'subtitle': 'نگهداری امن اطلاعات و فایل‌ها',
+        'description': 'در حالت عادی داده‌ها ۳ ماه نگهداری می‌شوند؛ با خرید فضای ابری، داده‌ها دائمی نگهداری می‌شوند.',
+        'base_price': Decimal('3000000'),
+        'upfront_amount': Decimal('1000000'),
+        'installment_months': 4,
+        'monthly_installment_amount': Decimal('500000'),
+        'accent': '#7c3aed',
+    },
     CarWashFeaturePurchase.FeatureKey.ACCOUNTING: {
         'title': 'حسابداری',
         'subtitle': 'خدمات حسابداری و حسابرسی پیشرفته',
@@ -73,16 +83,6 @@ FEATURE_OPTION_CATALOG = {
         'is_available': False,
         'status_label': 'به‌زودی',
         'unavailable_message': 'صفحه حسابداری پیشرفته هنوز در حال توسعه است و فعلا قابل خرید یا فعال‌سازی نیست.',
-    },
-    CarWashFeaturePurchase.FeatureKey.CLOUD_STORAGE: {
-        'title': 'فضای ابری',
-        'subtitle': 'نگهداری امن اطلاعات و فایل‌ها',
-        'description': 'در حالت عادی داده‌ها ۳ ماه نگهداری می‌شوند؛ با خرید فضای ابری، داده‌ها دائمی نگهداری می‌شوند.',
-        'base_price': Decimal('3000000'),
-        'upfront_amount': Decimal('1000000'),
-        'installment_months': 4,
-        'monthly_installment_amount': Decimal('500000'),
-        'accent': '#7c3aed',
     },
 }
 

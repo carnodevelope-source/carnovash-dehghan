@@ -472,6 +472,15 @@
               </button>
               <button
                 type="button"
+                class="ticket-stat"
+                :class="{ active: ticketScope === 'closed' }"
+                @click="ticketScope = 'closed'"
+              >
+                <small>بسته</small>
+                <strong>{{ toFa(ticketSummaryCards.find((item) => item.key === 'closed')?.value || 0) }}</strong>
+              </button>
+              <button
+                type="button"
                 class="ticket-stat urgent"
                 :class="{ active: ticketScope === 'wallet' }"
                 @click="ticketScope = 'wallet'"
@@ -614,10 +623,7 @@
         <section class="ticket-desk-stage">
           <div v-if="selectedTicket" class="ticket-stage-body">
             <header class="ticket-stage-head">
-              <button type="button" class="ticket-back-btn" @click="clearSelectedTicket">
-                <span aria-hidden="true">→</span>
-                بازگشت به لیست تیکت‌ها
-              </button>
+              <button type="button" class="ticket-back-btn" @click="clearSelectedTicket">← لیست</button>
               <div class="ticket-stage-title">
                 <div class="ticket-stage-title-row">
                   <h2>{{ selectedTicket.subject }}</h2>
@@ -625,40 +631,33 @@
                     {{ statusLabel(selectedTicket.status) }}
                   </span>
                 </div>
-                <div class="ticket-stage-meta">
-                  <span>{{ selectedTicket.tenant_name || 'بدون کارواش' }}</span>
+                <p class="ticket-stage-meta">
+                  <span>#{{ selectedTicket.id }}</span>
+                  <span>{{ selectedTicket.tenant_name || '—' }}</span>
                   <span>{{ selectedTicket.assigned_to_name || 'بدون مسئول' }}</span>
-                  <span>{{ categoryLabel(selectedTicket.category) }}</span>
                   <span>{{ priorityLabel(selectedTicket.priority) }}</span>
-                  <span class="mono">#{{ selectedTicket.id }}</span>
-                </div>
+                </p>
               </div>
               <div class="ticket-stage-controls">
-                <label>
-                  <span>وضعیت</span>
-                  <select v-model="ticketReply.status">
-                    <option value="">بدون تغییر</option>
-                    <option value="answered">پاسخ داده شده</option>
-                    <option value="pending">در انتظار پیگیری</option>
-                    <option value="closed">بستن تیکت</option>
-                  </select>
-                </label>
-                <label>
-                  <span>ارجاع</span>
-                  <select v-model="ticketReply.assign_to_user_id">
-                    <option :value="0">بدون ارجاع (مالکیت خودم)</option>
-                    <option v-for="member in teamAssignable" :key="member.id" :value="member.id">
-                      {{ member.full_name || member.username }}
-                    </option>
-                  </select>
-                </label>
+                <select v-model="ticketReply.status" aria-label="وضعیت">
+                  <option value="">وضعیت</option>
+                  <option value="answered">پاسخ‌داده‌شده</option>
+                  <option value="pending">در انتظار</option>
+                  <option value="closed">بستن</option>
+                </select>
+                <select v-model="ticketReply.assign_to_user_id" aria-label="ارجاع">
+                  <option :value="0">ارجاع به من</option>
+                  <option v-for="member in teamAssignable" :key="member.id" :value="member.id">
+                    {{ member.full_name || member.username }}
+                  </option>
+                </select>
                 <button
                   type="button"
-                  class="ghost-btn"
+                  class="ghost-btn ticket-assign-btn"
                   :disabled="!ticketReply.assign_to_user_id || ticketAssign.submitting"
                   @click="referSelectedTicket"
                 >
-                  {{ ticketAssign.submitting ? '...' : 'ارجاع سریع' }}
+                  {{ ticketAssign.submitting ? '...' : 'ارجاع' }}
                 </button>
               </div>
             </header>
@@ -765,7 +764,7 @@
 
           <div v-else class="ticket-stage-empty">
             <strong>لیست تیکت‌ها</strong>
-            <span>ابتدا یک تیکت از لیست انتخاب کنید تا جزئیات و گفتگو نمایش داده شود. همه پشتیبان‌ها به همه تیکت‌ها دسترسی نظارتی دارند.</span>
+            <span>یک تیکت را از لیست انتخاب کنید تا گفتگو و جزئیات آن اینجا باز شود.</span>
           </div>
         </section>
       </section>
@@ -1800,7 +1799,8 @@ const isWalletBankWithdrawalTicket = (ticket) => {
 }
 const isWalletOperationTicket = (ticket) => isWalletCardPaymentTicket(ticket) || isWalletBankWithdrawalTicket(ticket)
 const ticketScopeOptions = computed(() => [
-  { key: 'all', label: 'همه تیکت‌ها' },
+  { key: 'all', label: 'فعال' },
+  { key: 'closed', label: 'بسته‌شده' },
   { key: 'wallet', label: 'برداشت / شارژ' },
   { key: 'unassigned', label: 'بدون مسئول' },
   { key: 'mine', label: 'ارجاع به من' },
@@ -1822,30 +1822,32 @@ const ticketSummaryCards = computed(() => {
   }, { total: 0, open: 0, pending: 0, answered: 0, closed: 0, unassigned: 0, mine: 0, urgent: 0, wallet: 0 })
   const activeCount = counts.open + counts.pending + counts.answered
   return [
-    { key: 'open', label: 'باز / مشترک', value: activeCount, tone: 'open' },
+    { key: 'open', label: 'فعال', value: activeCount, tone: 'open' },
+    { key: 'closed', label: 'بسته', value: counts.closed, tone: 'closed' },
     { key: 'wallet', label: 'برداشت / شارژ', value: counts.wallet, tone: 'urgent' },
     { key: 'unassigned', label: 'بدون مسئول', value: counts.unassigned, tone: 'pending' },
     { key: 'mine', label: 'ارجاع به من', value: counts.mine, tone: 'mine' },
-    { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' }
+    { key: 'urgent', label: 'فوری', value: counts.urgent, tone: 'urgent' },
+    { key: 'answered', label: 'پاسخ‌داده‌شده', value: counts.answered, tone: 'answered' }
   ]
 })
 const openTicketCount = computed(() => ticketSummaryCards.value.find((item) => item.key === 'open')?.value || 0)
 const activeTicketScopeLabel = computed(() => {
   const match = ticketScopeOptions.value.find((item) => item.key === ticketScope.value)
-  return match?.label || 'همه تیکت‌ها'
+  return match?.label || 'فعال'
 })
 const visibleTickets = computed(() => {
   const items = Array.isArray(tickets.value) ? tickets.value : []
   const filtered = items.filter((item) => {
     if (!item) return false
-    if (ticketScope.value === 'mine') return Number(item.assigned_to || 0) === Number(authStore.user?.id || 0)
+    if (ticketScope.value === 'closed') return item.status === 'closed'
+    if (ticketScope.value === 'mine') return Number(item.assigned_to || 0) === Number(authStore.user?.id || 0) && item.status !== 'closed'
     if (ticketScope.value === 'urgent') return ['urgent', 'high'].includes(item.priority) && item.status !== 'closed'
     if (ticketScope.value === 'unassigned') return !item.assigned_to && item.status !== 'closed'
     if (ticketScope.value === 'wallet') return isWalletOperationTicket(item) && item.status !== 'closed'
     if (ticketScope.value === 'answered') return item.status === 'answered'
-    // Default "all": keep closed tickets visible for HQ admin, hide for support agents.
-    if (!authStore.isHqAdmin && item.status === 'closed') return false
-    return true
+    // Default "all" = active tickets only (open/pending/answered)
+    return item.status !== 'closed'
   })
   return filtered.sort((a, b) => {
     const aOpen = a.status !== 'closed' ? 1 : 0
@@ -2563,14 +2565,17 @@ const ensureSelectedTicket = async (options = {}) => {
   if (selectedTicket.value?.id && visibleTickets.value.some((item) => item.id === selectedTicket.value.id)) {
     const stillExists = tickets.value.some((item) => item.id === selectedTicket.value.id)
     if (stillExists) {
-      await selectTicket(selectedTicket.value.id, {
-        keepReply: Boolean(options.keepReply),
-        silent: Boolean(options.silent)
-      })
+      if (options.refreshSelected) {
+        await selectTicket(selectedTicket.value.id, {
+          keepReply: Boolean(options.keepReply),
+          silent: Boolean(options.silent)
+        })
+      }
       return
     }
   }
-  await selectTicket(visibleTickets.value[0].id)
+  // List-first: never auto-open another ticket; clear selection if current is out of filter.
+  if (!options.keepReply) selectedTicket.value = null
 }
 
 const selectTicket = async (ticketId, options = {}) => {
@@ -6897,11 +6902,11 @@ td strong {
 .ticket-stage-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px 14px;
+  gap: 8px 12px;
   align-items: start;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.95);
+  padding: 10px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e8eef5;
 }
 
 .ticket-back-btn {
@@ -6909,36 +6914,51 @@ td strong {
   grid-column: 1 / -1;
   justify-self: start;
   align-items: center;
-  gap: 8px;
-  padding-inline: 0;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 9px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .ticket-stage-title {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
 }
 
 .ticket-stage-title-row {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .ticket-stage-title h2 {
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.5;
+  margin: 0 !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1.4 !important;
   color: #0f172a;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .ticket-stage-meta {
+  margin: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
-  color: #64748b;
-  font-size: 12px;
+  gap: 4px 10px;
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 1.3;
 }
 
 .ticket-stage-meta .mono {
@@ -6949,36 +6969,58 @@ td strong {
 .ticket-stage-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
 
-.ticket-stage-controls label {
-  display: grid;
-  gap: 4px;
-  min-width: 140px;
-}
-
-.ticket-stage-controls label span {
+.ticket-stage-controls select {
+  height: 32px !important;
+  min-width: 108px;
+  border: 1px solid #dbe3ef;
+  border-radius: 9px;
+  padding: 0 8px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
   font-size: 11px;
-  color: #64748b;
+  font-weight: 700;
+}
+
+.ticket-assign-btn {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 10px !important;
+  font-size: 11px !important;
+  border-radius: 9px !important;
 }
 
 .ticket-stage-actions {
   flex: 0 0 auto;
   display: grid;
-  gap: 10px;
-  padding: 12px 18px 0;
+  gap: 8px;
+  padding: 10px 12px 0;
 }
 
 .ticket-action-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px 14px;
+  gap: 8px 10px;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: 16px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background: #fff;
-  border: 1px solid rgba(226, 232, 240, 0.95);
+  border: 1px solid #e8eef5;
+}
+
+.ticket-action-card strong {
+  font-size: 12px;
+}
+
+.ticket-action-card p,
+.ticket-action-card small {
+  font-size: 10px;
+  line-height: 1.5;
+  color: #64748b;
 }
 
 .ticket-action-card.approve {
@@ -7042,59 +7084,59 @@ td strong {
 
 .ticket-stage-stream {
   flex: 1 1 auto;
-  min-height: 280px;
+  min-height: 220px;
   overflow: visible;
-  padding: 16px 18px;
+  padding: 10px 12px;
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 8px;
 }
 
 .ticket-bubble {
-  max-width: min(720px, 92%);
+  max-width: min(520px, 90%);
   justify-self: start;
   display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border-radius: 18px 18px 18px 8px;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 12px 12px 12px 6px;
   background: #fff;
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.03);
+  border: 1px solid #e8eef5;
+  box-shadow: none;
   user-select: text;
   -webkit-user-select: text;
 }
 
 .ticket-bubble.mine {
   justify-self: end;
-  border-radius: 18px 18px 8px 18px;
-  background: rgba(37, 99, 235, 0.08);
-  border-color: rgba(37, 99, 235, 0.16);
+  border-radius: 12px 12px 6px 12px;
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
 
 .ticket-bubble.internal {
-  background: rgba(254, 243, 199, 0.7);
-  border-color: rgba(245, 158, 11, 0.25);
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 
 .ticket-bubble-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px 8px;
   align-items: center;
-  color: #64748b;
-  font-size: 11px;
+  color: #94a3b8;
+  font-size: 10px;
 }
 
 .ticket-bubble-meta strong {
-  color: #0f172a;
-  font-size: 12px;
+  color: #334155;
+  font-size: 10px;
 }
 
 .ticket-bubble p {
   margin: 0;
-  color: #1e293b;
-  font-size: 15px;
-  line-height: 1.85;
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
@@ -7105,9 +7147,9 @@ td strong {
 .ticket-stage-composer {
   display: grid;
   gap: 8px;
-  padding: 10px 18px 12px;
-  background: rgba(255, 255, 255, 0.96);
-  border-top: 1px solid rgba(226, 232, 240, 0.95);
+  padding: 8px 12px 10px;
+  background: #fff;
+  border-top: 1px solid #e8eef5;
 }
 
 .ticket-template-row {
@@ -7123,41 +7165,51 @@ td strong {
 
 .ticket-template {
   flex: 0 0 auto;
-  padding: 7px 11px;
+  padding: 5px 10px;
   border-radius: 999px;
   background: #f1f5f9;
   color: #475569;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 700;
 }
 
 .ticket-stage-composer textarea {
-  min-height: 64px;
-  max-height: 110px;
-  height: 72px !important;
+  min-height: 56px;
+  max-height: 96px;
+  height: 64px !important;
   resize: none;
-  line-height: 1.8;
-  font-size: 15px;
+  line-height: 1.55;
+  font-size: 12px !important;
+  border-radius: 10px;
+  padding: 8px 10px;
 }
 
 .ticket-composer-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .ticket-internal {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  color: #475569;
-  font-size: 13px;
+  gap: 6px;
+  color: #64748b;
+  font-size: 11px;
 }
 
 .ticket-composer-hint {
   color: #94a3b8;
-  font-size: 12px;
+  font-size: 10px;
+}
+
+.ticket-composer-bar .primary-btn {
+  min-height: 34px !important;
+  height: 34px;
+  padding: 0 14px !important;
+  font-size: 12px !important;
+  border-radius: 10px !important;
 }
 
 .ticket-stage-empty {
@@ -7221,18 +7273,19 @@ td strong {
 
   .ticket-back-btn {
     display: inline-flex;
-    width: 100%;
+    width: fit-content;
     justify-content: flex-start;
-    justify-self: stretch;
-    min-height: 44px;
-    padding: 10px 14px;
-    border-radius: 14px;
-    background: linear-gradient(180deg, #eff6ff, #dbeafe);
-    border: 1px solid rgba(59, 130, 246, 0.28);
-    color: #1d4ed8;
-    font-size: 14px;
-    font-weight: 800;
-    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+    justify-self: start;
+    min-height: 30px;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 9px;
+    background: #fff;
+    border: 1px solid #dbe3ef;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 700;
+    box-shadow: none;
   }
 
   .ticket-desk-scopes {
@@ -7270,46 +7323,45 @@ td strong {
 
   .ticket-stage-head {
     grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 12px;
+    gap: 8px;
+    padding: 10px;
     position: sticky;
     top: 0;
     z-index: 5;
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(10px);
+    background: #fff;
   }
 
   .ticket-stage-title h2 {
-    font-size: 16px;
+    font-size: 13px !important;
   }
 
   .ticket-stage-controls {
     width: 100%;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 6px;
   }
 
-  .ticket-stage-controls label {
-    flex: 1;
+  .ticket-stage-controls select {
     min-width: 0;
+    width: 100%;
   }
 
-  .ticket-stage-controls .ghost-btn {
-    grid-column: 1 / -1;
+  .ticket-assign-btn {
+    width: auto;
   }
 
   .ticket-stage-actions {
-    padding: 12px 12px 0;
-    gap: 12px;
+    padding: 10px 10px 0;
+    gap: 8px;
   }
 
   .ticket-action-card,
   .ticket-action-card.wallet {
     grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 14px;
-    border-radius: 18px;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
   }
 
   .ticket-amount-field {
@@ -7318,15 +7370,14 @@ td strong {
   }
 
   .ticket-stage-stream {
-    min-height: 360px;
-    padding: 14px 12px 18px;
+    min-height: 280px;
+    padding: 10px;
   }
 
   .ticket-stage-composer {
-    padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid rgba(226, 232, 240, 0.95);
-    background: rgba(255, 255, 255, 0.98);
-    backdrop-filter: blur(10px);
+    padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid #e8eef5;
+    background: #fff;
   }
 
   .ticket-template-row {

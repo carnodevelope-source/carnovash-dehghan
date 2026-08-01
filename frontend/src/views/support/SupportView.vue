@@ -17,55 +17,35 @@
         تیکت‌ها در تایم اداری حداکثر نیم ساعت و در تایم غیر اداری حداکثر ۲۴ ساعت پاسخ داده خواهند شد.
       </section>
 
-      <section class="workspace-grid" :class="{ 'ticket-detail-open': Boolean(detailState.ticket) }">
-        <div class="inbox-column">
-          <section class="stats-grid">
-            <article
-              v-for="item in statusTrack"
-              :key="item.key"
-              class="stat-card"
-              :class="[statusClass(item.key), { active: activeStatusTab === item.key }]"
-              @click="activeStatusTab = item.key"
-            >
-              <div class="stat-icon">{{ statusGlyph(item.key) }}</div>
-              <strong>{{ toFa(item.count) }}</strong>
-              <span>{{ item.label }}</span>
-              <small>{{ item.description }}</small>
-            </article>
-          </section>
-
-          <aside class="surface-card inbox-card">
-          <header class="panel-head">
+      <section class="support-workspace" :class="{ 'is-detail': Boolean(detailState.ticket) }">
+        <aside class="support-inbox">
+          <header class="support-inbox-head">
             <div>
-              <p class="panel-kicker">Ticket Inbox</p>
-              <h3>لیست تیکت‌های من</h3>
-              <span>{{ toFa(filteredTickets.length) }} مورد در وضعیت {{ activeStatusLabel }}</span>
+              <h3>تیکت‌های من</h3>
+              <span>{{ toFa(filteredTickets.length) }} مورد · {{ activeStatusLabel }}</span>
             </div>
-            <button type="button" class="mini-btn" @click="toggleStatusFilter">بعدی</button>
+            <button type="button" class="primary-btn support-new-btn" @click="openCreateTicketModal">تیکت جدید</button>
           </header>
 
-          <div class="chip-row">
-            <button
-              v-for="item in categoryTabs"
-              :key="item.key"
-              type="button"
-              class="chip-btn"
-              :class="{ active: activeCategoryTab === item.key }"
-              @click="activeCategoryTab = item.key"
-            >
-              {{ item.label }}
-            </button>
-          </div>
-
-          <div class="inbox-summary-grid">
-            <article class="summary-tile">
-              <small>منتظر پاسخ من</small>
-              <strong>{{ toFa(waitingForUserCount) }}</strong>
-            </article>
-            <article class="summary-tile">
-              <small>در حال بررسی</small>
-              <strong>{{ toFa(inProgressCount) }}</strong>
-            </article>
+          <div class="support-filter-bar">
+            <div class="status-tabs" role="tablist" aria-label="فیلتر وضعیت">
+              <button
+                v-for="item in statusTrack"
+                :key="item.key"
+                type="button"
+                role="tab"
+                class="status-tab"
+                :class="{ active: activeStatusTab === item.key }"
+                :aria-selected="activeStatusTab === item.key"
+                @click="activeStatusTab = item.key"
+              >
+                <span>{{ item.label }}</span>
+                <em>{{ toFa(item.count) }}</em>
+              </button>
+            </div>
+            <select v-model="activeCategoryTab" class="category-select" aria-label="دسته‌بندی">
+              <option v-for="item in categoryTabs" :key="item.key" :value="item.key">{{ item.label }}</option>
+            </select>
           </div>
 
           <div v-if="filteredTickets.length" class="ticket-list">
@@ -73,90 +53,63 @@
               v-for="ticket in filteredTickets"
               :key="ticket.id"
               class="ticket-row"
-              :class="[statusClass(ticket.status), { selected: detailState.ticket?.id === ticket.id }]"
+              :class="{ selected: detailState.ticket?.id === ticket.id }"
               role="button"
               tabindex="0"
               @click="openTicketDetail(ticket.id)"
               @keydown.enter.prevent="openTicketDetail(ticket.id)"
               @keydown.space.prevent="openTicketDetail(ticket.id)"
             >
-              <div class="ticket-row-meta ticket-row-meta-top">
-                <span class="meta-pill mono">#{{ ticket.id }}</span>
-                <span>{{ formatDateTime(ticket.updated_at) }}</span>
-              </div>
               <div class="ticket-row-top">
                 <strong>{{ ticket.subject }}</strong>
                 <span class="status-pill" :class="statusClass(ticket.status)">{{ clientStatusLabel(ticket) }}</span>
               </div>
-              <p>{{ ticket.last_message_preview || ticket.message }}</p>
-              <div class="ticket-row-tags">
-                <span class="meta-pill">{{ categoryLabel(ticket.category) }}</span>
-                <span class="meta-pill">{{ priorityLabel(ticket.priority) }}</span>
-                <span>{{ toFa(ticket.messages_count || 0) }} پیام</span>
-              </div>
-              <div class="ticket-row-meta">
-                <span>{{ ticketLastResponder(ticket) }}</span>
+              <p class="ticket-row-preview">{{ ticket.last_message_preview || ticket.message }}</p>
+              <div class="ticket-row-foot">
+                <span class="mono">#{{ ticket.id }}</span>
+                <span>{{ categoryLabel(ticket.category) }}</span>
+                <span>{{ formatDateTime(ticket.updated_at) }}</span>
               </div>
             </article>
           </div>
 
-          <div v-else class="empty-state">
-            <div class="empty-icon" aria-hidden="true">
-              <svg viewBox="0 0 64 64" fill="none">
-                <circle cx="32" cy="32" r="27" stroke="currentColor" stroke-width="2.4" />
-                <path d="m22 33 8 8 14-18" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </div>
-            <h3>تیکتی در این نما نیست</h3>
-            <p>فیلتر وضعیت یا دسته‌بندی را تغییر دهید، یا یک تیکت تازه ثبت کنید.</p>
+          <div v-else class="empty-state inbox-empty">
+            <h3>تیکتی در این فیلتر نیست</h3>
+            <p>وضعیت یا دسته‌بندی را عوض کنید، یا تیکت تازه ثبت کنید.</p>
             <button type="button" class="primary-btn" @click="openCreateTicketModal">ثبت تیکت</button>
           </div>
-          </aside>
-        </div>
+        </aside>
 
-        <section class="surface-card conversation-card">
+        <section class="support-detail">
           <div v-if="detailState.loading" class="loading-state">در حال بارگذاری گفتگو...</div>
 
           <template v-else-if="detailState.ticket">
-            <header class="conversation-head">
-              <button type="button" class="support-back-btn" @click="resetDetailState">
-                بازگشت به لیست
-              </button>
-              <div class="conversation-copy">
-                <span class="panel-kicker">Conversation</span>
-                <div class="conversation-title">
-                  <h3 :title="detailState.ticket.subject">{{ detailState.ticket.subject }}</h3>
-                  <span class="status-pill" :class="statusClass(detailState.ticket.status)">
-                    {{ clientStatusLabel(detailState.ticket) }}
-                  </span>
-                </div>
+            <header class="ticket-view-head">
+              <button type="button" class="support-back-btn" @click="resetDetailState">← لیست</button>
+              <div class="ticket-view-title">
+                <h3 :title="detailState.ticket.subject">{{ detailState.ticket.subject }}</h3>
+                <span class="status-pill" :class="statusClass(detailState.ticket.status)">
+                  {{ clientStatusLabel(detailState.ticket) }}
+                </span>
               </div>
-
-              <div class="conversation-tags">
-                <span class="meta-pill">{{ categoryLabel(detailState.ticket.category) }}</span>
-                <span class="meta-pill">{{ priorityLabel(detailState.ticket.priority) }}</span>
-                <span class="meta-pill mono">#{{ detailState.ticket.id }}</span>
-              </div>
+              <p class="ticket-view-meta">
+                <span>#{{ detailState.ticket.id }}</span>
+                <span>{{ categoryLabel(detailState.ticket.category) }}</span>
+                <span>{{ priorityLabel(detailState.ticket.priority) }}</span>
+              </p>
             </header>
 
-            <section v-if="detailState.ticket.attachments?.length" class="ticket-attachments-shell">
-              <div class="reply-head">
-                <strong>فایل‌های پیوست</strong>
-                <small>{{ toFa(detailState.ticket.attachments.length) }} فایل</small>
-              </div>
-              <div class="ticket-attachments-list">
-                <a
-                  v-for="attachment in detailState.ticket.attachments"
-                  :key="attachment.id"
-                  class="ticket-attachment-item"
-                  :href="attachment.file_url"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <strong>{{ attachment.original_name || 'فایل پیوست' }}</strong>
-                  <span>مشاهده فایل</span>
-                </a>
-              </div>
+            <section v-if="detailState.ticket.attachments?.length" class="ticket-files-bar">
+              <a
+                v-for="attachment in detailState.ticket.attachments"
+                :key="attachment.id"
+                class="ticket-file-link"
+                :href="attachment.file_url"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {{ attachment.original_name || 'پیوست' }}
+              </a>
             </section>
 
             <section ref="messageThreadRef" class="message-thread">
@@ -180,27 +133,22 @@
 
             <footer class="conversation-footer" :class="{ 'is-closed': detailState.ticket.status === 'closed' }">
               <section v-if="detailState.ticket.status !== 'closed'" class="reply-shell">
-                <div class="reply-head">
-                  <strong>ارسال پاسخ</strong>
-                </div>
-
                 <div class="reply-form">
                   <textarea
                     v-model.trim="detailState.replyBody"
                     :disabled="detailState.sendingReply"
-                    rows="3"
-                    placeholder="پاسخ تکمیلی خود را بنویسید..."
+                    rows="2"
+                    placeholder="پاسخ خود را بنویسید..."
                     @keydown.ctrl.enter.prevent="submitReply"
                   />
                   <div class="reply-actions">
-                    <span class="hint">{{ toFa(detailState.replyBody.length) }} کاراکتر</span>
                     <button
                       type="button"
                       class="primary-btn"
                       :disabled="detailState.sendingReply || !detailState.replyBody"
                       @click="submitReply"
                     >
-                      {{ detailState.sendingReply ? 'در حال ارسال...' : 'ارسال پیام' }}
+                      {{ detailState.sendingReply ? '...' : 'ارسال' }}
                     </button>
                   </div>
                 </div>
@@ -208,17 +156,14 @@
 
               <section v-else class="feedback-shell">
                 <div class="closed-note compact">
-                  <span class="status-pill closed">تیکت بسته شده</span>
-                  <p>اگر مشکل باقی است، تیکت جدید با ارجاع به #{{ detailState.ticket.id }} ثبت کنید.</p>
-                </div>
-
-                <div class="reply-head">
-                  <strong>امتیازدهی به پشتیبانی</strong>
-                  <small v-if="canRateTicket(detailState.ticket)">تجربه رسیدگی را ثبت کنید.</small>
-                  <small v-else>نظر شما قبلا ثبت شده است.</small>
+                  <span class="status-pill closed">بسته شده</span>
+                  <p>برای پیگیری مجدد، تیکت جدید ثبت کنید.</p>
                 </div>
 
                 <template v-if="canRateTicket(detailState.ticket)">
+                  <div class="reply-head">
+                    <strong>امتیاز به پشتیبانی</strong>
+                  </div>
                   <div class="rating-stars">
                     <button
                       v-for="score in 5"
@@ -234,7 +179,7 @@
                   <textarea
                     v-model.trim="detailState.feedbackText"
                     rows="2"
-                    placeholder="اختیاری: تجربه خود را خیلی کوتاه بنویسید..."
+                    placeholder="اختیاری: نظر کوتاه..."
                   />
                   <div class="reply-actions">
                     <button type="button" class="primary-btn" :disabled="!detailState.feedbackScore" @click="submitTicketFeedback">
@@ -246,24 +191,16 @@
                 <div v-else class="feedback-static">
                   <div class="feedback-score">{{ satisfactionLabel(detailState.ticket.customer_satisfaction) }}</div>
                   <p v-if="detailState.ticket.customer_feedback">{{ detailState.ticket.customer_feedback }}</p>
-                  <p v-else>برای این تیکت امتیاز ثبت شده است.</p>
                 </div>
               </section>
             </footer>
           </template>
 
           <div v-else class="empty-state conversation-empty">
-            <div class="empty-icon" aria-hidden="true">
-              <svg viewBox="0 0 120 120" fill="none">
-                <path d="M28 32c0-8.837 7.163-16 16-16h32c8.837 0 16 7.163 16 16v24c0 8.837-7.163 16-16 16H58l-18 14v-14h-4c-8.837 0-16-7.163-16-16V32Z" stroke="currentColor" stroke-width="4" stroke-linejoin="round" />
-                <path d="M46 40h28M46 54h18" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
-              </svg>
-            </div>
             <h3>یک تیکت را انتخاب کنید</h3>
-            <p>برای دیدن جزئیات کامل، پاسخ‌های پشتیبانی و ادامه گفتگو، از ستون سمت راست یک تیکت را باز کنید.</p>
+            <p>از لیست سمت راست روی تیکت کلیک کنید تا گفتگو و جزئیات آن اینجا باز شود.</p>
           </div>
         </section>
-
       </section>
     </div>
 
@@ -643,15 +580,15 @@ const focusSearch = () => {
   if (element) element.focus()
 }
 
-const focusLatestTicket = async () => {
-  if (!tickets.value.length) return
-  await openTicketDetail(tickets.value[0].id)
-}
-
-const toggleStatusFilter = () => {
-  const order = ['open', 'pending', 'closed']
-  const currentIndex = order.findIndex((item) => item === activeStatusTab.value)
-  activeStatusTab.value = order[(currentIndex + 1) % order.length]
+const syncTicketSelection = () => {
+  const visibleIds = filteredTickets.value.map((item) => item.id)
+  if (!visibleIds.length) {
+    resetDetailState()
+    return
+  }
+  if (detailState.ticket?.id && !visibleIds.includes(detailState.ticket.id)) {
+    resetDetailState()
+  }
 }
 
 const buildStructuredMessage = () => {
@@ -804,13 +741,7 @@ const submitReply = async () => {
 }
 
 const ensureActiveTicket = async () => {
-  const visibleIds = filteredTickets.value.map((item) => item.id)
-  if (!visibleIds.length) {
-    resetDetailState()
-    return
-  }
-  if (detailState.ticket?.id && visibleIds.includes(detailState.ticket.id)) return
-  await openTicketDetail(visibleIds[0])
+  syncTicketSelection()
 }
 
 const loadTickets = async (options = {}) => {
@@ -832,7 +763,7 @@ const loadTickets = async (options = {}) => {
       return
     }
   }
-  await ensureActiveTicket()
+  syncTicketSelection()
 }
 
 const refreshTicketsQuietly = async () => {
@@ -876,16 +807,16 @@ const submitTicket = async () => {
   await openTicketDetail(data.id)
 }
 
-watch(activeStatusTab, async () => {
-  await ensureActiveTicket()
+watch(activeStatusTab, () => {
+  syncTicketSelection()
 })
 
-watch(activeCategoryTab, async () => {
-  await ensureActiveTicket()
+watch(activeCategoryTab, () => {
+  syncTicketSelection()
 })
 
-watch(searchQuery, async () => {
-  await ensureActiveTicket()
+watch(searchQuery, () => {
+  syncTicketSelection()
 })
 
 watch(() => ticketModal.category, (value) => {
@@ -928,6 +859,364 @@ onBeforeUnmount(() => {
   color: #5b3f8c;
   font-weight: 800;
   line-height: 1.9;
+}
+
+.support-workspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  min-height: calc(100dvh - 200px);
+}
+
+.support-inbox,
+.support-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+
+.support-inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.support-inbox-head h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.support-inbox-head span {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.support-new-btn {
+  flex-shrink: 0;
+  min-height: 36px !important;
+  height: 36px;
+  padding: 0 12px !important;
+  font-size: 12px !important;
+  border-radius: 12px !important;
+}
+
+.support-filter-bar {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #eef2f7;
+  background: #f8fafc;
+}
+
+.status-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: #eef2f7;
+}
+
+.status-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.status-tab em {
+  font-style: normal;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #334155;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-tab.active {
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.status-tab.active em {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.category-select {
+  height: 38px;
+  border: 1px solid #dbe3ef;
+  border-radius: 12px;
+  padding: 0 12px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.support-inbox .ticket-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  align-content: start;
+}
+
+.support-inbox .ticket-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #e8eef5;
+  border-radius: 14px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.support-inbox .ticket-row:hover,
+.support-inbox .ticket-row.selected {
+  border-color: #93c5fd;
+  background: #f8fbff;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+}
+
+.support-inbox .ticket-row-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.support-inbox .ticket-row-top strong {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #0f172a;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.support-inbox .ticket-row-preview {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.support-inbox .ticket-row-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.support-inbox .inbox-empty {
+  margin: auto;
+  padding: 24px 16px;
+}
+
+.support-detail {
+  padding: 0;
+}
+
+.support-detail > .loading-state,
+.support-detail > .conversation-empty {
+  margin: auto;
+  padding: 32px 20px;
+  text-align: center;
+}
+
+.support-detail > .ticket-view-head,
+.support-detail > .ticket-files-bar {
+  padding: 10px 12px 0;
+}
+
+.support-detail > .message-thread {
+  flex: 1 1 auto;
+  min-height: 180px;
+  height: auto !important;
+  max-height: none !important;
+  overflow: auto;
+  margin: 8px 12px;
+  padding: 10px !important;
+  border-radius: 14px !important;
+}
+
+.support-detail > .conversation-footer {
+  padding: 10px 12px 12px;
+  border-top: 1px solid #eef2f7;
+  background: #fbfcfe;
+}
+
+.ticket-view-head {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 10px !important;
+  border-bottom: 1px solid #eef2f7;
+  flex: 0 0 auto;
+}
+
+.ticket-view-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ticket-view-title h3 {
+  margin: 0 !important;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1.4 !important;
+  color: #0f172a;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ticket-view-meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.ticket-files-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 8px !important;
+}
+
+.ticket-file-link {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.support-detail .status-pill {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.support-detail .reply-shell,
+.support-detail .feedback-shell {
+  padding: 10px !important;
+  gap: 8px !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+.support-detail .reply-form {
+  display: grid;
+  gap: 8px;
+}
+
+.support-detail .reply-form textarea,
+.support-detail .feedback-shell textarea {
+  min-height: 64px !important;
+  font-size: 12px !important;
+  border-radius: 10px !important;
+}
+
+.support-detail .reply-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-direction: row !important;
+  align-items: center !important;
+}
+
+.support-detail .reply-actions .primary-btn {
+  min-height: 34px !important;
+  height: 34px;
+  padding: 0 14px !important;
+  font-size: 12px !important;
+  border-radius: 10px !important;
+}
+
+.support-detail .message-bubble {
+  width: min(88%, 420px) !important;
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+}
+
+.support-detail .message-bubble p {
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+}
+
+.support-detail .message-meta {
+  gap: 6px !important;
+  margin-bottom: 4px;
+  flex-direction: row !important;
+  align-items: center !important;
+}
+
+.support-detail .sender-tag,
+.support-detail .message-meta small {
+  font-size: 10px !important;
+}
+
+.support-back-btn {
+  display: none;
 }
 
 .surface-card,
@@ -2016,6 +2305,60 @@ onBeforeUnmount(() => {
 
   .workspace-grid.ticket-detail-open .inbox-column {
     display: none;
+  }
+
+  .support-workspace {
+    grid-template-columns: 1fr;
+    min-height: calc(100dvh - 160px);
+  }
+
+  .support-workspace:not(.is-detail) .support-detail {
+    display: none;
+  }
+
+  .support-workspace.is-detail .support-inbox {
+    display: none;
+  }
+
+  .support-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: fit-content;
+    height: 30px;
+    padding: 0 10px;
+    margin-bottom: 4px;
+    border: 1px solid #dbe3ef;
+    border-radius: 9px;
+    background: #fff;
+    color: #334155;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .support-inbox-head h3 {
+    font-size: 14px;
+  }
+
+  .status-tab {
+    min-height: 32px;
+    font-size: 11px;
+  }
+
+  .support-detail > .message-thread {
+    margin: 6px 10px;
+  }
+
+  .support-detail > .ticket-view-head,
+  .support-detail > .ticket-files-bar,
+  .support-detail > .conversation-footer {
+    padding-inline: 10px;
+  }
+
+  .ticket-view-title h3 {
+    font-size: 13px !important;
   }
 
   .modal-head {

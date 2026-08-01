@@ -95,6 +95,7 @@
         <article v-for="card in visibleSummaryCards" :key="card.key" class="kpi-card">
           <p>{{ card.label }}</p>
           <strong>{{ card.value }}</strong>
+          <small v-if="card.hint" class="kpi-hint">{{ card.hint }}</small>
         </article>
       </section>
 
@@ -224,6 +225,37 @@
                       :plate-type="row.plate_type || 'car'"
                       compact
                     /></span></td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+          </tbody></table></div>
+        </template>
+
+        <template v-else-if="activeTab === 'discount'">
+          <h3>گزارش تخفیف</h3>
+          <p class="discount-tab-note">
+            تخفیف امتیاز مشتری همان تخفیف باشگاه مشتریان است که بر اساس امتیاز و دفعات مراجعه پلاک در بازه انتخابی ثبت شده است.
+          </p>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>تخفیف امتیاز / مراجعه</th><th>تخفیف مجموعه</th><th>تخفیف دستی</th><th>جمع تخفیف</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in data.discount_report" :key="`d-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)">
+              <td>{{ row.row }}</td>
+              <td>{{ row.driver_name }}</td>
+              <td>{{ row.driver_phone }}</td>
+              <td>{{ row.car_model }}</td>
+              <td>{{ row.car_color || '-' }}</td>
+              <td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+                :plate-number="row.plate_number"
+                :plate-left="row.plate_left"
+                :plate-letter="row.plate_letter"
+                :plate-mid="row.plate_mid"
+                :plate-right="row.plate_right"
+                :plate-type="row.plate_type || 'car'"
+                compact
+              /></span></td>
+              <td>{{ money(row.loyalty_discount_total) }}</td>
+              <td>{{ money(row.facility_discount_total) }}</td>
+              <td>{{ money(row.manual_discount_total) }}</td>
+              <td>{{ money(row.discount_total) }}</td>
+              <td>{{ dateTime(row.created_at) }}</td>
+            </tr>
+            <tr v-if="!data.discount_report.length"><td colspan="11">در این بازه تخفیفی ثبت نشده است.</td></tr>
           </tbody></table></div>
         </template>
 
@@ -443,9 +475,34 @@ const filters = reactive({
   plateMid: '',
   plateRight: ''
 })
-const summary = reactive({ vehicles_count: 0, carwash_total: 0, worker_total: 0, tips_total: 0, discount_total: 0, tax_total: 0, final_total: 0, before_discount_total: 0, payable_worker_total: 0, bonus_total: 0, penalty_total: 0 })
-const sectionTotals = reactive({ overall: {}, carwash: {}, worker: {}, tips: {}, revenue: {}, attendance: {}, blacklist: {} })
-const data = reactive({ overall_report: [], carwash_report: [], worker_report: [], tips_report: [], attendance_report: [], blacklist_report: [], revenue_report: [] })
+const summary = reactive({
+  vehicles_count: 0,
+  carwash_total: 0,
+  worker_total: 0,
+  tips_total: 0,
+  discount_total: 0,
+  facility_discount_total: 0,
+  loyalty_discount_total: 0,
+  manual_discount_total: 0,
+  loyalty_discount_count: 0,
+  tax_total: 0,
+  final_total: 0,
+  before_discount_total: 0,
+  payable_worker_total: 0,
+  bonus_total: 0,
+  penalty_total: 0
+})
+const sectionTotals = reactive({ overall: {}, carwash: {}, worker: {}, tips: {}, discount: {}, revenue: {}, attendance: {}, blacklist: {} })
+const data = reactive({
+  overall_report: [],
+  carwash_report: [],
+  worker_report: [],
+  tips_report: [],
+  discount_report: [],
+  attendance_report: [],
+  blacklist_report: [],
+  revenue_report: []
+})
 const expandedServiceRows = ref({})
 const selectedWorkerSummary = ref(null)
 const selectedWorkerTransactions = ref([])
@@ -463,6 +520,7 @@ const tabs = [
   { key: 'carwash', label: 'حق کارواش', icon: 'wallet', help: sectionHelpByPage.reports.carwash },
   { key: 'worker', label: 'حق نیرو', icon: 'users3', help: sectionHelpByPage.reports.worker },
   { key: 'tips', label: 'انعام', icon: 'message', help: sectionHelpByPage.reports.tips },
+  { key: 'discount', label: 'تخفیف', icon: 'star', help: sectionHelpByPage.reports.discount },
   { key: 'revenue', label: 'گزارش درآمد', icon: 'graph', help: sectionHelpByPage.reports.revenue },
   { key: 'attendance', label: 'ورود و خروج', icon: 'calendar', help: sectionHelpByPage.reports.attendance },
   { key: 'blacklist', label: 'لیست سیاه', icon: 'danger', help: sectionHelpByPage.reports.blacklist }
@@ -557,6 +615,29 @@ const visibleSummaryCards = computed(() => {
   if (activeTab.value === 'tips') {
     return [
       { key: 'tips_total', label: 'انعام', value: money(summary.tips_total) }
+    ]
+  }
+  if (activeTab.value === 'discount') {
+    const loyaltyTotal = Number(sectionTotals.discount?.loyalty_discount_total ?? summary.loyalty_discount_total ?? 0)
+    const loyaltyCount = Number(sectionTotals.discount?.loyalty_discount_count ?? summary.loyalty_discount_count ?? 0)
+    return [
+      { key: 'discount_total', label: 'جمع کل تخفیف', value: money(sectionTotals.discount?.discount_total ?? summary.discount_total) },
+      { key: 'loyalty_discount_total', label: 'تخفیف امتیاز مشتری', value: money(loyaltyTotal) },
+      {
+        key: 'loyalty_visit_discount',
+        label: 'تخفیف دفعات مراجعه',
+        value: money(loyaltyTotal),
+        hint: loyaltyCount
+          ? `${Number(loyaltyCount).toLocaleString('fa-IR')} مراجعه با تخفیف امتیاز`
+          : 'در این بازه تخفیف امتیاز ثبت نشده'
+      },
+      { key: 'facility_discount_total', label: 'تخفیف مجموعه', value: money(sectionTotals.discount?.facility_discount_total ?? summary.facility_discount_total) },
+      { key: 'manual_discount_total', label: 'تخفیف دستی', value: money(sectionTotals.discount?.manual_discount_total ?? summary.manual_discount_total) },
+      {
+        key: 'discount_rows_count',
+        label: 'تعداد سفارش‌های دارای تخفیف',
+        value: Number(sectionTotals.discount?.count || data.discount_report.length || 0).toLocaleString('fa-IR')
+      }
     ]
   }
   if (activeTab.value === 'revenue') {
@@ -841,6 +922,7 @@ const fetchReports = async () => {
     Object.assign(sectionTotals.carwash, payload.section_totals?.carwash || {})
     Object.assign(sectionTotals.worker, payload.section_totals?.worker || {})
     Object.assign(sectionTotals.tips, payload.section_totals?.tips || {})
+    Object.assign(sectionTotals.discount, payload.section_totals?.discount || {})
     Object.assign(sectionTotals.attendance, payload.section_totals?.attendance || {})
     Object.assign(sectionTotals.blacklist, payload.section_totals?.blacklist || {})
     Object.assign(sectionTotals.revenue, payload.section_totals?.revenue || {})
@@ -849,6 +931,7 @@ const fetchReports = async () => {
     data.carwash_report = payload.carwash_report || []
     data.worker_report = payload.worker_report || []
     data.tips_report = payload.tips_report || []
+    data.discount_report = payload.discount_report || []
     data.attendance_report = payload.attendance_report || []
     data.blacklist_report = payload.blacklist_report || []
     data.revenue_report = payload.revenue_report || []
@@ -1380,17 +1463,19 @@ onMounted(async () => {
 .plate-clear-btn:disabled{opacity:.45;cursor:not-allowed}
 .filters-actions{margin-right:auto;display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:nowrap}
 .summary-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px;margin-bottom:10px}
-.kpi-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fbff}
+.kpi-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px;background:#f8fbff;min-width:0}
 .kpi-card p{margin:0;color:#64748b;font-size:12px}
-.kpi-card strong{display:block;margin-top:6px;font-size:15px;color:#0f172a}
-.tabs-bar{display:flex;gap:6px;flex-wrap:wrap}
+.kpi-card strong{display:block;margin-top:6px;font-size:15px;color:#0f172a;word-break:break-word}
+.kpi-hint{display:block;margin-top:6px;color:#64748b;font-size:11px;line-height:1.6}
+.discount-tab-note{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;font-size:12px;line-height:1.8}
+.tabs-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px}
 .export-studio-actions{display:grid;grid-template-columns:repeat(2,minmax(180px,220px));justify-content:start;gap:12px}
 .export-action-btn{border:0;border-radius:18px;padding:14px 16px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;font-weight:700;transition:transform .18s ease, box-shadow .18s ease, opacity .18s ease}
 .export-action-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 14px 30px rgba(15,23,42,.14)}
 .export-action-btn:disabled{opacity:.7;cursor:not-allowed}
 .export-action-btn.csv{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff}
 .export-action-btn.pdf{background:#fff;border:1px solid #cbd5e1;color:#0f172a}
-.chip{border:0;background:#e2e8f0;color:#334155;padding:6px 12px;border-radius:999px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:8px}
+.chip{border:0;background:#e2e8f0;color:#334155;padding:6px 12px;border-radius:14px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:40px}
 .chip.active,.primary-btn{background:#2563eb;color:#fff}
 .primary-btn,.secondary-btn,.close-btn{border:0;border-radius:10px;padding:8px 12px;cursor:pointer}
 .secondary-btn{background:#e2e8f0}
@@ -1532,6 +1617,7 @@ onMounted(async () => {
 .pdf-format-option:disabled{opacity:.56;cursor:not-allowed}
 @media (max-width:1400px){.summary-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media (max-width:1200px){.filters-top-row{grid-template-columns:repeat(3,minmax(0,1fr))}.plate-filter-bar{flex-wrap:wrap}.filters-actions{margin-right:0;width:100%;justify-content:flex-start;flex-wrap:wrap}.worker-summary-grid{grid-template-columns:repeat(2,1fr)}.export-studio-actions{grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch}}
-@media (max-width:760px){.reports-content{font-size:11px}.range-chip,.chip,.field,.field input,.field select,.modal-step{font-size:10px}.table-wrap{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}.table-wrap table{width:max-content;min-width:100%;table-layout:auto}.table-wrap th,.table-wrap td{white-space:nowrap;word-break:normal;overflow-wrap:normal}.primary-btn,.secondary-btn,.close-btn{font-size:10px;padding:7px 10px}.filters-top-row{grid-template-columns:repeat(2,minmax(0,1fr))}.summary-grid,.worker-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.worker-head,.action-row,.services-preview-cell,.filters-actions{flex-direction:column;align-items:stretch}.kpi-card p,.services-expanded-box strong,.payout-card p{font-size:10px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:12px}.field input,.field select,.modal-body input,.modal-body select{height:34px}.range-bar,.tabs-bar{gap:5px}.modal-overlay{padding:10px}.modal-panel{max-height:calc(100vh - 20px);overflow:auto}.modal-body{grid-template-columns:repeat(2,minmax(0,1fr))}.export-studio-actions{grid-template-columns:1fr}.export-action-btn,.clear-btn{width:100%}}
-@media (max-width:480px){.reports-content{font-size:10px}.range-chip,.chip,.field,.field input,.field select{font-size:9px}.primary-btn,.secondary-btn,.close-btn{font-size:9px;padding:6px 9px}.kpi-card{padding:8px}.kpi-card p,.services-expanded-box strong,.services-expanded-box p,.payout-card p,.modal-step{font-size:9px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:11px}.field input,.field select,.modal-body input,.modal-body select{height:32px}.plate-filter-bar,.table-card,.modal-body{padding:8px}.worker-head,.action-row{gap:6px}.filters-top-row{grid-template-columns:1fr}.plate-type-inline,.plate-clear-btn,.plate-filter-editor{width:100%;max-width:none}}
+@media (max-width:900px){.summary-grid,.worker-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:768px){.reports-content{font-size:11px}.range-chip,.chip,.field,.field input,.field select,.modal-step{font-size:10px}.table-wrap{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}.table-wrap table{width:max-content;min-width:100%;table-layout:auto}.table-wrap th,.table-wrap td{white-space:nowrap;word-break:normal;overflow-wrap:normal}.primary-btn,.secondary-btn,.close-btn{font-size:10px;padding:7px 10px}.filters-top-row{grid-template-columns:repeat(2,minmax(0,1fr))}.summary-grid,.worker-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:8px}.kpi-card{padding:10px 8px;border-radius:10px}.worker-head,.action-row,.services-preview-cell,.filters-actions{flex-direction:column;align-items:stretch}.kpi-card p,.services-expanded-box strong,.payout-card p{font-size:10px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:12px}.field input,.field select,.modal-body input,.modal-body select{height:34px}.range-bar{gap:5px}.tabs-bar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tabs-bar .chip{width:100%;justify-content:center;min-height:40px;border-radius:12px}.modal-overlay{padding:10px}.modal-panel{max-height:calc(100vh - 20px);overflow:auto}.modal-body{grid-template-columns:repeat(2,minmax(0,1fr))}.export-studio-actions{grid-template-columns:1fr}.export-action-btn,.clear-btn{width:100%}}
+@media (max-width:480px){.reports-content{font-size:10px}.range-chip,.chip,.field,.field input,.field select{font-size:9px}.primary-btn,.secondary-btn,.close-btn{font-size:9px;padding:6px 9px}.summary-grid,.worker-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:6px}.kpi-card{padding:8px}.kpi-card p,.services-expanded-box strong,.services-expanded-box p,.payout-card p,.modal-step{font-size:9px}.kpi-card strong,.payout-card strong,.table-card h3{font-size:11px}.field input,.field select,.modal-body input,.modal-body select{height:32px}.plate-filter-bar,.table-card,.modal-body{padding:8px}.worker-head,.action-row{gap:6px}.filters-top-row{grid-template-columns:repeat(2,minmax(0,1fr))}.plate-type-inline,.plate-clear-btn,.plate-filter-editor{width:100%;max-width:none}}
 </style>

@@ -150,7 +150,7 @@ body.modal-open {
     max-width: 100%;
   }
 
-  #app :where(.topbar, .page-head, .page-actions, .head-row, .head-actions, .history-head, .history-controls, .hero-actions, .hero-top, .worker-actions, .conversation-title, .conversation-tags, .reply-actions, .block-head, .detail-row, .message-meta, .modal-actions) {
+  #app :where(.topbar, .page-head, .page-actions, .head-row, .head-actions, .history-head, .history-controls, .hero-actions, .hero-top, .worker-actions, .block-head, .detail-row, .modal-actions) {
     row-gap: 10px;
   }
 
@@ -211,8 +211,21 @@ body.modal-open {
     padding-left: 16px !important;
   }
 
-  #app :where(.summary-grid, .filters-card, .worker-summary-grid, .hero-mini-grid, .stats-grid, .metric-strip, .inbox-summary-grid, .wallet-summary-board, .shortcut-grid, .summary-stat-grid, .worker-selection-grid, .modern-worker-share-editor, .release-secondary-grid, .cheque-fields-grid, .worker-meta, .kpi-grid) {
+  #app :where(.filters-card, .hero-mini-grid, .stats-grid, .metric-strip, .inbox-summary-grid, .summary-stat-grid, .worker-selection-grid, .modern-worker-share-editor, .release-secondary-grid, .cheque-fields-grid, .worker-meta, .kpi-grid) {
     grid-template-columns: 1fr !important;
+  }
+
+  #app :where(.wallet-overview) {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "hero"
+      "sms"
+      "shortcuts"
+      "money" !important;
+  }
+
+  #app :where(.summary-grid, .worker-summary-grid, .shortcut-grid, .summary-money-row, .options-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
   #app :where(.modal-form, .history-summary, .payment-settings-grid, .printer-settings-grid) {
