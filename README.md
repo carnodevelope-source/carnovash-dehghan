@@ -502,7 +502,8 @@ gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
 | `IRANPAYAMAK_BASE_URL` | آدرس سرویس پیامک |
 | `IRANPAYAMAK_LINE_NUMBER` | شماره خط پیامک |
 | `IRANPAYAMAK_API_KEY` | کلید API پیامک |
-| `SMS_PRICE_PER_SEGMENT` | هزینه ثابت هر پیامک برای هر گیرنده |
+| `SMS_PRICE_PER_SEGMENT` | هزینه هر پارت پیامک (تومان) — بر اساس طول همان پیام قبل از ارسال |
+| `SMS_CHARS_PER_SEGMENT` | سقف کاراکتر پارت اول (پیش‌فرض ۷۰؛ پارت‌های بعدی ۶۷) |
 
 ### نمونه `.env`
 
@@ -534,10 +535,11 @@ DB_ROOT_PASSWORD=change-me-root
 PLATE_AI_SERVICE_URL=http://plate-ai:8765
 PLATE_AI_TIMEOUT_SECONDS=5
 
+SMS_PRICE_PER_SEGMENT=185
+SMS_CHARS_PER_SEGMENT=70
 IRANPAYAMAK_BASE_URL=https://api.iranpayamak.com
 IRANPAYAMAK_LINE_NUMBER=
 IRANPAYAMAK_API_KEY=
-SMS_PRICE_PER_SEGMENT=400
 ```
 
 ## داده‌های اولیه و Migration

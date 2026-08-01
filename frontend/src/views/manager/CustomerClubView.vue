@@ -729,6 +729,10 @@
                 <strong>{{ toFa(smsCharacterCount) }}</strong>
               </article>
               <article class="detail-metric">
+                <small>پارت پیام</small>
+                <strong>{{ toFa(smsSegmentCount) }}</strong>
+              </article>
+              <article class="detail-metric">
                 <small>تعداد گیرنده</small>
                 <strong>{{ toFa(smsRecipients.length) }}</strong>
               </article>
@@ -842,6 +846,7 @@ import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
 import { hasFeatureAccess } from '../../utils/attendanceAccess'
 import { normalizeIranMobile as normalizePhone } from '../../utils/phone'
 import { sectionHelpByPage } from '../../config/pageHelp'
+import { smsCharacterCount as countSmsCharacters, smsCostForText, smsSegmentsForText } from '../../utils/smsCost'
 import actionViewIcon from '../../assets/iconly/show.svg'
 import actionGroupIcon from '../../assets/iconly/category.svg'
 import actionSmsIcon from '../../assets/iconly/message.svg'
@@ -861,7 +866,7 @@ const templateSaving = ref(false)
 const customers = ref([])
 const smsCreditBalance = ref(0)
 const smsPricePerSegment = ref(185)
-const smsCharsPerSegment = ref(100)
+const smsCharsPerSegment = ref(70)
 const highlightedGroupId = ref('')
 const customerImportFileRef = ref(null)
 const CUSTOMER_IMPORT_PRICE = 500000
@@ -1035,17 +1040,16 @@ const groupBuilderPreview = computed(() => {
 })
 
 const smsRecipients = computed(() => smsComposer.recipients || [])
-const smsCharacterCount = computed(() => String(smsComposer.message || '').trim().length)
-const smsSegmentCount = computed(() => {
-  const length = smsCharacterCount.value
-  const perSegment = Math.max(1, Number(smsCharsPerSegment.value || 100))
-  if (length <= 0) return 0
-  return Math.ceil(length / perSegment)
-})
+const smsCharacterCount = computed(() => countSmsCharacters(smsComposer.message || ''))
+const smsSegmentCount = computed(() => smsSegmentsForText(smsComposer.message || '', {
+  charsPerSegment: Math.max(1, Number(smsCharsPerSegment.value || 70)),
+}))
 const estimatedSmsCost = computed(() => (
   smsRecipients.value.length
-  * smsSegmentCount.value
-  * Number(smsPricePerSegment.value || 0)
+  * smsCostForText(smsComposer.message || '', {
+    pricePerSegment: Number(smsPricePerSegment.value || 185),
+    charsPerSegment: Math.max(1, Number(smsCharsPerSegment.value || 70)),
+  })
 ))
 const hasEnoughSmsCredit = computed(() => smsCreditBalance.value >= estimatedSmsCost.value)
 const canSendSms = computed(() => smsRecipients.value.length > 0 && String(smsComposer.message || '').trim().length > 0 && hasEnoughSmsCredit.value)
@@ -1336,7 +1340,7 @@ const loadCustomerClubData = async ({ showLoading = true } = {}) => {
     smsLogs.value = Array.isArray(data?.logs) ? data.logs : []
     smsCreditBalance.value = Number(data?.summary?.sms_balance || 0)
     smsPricePerSegment.value = Number(data?.summary?.sms_price_per_segment || 185)
-    smsCharsPerSegment.value = Number(data?.summary?.sms_chars_per_segment || 100)
+    smsCharsPerSegment.value = Number(data?.summary?.sms_chars_per_segment || 70)
   } catch (_error) {
     customers.value = []
     customGroups.value = []
@@ -1344,7 +1348,7 @@ const loadCustomerClubData = async ({ showLoading = true } = {}) => {
     smsLogs.value = []
     smsCreditBalance.value = 0
     smsPricePerSegment.value = 185
-    smsCharsPerSegment.value = 100
+    smsCharsPerSegment.value = 70
   } finally {
     if (showLoading) loading.value = false
   }

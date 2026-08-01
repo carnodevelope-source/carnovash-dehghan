@@ -202,5 +202,7 @@ IRANPAYAMAK_API_KEY = config('IRANPAYAMAK_API_KEY', default='')
 IRANPAYAMAK_LINE_NUMBER = config('IRANPAYAMAK_LINE_NUMBER', default='')
 SMS_PRICE_PER_SEGMENT = config('SMS_PRICE_PER_SEGMENT', default=185, cast=int)
 SMS_CHARS_PER_SEGMENT = config('SMS_CHARS_PER_SEGMENT', default=70, cast=int)
+# IranPayamak appends unsubscribe text; counted in billable length (empty to disable).
+SMS_PROVIDER_FOOTER = config('SMS_PROVIDER_FOOTER', default='\nلغو11')
 # Keep vehicle assign/release SMS off the request path so operator actions stay snappy.
 SMS_SEND_IN_BACKGROUND = config('SMS_SEND_IN_BACKGROUND', default=True, cast=bool)

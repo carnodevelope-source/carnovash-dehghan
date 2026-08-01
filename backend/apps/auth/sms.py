@@ -7,6 +7,7 @@ from apps.notifications.services import (
     make_json_safe,
     normalize_phone,
     send_provider_sms,
+    sms_billable_text,
     sms_cost_for_text,
     sms_price_per_segment,
     sms_segments_for_text,
@@ -62,6 +63,7 @@ def send_logged_sms(*, tenant, text, phone, template_code, payload=None, created
     sms_price = sms_price_per_segment()
     segments = sms_segments_for_text(text)
     estimated_cost = sms_cost_for_text(text)
+    character_count = len(sms_billable_text(text))
     if charge_tenant_wallet and tenant and sms_wallet_balance(tenant) < estimated_cost:
         result = {'ok': False, 'message': 'موجودی کیف پول پیامک کافی نیست.'}
         create_sms_log(
@@ -70,6 +72,7 @@ def send_logged_sms(*, tenant, text, phone, template_code, payload=None, created
             template_code=template_code,
             payload={
                 **base_payload,
+                'character_count': character_count,
                 'estimated_cost': float(estimated_cost),
                 'segments': segments,
                 'price_per_segment': float(sms_price),
@@ -82,6 +85,7 @@ def send_logged_sms(*, tenant, text, phone, template_code, payload=None, created
     provider_result = send_provider_sms(tenant, text, [normalized_phone])
     log_payload = {
         **base_payload,
+        'character_count': character_count,
         'estimated_cost': float(estimated_cost),
         'segments': segments,
         'price_per_segment': float(sms_price),

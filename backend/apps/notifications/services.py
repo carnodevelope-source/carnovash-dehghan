@@ -32,18 +32,58 @@ ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩'
 
 
 def sms_chars_per_segment():
+    """Single-part UCS-2 limit (Melipayamak/IranPayamak Persian SMS = 70)."""
     return max(1, int(getattr(settings, 'SMS_CHARS_PER_SEGMENT', 70) or 70))
+
+
+def sms_chars_per_multipart_segment():
+    """
+    Multipart UCS-2 uses UDH overhead (typically 3 chars), so 67 when single is 70.
+    Melipayamak bills long Persian messages in these chunks.
+    """
+    single = sms_chars_per_segment()
+    return max(1, single - 3)
 
 
 def sms_price_per_segment():
     return Decimal(str(getattr(settings, 'SMS_PRICE_PER_SEGMENT', 185) or 185))
 
 
+def sms_provider_footer_text():
+    """
+    IranPayamak often appends an unsubscribe footer (e.g. لغو11) to delivered SMS.
+    Include it in billable length so wallet debit matches provider panel parts.
+    """
+    configured = getattr(settings, 'SMS_PROVIDER_FOOTER', None)
+    if configured is None:
+        return '\nلغو11'
+    return str(configured)
+
+
+def sms_billable_text(text):
+    body = str(text or '')
+    if not body.strip():
+        return ''
+    footer = sms_provider_footer_text()
+    if not footer:
+        return body
+    if 'لغو' in body:
+        return body
+    return f'{body}{footer}'
+
+
 def sms_segments_for_text(text):
-    length = len(str(text or ''))
+    """
+    Count Melipayamak-style parts from the exact message that will be billed.
+    Not a flat fee: each send is measured by its own character length.
+    """
+    length = len(sms_billable_text(text))
     if length <= 0:
         return 0
-    return math.ceil(length / sms_chars_per_segment())
+    single_limit = sms_chars_per_segment()
+    if length <= single_limit:
+        return 1
+    return math.ceil(length / sms_chars_per_multipart_segment())
 
 
 def sms_cost_for_text(text):
@@ -870,6 +910,7 @@ def _send_vehicle_event_sms_sync(event_code, tenant, vehicle, *, created_by=None
         item_payload = make_json_safe({
             **payload,
             'text': item['text'],
+            'character_count': len(sms_billable_text(item['text'])),
             'estimated_cost': float(item_cost),
             'segments': sms_segments_for_text(item['text']),
             'price_per_segment': float(sms_price),

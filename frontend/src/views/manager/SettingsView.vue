@@ -440,7 +440,7 @@
               <div class="general-settings-head">
                 <div>
                   <strong>تنظیمات سرویس پیامک</strong>
-                  <p class="sms-cost-hint">هزینه: هر ۷۰ کاراکتر ۱۸۵ تومان (۱–۷۰: ۱۸۵، ۷۱–۱۴۰: ۳۷۰، …)</p>
+                  <p class="sms-cost-hint">هزینه بر اساس طول همان پیام قبل از ارسال: تا ۷۰ کاراکتر = ۱ پارت (۱۸۵ تومان)، پیام بلندتر با پارت‌های ۶۷ کاراکتری محاسبه می‌شود.</p>
                 </div>
               </div>
               <div class="sms-auto-send-panel">
@@ -845,6 +845,7 @@ import { sectionHelpByPage } from '../../config/pageHelp'
 import HelpTip from '../../components/base/HelpTip.vue'
 import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
 import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
+import { smsCharacterCount, smsCostForText, smsSegmentsForText } from '../../utils/smsCost'
 import {
   checkPrintAgentHealth,
   fetchSystemPrinters,
@@ -1157,23 +1158,19 @@ const smsTemplateTokens = [
 const SMS_CHARS_PER_SEGMENT = 70
 const SMS_PRICE_PER_SEGMENT = 185
 
-const smsSegmentsForText = (text) => {
-  const length = String(text || '').length
-  if (!length) return 0
-  return Math.ceil(length / SMS_CHARS_PER_SEGMENT)
-}
-
-const smsCostForText = (text) => smsSegmentsForText(text) * SMS_PRICE_PER_SEGMENT
-
 const toPersianDigits = (value) => String(value ?? '').replace(/\d/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)] || digit)
 
 const toPersianMoney = (value) => toPersianDigits(Number(value || 0).toLocaleString('en-US'))
 
 const smsEstimatedCostLabel = (text) => {
-  const segments = smsSegmentsForText(text)
+  const chars = smsCharacterCount(text)
+  const segments = smsSegmentsForText(text, { charsPerSegment: SMS_CHARS_PER_SEGMENT })
   if (!segments) return 'بدون هزینه'
-  const amount = smsCostForText(text)
-  return `حدود ${toPersianMoney(amount)} تومان (${toPersianDigits(segments)} پارت)`
+  const amount = smsCostForText(text, {
+    pricePerSegment: SMS_PRICE_PER_SEGMENT,
+    charsPerSegment: SMS_CHARS_PER_SEGMENT,
+  })
+  return `${toPersianDigits(chars)} کاراکتر • ${toPersianDigits(segments)} پارت • حدود ${toPersianMoney(amount)} تومان`
 }
 
 const ensureReleasedSmsTemplateDetails = (template) => {
