@@ -683,9 +683,14 @@
                     <small v-if="selectedTicket.wallet_id">کیف پول #{{ selectedTicket.wallet_id }}</small>
                   </div>
                   <label class="ticket-amount-field">
-                    <span>مبلغ (تومان)</span>
+                    <span>{{ isWalletBankWithdrawalTicket(selectedTicket) ? 'مبلغ برداشت (تومان)' : 'مبلغ خام واریزی (تومان)' }}</span>
                     <input v-model="walletTransfer.amountText" inputmode="numeric" placeholder="مثلا ۲۵۰۰۰۰" />
                   </label>
+                  <div v-if="!isWalletBankWithdrawalTicket(selectedTicket) && walletTransferGross > 0" class="wallet-tax-preview">
+                    <div><span>مبلغ خام</span><strong>{{ money(walletTransferGross) }}</strong></div>
+                    <div><span>مالیات ۱۰٪</span><strong>− {{ money(walletTransferTax) }}</strong></div>
+                    <div class="net"><span>واریز به کیف پول</span><strong>{{ money(walletTransferNet) }}</strong></div>
+                  </div>
                   <button type="button" class="primary-btn" :disabled="walletTransfer.submitting" @click="submitWalletTransfer">
                     {{ walletTransfer.submitting ? walletOperationSubmittingLabel : walletOperationButtonLabel }}
                   </button>
@@ -2182,13 +2187,17 @@ const extractWalletTransferAmount = (ticket) => {
   }
   return 0
 }
-const walletOperationButtonLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'تایید و کسر از کیف پول' : 'انتقال پول')
+const walletOperationButtonLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'تایید و کسر از کیف پول' : 'تایید و شارژ کیف پول')
 const walletOperationSubmittingLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'در حال کسر...' : 'در حال انتقال...')
 const walletOperationHint = computed(() => (
   isWalletBankWithdrawalTicket(selectedTicket.value)
     ? 'اول واریز بانکی را انجام دهید، بعد تایید کنید تا مبلغ از کیف پول کم شود.'
-    : 'مبلغ تاییدشده را وارد کنید تا به کیف پول مقصد اعمال شود.'
+    : 'مبلغ خام رسید را وارد کنید. بعد از تایید، ۱۰٪ مالیات کسر و باقی‌مانده به کیف پول اضافه می‌شود.'
 ))
+const WALLET_DEPOSIT_TAX_PERCENT = 10
+const walletTransferGross = computed(() => parseTransferAmount(walletTransfer.amountText) || 0)
+const walletTransferTax = computed(() => Math.round((walletTransferGross.value * WALLET_DEPOSIT_TAX_PERCENT) / 100))
+const walletTransferNet = computed(() => Math.max(0, walletTransferGross.value - walletTransferTax.value))
 const initials = (value) => {
   const parts = String(value || '').trim().split(' ').filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`
@@ -2686,7 +2695,7 @@ const submitWalletTransfer = async () => {
       wallet_id: Number(selectedTicket.value.wallet_id || 0) || undefined
     })
     walletTransfer.amountText = ''
-    walletTransfer.success = 'انتقال وجه ثبت شد و کیف پول مقصد شارژ شد.'
+    walletTransfer.success = 'انتقال وجه ثبت شد و مبلغ خالص (بعد از مالیات) به کیف پول اضافه شد.'
     walletTransfer.skipNextSuggestedAmount = true
     if (isWalletBankWithdrawalTicket(selectedTicket.value)) {
       walletTransfer.success = 'تایید شد و مبلغ از کیف پول کم شد.'
@@ -7031,7 +7040,41 @@ td strong {
 .ticket-action-card.wallet {
   background: rgba(239, 246, 255, 0.95);
   border-color: rgba(59, 130, 246, 0.2);
-  grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
+  grid-template-columns: 1fr;
+}
+
+.wallet-tax-preview {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e8eef5;
+}
+
+.wallet-tax-preview > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.wallet-tax-preview span {
+  color: #64748b;
+}
+
+.wallet-tax-preview strong {
+  color: #0f172a;
+}
+
+.wallet-tax-preview .net {
+  padding-top: 4px;
+  border-top: 1px dashed #dbe3ef;
+}
+
+.wallet-tax-preview .net strong {
+  color: #166534;
 }
 
 .ticket-action-card .transfer-feedback {

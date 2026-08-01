@@ -29,6 +29,7 @@ from .sms import (
 )
 from .support_tickets import (
     apply_hq_ticket_visibility,
+    calculate_wallet_card_deposit_amounts as _calculate_wallet_card_deposit_amounts,
     claim_ticket_if_unassigned,
     close_stale_support_tickets,
     is_payment_support_ticket,
@@ -38,6 +39,7 @@ from .support_tickets import (
     parse_wallet_id_from_ticket as _parse_wallet_id_from_ticket,
     refer_ticket_to_user,
     send_payment_ticket_sms_to_simple_supporters,
+    WALLET_CARD_DEPOSIT_TAX_PERCENT,
 )
 from .serializers import (
     CarWashCreateSerializer,
@@ -1415,23 +1417,37 @@ class HqTicketWalletTransferView(HqBaseView):
 
         serializer = HqTicketWalletTransferSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        amount = serializer.validated_data['amount']
+        gross_amount = serializer.validated_data['amount']
+        gross_amount, tax_amount, net_amount = _calculate_wallet_card_deposit_amounts(gross_amount)
+        if net_amount <= 0:
+            return Response({'detail': 'مبلغ خالص بعد از مالیات معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
         wallet_id = serializer.validated_data.get('wallet_id') or _parse_wallet_id_from_ticket(ticket)
         if not wallet_id:
             return Response({'detail': 'کیف پول مقصد در تیکت مشخص نیست.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_cashflow = CashflowTransaction.objects.filter(
+            tenant=ticket.tenant,
+            reference_type='wallet_card_ticket',
+            reference_id=ticket.id,
+        ).first()
+        if existing_cashflow:
+            return Response({'detail': 'شارژ این تیکت قبلا ثبت شده است.'}, status=status.HTTP_400_BAD_REQUEST)
 
         wallet = Wallet.objects.select_for_update().filter(pk=wallet_id, tenant=ticket.tenant, is_active=True).first()
         if not wallet:
             return Response({'detail': 'کیف پول مقصد معتبر نیست.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        wallet.balance = Decimal(str(wallet.balance or 0)) + amount
+        wallet.balance = Decimal(str(wallet.balance or 0)) + net_amount
         wallet.save(update_fields=['balance', 'updated_at'])
         cashflow = CashflowTransaction.objects.create(
             tenant=ticket.tenant,
             wallet=wallet,
             direction=CashflowTransaction.Direction.IN,
-            amount=amount,
-            description=f'شارژ کارت به کارت از تیکت #{ticket.id}',
+            amount=net_amount,
+            description=(
+                f'شارژ کارت به کارت از تیکت #{ticket.id} '
+                f'(مبلغ واریزی {gross_amount:,.0f} − مالیات {WALLET_CARD_DEPOSIT_TAX_PERCENT:g}٪ = {tax_amount:,.0f})'
+            ),
             reference_type='wallet_card_ticket',
             reference_id=ticket.id,
             created_by=request.user,
@@ -1439,7 +1455,12 @@ class HqTicketWalletTransferView(HqBaseView):
         message = SupportTicketMessage.objects.create(
             ticket=ticket,
             sender=request.user,
-            body=f'انتقال وجه کارت به کارت تایید شد و مبلغ {amount:,.0f} تومان به کیف پول «{wallet.name}» اضافه شد.',
+            body=(
+                f'انتقال وجه کارت به کارت تایید شد.\n'
+                f'مبلغ خام واریزی: {gross_amount:,.0f} تومان\n'
+                f'مالیات {WALLET_CARD_DEPOSIT_TAX_PERCENT:g}٪: {tax_amount:,.0f} تومان\n'
+                f'مبلغ نهایی اضافه‌شده به کیف پول «{wallet.name}»: {net_amount:,.0f} تومان'
+            ),
             is_internal=True,
         )
         ticket.status = SupportTicket.Status.ANSWERED
@@ -1466,6 +1487,10 @@ class HqTicketWalletTransferView(HqBaseView):
                 'wallet_name': wallet.name,
                 'wallet_balance': wallet.balance,
                 'transaction_id': cashflow.id,
+                'gross_amount': gross_amount,
+                'tax_percent': WALLET_CARD_DEPOSIT_TAX_PERCENT,
+                'tax_amount': tax_amount,
+                'net_amount': net_amount,
                 'ticket': SupportTicketDetailSerializer(ticket).data,
             },
             status=status.HTTP_200_OK,

@@ -385,6 +385,18 @@
             </div>
           </div>
 
+          <div v-if="actionModal.type === 'deposit' && actionModal.paymentMethod === 'card' && selectedActionAmount > 0" class="wallet-modal-section deposit-tax-preview">
+            <div class="wallet-modal-section-head">
+              <strong>محاسبه واریز به کیف پول</strong>
+              <span>پس از تایید پشتیبانی، مالیات از مبلغ خام کسر می‌شود</span>
+            </div>
+            <div class="deposit-tax-rows">
+              <div><span>مبلغ خام واریزی</span><strong>{{ moneyWithUnit(selectedActionAmount) }}</strong></div>
+              <div><span>کسر مالیات ۱۰٪</span><strong class="tax">− {{ moneyWithUnit(depositTaxAmount) }}</strong></div>
+              <div class="net"><span>مبلغ نهایی اضافه‌شده به کیف پول</span><strong>{{ moneyWithUnit(depositNetAmount) }}</strong></div>
+            </div>
+          </div>
+
           <div v-if="actionModal.type === 'deposit' && actionModal.paymentMethod === 'card'" class="wallet-modal-section card-payment-section">
             <div class="wallet-modal-section-head">
               <strong>اطلاعات کارت به کارت</strong>
@@ -396,7 +408,8 @@
               <span>{{ companyCardHolder }}</span>
             </div>
             <p class="card-payment-instruction">
-              بعد از پرداخت وجه روی این دکمه کلیک کنید. فرم تیکت پرداخت به صورت خودکار باز می‌شود؛ شماره و کد تراکنش یا مشخصات رسید واریز را وارد کنید و تیکت را ارجاع دهید.
+              مبلغ خام را کارت به کارت کنید. بعد از تایید پشتیبانی، ۱۰٪ مالیات کسر و باقی‌مانده به کیف پول اضافه می‌شود.
+              برای مثال اگر ۲٬۰۰۰٬۰۰۰ تومان واریز کنید، ۲۰۰٬۰۰۰ تومان مالیات و ۱٬۸۰۰٬۰۰۰ تومان به کیف پول می‌نشیند.
             </p>
             <button class="support-ticket-btn" type="button" @click="openPaymentSupportTicket">
               ثبت تیکت رسید واریز
@@ -457,7 +470,7 @@
 
           <div v-if="selectedActionAmount > 0" class="wallet-balance-preview-grid">
             <div class="wallet-balance-preview" :class="{ danger: balanceAfterAction < 0 }">
-              <span>{{ actionModal.type === 'deposit' ? 'موجودی بعد از واریز' : 'مانده مبدا' }}</span>
+              <span>{{ actionModal.type === 'deposit' ? 'موجودی بعد از واریز خالص' : 'مانده مبدا' }}</span>
               <strong>{{ moneyWithUnit(Math.max(0, balanceAfterAction)) }}</strong>
             </div>
             <div v-if="actionModal.type === 'withdraw' && actionModal.destinationType === 'wallet' && selectedDestinationWallet" class="wallet-balance-preview destination">
@@ -483,7 +496,7 @@
           </div>
 
           <div v-else class="wallet-note">
-            {{ actionModal.type === 'deposit' ? 'واریز کارت به کارت بعد از بررسی رسید توسط پشتیبانی به کیف پول اضافه می‌شود.' : 'انتقال بین کیف‌پول‌ها بلافاصله انجام می‌شود.' }}
+            {{ actionModal.type === 'deposit' ? 'واریز کارت به کارت بعد از تایید پشتیبانی با کسر ۱۰٪ مالیات به کیف پول اضافه می‌شود.' : 'انتقال بین کیف‌پول‌ها بلافاصله انجام می‌شود.' }}
           </div>
 
           <button v-if="actionModal.type !== 'deposit' || actionModal.paymentMethod !== 'card'" class="submit-btn" :class="actionModal.type === 'deposit' ? 'submit-deposit' : 'submit-withdraw'" type="button" :disabled="!canSubmitAction" @click="submitAction">
@@ -958,9 +971,16 @@ const actionQuickAmounts = computed(() => (
   actionModal.type === 'deposit' ? dynamicDepositAmounts.value : dynamicWithdrawAmounts.value
 ))
 const selectedActionAmount = computed(() => parseAmount(actionModal.amountText))
+const WALLET_DEPOSIT_TAX_PERCENT = 10
+const depositTaxAmount = computed(() => {
+  if (actionModal.type !== 'deposit' || actionModal.paymentMethod !== 'card') return 0
+  const gross = Math.max(0, Number(selectedActionAmount.value || 0))
+  return Math.round((gross * WALLET_DEPOSIT_TAX_PERCENT) / 100)
+})
+const depositNetAmount = computed(() => Math.max(0, Number(selectedActionAmount.value || 0) - depositTaxAmount.value))
 const balanceAfterAction = computed(() => (
   actionModal.type === 'deposit'
-    ? activeWalletBalance.value + selectedActionAmount.value
+    ? activeWalletBalance.value + (actionModal.paymentMethod === 'card' ? depositNetAmount.value : selectedActionAmount.value)
     : activeWalletBalance.value - selectedActionAmount.value
 ))
 const destinationBalanceAfterAction = computed(() => (
@@ -1665,6 +1685,13 @@ onMounted(async () => {
 .company-card-box strong{font-size:23px;letter-spacing:.08em;color:#7c3aed;direction:ltr;text-align:left}
 .company-card-box span{color:#334155;font-weight:800}
 .card-payment-instruction{margin:0;color:#475569;line-height:1.9;font-size:13px}
+.deposit-tax-rows{display:grid;gap:8px}
+.deposit-tax-rows > div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid #e8eef5}
+.deposit-tax-rows span{color:#64748b;font-size:12px;font-weight:700}
+.deposit-tax-rows strong{color:#0f172a;font-size:13px}
+.deposit-tax-rows strong.tax{color:#c2410c}
+.deposit-tax-rows .net{background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border-color:#bbf7d0}
+.deposit-tax-rows .net strong{color:#166534}
 .support-ticket-btn{min-height:52px;border:none;border-radius:16px;background:#9d6cff;color:#fff;font-weight:900;cursor:pointer}
 .wallet-note{padding:15px 16px;border-radius:18px;background:#fbf8ff;color:#334155;border:1px solid #efe4ff;line-height:1.8}
 .submit-btn{height:54px;border-radius:16px;color:#fff;font-weight:800;box-shadow:none;transition:transform .2s ease,filter .2s ease,opacity .2s ease}

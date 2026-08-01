@@ -1,6 +1,6 @@
 from datetime import timedelta
 import re
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q
 from django.utils import timezone
@@ -11,6 +11,23 @@ from .models import SupportTicket, User
 
 
 SUPPORT_TICKET_AUTO_CLOSE_AFTER_DAYS = 3
+WALLET_CARD_DEPOSIT_TAX_PERCENT = Decimal('10')
+
+
+def calculate_wallet_card_deposit_amounts(gross_amount):
+    """Split a card-to-card deposit into gross, 10% tax, and net wallet credit."""
+    gross = Decimal(str(gross_amount or 0))
+    if gross <= 0:
+        zero = Decimal('0')
+        return zero, zero, zero
+    tax = (gross * WALLET_CARD_DEPOSIT_TAX_PERCENT / Decimal('100')).quantize(
+        Decimal('0.01'),
+        rounding=ROUND_HALF_UP,
+    )
+    if tax >= gross:
+        tax = max(Decimal('0'), gross - Decimal('0.01'))
+    net = (gross - tax).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return gross, tax, net
 
 
 def close_stale_support_tickets(*, now=None):
