@@ -1,7 +1,13 @@
-const PRINT_AGENT_BASE_URL = String(import.meta.env.VITE_PRINT_AGENT_URL || 'http://127.0.0.1:17321').replace(/\/$/, '')
+const PRINT_AGENT_CANDIDATES = Array.from(new Set([
+  String(import.meta.env.VITE_PRINT_AGENT_URL || '').replace(/\/$/, ''),
+  'http://127.0.0.1:17321',
+  'http://localhost:17321'
+].filter(Boolean)))
 
-const requestJson = async (path, options = {}) => {
-  const response = await fetch(`${PRINT_AGENT_BASE_URL}${path}`, {
+let resolvedPrintAgentBaseUrl = PRINT_AGENT_CANDIDATES[0] || 'http://127.0.0.1:17321'
+
+const requestJsonAt = async (baseUrl, path, options = {}) => {
+  const response = await fetch(`${baseUrl}${path}`, {
     ...options,
     headers: {
       Accept: 'application/json',
@@ -23,7 +29,24 @@ const requestJson = async (path, options = {}) => {
   return data || {}
 }
 
-export const getPrintAgentBaseUrl = () => PRINT_AGENT_BASE_URL
+const requestJson = async (path, options = {}) => {
+  let lastError = null
+  const bases = Array.from(new Set([resolvedPrintAgentBaseUrl, ...PRINT_AGENT_CANDIDATES]))
+  for (const baseUrl of bases) {
+    try {
+      const data = await requestJsonAt(baseUrl, path, options)
+      resolvedPrintAgentBaseUrl = baseUrl
+      return data
+    } catch (error) {
+      lastError = error
+      // Keep trying other loopback URLs only for connectivity failures.
+      if (error?.status && error.status !== 0) throw error
+    }
+  }
+  throw lastError || new Error('پرینت‌ایجنت در دسترس نیست.')
+}
+
+export const getPrintAgentBaseUrl = () => resolvedPrintAgentBaseUrl
 
 export const checkPrintAgentHealth = async () => {
   try {
@@ -35,7 +58,7 @@ export const checkPrintAgentHealth = async () => {
 }
 
 export const fetchSystemPrinters = async () => {
-  const data = await requestJson('/printers', { method: 'GET', signal: AbortSignal.timeout(5000) })
+  const data = await requestJson('/printers', { method: 'GET', signal: AbortSignal.timeout(8000) })
   return Array.isArray(data.printers) ? data.printers : []
 }
 
@@ -68,6 +91,9 @@ export const printPdfBlobSilent = async (blob, printerName, fileName = 'carnowas
 
 export const resolveSilentPrintErrorMessage = (error) => {
   if (error?.status === 0 || error?.name === 'TypeError' || error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+    if (typeof window !== 'undefined' && window.isSecureContext && window.location?.protocol === 'https:') {
+      return 'مرورگر به پرینت‌ایجنت محلی وصل نشد. start-print-agent.bat را اجرا کنید و اگر باز هم لیست خالی بود، یک‌بار صفحه را رفرش کنید.'
+    }
     return 'پرینت‌ایجنت روشن نیست. فایل tools/print-agent/start-print-agent.bat را روی همین سیستم اجرا کنید.'
   }
   return error?.message || 'چاپ مستقیم ناموفق بود.'

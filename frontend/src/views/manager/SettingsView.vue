@@ -386,7 +386,10 @@
                 <label class="general-setting-label full-width">
                   <span>پرینتر سیستم</span>
                   <div class="printer-select-row">
-                    <select v-model="generalSettings.receipt_printer_name">
+                    <select
+                      v-model="generalSettings.receipt_printer_name"
+                      :disabled="systemPrintersLoading"
+                    >
                       <option value="">انتخاب پرینتر...</option>
                       <option
                         v-if="generalSettings.receipt_printer_name && !systemPrinterOptions.includes(generalSettings.receipt_printer_name)"
@@ -395,13 +398,24 @@
                         {{ generalSettings.receipt_printer_name }} (ذخیره‌شده)
                       </option>
                       <option v-for="printer in systemPrinters" :key="printer.name" :value="printer.name">
-                        {{ printer.name }}{{ printer.isDefault ? ' (پیش‌فرض سیستم)' : '' }}
+                        {{ printer.name }}{{ printer.isDefault ? ' (پیش‌فرض سیستم)' : '' }}{{ printer.workOffline ? ' (آفلاین)' : '' }}
                       </option>
                     </select>
                     <button type="button" class="secondary-btn printer-refresh-btn" :disabled="systemPrintersLoading" @click="loadSystemPrinters">
                       {{ systemPrintersLoading ? 'در حال خواندن...' : 'بروزرسانی لیست' }}
                     </button>
                   </div>
+                  <input
+                    v-model.trim="generalSettings.receipt_printer_name"
+                    class="printer-name-input"
+                    type="text"
+                    list="system-printers-datalist"
+                    placeholder="یا نام دقیق پرینتر را مثل پنجره Ctrl+P بنویسید"
+                    autocomplete="off"
+                  />
+                  <datalist id="system-printers-datalist">
+                    <option v-for="printer in systemPrinters" :key="`dl-${printer.name}`" :value="printer.name" />
+                  </datalist>
                   <small class="field-file-note">{{ printerAgentHint }}</small>
                 </label>
                 <label class="general-setting-label">
@@ -849,10 +863,10 @@ const printerAgentHint = computed(() => {
   if (printAgentOnline.value) {
     const count = systemPrinters.value.length
     return count
-      ? `${count.toLocaleString('fa-IR')} پرینتر پیدا شد. دستگاه را انتخاب کنید و ثبت تنظیمات را بزنید.`
-      : 'پرینت‌ایجنت آنلاین است ولی پرینتری پیدا نشد.'
+      ? `${count.toLocaleString('fa-IR')} پرینتر سیستم پیدا شد. یکی را انتخاب کنید یا نام دقیق را بنویسید، سپس ثبت تنظیمات را بزنید.`
+      : 'پرینت‌ایجنت آنلاین است ولی پرینتری از ویندوز خوانده نشد. نام پرینتر را مثل پنجره Ctrl+P دستی وارد کنید.'
   }
-  return 'برای دیدن لیست پرینترها، فایل tools/print-agent/start-print-agent.bat را روی همین سیستم اجرا کنید.'
+  return 'برای شناسایی خودکار پرینترها، فایل tools/print-agent/start-print-agent.bat را روی همین سیستم اجرا کنید و «بروزرسانی لیست» را بزنید.'
 })
 const systemPrinterOptions = computed(() => systemPrinters.value.map((item) => item.name))
 
@@ -2242,6 +2256,16 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 .printer-refresh-btn {
   height: 48px;
   white-space: nowrap;
+}
+.printer-name-input {
+  margin-top: 10px;
+  width: 100%;
+  height: 44px;
+  border: 1px solid #e8d7bf;
+  border-radius: 12px;
+  padding: 0 12px;
+  background: #fff;
+  font: inherit;
 }
 .printer-toggle {
   grid-column: 1 / -1;
