@@ -667,7 +667,7 @@
                 <section v-if="isWalletOperationTicket(selectedTicket)" class="ticket-action-card wallet">
                   <div>
                     <strong>{{ walletOperationButtonLabel }}</strong>
-                    <p>مبلغ تاییدشده را وارد کنید تا به کیف پول مقصد اعمال شود.</p>
+                    <p>{{ walletOperationHint }}</p>
                   </div>
                   <label class="ticket-amount-field">
                     <span>مبلغ (تومان)</span>
@@ -2135,11 +2135,19 @@ const isWalletCardPaymentTicket = (ticket) => {
 }
 const isWalletBankWithdrawalTicket = (ticket) => {
   const text = `${ticket?.subject || ''}\n${ticket?.message || ''}`.toLowerCase()
-  return text.includes('wallet-bank-withdrawal')
+  return (
+    text.includes('wallet-bank-withdrawal')
+    || (text.includes('برداشت') && text.includes('کیف پول') && (text.includes('شبا') || text.includes('بانک') || text.includes('iban')))
+  )
 }
 const isWalletOperationTicket = (ticket) => isWalletCardPaymentTicket(ticket) || isWalletBankWithdrawalTicket(ticket)
-const walletOperationButtonLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'برداشت' : 'انتقال پول')
-const walletOperationSubmittingLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'در حال برداشت...' : 'در حال انتقال...')
+const walletOperationButtonLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'تایید و کسر از کیف پول' : 'انتقال پول')
+const walletOperationSubmittingLabel = computed(() => isWalletBankWithdrawalTicket(selectedTicket.value) ? 'در حال کسر...' : 'در حال انتقال...')
+const walletOperationHint = computed(() => (
+  isWalletBankWithdrawalTicket(selectedTicket.value)
+    ? 'اول واریز بانکی را انجام دهید، بعد تایید کنید تا مبلغ از کیف پول کم شود.'
+    : 'مبلغ تاییدشده را وارد کنید تا به کیف پول مقصد اعمال شود.'
+))
 const initials = (value) => {
   const parts = String(value || '').trim().split(' ').filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`
@@ -2628,7 +2636,7 @@ const submitWalletTransfer = async () => {
     walletTransfer.success = 'انتقال وجه ثبت شد و کیف پول مقصد شارژ شد.'
     walletTransfer.skipNextSuggestedAmount = true
     if (isWalletBankWithdrawalTicket(selectedTicket.value)) {
-      walletTransfer.success = 'برداشت ثبت شد و مبلغ از کیف پول کم شد.'
+      walletTransfer.success = 'تایید شد و مبلغ از کیف پول کم شد.'
     }
     await selectTicket(selectedTicket.value.id)
     await loadTickets()

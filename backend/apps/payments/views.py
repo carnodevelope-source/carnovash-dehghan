@@ -1013,9 +1013,10 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
             f"tenant_id: {tenant.id if tenant else ''}",
             f"tenant_name: {tenant.name if tenant else ''}",
             f"description: {description or '-'}",
+            f"wallet_debited: no",
             "",
             f"درخواست برداشت {amount:,.0f} تومان از کیف پول «{source_wallet.name}» به شماره شبا {iban} ثبت شد.",
-            "بعد از انجام دستی واریز بانکی، از دکمه برداشت همین تیکت استفاده کنید تا مبلغ از کیف پول کم شود.",
+            "مبلغ هنوز از کیف پول کم نشده است. بعد از واریز دستی به حساب بانکی، با دکمه تایید همین تیکت مبلغ از کیف پول کسر می‌شود.",
         ])
         ticket = SupportTicket.objects.create(
             tenant=tenant,
@@ -1098,7 +1099,7 @@ class WalletWithdrawView(WalletBaseMixin, APIView):
                 )
                 return Response(
                     {
-                        'detail': 'درخواست برداشت بانکی ثبت شد و برای پشتیبانی تیکت خودکار ساخته شد.',
+                        'detail': 'درخواست برداشت ثبت شد و برای پشتیبانی تیکت ساخته شد. مبلغ بعد از تایید پشتیبانی از کیف پول کم می‌شود.',
                         'wallet': WalletSerializer(source_wallet).data,
                         'ticket': {
                             'id': ticket.id,

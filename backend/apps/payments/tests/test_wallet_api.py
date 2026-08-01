@@ -190,6 +190,13 @@ class WalletApiTests(APITestCase):
                 status=SupportTicket.Status.OPEN,
             ).exists()
         )
+        self.assertFalse(
+            CashflowTransaction.objects.filter(
+                tenant=self.tenant,
+                wallet=sms_wallet,
+                reference_type='wallet_bank_withdrawal_ticket',
+            ).exists()
+        )
 
     def test_accounting_feature_option_purchase_is_unavailable_until_page_is_ready(self):
         self.wallet.balance = 10000000

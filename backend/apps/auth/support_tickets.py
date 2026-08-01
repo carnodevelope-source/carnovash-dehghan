@@ -35,8 +35,10 @@ def is_wallet_card_payment_ticket(ticket):
 
 def is_wallet_bank_withdrawal_ticket(ticket):
     text = f'{getattr(ticket, "subject", "")}\n{getattr(ticket, "message", "")}'.lower()
-    return 'wallet-bank-withdrawal' in text
-
+    return (
+        'wallet-bank-withdrawal' in text
+        or ('برداشت' in text and 'کیف پول' in text and ('شبا' in text or 'بانک' in text or 'iban' in text))
+    )
 
 def is_payment_support_ticket(ticket):
     """Payment deposit (card-to-card) or bank withdrawal tickets that need SMS alerts."""

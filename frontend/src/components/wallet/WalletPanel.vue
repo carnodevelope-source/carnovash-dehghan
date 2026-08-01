@@ -509,11 +509,11 @@
           </div>
 
           <div v-if="actionModal.type === 'withdraw' && actionModal.destinationType === 'bank'" class="wallet-note">
-            درخواست برداشت بانکی برای پشتیبانی تیکت می‌شود و بعد از انجام دستی، با دکمه برداشت از کیف پول کم خواهد شد.
+            با ثبت برداشت فقط تیکت برای پشتیبانی ساخته می‌شود. مبلغ هنوز کم نمی‌شود؛ بعد از واریز بانکی و تایید پشتیبانی از کیف پول کسر خواهد شد.
           </div>
 
           <div v-else class="wallet-note">
-            {{ actionModal.type === 'deposit' ? 'واریز کارت به کارت بعد از بررسی رسید توسط پشتیبانی به کیف پول اضافه می‌شود.' : 'برداشت بلافاصله از موجودی کیف پول کسر می‌شود.' }}
+            {{ actionModal.type === 'deposit' ? 'واریز کارت به کارت بعد از بررسی رسید توسط پشتیبانی به کیف پول اضافه می‌شود.' : 'انتقال بین کیف‌پول‌ها بلافاصله انجام می‌شود.' }}
           </div>
 
           <button v-if="actionModal.type !== 'deposit' || actionModal.paymentMethod !== 'card'" class="submit-btn" :class="actionModal.type === 'deposit' ? 'submit-deposit' : 'submit-withdraw'" type="button" :disabled="!canSubmitAction" @click="submitAction">
@@ -958,7 +958,7 @@ const setFilter = async (type) => {
   await loadWalletDashboard()
 }
 
-const openActionModal = (type) => {
+const openActionModal = async (type) => {
   clearMessages()
   if (type === 'deposit' && !canDepositWalletAction.value) {
     state.error = 'شما دسترسی ثبت واریز کیف پول را ندارید.'
@@ -1000,6 +1000,15 @@ const openActionModal = (type) => {
     actionModal.amountText = ''
   } else if (dynamicWithdrawAmounts.value.length) {
     actionModal.amountText = money(dynamicWithdrawAmounts.value[0].value)
+  }
+  if (type === 'withdraw') {
+    try {
+      const { data } = await api.get('/services/general-settings/', { meta: { trackLoading: false, showErrorToast: false } })
+      if (data?.bank_account_iban) actionModal.bankAccountIban = String(data.bank_account_iban)
+      if (data?.bank_account_holder) actionModal.bankAccountHolder = String(data.bank_account_holder)
+    } catch (_error) {
+      // optional prefill
+    }
   }
 }
 

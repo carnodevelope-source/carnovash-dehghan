@@ -1544,7 +1544,7 @@ class HqTicketWalletWithdrawView(HqBaseView):
         message = SupportTicketMessage.objects.create(
             ticket=ticket,
             sender=request.user,
-            body=f'برداشت بانکی انجام شد و مبلغ {amount:,.0f} تومان از کیف پول «{wallet.name}» کسر شد.',
+            body=f'واریز بانکی تایید شد و مبلغ {amount:,.0f} تومان از کیف پول «{wallet.name}» کسر شد.',
             is_internal=True,
         )
         ticket.status = SupportTicket.Status.ANSWERED
@@ -1571,6 +1571,7 @@ class HqTicketWalletWithdrawView(HqBaseView):
                 'wallet_name': wallet.name,
                 'wallet_balance': wallet.balance,
                 'transaction_id': cashflow.id,
+                'already_debited': False,
                 'ticket': SupportTicketDetailSerializer(ticket).data,
             },
             status=status.HTTP_200_OK,
