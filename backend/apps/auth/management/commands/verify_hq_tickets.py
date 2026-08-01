@@ -3,9 +3,10 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 
-from apps.auth.models import SupportTicket, SupportTicketMessage
+from apps.auth.models import CarWash, SupportTicket, SupportTicketMessage
 from apps.auth.serializers import SupportTicketListSerializer
 from apps.auth.support_tickets import (
     apply_hq_ticket_visibility,
@@ -26,7 +27,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--create-sample',
             action='store_true',
-            help='Create one sample wallet-bank-withdrawal ticket for the first active tenant.',
+            help='Create one sample wallet-bank-withdrawal ticket for a HQ-visible tenant.',
         )
         parser.add_argument(
             '--amount',
@@ -44,6 +45,13 @@ class Command(BaseCommand):
 
         self.stdout.write('=== Ticket inventory ===')
         self.stdout.write(f'total={total} open={open_count} withdraw={withdraw_count} deposit={deposit_count}')
+
+        self.stdout.write('=== Carwash visibility ===')
+        for row in CarWash.objects.annotate(ticket_count=Count('support_tickets')).order_by('id'):
+            mark = 'HIDDEN' if row.exclude_from_hq_reports else 'visible'
+            self.stdout.write(
+                f'- id={row.id} [{mark}] active={row.is_active} tickets={row.ticket_count} name={row.name}'
+            )
 
         hq_users = list(
             user_model.objects.filter(
@@ -64,19 +72,24 @@ class Command(BaseCommand):
                 f'- id={user.id} username={user.username} role={user.platform_role} visible_tickets={visible}'
             )
 
-        excluded = list(
-            SupportTicket.objects.filter(tenant__exclude_from_hq_reports=True)
-            .values_list('id', 'tenant_id', 'subject')[:20]
-        )
-        if excluded:
-            self.stdout.write(self.style.WARNING(f'Tickets hidden by exclude_from_hq_reports: {excluded}'))
+        hidden_tickets = SupportTicket.objects.filter(tenant__exclude_from_hq_reports=True).count()
+        if hidden_tickets:
+            self.stdout.write(
+                self.style.WARNING(
+                    f'{hidden_tickets} ticket(s) are hidden because their carwash has exclude_from_hq_reports=True. '
+                    'Run: python manage.py fix_hq_tenant_visibility --include-all-active --yes'
+                )
+            )
 
         sample_ticket = None
         if options.get('create_sample'):
             sample_ticket = self._create_sample_ticket(amount=options['amount'])
             self.stdout.write(self.style.SUCCESS(f'Created sample withdraw ticket id={sample_ticket.id}'))
 
-        focus = sample_ticket or SupportTicket.objects.order_by('-id').first()
+        focus = sample_ticket or (
+            SupportTicket.objects.filter(tenant__exclude_from_hq_reports=False).order_by('-id').first()
+            or SupportTicket.objects.order_by('-id').first()
+        )
         if not focus:
             self.stdout.write(self.style.WARNING('No tickets to inspect.'))
             return
@@ -105,32 +118,56 @@ class Command(BaseCommand):
             f'parsed_amount={parse_wallet_amount_from_ticket(focus)}'
         )
 
+        tenant_excluded = bool(getattr(focus.tenant, 'exclude_from_hq_reports', False))
+        if tenant_excluded:
+            self.stdout.write(
+                self.style.ERROR(
+                    f'Ticket #{focus.id} will NOT appear in HQ list because tenant '
+                    f'#{focus.tenant_id} ({focus.tenant.name}) has exclude_from_hq_reports=True.'
+                )
+            )
+            return
+
         if hq_users:
-            visible_ids = list(
+            visible_ids = set(
                 apply_hq_ticket_visibility(
                     SupportTicket.objects.filter(tenant__exclude_from_hq_reports=False),
                     hq_users[0],
-                ).values_list('id', flat=True)[:30]
+                ).values_list('id', flat=True)[:200]
             )
-            in_hq = focus.id in visible_ids or SupportTicket.objects.filter(
-                pk=focus.id,
-                tenant__exclude_from_hq_reports=False,
-            ).exists()
-            if in_hq:
+            if focus.id in visible_ids:
                 self.stdout.write(self.style.SUCCESS(f'Ticket #{focus.id} SHOULD appear in HQ مرکز تیکت.'))
             else:
-                self.stdout.write(self.style.ERROR(f'Ticket #{focus.id} will NOT appear in HQ list. Check tenant.exclude_from_hq_reports.'))
+                self.stdout.write(self.style.ERROR(f'Ticket #{focus.id} missing from HQ visibility queryset.'))
 
     @transaction.atomic
     def _create_sample_ticket(self, *, amount):
         user_model = get_user_model()
         manager = (
-            user_model.objects.filter(role='manager', is_active=True, tenant__isnull=False)
+            user_model.objects.filter(
+                role='manager',
+                is_active=True,
+                tenant__isnull=False,
+                tenant__exclude_from_hq_reports=False,
+                tenant__is_active=True,
+            )
             .select_related('tenant')
             .order_by('id')
             .first()
         )
-        if not manager or not manager.tenant_id:
+        if not manager:
+            # Fall back and surface the real problem clearly.
+            manager = (
+                user_model.objects.filter(role='manager', is_active=True, tenant__isnull=False)
+                .select_related('tenant')
+                .order_by('id')
+                .first()
+            )
+            if manager and manager.tenant and manager.tenant.exclude_from_hq_reports:
+                raise SystemExit(
+                    f'Only managers found are on hidden tenants (e.g. #{manager.tenant_id} {manager.tenant.name}). '
+                    'Run: python manage.py fix_hq_tenant_visibility --include-all-active --yes'
+                )
             raise SystemExit('No manager with tenant found to create sample ticket.')
 
         wallet = (

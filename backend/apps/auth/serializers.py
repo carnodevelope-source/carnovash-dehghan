@@ -1,4 +1,6 @@
-﻿from django.contrib.auth import authenticate, get_user_model
+﻿from decimal import Decimal
+
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
 
 from .feature_access import feature_access_map_for_tenant
@@ -572,5 +574,5 @@ class SupportTicketFeedbackSerializer(serializers.Serializer):
 
 
 class HqTicketWalletTransferSerializer(serializers.Serializer):
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('1'))
     wallet_id = serializers.IntegerField(required=False)
