@@ -205,7 +205,7 @@ import PlateBadge from '../vehicles/PlateBadge.vue'
 import PlateEditor from '../vehicles/PlateEditor.vue'
 import BasePhoneInput from '../base/BasePhoneInput.vue'
 import { buildPlateNumber, getAmbiguousLetterSuggestions, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
-import { askCameraDeniedHelp, askCameraPermission } from '../../utils/permissionPrompt'
+import { askCameraDeniedHelp } from '../../utils/permissionPrompt'
 import { notifyWarning } from '../../utils/notify'
 import {
   defaultTariffType,
@@ -482,18 +482,8 @@ const startCamera = async ({ silent = false } = {}) => {
       return
     }
 
-    if (!silent) {
-      const decision = await askCameraPermission()
-      if (decision.secondary) {
-        cameraFileInputRef.value?.click()
-        return
-      }
-      if (!decision.confirmed) {
-        setCameraMessage('برای فعال شدن دوربین، دکمه «باز کردن دوربین» را بزنید و دسترسی را تأیید کنید.')
-        return
-      }
-    }
-
+    // No in-app confirm here: user already clicked "باز کردن دوربین".
+    // Browser asks once via getUserMedia and remembers until site data is cleared.
     stopCamera()
     const stream = await requestCameraStream()
     cameraStream.value = stream
@@ -957,7 +947,7 @@ onMounted(async () => {
   }
   // Don't auto-request camera: browsers only show permission after a real user click.
   if (!cameraState.active) {
-    setCameraMessage('برای تشخیص پلاک، روی «باز کردن دوربین» بزنید؛ پنجره تأیید دسترسی نمایش داده می‌شود.')
+    setCameraMessage('برای تشخیص پلاک، روی «باز کردن دوربین» بزنید. اگر هنوز اجازه نداده باشید، مرورگر یک‌بار از شما می‌پرسد.')
   }
 })
 
