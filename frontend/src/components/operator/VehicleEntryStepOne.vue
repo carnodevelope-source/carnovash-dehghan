@@ -17,15 +17,16 @@
         >
           <video ref="cameraVideoRef" class="camera-video" autoplay playsinline muted></video>
           <canvas ref="cameraCanvasRef" class="camera-canvas"></canvas>
-          <span>{{ cameraHintText }}</span>
+          <span v-if="!cameraState.active || cameraState.loading">{{ cameraHintText }}</span>
         </div>
+
+        <p v-if="cameraState.active && !cameraState.loading" class="camera-click-hint">
+          کلیک کنید روی تصویر
+        </p>
 
         <div class="camera-actions">
           <button type="button" class="camera-action primary-camera" :disabled="cameraState.loading" @click="startCamera()">
             {{ cameraState.active ? 'راه‌اندازی مجدد دوربین' : 'باز کردن دوربین' }}
-          </button>
-          <button type="button" class="camera-action" :disabled="cameraState.loading || !cameraState.active" @click="captureFromVideo">
-            {{ cameraState.loading ? 'در حال تشخیص...' : 'تشخیص پلاک' }}
           </button>
           <button type="button" class="camera-action" :disabled="cameraState.loading" @click="cameraFileInputRef?.click()">
             دوربین گوشی / عکس
@@ -281,7 +282,6 @@ const actionLocked = ref(false)
 const mobileViewportQuery = window.matchMedia('(max-width: 640px)')
 let isHydratingForm = false
 const aiSessionId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-const isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(window.navigator.userAgent || '')
 const canUseLiveCamera = Boolean(window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname))
 const normalizeAiConfidence = (value) => {
   if (value === null || value === undefined || value === '') return null
@@ -309,16 +309,31 @@ const mobileTariffBubblesStyle = computed(() => {
   return { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
 })
 
+const canAttemptLiveCamera = () => (
+  !form.isAnonymous
+  && !form.isPieceWash
+  && !props.vehicleInfo?.hideAiPanel
+  && Boolean(navigator.mediaDevices?.getUserMedia)
+  && canUseLiveCamera
+)
+
+const ensureCameraAutoStart = ({ silent = true } = {}) => {
+  if (cameraState.active || cameraState.loading || !canAttemptLiveCamera()) return
+  if (isMobileViewport.value && isAiPanelCollapsed.value) return
+  startCamera({ silent }).catch(() => {})
+}
+
 const syncMobileViewport = (event) => {
   isMobileViewport.value = Boolean(event?.matches ?? mobileViewportQuery.matches)
-  if (!isMobileViewport.value) isAiPanelCollapsed.value = false
+  if (!isMobileViewport.value) {
+    isAiPanelCollapsed.value = false
+    ensureCameraAutoStart({ silent: true })
+  }
 }
 
 const toggleAiPanel = () => {
   isAiPanelCollapsed.value = !isAiPanelCollapsed.value
-  if (!isAiPanelCollapsed.value && !cameraState.active && !form.isAnonymous && !form.isPieceWash && navigator.mediaDevices?.getUserMedia && canUseLiveCamera) {
-    startCamera({ silent: false }).catch(() => {})
-  }
+  if (!isAiPanelCollapsed.value) ensureCameraAutoStart({ silent: false })
 }
 
 const isMotorcyclePlate = () => form.plateType === 'motorcycle'
@@ -494,10 +509,16 @@ const startCamera = async ({ silent = false } = {}) => {
       await cameraVideoRef.value.play()
     }
     cameraState.active = true
-    setCameraMessage('دوربین آماده است. هر وقت روی تصویر کلیک کنید همان لحظه پلاک خوانده می‌شود.')
+    setCameraMessage('')
   } catch (error) {
     console.error('startCamera error:', error)
-    if (silent) return
+    if (silent) {
+      const denied = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(String(error?.name || ''))
+      if (denied) {
+        setCameraMessage('برای اولین بار روی «باز کردن دوربین» بزنید تا مرورگر اجازه دسترسی را بگیرد. بعد از آن دوربین خودکار باز می‌شود.')
+      }
+      return
+    }
     const denied = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(String(error?.name || ''))
     setCameraMessage(cameraErrorMessage(error), true)
     if (denied) {
@@ -803,9 +824,8 @@ const detectedPlate = computed(() => (
   }) || (detectedPlateType.value === 'motorcycle' ? '--- -----' : '-- - --- --')
 ))
 const cameraHintText = computed(() => {
-  if (!cameraState.active) return 'ابتدا دوربین را باز کنید'
   if (cameraState.loading) return 'در حال تشخیص پلاک...'
-  return 'برای تشخیص پلاک روی تصویر کلیک کنید'
+  return 'در حال آماده‌سازی دوربین...'
 })
 const detectedModelColor = computed(() => {
   const text = `${form.model.trim()} ${form.color.trim()}`.trim()
@@ -835,20 +855,24 @@ watch(() => form.isAnonymous, (value) => {
   }
   if (form.model === '1111') form.model = ''
   if (form.color === '1111') form.color = ''
+  ensureCameraAutoStart({ silent: true })
 })
 
 watch(() => form.isPieceWash, (value) => {
-  if (!value) return
-  stopCamera()
-  form.isAnonymous = false
-  form.plateLeft = ''
-  form.plateLetter = ''
-  form.plateMid = ''
-  form.plateRight = ''
-  letterSuggestions.value = []
-  form.model = ''
-  form.color = ''
-  form.note = ''
+  if (value) {
+    stopCamera()
+    form.isAnonymous = false
+    form.plateLeft = ''
+    form.plateLetter = ''
+    form.plateMid = ''
+    form.plateRight = ''
+    letterSuggestions.value = []
+    form.model = ''
+    form.color = ''
+    form.note = ''
+    return
+  }
+  ensureCameraAutoStart({ silent: true })
 })
 
 watch(() => form.plateType, (value) => {
@@ -936,19 +960,16 @@ watch(
 onMounted(async () => {
   mobileViewportQuery.addEventListener('change', syncMobileViewport)
   if (form.isAnonymous || form.isPieceWash) return
-  if (!isMobileDevice) return
   if (!navigator.mediaDevices?.getUserMedia) {
     setCameraMessage('این مرورگر دوربین زنده را پشتیبانی نمی‌کند. از گزینه دوربین گوشی / عکس استفاده کنید.', true)
     return
   }
   if (!canUseLiveCamera) {
-    setCameraMessage('برای فعال شدن دوربین زنده در موبایل باید سایت را با HTTPS باز کنید. در این حالت از گزینه دوربین گوشی / عکس استفاده کنید.', true)
+    setCameraMessage('برای فعال شدن دوربین زنده باید سایت را با HTTPS باز کنید. در این حالت از گزینه دوربین گوشی / عکس استفاده کنید.', true)
     return
   }
-  // Don't auto-request camera: browsers only show permission after a real user click.
-  if (!cameraState.active) {
-    setCameraMessage('برای تشخیص پلاک، روی «باز کردن دوربین» بزنید. اگر هنوز اجازه نداده باشید، مرورگر یک‌بار از شما می‌پرسد.')
-  }
+  setCameraMessage('در حال اتصال به دوربین...')
+  ensureCameraAutoStart({ silent: true })
 })
 
 onBeforeUnmount(() => {
@@ -1105,6 +1126,14 @@ onBeforeUnmount(() => {
 .camera-box.active > span {
   background: rgba(15, 23, 42, 0.72);
   color: #fff;
+}
+
+.camera-click-hint {
+  margin: -4px 0 0;
+  text-align: center;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .camera-actions {
