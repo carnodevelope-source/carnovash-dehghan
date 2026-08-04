@@ -375,7 +375,7 @@
               <div class="general-settings-head">
                 <div>
                   <strong>تنظیمات فیش پرینتر</strong>
-                  <p class="helper-text">پرینتر را از لیست دستگاه‌های سیستم انتخاب کنید. برای چاپ مستقیم بدون صفحه پرینت مرورگر، پرینت‌ایجنت باید روی همین سیستم در حال اجرا باشد.</p>
+                  <p class="helper-text">نیازی به نصب نرم‌افزار نیست. با دکمه چاپ، پنجره چاپ سیستم (مثل Ctrl+P) باز می‌شود و پرینترهای همان سیستم قابل انتخاب هستند.</p>
                 </div>
                 <label class="settings-toggle">
                   <input v-model="generalSettings.receipt_printer_enabled" type="checkbox" />
@@ -383,41 +383,6 @@
                 </label>
               </div>
               <div class="printer-settings-grid">
-                <label class="general-setting-label full-width">
-                  <span>پرینتر سیستم</span>
-                  <div class="printer-select-row">
-                    <select
-                      v-model="generalSettings.receipt_printer_name"
-                      :disabled="systemPrintersLoading"
-                    >
-                      <option value="">انتخاب پرینتر...</option>
-                      <option
-                        v-if="generalSettings.receipt_printer_name && !systemPrinterOptions.includes(generalSettings.receipt_printer_name)"
-                        :value="generalSettings.receipt_printer_name"
-                      >
-                        {{ generalSettings.receipt_printer_name }} (ذخیره‌شده)
-                      </option>
-                      <option v-for="printer in systemPrinters" :key="printer.name" :value="printer.name">
-                        {{ printer.name }}{{ printer.isDefault ? ' (پیش‌فرض سیستم)' : '' }}{{ printer.workOffline ? ' (آفلاین)' : '' }}
-                      </option>
-                    </select>
-                    <button type="button" class="secondary-btn printer-refresh-btn" :disabled="systemPrintersLoading" @click="loadSystemPrinters">
-                      {{ systemPrintersLoading ? 'در حال خواندن...' : 'بروزرسانی لیست' }}
-                    </button>
-                  </div>
-                  <input
-                    v-model.trim="generalSettings.receipt_printer_name"
-                    class="printer-name-input"
-                    type="text"
-                    list="system-printers-datalist"
-                    placeholder="یا نام دقیق پرینتر را مثل پنجره Ctrl+P بنویسید"
-                    autocomplete="off"
-                  />
-                  <datalist id="system-printers-datalist">
-                    <option v-for="printer in systemPrinters" :key="`dl-${printer.name}`" :value="printer.name" />
-                  </datalist>
-                  <small class="field-file-note">{{ printerAgentHint }}</small>
-                </label>
                 <label class="general-setting-label">
                   <span>عرض کاغذ</span>
                   <select v-model="generalSettings.receipt_printer_paper_width">
@@ -846,30 +811,11 @@ import HelpTip from '../../components/base/HelpTip.vue'
 import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
 import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
 import { smsCharacterCount, smsCostForText, smsSegmentsForText } from '../../utils/smsCost'
-import {
-  checkPrintAgentHealth,
-  fetchSystemPrinters,
-  resolveSilentPrintErrorMessage
-} from '../../utils/receiptPrinter'
 
 const authStore = useAuthStore()
 const search = ref('')
 const activeTab = ref('workers')
 const errorMessage = ref('')
-const systemPrinters = ref([])
-const systemPrintersLoading = ref(false)
-const printAgentOnline = ref(false)
-const printerAgentHint = computed(() => {
-  if (systemPrintersLoading.value) return 'در حال خواندن پرینترهای شناخته‌شده سیستم...'
-  if (printAgentOnline.value) {
-    const count = systemPrinters.value.length
-    return count
-      ? `${count.toLocaleString('fa-IR')} پرینتر سیستم پیدا شد. یکی را انتخاب کنید یا نام دقیق را بنویسید، سپس ثبت تنظیمات را بزنید.`
-      : 'پرینت‌ایجنت آنلاین است ولی پرینتری از ویندوز خوانده نشد. نام پرینتر را مثل پنجره Ctrl+P دستی وارد کنید.'
-  }
-  return 'برای شناسایی خودکار پرینترها، فایل tools/print-agent/start-print-agent.bat را روی همین سیستم اجرا کنید و «بروزرسانی لیست» را بزنید.'
-})
-const systemPrinterOptions = computed(() => systemPrinters.value.map((item) => item.name))
 
 const tabs = [
   { key: 'workers', label: 'پرسنل', icon: 'users3', help: sectionHelpByPage.settings.workers },
@@ -1806,38 +1752,9 @@ const deleteProduct = async (item) => { if (!confirm('حذف شود؟')) return;
 const deleteExpense = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/inventory/expenses/${item.id}/`); t('حذف شد'); await loadAll() }
 const deleteService = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/services/${item.id}/`); t('حذف شد'); await loadAll() }
 
-const loadSystemPrinters = async () => {
-  systemPrintersLoading.value = true
-  try {
-    const health = await checkPrintAgentHealth()
-    printAgentOnline.value = Boolean(health.online)
-    if (!health.online) {
-      systemPrinters.value = []
-      return
-    }
-    const printers = await fetchSystemPrinters()
-    systemPrinters.value = Array.isArray(printers) ? printers : []
-    if (!generalSettings.receipt_printer_name) {
-      const defaultPrinter = systemPrinters.value.find((item) => item.isDefault)
-      if (defaultPrinter?.name) generalSettings.receipt_printer_name = defaultPrinter.name
-    }
-  } catch (error) {
-    printAgentOnline.value = false
-    systemPrinters.value = []
-    t(resolveSilentPrintErrorMessage(error), 'error')
-  } finally {
-    systemPrintersLoading.value = false
-  }
-}
-
-watch(activeTab, async (tab) => {
-  if (tab === 'general') await loadSystemPrinters()
-})
-
 onMounted(async () => {
   await authStore.fetchMe()
   await loadAll()
-  if (activeTab.value === 'general') await loadSystemPrinters()
 })
 </script>
 
@@ -2246,26 +2163,6 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   height: 48px;
   font: inherit;
 }
-.printer-select-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-}
-.printer-refresh-btn {
-  height: 48px;
-  white-space: nowrap;
-}
-.printer-name-input {
-  margin-top: 10px;
-  width: 100%;
-  height: 44px;
-  border: 1px solid #e8d7bf;
-  border-radius: 12px;
-  padding: 0 12px;
-  background: #fff;
-  font: inherit;
-}
 .printer-toggle {
   grid-column: 1 / -1;
   padding: 14px 16px;
@@ -2328,7 +2225,6 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .fixed-discount-grid,
   .settings-hero-stats,
   .payment-settings-grid, .printer-settings-grid, .printer-checks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .printer-select-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .settings-hero { display: none; }

@@ -244,7 +244,7 @@ import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { formatThousandsToman, formatThousandsTomanValue } from '../../utils/money'
 import { buildPlateNumber } from '../../utils/plate'
-import { printPdfBlobSilent, resolveSilentPrintErrorMessage } from '../../utils/receiptPrinter'
+import { printPdfBlobViaBrowser, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -746,11 +746,6 @@ const downloadInvoicePdf = async () => {
 }
 
 const printInvoiceHtml = async () => {
-  const printerName = String(invoiceMeta.receiptPrinterName || '').trim()
-  if (!printerName) {
-    invoiceErrorMessage.value = 'ابتدا در تنظیمات عمومی، پرینتر سیستم را انتخاب و ثبت کنید.'
-    return
-  }
   invoiceErrorMessage.value = ''
   const ready = invoicePdfUrl.value ? true : await buildInvoicePdf()
   if (!ready || !invoicePdfUrl.value) {
@@ -761,10 +756,10 @@ const printInvoiceHtml = async () => {
     invoiceGenerating.value = true
     const response = await fetch(invoicePdfUrl.value)
     const blob = await response.blob()
-    await printPdfBlobSilent(blob, printerName, `${invoiceFileLabel.value}.pdf`)
+    await printPdfBlobViaBrowser(blob)
   } catch (error) {
-    console.error('VehicleInvoiceModal silent print error:', error)
-    invoiceErrorMessage.value = resolveSilentPrintErrorMessage(error)
+    console.error('VehicleInvoiceModal print error:', error)
+    invoiceErrorMessage.value = resolvePrintErrorMessage(error)
   } finally {
     invoiceGenerating.value = false
   }

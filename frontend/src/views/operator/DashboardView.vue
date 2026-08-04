@@ -948,7 +948,7 @@ import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInpu
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
 import { buildPlateNumber, isAnonymousPlate, isValidIranMobile, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
-import { printPdfBlobSilent, resolveSilentPrintErrorMessage } from '../../utils/receiptPrinter'
+import { printPdfBlobViaBrowser, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -2789,12 +2789,6 @@ const downloadInvoicePdf = async () => {
   anchor.remove()
 }
 const printInvoiceHtml = async () => {
-  const printerName = String(releaseForm.value.receiptPrinterName || '').trim()
-  if (!printerName) {
-    invoiceErrorMessage.value = 'ابتدا در تنظیمات عمومی، پرینتر سیستم را انتخاب و ثبت کنید.'
-    notifyWarning(invoiceErrorMessage.value, { title: 'پرینتر انتخاب نشده' })
-    return
-  }
   invoiceErrorMessage.value = ''
   const ready = invoicePdfUrl.value ? true : await buildInvoicePdf()
   if (!ready || !invoicePdfUrl.value) {
@@ -2805,12 +2799,12 @@ const printInvoiceHtml = async () => {
     invoiceGenerating.value = true
     const response = await fetch(invoicePdfUrl.value)
     const blob = await response.blob()
-    await printPdfBlobSilent(blob, printerName, `${invoiceFileLabel.value}.pdf`)
-    notifySuccess(`فیش روی «${printerName}» ارسال شد.`, { title: 'چاپ مستقیم' })
+    await printPdfBlobViaBrowser(blob)
+    notifySuccess('پنجره چاپ سیستم باز شد؛ پرینتر را مثل Ctrl+P انتخاب کنید.', { title: 'چاپ' })
   } catch (error) {
-    console.error('printInvoiceHtml silent error:', error)
-    invoiceErrorMessage.value = resolveSilentPrintErrorMessage(error)
-    notifyError(invoiceErrorMessage.value, { title: 'چاپ مستقیم ناموفق' })
+    console.error('printInvoiceHtml error:', error)
+    invoiceErrorMessage.value = resolvePrintErrorMessage(error)
+    notifyError(invoiceErrorMessage.value, { title: 'چاپ ناموفق' })
   } finally {
     invoiceGenerating.value = false
   }
