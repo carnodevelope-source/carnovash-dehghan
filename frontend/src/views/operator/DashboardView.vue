@@ -948,7 +948,7 @@ import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInpu
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
 import { buildPlateNumber, isAnonymousPlate, isValidIranMobile, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
-import { printPdfBlobViaBrowser, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
+import { printHtmlElement, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
 
 const search = ref('')
 const debouncedSearch = ref('')
@@ -2790,17 +2790,15 @@ const downloadInvoicePdf = async () => {
 }
 const printInvoiceHtml = async () => {
   invoiceErrorMessage.value = ''
-  const ready = invoicePdfUrl.value ? true : await buildInvoicePdf()
-  if (!ready || !invoicePdfUrl.value) {
-    invoiceErrorMessage.value = invoiceErrorMessage.value || 'ساخت فایل چاپ ناموفق بود.'
+  if (!invoiceTemplateRef.value) {
+    invoiceErrorMessage.value = 'محتوای فاکتور برای چاپ آماده نیست.'
+    notifyError(invoiceErrorMessage.value, { title: 'چاپ ناموفق' })
     return
   }
   try {
     invoiceGenerating.value = true
-    const response = await fetch(invoicePdfUrl.value)
-    const blob = await response.blob()
-    await printPdfBlobViaBrowser(blob)
-    notifySuccess('پنجره چاپ سیستم باز شد؛ پرینتر را مثل Ctrl+P انتخاب کنید.', { title: 'چاپ' })
+    await nextTick()
+    await printHtmlElement(invoiceTemplateRef.value)
   } catch (error) {
     console.error('printInvoiceHtml error:', error)
     invoiceErrorMessage.value = resolvePrintErrorMessage(error)

@@ -1,57 +1,64 @@
-/** Open the OS print dialog (same printers as Ctrl+P). No local agent/install required. */
-export const printPdfBlobViaBrowser = (blob) => new Promise((resolve, reject) => {
-  if (!(blob instanceof Blob)) {
-    reject(new Error('فایل چاپ نامعتبر است.'))
-    return
+/** Print an HTML element via the browser print dialog (same as Ctrl+P). */
+export const printHtmlElement = async (element) => {
+  if (!(element instanceof Element)) {
+    throw new Error('محتوای چاپ پیدا نشد.')
   }
 
-  const url = URL.createObjectURL(blob)
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('title', 'carnowash-print')
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;'
-
-  let settled = false
-  const cleanup = () => {
-    try { URL.revokeObjectURL(url) } catch (_error) { /* ignore */ }
-    try { iframe.remove() } catch (_error) { /* ignore */ }
+  const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700')
+  if (!printWindow) {
+    throw new Error('پنجره چاپ مسدود شد. اجازه پاپ‌آپ را برای این سایت فعال کنید.')
   }
 
-  const fail = (message) => {
-    if (settled) return
-    settled = true
-    cleanup()
-    reject(new Error(message || 'باز کردن پنجره چاپ ناموفق بود.'))
-  }
+  const pageStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+    .map((node) => node.outerHTML)
+    .join('\n')
 
-  const succeed = () => {
-    if (settled) return
-    settled = true
-    // Keep iframe briefly so the print dialog can finish loading the PDF.
-    window.setTimeout(cleanup, 60_000)
-    resolve({ ok: true })
-  }
+  printWindow.document.open()
+  printWindow.document.write(`<!DOCTYPE html>
+<html dir="rtl" lang="fa">
+<head>
+  <meta charset="utf-8" />
+  <title>چاپ فاکتور</title>
+  ${pageStyles}
+  <style>
+    @page { margin: 8mm; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #111;
+    }
+    body {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  </style>
+</head>
+<body>${element.outerHTML}</body>
+</html>`)
+  printWindow.document.close()
 
-  iframe.onload = () => {
+  await new Promise((resolve) => {
+    const done = () => resolve()
+    if (printWindow.document.readyState === 'complete') {
+      window.setTimeout(done, 150)
+      return
+    }
+    printWindow.onload = () => window.setTimeout(done, 150)
+    window.setTimeout(done, 800)
+  })
+
+  try {
+    printWindow.focus()
+    printWindow.print()
+  } finally {
     window.setTimeout(() => {
-      try {
-        const frameWindow = iframe.contentWindow
-        if (!frameWindow) {
-          fail('پنجره چاپ در دسترس نیست.')
-          return
-        }
-        frameWindow.focus()
-        frameWindow.print()
-        succeed()
-      } catch (_error) {
-        fail('مرورگر اجازه چاپ نداد. پنجره پاپ‌آپ را بررسی کنید.')
-      }
-    }, 250)
+      try { printWindow.close() } catch (_error) { /* ignore */ }
+    }, 400)
   }
 
-  iframe.onerror = () => fail('بارگذاری فایل چاپ ناموفق بود.')
-  document.body.appendChild(iframe)
-  iframe.src = url
-})
+  return { ok: true }
+}
 
 export const resolvePrintErrorMessage = (error) => (
   error?.message || 'چاپ ناموفق بود.'

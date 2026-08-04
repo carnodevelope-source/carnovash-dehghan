@@ -244,7 +244,7 @@ import api from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
 import { formatThousandsToman, formatThousandsTomanValue } from '../../utils/money'
 import { buildPlateNumber } from '../../utils/plate'
-import { printPdfBlobViaBrowser, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
+import { printHtmlElement, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -747,16 +747,14 @@ const downloadInvoicePdf = async () => {
 
 const printInvoiceHtml = async () => {
   invoiceErrorMessage.value = ''
-  const ready = invoicePdfUrl.value ? true : await buildInvoicePdf()
-  if (!ready || !invoicePdfUrl.value) {
-    invoiceErrorMessage.value = invoiceErrorMessage.value || 'ساخت فایل چاپ ناموفق بود.'
+  if (!invoiceTemplateRef.value) {
+    invoiceErrorMessage.value = 'محتوای فاکتور برای چاپ آماده نیست.'
     return
   }
   try {
     invoiceGenerating.value = true
-    const response = await fetch(invoicePdfUrl.value)
-    const blob = await response.blob()
-    await printPdfBlobViaBrowser(blob)
+    await nextTick()
+    await printHtmlElement(invoiceTemplateRef.value)
   } catch (error) {
     console.error('VehicleInvoiceModal print error:', error)
     invoiceErrorMessage.value = resolvePrintErrorMessage(error)
