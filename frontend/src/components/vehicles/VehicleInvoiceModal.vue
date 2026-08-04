@@ -317,20 +317,56 @@ const invoiceThermalWidthMm = computed(() => sanitizeMillimeter(invoiceLayout.th
 const invoiceThermalHeightMm = computed(() => sanitizeMillimeter(invoiceLayout.thermalHeightMm, 220, 80, 600))
 const invoicePageMetrics = computed(() => {
   if (invoiceLayout.preset === 'a5') {
-    return { width: 138, minHeight: 200, padding: 4.5, gap: 6, margin: [5, 5, 5, 5], format: 'a5' }
-  }
-  if (invoiceLayout.preset === 'thermal') {
     return {
-      width: Math.max(42, invoiceThermalWidthMm.value - 6),
-      minHeight: Math.max(74, invoiceThermalHeightMm.value - 6),
-      padding: 3.2,
-      gap: 4,
-      margin: [3, 3, 3, 3],
-      format: [invoiceThermalWidthMm.value, invoiceThermalHeightMm.value]
+      width: 138,
+      minHeight: 200,
+      padding: 4.5,
+      gap: 6,
+      margin: [5, 5, 5, 5],
+      format: 'a5',
+      printWidthMm: 148,
+      printHeightMm: 210,
+      printMarginMm: 5,
+      thermal: false
     }
   }
-  return { width: 198, minHeight: 285, padding: 5, gap: 7, margin: [6, 6, 6, 6], format: 'a4' }
+  if (invoiceLayout.preset === 'thermal') {
+    const paperWidth = invoiceThermalWidthMm.value
+    const paperHeight = invoiceThermalHeightMm.value
+    return {
+      width: paperWidth,
+      minHeight: Math.max(80, Math.min(paperHeight, 160)),
+      padding: paperWidth <= 58 ? 1.6 : 2.2,
+      gap: 4,
+      margin: [1, 1, 1, 1],
+      format: [paperWidth, paperHeight],
+      printWidthMm: paperWidth,
+      printHeightMm: null,
+      printMarginMm: paperWidth <= 58 ? 1 : 1.5,
+      printMinHeightMm: 80,
+      thermal: true
+    }
+  }
+  return {
+    width: 198,
+    minHeight: 285,
+    padding: 5,
+    gap: 7,
+    margin: [6, 6, 6, 6],
+    format: 'a4',
+    printWidthMm: 210,
+    printHeightMm: 297,
+    printMarginMm: 6,
+    thermal: false
+  }
 })
+const invoicePrintPageOptions = computed(() => ({
+  widthMm: invoicePageMetrics.value.printWidthMm,
+  heightMm: invoicePageMetrics.value.printHeightMm,
+  minHeightMm: invoicePageMetrics.value.printMinHeightMm || invoicePageMetrics.value.minHeight,
+  marginMm: invoicePageMetrics.value.printMarginMm,
+  thermal: Boolean(invoicePageMetrics.value.thermal)
+}))
 const invoiceSheetStyle = computed(() => ({
   width: `${invoicePageMetrics.value.width}mm`,
   maxWidth: `${invoicePageMetrics.value.width}mm`,
@@ -482,9 +518,12 @@ const syncInvoiceLayoutFromPrinterSettings = (paperWidth) => {
     return
   }
   invoiceLayout.preset = 'thermal'
-  if (value === '58mm') {
+  const mmMatch = value.match(/(\d+(?:\.\d+)?)\s*mm/)
+  if (mmMatch) {
+    invoiceLayout.thermalWidthMm = sanitizeMillimeter(Number(mmMatch[1]), 80, 48, 120)
+  } else if (value === '58mm') {
     invoiceLayout.thermalWidthMm = 58
-  } else if (value === '80mm') {
+  } else {
     invoiceLayout.thermalWidthMm = 80
   }
 }
@@ -754,7 +793,7 @@ const printInvoiceHtml = async () => {
   try {
     invoiceGenerating.value = true
     await nextTick()
-    await printHtmlElement(invoiceTemplateRef.value)
+    await printHtmlElement(invoiceTemplateRef.value, invoicePrintPageOptions.value)
   } catch (error) {
     console.error('VehicleInvoiceModal print error:', error)
     invoiceErrorMessage.value = resolvePrintErrorMessage(error)
