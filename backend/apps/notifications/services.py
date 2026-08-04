@@ -462,13 +462,35 @@ def render_template_tokens(template_text, context):
     return message
 
 
-def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
-    vehicle = refresh_vehicle_for_sms(vehicle)
+def resolve_vehicle_visit_count(vehicle, visit_count=None):
+    if visit_count is not None:
+        try:
+            return max(0, int(visit_count or 0))
+        except (TypeError, ValueError):
+            return 0
+    tenant = getattr(vehicle, 'tenant', None)
+    if tenant is None or not getattr(tenant, 'pk', None):
+        return 0
+    from apps.vehicles.loyalty import get_or_create_plate_loyalty, loyalty_snapshot
+
+    profile = get_or_create_plate_loyalty(
+        tenant=tenant,
+        plate_number=getattr(vehicle, 'plate_number', ''),
+        plate_left=getattr(vehicle, 'plate_left', ''),
+        plate_letter=getattr(vehicle, 'plate_letter', ''),
+        plate_mid=getattr(vehicle, 'plate_mid', ''),
+        plate_right=getattr(vehicle, 'plate_right', ''),
+    )
+    return int(loyalty_snapshot(profile).get('visit_count', 0) or 0)
+
+
+def build_vehicle_assignment_sms_context(vehicle, *, assigned_at=None, visit_count=None):
     assigned_at = assigned_at or getattr(vehicle, 'ready_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
     job = getattr(vehicle, 'job', None)
     plate_label = format_plate_for_sms(vehicle)
     driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
-    context = {
+    visit_count_label = to_persian_digits(str(resolve_vehicle_visit_count(vehicle, visit_count)))
+    return {
         '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
         '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', ''), driver_gender),
         '[جنسیت مشتری]': customer_title(driver_gender),
@@ -483,7 +505,18 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
         '[جمع تخفیف]': format_toman(assignment_discount_total(job)),
         '[مالیات]': format_toman(assignment_tax_total(job)),
         '[مبلغ نهایی]': format_toman(assignment_invoice_final_total(job)),
+        '[تعداد مراجعات]': visit_count_label,
+        '[تعداد مراجعه]': visit_count_label,
     }
+
+
+def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None, visit_count=None):
+    vehicle = refresh_vehicle_for_sms(vehicle)
+    context = build_vehicle_assignment_sms_context(
+        vehicle,
+        assigned_at=assigned_at,
+        visit_count=visit_count,
+    )
     intro_template = str(
         getattr(settings_obj, 'sms_vehicle_assigned_template', '')
         or DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE
@@ -496,28 +529,13 @@ def build_vehicle_assignment_sms(settings_obj, vehicle, *, assigned_at=None):
     return render_template_tokens(template, context), context
 
 
-def build_vehicle_assignment_sms_messages(settings_obj, vehicle, *, assigned_at=None):
+def build_vehicle_assignment_sms_messages(settings_obj, vehicle, *, assigned_at=None, visit_count=None):
     vehicle = refresh_vehicle_for_sms(vehicle)
-    assigned_at = assigned_at or getattr(vehicle, 'ready_at', None) or getattr(vehicle, 'updated_at', None) or timezone.now()
-    job = getattr(vehicle, 'job', None)
-    plate_label = format_plate_for_sms(vehicle)
-    driver_gender = getattr(vehicle, 'driver_gender', '') or getattr(getattr(vehicle, 'customer', None), 'gender', '')
-    context = {
-        '[نام مشتری]': customer_display_name_with_title(getattr(vehicle, 'driver_name', ''), driver_gender) or 'مشتری',
-        '[خطاب مشتری]': customer_greeting(getattr(vehicle, 'driver_name', ''), driver_gender),
-        '[جنسیت مشتری]': customer_title(driver_gender),
-        '[نام کارواش]': getattr(getattr(vehicle, 'tenant', None), 'name', '') or 'کارواش',
-        '[شماره پذیرش]': to_persian_digits(getattr(vehicle, 'admission_number', None) or getattr(vehicle, 'id', '') or ''),
-        '[پلاک]': plate_label,
-        '[ساعت تخصیص]': format_local_time(assigned_at),
-        '[تاریخ تخصیص]': format_jalali_date(assigned_at),
-        '[خلاصه خدمات]': build_services_sms_summary(job),
-        '[جمع کل]': format_toman(assignment_invoice_total(job)),
-        '[جمع نرخ نامه]': format_toman(assignment_invoice_total(job)),
-        '[جمع تخفیف]': format_toman(assignment_discount_total(job)),
-        '[مالیات]': format_toman(assignment_tax_total(job)),
-        '[مبلغ نهایی]': format_toman(assignment_invoice_final_total(job)),
-    }
+    context = build_vehicle_assignment_sms_context(
+        vehicle,
+        assigned_at=assigned_at,
+        visit_count=visit_count,
+    )
     assigned_enabled = getattr(settings_obj, 'sms_vehicle_assigned_enabled', True) if settings_obj is not None else True
     assigned_template = str(
         getattr(settings_obj, 'sms_vehicle_assigned_template', '')
@@ -608,6 +626,7 @@ def build_vehicle_released_sms(
         '[درصد تخفیف مراجعه بعد]': next_discount_sms_value,
         '[درصد تخفیف امتیاز مشتری]': next_discount_label,
         '[تعداد مراجعات]': to_persian_digits(str(int(visit_count or 0))),
+        '[تعداد مراجعه]': to_persian_digits(str(int(visit_count or 0))),
         '[تعداد مراجعه مانده تا تخفیف]': to_persian_digits(str(fixed_discount_notice.get('remaining_visits', 0))) if fixed_discount_notice else '۰',
         '[درصد تخفیف هدف]': f"{to_persian_digits(str(round(float(fixed_discount_notice.get('discount_percent', 0)), 2)).replace('.0', ''))}٪" if fixed_discount_notice else next_discount_label,
         '[انعام]': format_toman(tip_amount),
@@ -837,6 +856,7 @@ def _send_vehicle_event_sms_sync(event_code, tenant, vehicle, *, created_by=None
             settings_obj,
             vehicle,
             assigned_at=extra_context.get('assigned_at'),
+            visit_count=extra_context.get('visit_count'),
         )
     elif event_code == 'vehicle_released':
         if settings_obj is not None and getattr(settings_obj, 'sms_vehicle_released_enabled', True) is False:

@@ -790,12 +790,23 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             )
 
         if requested_status == VehicleEntry.Status.READY_TO_SETTLE:
+            loyalty = loyalty_snapshot(get_or_create_plate_loyalty(
+                tenant=tenant,
+                plate_number=vehicle_entry.plate_number,
+                plate_left=vehicle_entry.plate_left,
+                plate_letter=vehicle_entry.plate_letter,
+                plate_mid=vehicle_entry.plate_mid,
+                plate_right=vehicle_entry.plate_right,
+            ))
             send_vehicle_event_sms(
                 'vehicle_assigned',
                 tenant,
                 vehicle_entry,
                 created_by=request.user if getattr(request, 'user', None) and request.user.is_authenticated else None,
-                extra_context={'assigned_at': vehicle_entry.ready_at or vehicle_entry.updated_at},
+                extra_context={
+                    'assigned_at': vehicle_entry.ready_at or vehicle_entry.updated_at,
+                    'visit_count': loyalty.get('visit_count', 0),
+                },
             )
 
         return vehicle_entry
@@ -1116,12 +1127,23 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             if not instance.ready_at:
                 instance.ready_at = timezone.now()
                 instance.save(update_fields=['ready_at', 'updated_at'])
+            loyalty = loyalty_snapshot(get_or_create_plate_loyalty(
+                tenant=tenant,
+                plate_number=instance.plate_number,
+                plate_left=instance.plate_left,
+                plate_letter=instance.plate_letter,
+                plate_mid=instance.plate_mid,
+                plate_right=instance.plate_right,
+            ))
             send_vehicle_event_sms(
                 'vehicle_assigned',
                 tenant,
                 instance,
                 created_by=request.user if getattr(request, 'user', None) and request.user.is_authenticated else None,
-                extra_context={'assigned_at': instance.ready_at or instance.updated_at},
+                extra_context={
+                    'assigned_at': instance.ready_at or instance.updated_at,
+                    'visit_count': loyalty.get('visit_count', 0),
+                },
             )
 
         return instance

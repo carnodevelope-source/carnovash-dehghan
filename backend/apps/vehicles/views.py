@@ -413,12 +413,23 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
 
         if previous_status != new_status:
             if new_status == VehicleEntry.Status.READY_TO_SETTLE:
+                loyalty = loyalty_snapshot(get_or_create_plate_loyalty(
+                    tenant=instance.tenant,
+                    plate_number=instance.plate_number,
+                    plate_left=instance.plate_left,
+                    plate_letter=instance.plate_letter,
+                    plate_mid=instance.plate_mid,
+                    plate_right=instance.plate_right,
+                ))
                 send_vehicle_event_sms(
                     'vehicle_assigned',
                     instance.tenant,
                     instance,
                     created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
-                    extra_context={'assigned_at': instance.ready_at or timezone.now()},
+                    extra_context={
+                        'assigned_at': instance.ready_at or timezone.now(),
+                        'visit_count': loyalty.get('visit_count', 0),
+                    },
                 )
             elif new_status == VehicleEntry.Status.RELEASED:
                 job = getattr(instance, 'job', None)

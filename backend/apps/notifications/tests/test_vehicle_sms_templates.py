@@ -185,6 +185,43 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('مبلغ نهایی: ۲۶۵،۰۰۰ تومان', message)
         self.assertIn('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.', message)
 
+    def test_assignment_sms_renders_visit_count(self):
+        tenant = SimpleNamespace(name='کارواش یک')
+        job = SimpleNamespace(
+            final_total=125000,
+            services_total=125000,
+            service_lines=[
+                SimpleNamespace(custom_service_name='روشویی', line_total=125000),
+            ],
+        )
+        vehicle = SimpleNamespace(
+            admission_number=1000,
+            tenant=tenant,
+            job=job,
+            driver_name='علی رضایی',
+            plate_number='22 ب 345 67',
+            ready_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        settings_obj = SimpleNamespace(
+            sms_vehicle_assigned_template=(
+                '[نام مشتری]\n'
+                'تعداد دفعات مراجعه: [تعداد مراجعات]\n'
+                'تعداد مراجعه: [تعداد مراجعه]\n'
+                'پلاک: [پلاک]'
+            ),
+            sms_vehicle_assigned_invoice_template='',
+        )
+
+        message, context = build_vehicle_assignment_sms(settings_obj, vehicle, visit_count=7)
+
+        self.assertEqual(context['[تعداد مراجعات]'], '۷')
+        self.assertEqual(context['[تعداد مراجعه]'], '۷')
+        self.assertIn('تعداد دفعات مراجعه: ۷', message)
+        self.assertIn('تعداد مراجعه: ۷', message)
+        self.assertNotIn('[تعداد مراجعات]', message)
+        self.assertNotIn('[تعداد مراجعه]', message)
+
     def test_released_sms_uses_fallback_greeting_for_anonymous_customer(self):
         tenant = SimpleNamespace(name='کارواش یک')
         vehicle = SimpleNamespace(
