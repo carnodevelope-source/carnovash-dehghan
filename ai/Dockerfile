@@ -19,13 +19,20 @@ RUN apt-get -o Acquire::Retries=5 -o Acquire::ForceIPv4=true update \
 
 COPY ai/final/requirements.txt /tmp/requirements.txt
 COPY backend/packages /opt/packages
+# Prefer offline wheels when present, but allow PyPI fallback for missing/incompatible pins.
 RUN if [ -d /opt/packages ] && [ "$(ls -A /opt/packages 2>/dev/null)" ]; then \
-      pip install --no-index --find-links=/opt/packages -r /tmp/requirements.txt \
-      && pip uninstall -y opencv-python \
-      && pip install --no-index --find-links=/opt/packages --force-reinstall --no-deps opencv-python-headless; \
+      pip install --find-links=/opt/packages -r /tmp/requirements.txt \
+      || pip install -r /tmp/requirements.txt; \
     else \
       pip install -r /tmp/requirements.txt; \
-    fi
+    fi \
+    && pip uninstall -y opencv-python || true \
+    && if [ -d /opt/packages ] && [ "$(ls -A /opt/packages 2>/dev/null)" ]; then \
+         pip install --find-links=/opt/packages --force-reinstall --no-deps opencv-python-headless \
+         || pip install --force-reinstall --no-deps opencv-python-headless; \
+       else \
+         pip install --force-reinstall --no-deps opencv-python-headless; \
+       fi
 
 COPY ai/final/ /app/
 RUN chmod +x /app/docker-entrypoint.sh \
