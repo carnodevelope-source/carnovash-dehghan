@@ -3,6 +3,28 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
+$requiredWeights = @(
+  "plate_detector.pt",
+  "vehicle_detector.pt",
+  "ocr_model.ts",
+  "letter_model.ts",
+  "color_model.ts"
+)
+$weightsDir = Join-Path $projectRoot "ai\final\weights"
+foreach ($name in $requiredWeights) {
+  $path = Join-Path $weightsDir $name
+  if (-not (Test-Path $path)) {
+    throw @"
+Missing plate-ai weight: $path
+
+Weights are not in git (~540MB). Copy them to the server first:
+  .\scripts\sync_plate_ai_weights.ps1 user@server:/path/to/carvash
+or:
+  scp -r ai\final\weights user@server:/path/to/carvash/ai/final/
+"@
+  }
+}
+
 Write-Host "Checking Docker engine..."
 docker info | Out-Null
 

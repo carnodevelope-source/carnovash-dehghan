@@ -5,7 +5,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_DEFAULT_TIMEOUT=120 \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    PLATE_AI_WEIGHTS_DIR=/app/weights
 
 WORKDIR /app
 
@@ -27,7 +28,10 @@ RUN if [ -d /opt/packages ] && [ "$(ls -A /opt/packages 2>/dev/null)" ]; then \
     fi
 
 COPY ai/final/ /app/
+RUN chmod +x /app/docker-entrypoint.sh \
+    && mkdir -p /app/weights
 
 EXPOSE 8765
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["python", "plate_http_service.py", "--host", "0.0.0.0", "--port", "8765"]

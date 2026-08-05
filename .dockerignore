@@ -21,8 +21,11 @@ ai/io/input/
 ai/io/output/
 ai/websit/
 ai/tst/
+ai/final/weights/**
+!ai/final/weights/README.md
 ai/*.bat
 ai/*.md
+!ai/final/README.md
 ai/*.mp4
 ai/plate-ai-smoke*.log
 ai/**/*.download
@@ -30,7 +33,6 @@ ai/**/*.corrupt
 ai/**/*.corrupt.*
 ai/**/.DS_Store
 ai/**/Thumbs.db
-
 backend/**/__pycache__/
 backend/**/*.py[cod]
 backend/**/*.log

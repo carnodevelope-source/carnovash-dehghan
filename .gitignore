@@ -2,7 +2,11 @@
 .DS_Store
 Thumbs.db
 Desktop.ini
-ai/final/weights/
+ai/final/weights/*
+!ai/final/weights/README.md
+!ai/final/weights/.gitkeep
+ai/final/weights/Untitled
+ai/final/weights/Untitled.*
 # Node
 frontend/node_modules/
 tools/print-agent/node_modules/

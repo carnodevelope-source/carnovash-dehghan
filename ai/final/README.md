@@ -2,6 +2,20 @@
 
 این فولدر مستقل است و هیچ فایلی را از `ai` یا `ai_vehicle_agent` import نمی‌کند. قرارداد HTTP آن با سرویس قبلی سایت سازگار است و سه فیلد `color`، `color_confidence` و `color_reliable` را به پاسخ قبلی اضافه می‌کند.
 
+## دیپلوی سرور
+
+کد با git می‌رود؛ وزن‌ها (~540MB) نه. یک‌بار وزن‌ها را روی سرور کپی کنید، بعد Docker را بیلد کنید:
+
+```powershell
+.\scripts\sync_plate_ai_weights.ps1 user@server:/path/to/carvash -Restart
+```
+
+```bash
+./scripts/sync_plate_ai_weights.sh user@server:/path/to/carvash --restart
+```
+
+Compose فولدر `ai/final/weights` را روی `/app/weights` mount می‌کند.
+
 ## اجرای سایت (پیشنهادی)
 
 ```powershell

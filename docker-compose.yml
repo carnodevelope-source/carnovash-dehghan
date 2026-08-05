@@ -82,13 +82,14 @@ services:
       PLATE_AI_PORT: ${PLATE_AI_PORT:-8765}
       PLATE_AI_IMGSZ: ${PLATE_AI_IMGSZ:-640}
       PLATE_AI_CPU_THREADS: ${PLATE_AI_CPU_THREADS:-4}
-      PLATE_AI_THRESHOLD: ${PLATE_AI_THRESHOLD:-0.45}
+      PLATE_AI_THRESHOLD: ${PLATE_AI_THRESHOLD:-0.30}
       PLATE_AI_MIN_BOX_AREA: ${PLATE_AI_MIN_BOX_AREA:-300}
       PLATE_AI_BATCH_SIZE: ${PLATE_AI_BATCH_SIZE:-8}
       PLATE_AI_BATCH_WAIT_MS: ${PLATE_AI_BATCH_WAIT_MS:-12}
       PLATE_AI_QUEUE_SIZE: ${PLATE_AI_QUEUE_SIZE:-256}
       PLATE_AI_OCR_INTERVAL: ${PLATE_AI_OCR_INTERVAL:-12}
       PLATE_AI_COLOR_INTERVAL: ${PLATE_AI_COLOR_INTERVAL:-18}
+      PLATE_AI_WEIGHTS_DIR: /app/weights
     command:
       - python
       - plate_http_service.py
@@ -115,13 +116,14 @@ services:
     expose:
       - "${PLATE_AI_PORT:-8765}"
     volumes:
+      - ./ai/final/weights:/app/weights:ro
       - ./docker-data/plate-ai-output:/app/io/output
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import os; from urllib.request import urlopen; port = os.environ.get('PLATE_AI_PORT', '8765'); urlopen(f'http://127.0.0.1:{port}/health', timeout=5).read()\""]
       interval: 30s
       timeout: 5s
-      retries: 6
-      start_period: 90s
+      retries: 10
+      start_period: 180s
     restart: unless-stopped
 
   frontend:
