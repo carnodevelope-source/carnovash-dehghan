@@ -531,6 +531,14 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
             Decimal('0'),
         )
 
+        recipient_count = sum(len(batch_recipients) for batch_recipients in grouped_batches.values())
+        try:
+            from apps.auth.sample_tenant import assert_sample_sms_capacity, maybe_raise_sample_monthly_sms_alert
+
+            assert_sample_sms_capacity(tenant, extra=recipient_count)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         wallet_balance = self._sms_wallet_balance(tenant)
         if wallet_balance < estimated_total:
             return Response(
@@ -630,6 +638,11 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
             detail = 'بخشی از پیامک‌ها ارسال شد و بخشی ناموفق بود.'
         elif failed_count and not success_count:
             detail = str(results[0].get('message') or 'هیچ پیامکی ارسال نشد.') if results else 'هیچ پیامکی ارسال نشد.'
+
+        if success_count:
+            from apps.auth.sample_tenant import maybe_raise_sample_monthly_sms_alert
+
+            maybe_raise_sample_monthly_sms_alert()
 
         return Response(
             {

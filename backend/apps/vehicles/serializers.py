@@ -537,6 +537,13 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context.get('request')
         tenant = getattr(getattr(request, 'user', None), 'tenant', None)
+        from apps.auth.sample_tenant import assert_sample_vehicle_capacity
+        from rest_framework.exceptions import ValidationError as DrfValidationError
+
+        try:
+            assert_sample_vehicle_capacity(tenant)
+        except ValueError as exc:
+            raise DrfValidationError({'detail': [str(exc)]}) from exc
         self._discard_ai_audit_fields(validated_data)
         services_payload = validated_data.pop('services', [])
         products_payload = validated_data.pop('products', [])
@@ -1330,6 +1337,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         return result
 
     def _resolve_customer_profile(self, phone, full_name='', gender='', increment_visit=False, tenant=None):
+        from apps.auth.sample_tenant import SAMPLE_MASKED_NAME, SAMPLE_MASKED_PHONE, is_sample_tenant
+
         phone_value = self._normalize_phone(phone)
         if not phone_value:
             return None
@@ -1350,13 +1359,25 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         update_fields = ['updated_at']
         display_name = (full_name or '').strip()
+        # Historical masked sample customer must stay masked; new real phones create new profiles above.
+        masked_historical = (
+            is_sample_tenant(tenant)
+            and customer.phone == SAMPLE_MASKED_PHONE
+        )
         if tenant and customer.tenant_id is None:
             customer.tenant = tenant
             update_fields.append('tenant')
-        if display_name and display_name != (customer.full_name or '').strip():
+        if (
+            display_name
+            and display_name != (customer.full_name or '').strip()
+            and not masked_historical
+        ):
             customer.full_name = display_name
             update_fields.append('full_name')
-        if normalized_gender and normalized_gender != (customer.gender or ''):
+        elif masked_historical and customer.full_name != SAMPLE_MASKED_NAME:
+            customer.full_name = SAMPLE_MASKED_NAME
+            update_fields.append('full_name')
+        if normalized_gender and normalized_gender != (customer.gender or '') and not masked_historical:
             customer.gender = normalized_gender
             update_fields.append('gender')
 

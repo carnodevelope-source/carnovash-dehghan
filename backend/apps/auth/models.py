@@ -9,6 +9,12 @@ class CarWash(models.Model):
     address = models.CharField(max_length=300, blank=True, default='')
     is_active = models.BooleanField(default=True)
     exclude_from_hq_reports = models.BooleanField(default=False)
+    is_sample = models.BooleanField(
+        default=False,
+        help_text='Demo/sample tenant: hidden from HQ reports/lists, tickets still visible.',
+    )
+    sample_daily_sms_limit = models.PositiveIntegerField(default=15)
+    sample_daily_vehicle_limit = models.PositiveIntegerField(default=20)
     trial_started_at = models.DateTimeField(null=True, blank=True)
     trial_ends_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -54,7 +60,8 @@ class User(AbstractUser):
         HQ_SUPPORT = 'hq_support', 'HQ Support'
 
     full_name = models.CharField(max_length=150, blank=True)
-    phone = models.CharField(max_length=20, unique=True)
+    # Not globally unique: sample/demo workers may share the masked phone.
+    phone = models.CharField(max_length=20, db_index=True)
     tenant = models.ForeignKey(
         CarWash,
         on_delete=models.PROTECT,

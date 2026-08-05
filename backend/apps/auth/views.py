@@ -783,7 +783,22 @@ class HqBaseView(APIView):
 
 
 def _hq_visible_carwashes():
-    return CarWash.objects.filter(exclude_from_hq_reports=False)
+    # Sample/demo tenants stay out of HQ lists & reports; tickets use a separate filter.
+    from .sample_tenant import hq_reportable_carwashes_q
+
+    return CarWash.objects.filter(hq_reportable_carwashes_q())
+
+
+def _hq_ticket_queryset_q():
+    from .sample_tenant import hq_ticket_queryset_q
+
+    return hq_ticket_queryset_q()
+
+
+def _hq_ticket_tenant_filter():
+    from .sample_tenant import hq_ticket_tenants_q
+
+    return hq_ticket_tenants_q()
 
 
 class HqOverviewView(HqBaseView):
@@ -795,30 +810,27 @@ class HqOverviewView(HqBaseView):
         close_stale_support_tickets()
         open_statuses = [SupportTicket.Status.OPEN, SupportTicket.Status.PENDING, SupportTicket.Status.ANSWERED]
         visible_carwashes = _hq_visible_carwashes()
+        ticket_q = _hq_ticket_queryset_q()
         summary = {
             'active_carwashes': visible_carwashes.filter(is_active=True).count(),
             'total_carwashes': visible_carwashes.count(),
             'open_tickets': SupportTicket.objects.filter(
                 status__in=open_statuses,
-                tenant__exclude_from_hq_reports=False,
-            ).count(),
+            ).filter(ticket_q).count(),
             'urgent_tickets': SupportTicket.objects.filter(
                 status__in=open_statuses,
                 priority=SupportTicket.Priority.URGENT,
-                tenant__exclude_from_hq_reports=False,
-            ).count(),
+            ).filter(ticket_q).count(),
             'hq_support_users': User.objects.filter(platform_role=User.PlatformRoles.HQ_SUPPORT, is_active=True).count(),
             'today_vehicles': VehicleEntry.objects.filter(
                 check_in_at__date=timezone.localdate(),
-                tenant__exclude_from_hq_reports=False,
+                tenant__in=visible_carwashes,
             ).count(),
         }
 
         recent_carwashes = visible_carwashes.order_by('-created_at')[:5]
         recent_tickets = apply_hq_ticket_visibility(
-            SupportTicket.objects.select_related('tenant', 'created_by', 'assigned_to').filter(
-                tenant__exclude_from_hq_reports=False,
-            ),
+            SupportTicket.objects.select_related('tenant', 'created_by', 'assigned_to').filter(ticket_q),
             request.user,
         ).order_by('-last_message_at', '-created_at')[:6]
         return Response(
@@ -1277,7 +1289,7 @@ class HqTicketListView(HqBaseView):
             SupportTicket.objects.select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
             .select_related('registration_request__manager')
             .prefetch_related('messages__sender')
-            .filter(tenant__exclude_from_hq_reports=False)
+            .filter(_hq_ticket_queryset_q())
             .order_by('-last_message_at', '-created_at')
         )
         queryset = apply_hq_ticket_visibility(queryset, request.user)
@@ -1311,7 +1323,8 @@ class HqTicketDetailView(HqBaseView):
 
         close_stale_support_tickets()
         queryset = (
-            SupportTicket.objects.filter(pk=pk, tenant__exclude_from_hq_reports=False)
+            SupportTicket.objects.filter(pk=pk)
+            .filter(_hq_ticket_queryset_q())
             .select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
             .select_related('registration_request__manager')
             .prefetch_related('messages__sender', 'attachments')
@@ -1330,10 +1343,7 @@ class HqTicketMessageCreateView(HqBaseView):
         if forbidden:
             return forbidden
 
-        queryset = SupportTicket.objects.filter(
-            pk=pk,
-            tenant__exclude_from_hq_reports=False,
-        ).select_related('assigned_to', 'tenant')
+        queryset = SupportTicket.objects.filter(pk=pk).filter(_hq_ticket_queryset_q()).select_related('assigned_to', 'tenant')
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         ticket = queryset.first()
         if not ticket:
@@ -1404,10 +1414,7 @@ class HqTicketWalletTransferView(HqBaseView):
         if forbidden:
             return forbidden
 
-        queryset = SupportTicket.objects.select_for_update().filter(
-            pk=pk,
-            tenant__exclude_from_hq_reports=False,
-        ).select_related('tenant', 'assigned_to')
+        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).filter(_hq_ticket_queryset_q()).select_related('tenant', 'assigned_to')
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         ticket = queryset.first()
         if not ticket:
@@ -1504,10 +1511,7 @@ class HqTicketWalletWithdrawView(HqBaseView):
         if forbidden:
             return forbidden
 
-        queryset = SupportTicket.objects.select_for_update().filter(
-            pk=pk,
-            tenant__exclude_from_hq_reports=False,
-        ).select_related('tenant', 'assigned_to')
+        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).filter(_hq_ticket_queryset_q()).select_related('tenant', 'assigned_to')
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         ticket = queryset.first()
         if not ticket:
@@ -1598,7 +1602,7 @@ class HqTicketApproveRegistrationView(HqBaseView):
 
         queryset = (
             SupportTicket.objects.select_for_update()
-            .filter(pk=pk, is_registration_request=True, tenant__exclude_from_hq_reports=False)
+            .filter(pk=pk, is_registration_request=True).filter(_hq_ticket_queryset_q())
             .select_related('tenant', 'assigned_to', 'registration_request__manager')
         )
         queryset = apply_hq_ticket_visibility(queryset, request.user)
@@ -1704,10 +1708,7 @@ class HqTicketAssignView(HqBaseView):
         if forbidden:
             return forbidden
 
-        queryset = SupportTicket.objects.select_for_update().filter(
-            pk=pk,
-            tenant__exclude_from_hq_reports=False,
-        ).select_related('assigned_to', 'tenant')
+        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).filter(_hq_ticket_queryset_q()).select_related('assigned_to', 'tenant')
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         ticket = queryset.first()
         if not ticket:

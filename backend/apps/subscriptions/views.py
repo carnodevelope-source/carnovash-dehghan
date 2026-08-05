@@ -148,7 +148,7 @@ class SubscriptionsHqBaseView(APIView):
 
 def _apply_subscription_filters(qs, request):
     params = request.query_params
-    qs = qs.filter(tenant__exclude_from_hq_reports=False)
+    qs = qs.filter(tenant__exclude_from_hq_reports=False, tenant__is_sample=False)
     # Inactive carwashes are excluded from HQ service reports by default.
     include_inactive = str(params.get('include_inactive') or '').strip().lower() in {'1', 'true', 'yes'}
     if not include_inactive:
@@ -369,7 +369,9 @@ class ClientServicesView(SubscriptionsHqBaseView):
         forbidden = self.forbid(request)
         if forbidden:
             return forbidden
-        tenant = CarWash.objects.filter(pk=tenant_id, is_active=True, exclude_from_hq_reports=False).first()
+        tenant = CarWash.objects.filter(
+            pk=tenant_id, is_active=True, exclude_from_hq_reports=False, is_sample=False
+        ).first()
         if not tenant:
             return Response({'detail': 'کلاینت فعال یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
         seed_catalog_from_legacy()
@@ -407,6 +409,7 @@ class ManualOrderCreateView(SubscriptionsHqBaseView):
         tenant = CarWash.objects.filter(
             pk=request.data.get('tenant_id'),
             exclude_from_hq_reports=False,
+            is_sample=False,
         ).first()
         product = ServiceProduct.objects.filter(pk=request.data.get('product_id')).select_related('project').first()
         plan = ServicePlan.objects.filter(pk=request.data.get('plan_id'), product=product).first() if product else None
@@ -464,10 +467,15 @@ class AlertsListView(SubscriptionsHqBaseView):
         forbidden = self.forbid(request)
         if forbidden:
             return forbidden
+        from apps.auth.sample_tenant import SAMPLE_SMS_ALERT_CODE
+
         qs = ServiceAlert.objects.select_related('tenant', 'subscription', 'subscription__product').filter(
             is_resolved=False,
             tenant__is_active=True,
-            tenant__exclude_from_hq_reports=False,
+        ).filter(
+            # Hide sample tenants from normal alerts, but keep the monthly sample-SMS warning.
+            Q(tenant__exclude_from_hq_reports=False, tenant__is_sample=False)
+            | Q(code=SAMPLE_SMS_ALERT_CODE)
         )
         if request.query_params.get('tenant_id'):
             qs = qs.filter(tenant_id=request.query_params.get('tenant_id'))

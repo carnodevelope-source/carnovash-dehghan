@@ -26,9 +26,10 @@ class LoginSerializer(serializers.Serializer):
         resolved_username = username_or_phone
         user_model = get_user_model()
 
-        user_by_phone = user_model.objects.filter(phone=username_or_phone).first()
-        if user_by_phone:
-            resolved_username = user_by_phone.username
+        # Shared masked phones (sample workers) must not hijack username login resolution.
+        phone_matches = list(user_model.objects.filter(phone=username_or_phone)[:2])
+        if len(phone_matches) == 1:
+            resolved_username = phone_matches[0].username
 
         user = user_model.objects.filter(username=resolved_username).select_related('tenant').first()
         if not user or not user.check_password(password):
@@ -293,7 +294,9 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
     def validate_tenant_id(self, value):
         if value in (None, 0, '0', ''):
             return None
-        tenant = CarWash.objects.filter(pk=value, is_active=True, exclude_from_hq_reports=False).first()
+        tenant = CarWash.objects.filter(
+            pk=value, is_active=True, exclude_from_hq_reports=False, is_sample=False
+        ).first()
         if not tenant:
             raise serializers.ValidationError('کارواش انتخاب‌شده معتبر نیست.')
         return tenant.id
@@ -368,7 +371,9 @@ class HqSupportUserUpdateSerializer(serializers.Serializer):
     def validate_tenant_id(self, value):
         if value in (None, 0, '0', ''):
             return None
-        tenant = CarWash.objects.filter(pk=value, is_active=True, exclude_from_hq_reports=False).first()
+        tenant = CarWash.objects.filter(
+            pk=value, is_active=True, exclude_from_hq_reports=False, is_sample=False
+        ).first()
         if not tenant:
             raise serializers.ValidationError('کارواش انتخاب‌شده معتبر نیست.')
         return tenant.id

@@ -898,6 +898,28 @@ def _send_vehicle_event_sms_sync(event_code, tenant, vehicle, *, created_by=None
     if not message_items:
         return {'ok': False, 'reason': 'empty_template'}
 
+    try:
+        from apps.auth.sample_tenant import assert_sample_sms_capacity, maybe_raise_sample_monthly_sms_alert
+
+        assert_sample_sms_capacity(tenant, extra=len(message_items))
+    except ValueError as exc:
+        NotificationLog.objects.create(
+            tenant=tenant,
+            vehicle_entry=vehicle,
+            channel=NotificationLog.Channel.SMS,
+            recipient=phone,
+            template_code=event_code,
+            payload=make_json_safe({
+                'event_code': event_code,
+                'reason': 'sample_daily_sms_cap',
+                'detail': str(exc),
+            }),
+            status=NotificationLog.Status.FAILED,
+            provider_response=str(exc),
+            created_by=created_by if getattr(created_by, 'is_authenticated', False) else None,
+        )
+        return {'ok': False, 'reason': 'sample_daily_sms_cap', 'detail': str(exc)}
+
     sms_price = sms_price_per_segment()
     estimated_cost = sum((sms_cost_for_text(item['text']) for item in message_items), Decimal('0'))
     balance = sms_wallet_balance(tenant)
@@ -973,6 +995,8 @@ def _send_vehicle_event_sms_sync(event_code, tenant, vehicle, *, created_by=None
             created_by=created_by if getattr(created_by, 'is_authenticated', False) else None,
         )
         sent_count += 1
+    if sent_count:
+        maybe_raise_sample_monthly_sms_alert()
     return {'ok': True, 'sent_count': sent_count}
 
 
