@@ -6,7 +6,7 @@ param(
   [int]$BackendPort = 8000,
   [int]$FrontendPort = 5173,
   [int]$AiImageSize = 640,
-  [double]$AiThreshold = 0.45,
+  [double]$AiThreshold = 0.30,
   [int]$AiMinBoxArea = 300,
   [int]$AiBatchSize = 8,
   [int]$AiBatchWaitMs = 12,
@@ -14,26 +14,29 @@ param(
 )
 
 $root = Split-Path -Parent $PSScriptRoot
-$aiDir = Join-Path $root "ai"
+$aiDir = Join-Path $root "ai\final"
+$aiParentDir = Join-Path $root "ai"
 $backendDir = Join-Path $root "backend"
 $frontendDir = Join-Path $root "frontend"
 $backendEntry = if (Test-Path (Join-Path $backendDir "manage_local.py")) { "manage_local.py" } else { "manage.py" }
 $aiServiceUrl = "http://${AiHost}:${AiPort}"
 
 function Resolve-PythonCommand {
-  param([string]$WorkingDirectory)
+  param([string[]]$WorkingDirectories)
 
-  $venvPython = Join-Path $WorkingDirectory "venv\Scripts\python.exe"
-  if (Test-Path $venvPython) {
-    Push-Location $WorkingDirectory
-    try {
-      & $venvPython -c "import cv2" *> $null
-      if ($LASTEXITCODE -eq 0) {
-        return $venvPython
+  foreach ($WorkingDirectory in $WorkingDirectories) {
+    $venvPython = Join-Path $WorkingDirectory "venv\Scripts\python.exe"
+    if (Test-Path $venvPython) {
+      Push-Location $WorkingDirectory
+      try {
+        & $venvPython -c "import cv2" *> $null
+        if ($LASTEXITCODE -eq 0) {
+          return $venvPython
+        }
+      } catch {
+      } finally {
+        Pop-Location
       }
-    } catch {
-    } finally {
-      Pop-Location
     }
   }
   return "python"
@@ -59,13 +62,14 @@ function Wait-ForHttp {
   return $false
 }
 
-$aiPython = Resolve-PythonCommand -WorkingDirectory $aiDir
-$backendPython = Resolve-PythonCommand -WorkingDirectory $backendDir
+$aiPython = Resolve-PythonCommand -WorkingDirectories @($aiDir, $aiParentDir)
+$backendPython = Resolve-PythonCommand -WorkingDirectories @($backendDir)
 
 $env:PLATE_AI_SERVICE_URL = $aiServiceUrl
 $env:PLATE_AI_TIMEOUT_SECONDS = "5"
+if (-not $env:PLATE_AI_DEVICE) { $env:PLATE_AI_DEVICE = "auto" }
 
-$aiCommand = "& '$aiPython' plate_http_service.py --host $AiHost --port $AiPort --imgsz $AiImageSize --threshold $AiThreshold --min-box-area $AiMinBoxArea --batch-size $AiBatchSize --batch-wait-ms $AiBatchWaitMs --queue-size $AiQueueSize"
+$aiCommand = "`$env:PLATE_AI_DEVICE='$($env:PLATE_AI_DEVICE)'; & '$aiPython' plate_http_service.py --host $AiHost --port $AiPort --imgsz $AiImageSize --threshold $AiThreshold --min-box-area $AiMinBoxArea --batch-size $AiBatchSize --batch-wait-ms $AiBatchWaitMs --queue-size $AiQueueSize"
 $backendCommand = "$env:PLATE_AI_SERVICE_URL='$aiServiceUrl'; $env:PLATE_AI_TIMEOUT_SECONDS='5'; & '$backendPython' $backendEntry runserver 0.0.0.0:$BackendPort"
 $frontendCommand = "npm run dev -- --host 0.0.0.0 --port $FrontendPort"
 

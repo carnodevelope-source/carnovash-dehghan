@@ -87,6 +87,8 @@ services:
       PLATE_AI_BATCH_SIZE: ${PLATE_AI_BATCH_SIZE:-8}
       PLATE_AI_BATCH_WAIT_MS: ${PLATE_AI_BATCH_WAIT_MS:-12}
       PLATE_AI_QUEUE_SIZE: ${PLATE_AI_QUEUE_SIZE:-256}
+      PLATE_AI_OCR_INTERVAL: ${PLATE_AI_OCR_INTERVAL:-12}
+      PLATE_AI_COLOR_INTERVAL: ${PLATE_AI_COLOR_INTERVAL:-18}
     command:
       - python
       - plate_http_service.py
@@ -97,7 +99,7 @@ services:
       - --imgsz
       - ${PLATE_AI_IMGSZ:-640}
       - --threshold
-      - ${PLATE_AI_THRESHOLD:-0.45}
+      - ${PLATE_AI_THRESHOLD:-0.30}
       - --min-box-area
       - ${PLATE_AI_MIN_BOX_AREA:-300}
       - --batch-size
@@ -106,6 +108,10 @@ services:
       - ${PLATE_AI_BATCH_WAIT_MS:-12}
       - --queue-size
       - ${PLATE_AI_QUEUE_SIZE:-256}
+      - --ocr-interval
+      - ${PLATE_AI_OCR_INTERVAL:-12}
+      - --color-interval
+      - ${PLATE_AI_COLOR_INTERVAL:-18}
     expose:
       - "${PLATE_AI_PORT:-8765}"
     volumes:

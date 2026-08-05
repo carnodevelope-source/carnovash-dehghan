@@ -678,6 +678,14 @@ class VehiclePlateRecognitionView(APIView):
         raw_text = upstream_data.get('text') or ''
         persian_text = upstream_data.get('persian_text') or ''
         parts = _plate_parts_from_ai(raw_text=raw_text, persian_text=persian_text)
+        color = str(upstream_data.get('color') or '').strip()
+        if color.lower() in {'', 'unknown', 'none', 'null'}:
+            color = ''
+        color_confidence = upstream_data.get('color_confidence')
+        try:
+            color_confidence = float(color_confidence) if color_confidence is not None else 0.0
+        except (TypeError, ValueError):
+            color_confidence = 0.0
         return Response(
             {
                 **upstream_data,
@@ -687,6 +695,10 @@ class VehiclePlateRecognitionView(APIView):
                 'plate_letter': parts.get('plate_letter', ''),
                 'plate_mid': parts.get('plate_mid', ''),
                 'plate_right': parts.get('plate_right', ''),
+                'color': color,
+                'color_confidence': color_confidence,
+                'color_reliable': bool(upstream_data.get('color_reliable')) and bool(color),
+                'color_stable': bool(upstream_data.get('color_stable')) and bool(color),
             },
             status=status.HTTP_200_OK,
         )

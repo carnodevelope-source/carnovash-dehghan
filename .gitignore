@@ -2,7 +2,7 @@
 .DS_Store
 Thumbs.db
 Desktop.ini
-
+ai/final/weights/
 # Node
 frontend/node_modules/
 tools/print-agent/node_modules/

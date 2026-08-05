@@ -16,13 +16,17 @@ RUN apt-get -o Acquire::Retries=5 -o Acquire::ForceIPv4=true update \
         libxcb1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY ai/requirements.txt /tmp/requirements.txt
+COPY ai/final/requirements.txt /tmp/requirements.txt
 COPY backend/packages /opt/packages
-RUN pip install --no-index --find-links=/opt/packages -r /tmp/requirements.txt
-RUN pip uninstall -y opencv-python \
-    && pip install --no-index --find-links=/opt/packages --force-reinstall --no-deps opencv-python-headless
+RUN if [ -d /opt/packages ] && [ "$(ls -A /opt/packages 2>/dev/null)" ]; then \
+      pip install --no-index --find-links=/opt/packages -r /tmp/requirements.txt \
+      && pip uninstall -y opencv-python \
+      && pip install --no-index --find-links=/opt/packages --force-reinstall --no-deps opencv-python-headless; \
+    else \
+      pip install -r /tmp/requirements.txt; \
+    fi
 
-COPY ai/ /app/
+COPY ai/final/ /app/
 
 EXPOSE 8765
 

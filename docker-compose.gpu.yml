@@ -1,9 +1,10 @@
 services:
   plate-ai:
     build:
-      context: ./ai/tst/Persian-License-Plate-Recognition
-      dockerfile: Dockerfile.gpu
+      context: .
+      dockerfile: ai/Dockerfile.gpu
     environment:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      PLATE_AI_DEVICE: ${PLATE_AI_DEVICE:-cuda}
     gpus: all
