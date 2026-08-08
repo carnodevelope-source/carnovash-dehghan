@@ -1836,7 +1836,9 @@ onMounted(loadInitialData)
 .product-line-total {
   flex-shrink: 0;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #0f172a;
 }
 
 .inline-product-qty span {
