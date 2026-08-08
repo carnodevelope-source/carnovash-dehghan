@@ -379,7 +379,8 @@ const hydrateForm = (data = {}) => {
     : 'male'
   form.mobile = normalizeDigits(String(data.mobile || data.driver_phone || ''))
   form.customerScore = Math.max(0, Number(data.customerScore ?? data.customer_score ?? 0))
-  form.customerLoyaltyVisitCount = Math.max(0, Number(data.customerLoyaltyVisitCount ?? data.customer_loyalty_visit_count ?? 0))
+  form.customerLoyaltyVisitCount = Math.max(1, Number(data.customerLoyaltyVisitCount ?? data.customer_loyalty_visit_count ?? 1))
+
   form.customerLoyaltyDiscountPercent = Math.max(0, Number(data.customerLoyaltyDiscountPercent ?? data.customer_loyalty_discount_percent ?? 0))
   form.note = String(data.note || data.notes || '')
   form.tariffType = normalizeTariffType(data.tariffType || data.tariff_type, form.plateType)
@@ -936,7 +937,8 @@ const applyPlateLookupData = (data = {}) => {
     : form.driverGender
   form.mobile = normalizeDigits(String(data.driver_phone || data.mobile || ''))
   form.customerScore = Math.max(0, Number(data.customer_score ?? data.customerScore ?? 0))
-  form.customerLoyaltyVisitCount = Math.max(0, Number(data.customer_loyalty_visit_count ?? data.customerLoyaltyVisitCount ?? 0))
+  form.customerLoyaltyVisitCount = Math.max(1, Number(data.customer_loyalty_visit_count ?? data.customerLoyaltyVisitCount ?? 1))
+
   form.customerLoyaltyDiscountPercent = Math.max(0, Number(data.customer_loyalty_discount_percent ?? data.customerLoyaltyDiscountPercent ?? 0))
   form.plateType = String(data.plate_type || form.plateType || 'car').trim() || 'car'
   if (data.tariff_type || data.tariffType) {

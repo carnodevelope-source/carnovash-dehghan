@@ -51,7 +51,11 @@ class VehicleEntryListCreateView(generics.ListCreateAPIView):
             'job',
             'job__assigned_worker',
             'job__assigned_worker__user',
-        ).prefetch_related('job__service_lines__service', 'status_logs').filter(tenant=self.request.user.tenant).order_by('-check_in_at')
+        ).prefetch_related(
+            'job__service_lines__service',
+            'job__product_lines__product',
+            'status_logs',
+        ).filter(tenant=self.request.user.tenant).order_by('check_in_at', 'id')
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
@@ -72,16 +76,25 @@ class VehicleEntryListCreateView(generics.ListCreateAPIView):
         log_ai_plate_audit_event(vehicle=vehicle, request=self.request, operation='create')
 
 
-def _normalized_plate_value(plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
-    left = str(plate_left or '').strip()
-    letter = str(plate_letter or '').strip()
-    mid = str(plate_mid or '').strip()
-    right = str(plate_right or '').strip()
-    if left and letter and mid and right:
-        return f'{left} {letter} {mid} {right}'
-    if mid and letter and not left and not right:
-        return f'{mid} {letter}'
-    return str(plate_number or '').strip()
+def _normalized_plate_value(
+    plate_number='',
+    plate_left='',
+    plate_letter='',
+    plate_mid='',
+    plate_right='',
+    plate_type='car',
+):
+    from .plate_normalize import normalize_plate_parts
+
+    parts = normalize_plate_parts(
+        plate_number=plate_number,
+        plate_left=plate_left,
+        plate_letter=plate_letter,
+        plate_mid=plate_mid,
+        plate_right=plate_right,
+        plate_type=plate_type,
+    )
+    return parts.get('plate_number') or ''
 
 
 def _find_blocked_plate(tenant, *, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
@@ -127,105 +140,27 @@ def _find_blocked_plate(tenant, *, plate_number='', plate_left='', plate_letter=
     return None
 
 
-_PERSIAN_DIGITS = str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789')
-_AI_LETTER_MAP = {
-    'a': 'ا',
-    'b': 'ب',
-    'c': 'ص',
-    'd': 'د',
-    'e': 'ه',
-    'f': 'ف',
-    'g': 'گ',
-    'h': 'ح',
-    'i': 'ی',
-    'j': 'ج',
-    'k': 'ک',
-    'l': 'ل',
-    'm': 'م',
-    'n': 'ن',
-    'o': 'و',
-    'p': 'پ',
-    'q': 'ق',
-    'r': 'ر',
-    's': 'س',
-    't': 'ط',
-    'u': 'ع',
-    'v': 'و',
-    'w': 'و',
-    'x': 'ش',
-    'y': 'ی',
-    'z': 'ز',
-}
-
-_PLATE_LETTER_WORD_MAP = {
-    'الف': 'ا',
-    'ا': 'ا',
-    'ب': 'ب',
-    'پ': 'پ',
-    'ت': 'ت',
-    'ث': 'ث',
-    'ج': 'ج',
-    'چ': 'چ',
-    'ح': 'ح',
-    'خ': 'خ',
-    'د': 'د',
-    'ذ': 'ذ',
-    'ر': 'ر',
-    'ز': 'ز',
-    'ژ': 'ژ',
-    'س': 'س',
-    'ش': 'ش',
-    'ص': 'ص',
-    'ض': 'ض',
-    'ط': 'ط',
-    'ظ': 'ظ',
-    'ع': 'ع',
-    'غ': 'غ',
-    'ف': 'ف',
-    'ق': 'ق',
-    'ک': 'ک',
-    'ك': 'ک',
-    'گ': 'گ',
-    'ل': 'ل',
-    'م': 'م',
-    'ن': 'ن',
-    'و': 'و',
-    'ه': 'ه',
-    'ی': 'ی',
-    'ي': 'ی',
-}
-
-
 def _normalized_ai_letter(value=''):
-    token = str(value or '').strip().lower()
-    if not token:
-        return ''
-    token = token.replace('ك', 'ک').replace('ي', 'ی')
-    if token in _AI_LETTER_MAP:
-        return _AI_LETTER_MAP[token]
-    if token in _PLATE_LETTER_WORD_MAP:
-        return _PLATE_LETTER_WORD_MAP[token]
-    first_char = token[:1]
-    if first_char in _AI_LETTER_MAP:
-        return _AI_LETTER_MAP[first_char]
-    return _PLATE_LETTER_WORD_MAP.get(first_char, '')
+    from .plate_normalize import normalize_plate_letter
+
+    return normalize_plate_letter(value)
 
 
 def _ai_plate_parts(visual_right='', letter='', mid='', visual_left=''):
-    right = str(visual_right or '').strip()
-    left = str(visual_left or '').strip()
-    middle = str(mid or '').strip()
-    normalized_letter = str(letter or '').strip()
-    return {
-        'plate_left': left,
-        'plate_letter': normalized_letter,
-        'plate_mid': middle,
-        'plate_right': right,
-        'plate_number': f'{left} {normalized_letter} {middle} {right}',
-    }
+    from .plate_normalize import normalize_plate_parts
+
+    return normalize_plate_parts(
+        plate_left=visual_left,
+        plate_letter=letter,
+        plate_mid=mid,
+        plate_right=visual_right,
+        plate_type='car',
+    )
 
 
 def _plate_parts_from_ai(raw_text='', persian_text=''):
+    from .plate_normalize import normalize_digits
+
     raw = str(raw_text or '').strip().lower()
     compact_raw = ''.join(ch for ch in raw if ch.isalnum())
     raw_match = re.search(r'(\d{2})([a-z])(\d{3})(\d{2})', compact_raw)
@@ -235,7 +170,7 @@ def _plate_parts_from_ai(raw_text='', persian_text=''):
         if letter:
             return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
 
-    normalized = str(persian_text or '').translate(_PERSIAN_DIGITS)
+    normalized = normalize_digits(persian_text or '')
     normalized = normalized.replace('ك', 'ک').replace('ي', 'ی')
     tokenized = re.sub(r'[^0-9A-Za-zآ-ی]+', ' ', normalized).split()
     for index in range(max(0, len(tokenized) - 3)):
@@ -255,6 +190,57 @@ def _plate_parts_from_ai(raw_text='', persian_text=''):
     return {}
 
 
+def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right='', plate_type='car'):
+    from .plate_normalize import normalize_plate_parts, plate_letter_lookup_variants
+
+    parts = normalize_plate_parts(
+        plate_number=plate_number,
+        plate_left=plate_left,
+        plate_letter=plate_letter,
+        plate_mid=plate_mid,
+        plate_right=plate_right,
+        plate_type=plate_type,
+    )
+    queryset = VehicleEntry.objects.filter(tenant=tenant).exclude(status=VehicleEntry.Status.CANCELLED)
+    candidates = []
+    if parts['plate_number']:
+        candidates.append(queryset.filter(plate_number=parts['plate_number']).order_by('-check_in_at').first())
+    letter_variants = plate_letter_lookup_variants(parts['plate_letter'] or plate_letter)
+    if parts['plate_mid'] and letter_variants:
+        if parts['plate_left'] and parts['plate_right']:
+            candidates.append(
+                queryset.filter(
+                    plate_left=parts['plate_left'],
+                    plate_mid=parts['plate_mid'],
+                    plate_right=parts['plate_right'],
+                    plate_letter__in=letter_variants,
+                ).order_by('-check_in_at').first()
+            )
+        elif not parts['plate_left'] and not parts['plate_right']:
+            candidates.append(
+                queryset.filter(
+                    plate_mid=parts['plate_mid'],
+                    plate_letter__in=letter_variants,
+                    plate_left='',
+                    plate_right='',
+                ).order_by('-check_in_at').first()
+            )
+    # Legacy rows may still store short "ا" while lookup uses "الف".
+    for letter in letter_variants:
+        legacy_number = ''
+        if parts['plate_left'] and letter and parts['plate_mid'] and parts['plate_right']:
+            legacy_number = f"{parts['plate_left']} {letter} {parts['plate_mid']} {parts['plate_right']}"
+        elif parts['plate_mid'] and letter and not parts['plate_left'] and not parts['plate_right']:
+            legacy_number = f"{parts['plate_mid']} {letter}"
+        if legacy_number and legacy_number != parts['plate_number']:
+            candidates.append(queryset.filter(plate_number=legacy_number).order_by('-check_in_at').first())
+    found = [item for item in candidates if item]
+    if not found:
+        return None, parts
+    found.sort(key=lambda item: item.check_in_at or timezone.now(), reverse=True)
+    return found[0], parts
+
+
 class VehicleEntryDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = VehicleEntrySerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -265,7 +251,7 @@ class VehicleEntryDetailView(generics.RetrieveUpdateAPIView):
             'job',
             'job__assigned_worker',
             'job__assigned_worker__user',
-        ).prefetch_related('job__service_lines__service', 'status_logs').filter(tenant=self.request.user.tenant)
+        ).prefetch_related('job__service_lines__service', 'job__product_lines__product', 'status_logs').filter(tenant=self.request.user.tenant)
 
     def perform_update(self, serializer):
         user = self.request.user if getattr(self.request.user, 'is_authenticated', False) else None
@@ -523,13 +509,17 @@ class VehiclePlateLookupView(APIView):
 
     def get(self, request):
         tenant = getattr(request.user, 'tenant', None)
-        plate_number = _normalized_plate_value(
+        plate_type = str(request.query_params.get('plate_type', 'car') or 'car').strip().lower() or 'car'
+        latest_vehicle, parts = _find_latest_vehicle_by_plate(
+            tenant,
             plate_number=request.query_params.get('plate_number', ''),
             plate_left=request.query_params.get('plate_left', ''),
             plate_letter=request.query_params.get('plate_letter', ''),
             plate_mid=request.query_params.get('plate_mid', ''),
             plate_right=request.query_params.get('plate_right', ''),
+            plate_type=plate_type,
         )
+        plate_number = parts.get('plate_number') or ''
         if not plate_number:
             return Response({'found': False}, status=status.HTTP_200_OK)
 
@@ -537,10 +527,6 @@ class VehiclePlateLookupView(APIView):
         discount_percent_per_half_star = Decimal(
             str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0)
         )
-        latest_vehicle = VehicleEntry.objects.filter(
-            tenant=tenant,
-            plate_number=plate_number,
-        ).exclude(status=VehicleEntry.Status.CANCELLED).order_by('-check_in_at').first()
 
         if not latest_vehicle:
             # First visit preview: count=1, score=0.5
@@ -576,6 +562,7 @@ class VehiclePlateLookupView(APIView):
                 plate_letter=latest_vehicle.plate_letter,
                 plate_mid=latest_vehicle.plate_mid,
                 plate_right=latest_vehicle.plate_right,
+                plate_type=getattr(latest_vehicle, 'plate_type', 'car'),
             ),
             discount_percent_per_half_star=discount_percent_per_half_star,
         )
@@ -592,13 +579,13 @@ class VehiclePlateLookupView(APIView):
             base_amount=0,
             profile=loyalty_profile,
             settings_obj=settings_obj,
-            visit_count=int(loyalty.get('visit_count', 0) or 0),
+            visit_count=max(1, int(loyalty.get('visit_count', 0) or 0)),
             score=loyalty.get('score', 0),
         )
         return Response(
             {
                 'found': True,
-                'plate_number': plate_number,
+                'plate_number': latest_vehicle.plate_number or plate_number,
                 'plate_left': latest_vehicle.plate_left or '',
                 'plate_letter': latest_vehicle.plate_letter or '',
                 'plate_mid': latest_vehicle.plate_mid or '',
@@ -611,10 +598,10 @@ class VehiclePlateLookupView(APIView):
                 'car_color': latest_vehicle.car_color or '',
                 'tariff_type': latest_vehicle.tariff_type or 'type_1',
                 'customer_score': loyalty.get('score', 0),
-                'customer_loyalty_visit_count': loyalty.get('visit_count', 0),
+                'customer_loyalty_visit_count': max(1, int(loyalty.get('visit_count', 0) or 0)),
                 'customer_loyalty_discount_percent': float(discount_percent or 0),
                 'discount_calculation_mode': getattr(settings_obj, 'discount_calculation_mode', 'step') if settings_obj else 'step',
-                'fixed_discount_notice': next_fixed_discount_notice(settings_obj, loyalty.get('visit_count', 0)),
+                'fixed_discount_notice': next_fixed_discount_notice(settings_obj, max(1, int(loyalty.get('visit_count', 0) or 0))),
             },
             status=status.HTTP_200_OK,
         )
@@ -712,7 +699,7 @@ class VehicleBlockPlateView(APIView):
         tenant = getattr(request.user, 'tenant', None)
         vehicle = (
             VehicleEntry.objects.select_related('customer', 'job', 'job__assigned_worker', 'job__assigned_worker__user')
-            .prefetch_related('job__service_lines__service', 'status_logs')
+            .prefetch_related('job__service_lines__service', 'job__product_lines__product', 'status_logs')
             .filter(pk=pk, tenant=tenant)
             .first()
         )

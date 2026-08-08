@@ -624,7 +624,7 @@ class ReportsDashboardView(APIView):
         if plate_type in {'car', 'motorcycle'}:
             vehicles = vehicles.filter(plate_type=plate_type)
 
-        records = list(vehicles.order_by('-released_at', '-check_in_at'))
+        records = list(vehicles.order_by('released_at', 'check_in_at', 'id'))
         if worker_id:
             records = [vehicle for vehicle in records if _job_has_worker(getattr(vehicle, 'job', None), worker_id)]
         return records

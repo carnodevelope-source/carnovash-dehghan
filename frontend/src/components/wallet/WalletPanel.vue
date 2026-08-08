@@ -765,7 +765,17 @@ const money = (value) => formatThousandsTomanValue(value)
 const moneyWithUnit = (value) => formatThousandsToman(value)
 const formatDateTime = (value) => value ? new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-'
 const formatShortDate = (value) => value ? new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' }).format(new Date(value)) : '-'
-const txTitle = (tx) => tx?.description || (tx?.direction === 'in' ? 'واریز به کیف پول' : 'برداشت از کیف پول')
+const txTitle = (tx) => {
+  const description = String(tx?.description || '').trim()
+  const referenceType = String(tx?.reference_type || '').trim()
+  if (referenceType === 'vehicle_assigned_sms' || description.includes('پذیرش')) {
+    return description || 'ارسال پیامک پذیرش خودرو'
+  }
+  if (referenceType === 'vehicle_released_sms' || description.includes('ترخیص')) {
+    return description || 'ارسال پیامک ترخیص خودرو'
+  }
+  return description || (tx?.direction === 'in' ? 'واریز به کیف پول' : 'برداشت از کیف پول')
+}
 const toFaPercent = (value) => `${new Intl.NumberFormat('fa-IR').format(Number(value || 0))}٪`
 const normalizeDigits = (value) => String(value || '')
   .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))

@@ -274,7 +274,7 @@ def refresh_vehicle_for_sms(vehicle):
         return vehicle
     return (
         VehicleEntry.objects.select_related('tenant', 'job')
-        .prefetch_related('job__service_lines__service')
+        .prefetch_related('job__service_lines__service', 'job__product_lines__product')
         .filter(pk=vehicle_id)
         .first()
         or vehicle
@@ -360,7 +360,36 @@ def build_services_sms_summary(job):
             lines.append(f'{title} : {format_toman(amount)}')
         else:
             lines.append(title)
+    for line in iter_product_lines(job):
+        product = getattr(line, 'product', None)
+        title = str(
+            getattr(product, 'name', '')
+            or getattr(line, 'product_name', '')
+            or 'قلم فروشگاهی'
+        ).strip()
+        quantity = _decimal_value(getattr(line, 'quantity', 0))
+        amount = _decimal_value(getattr(line, 'line_total', 0))
+        if amount <= 0:
+            amount = _decimal_value(getattr(line, 'unit_price', 0)) * (quantity or Decimal('1'))
+        qty_label = to_persian_digits(str(int(quantity))) if quantity > 0 else ''
+        prefix = f'{title} × {qty_label}' if qty_label else title
+        if amount > 0:
+            lines.append(f'{prefix} : {format_toman(amount)}')
+        else:
+            lines.append(prefix)
     return '\n'.join(lines) if lines else 'خدمات ثبت شده است: مبلغ هنگام نهایی‌سازی اعلام می‌شود'
+
+
+def iter_product_lines(job):
+    if not job:
+        return []
+    if hasattr(job, 'product_lines'):
+        manager = job.product_lines
+        if hasattr(manager, 'all'):
+            return list(manager.all())
+        if isinstance(manager, (list, tuple)):
+            return list(manager)
+    return list(getattr(job, 'product_lines', []) or [])
 
 
 def normalize_assignment_sms_wording(template):
@@ -561,7 +590,7 @@ def build_vehicle_assignment_sms_messages(settings_obj, vehicle, *, assigned_at=
                 'context': context,
                 'template_code': 'vehicle_assigned',
                 'reference_type': 'vehicle_assigned_sms',
-                'description': 'ارسال پیامک تخصیص خودرو',
+                'description': 'ارسال پیامک پذیرش خودرو',
             })
     return messages
 
@@ -1010,7 +1039,7 @@ def _run_vehicle_event_sms_job(event_code, vehicle_id, tenant_id, created_by_id,
     try:
         vehicle = (
             VehicleEntry.objects.select_related('tenant', 'job', 'customer')
-            .prefetch_related('job__service_lines__service')
+            .prefetch_related('job__service_lines__service', 'job__product_lines__product')
             .filter(id=vehicle_id)
             .first()
         )
@@ -1319,12 +1348,25 @@ def group_sms_batches(recipients, template_text, tenant_name):
 def extract_log_metadata(log):
     payload = log.payload or {}
     mapped_status = 'success' if log.status == 'sent' else log.status
+    template_code = str(log.template_code or payload.get('template_code') or '').strip()
+    event_code = str(payload.get('event_code') or template_code or '').strip()
+    if event_code in {'vehicle_assigned', 'vehicle_assigned_sms'}:
+        event_label = 'پیامک پذیرش'
+    elif event_code in {'vehicle_released', 'vehicle_released_sms'}:
+        event_label = 'پیامک ترخیص'
+    elif event_code:
+        event_label = event_code
+    else:
+        event_label = payload.get('target_label', '') or 'پیامک'
     return {
         'id': log.id,
         'status': mapped_status,
         'recipient_name': payload.get('recipient_name') or payload.get('customer', {}).get('name') or '',
         'phone': log.recipient,
-        'target_label': payload.get('target_label', ''),
+        'target_label': payload.get('target_label', '') or event_label,
+        'event_code': event_code,
+        'event_label': event_label,
+        'template_code': template_code,
         'message': payload.get('rendered_text') or payload.get('text') or '',
         'note': payload.get('note', ''),
         'created_at': log.created_at,

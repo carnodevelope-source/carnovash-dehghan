@@ -106,7 +106,45 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('تخفیف این سفارش: ۱۰۰،۰۰۰ تومان', message)
         self.assertIn('مبلغ نهایی: ۳۰۰،۰۰۰ تومان', message)
 
-    def test_assignment_sms_moves_financial_lines_below_services(self):
+    def test_assignment_sms_includes_shop_products(self):
+        tenant = SimpleNamespace(name='کارواش یک')
+        job = SimpleNamespace(
+            final_total=900000,
+            services_total=750000,
+            service_list_subtotal=750000,
+            products_total=150000,
+            total_discount=0,
+            service_lines=[
+                SimpleNamespace(custom_service_name='شست‌وشوی ویژه', line_total=750000),
+            ],
+            product_lines=[
+                SimpleNamespace(
+                    product=SimpleNamespace(name='اسپری داشبورد'),
+                    quantity=2,
+                    unit_price=75000,
+                    line_total=150000,
+                ),
+            ],
+        )
+        vehicle = SimpleNamespace(
+            admission_number=1000,
+            tenant=tenant,
+            job=job,
+            driver_name='علی رضایی',
+            plate_number='22 ب 345 67',
+            ready_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        settings_obj = SimpleNamespace(
+            sms_vehicle_assigned_template='پلاک: [پلاک]',
+            sms_vehicle_assigned_invoice_template='[خلاصه خدمات]\n[جمع کل]',
+        )
+
+        message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
+
+        self.assertIn('شست‌وشوی ویژه : ۷۵۰،۰۰۰ تومان', message)
+        self.assertIn('اسپری داشبورد × ۲ : ۱۵۰،۰۰۰ تومان', message)
+        self.assertIn('۹۰۰،۰۰۰ تومان', message)
         tenant = SimpleNamespace(name='میلان')
         job = SimpleNamespace(
             final_total=265000,

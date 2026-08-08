@@ -1515,7 +1515,10 @@ const mapVehicleToDraft = (source = {}) => ({
   smsNotificationsEnabled: source.sms_notifications_enabled !== false,
   smsAutoSendEnabled: source.smsAutoSendEnabled ?? source.sms_auto_send_enabled ?? source.sms_vehicle_auto_send_enabled ?? vehicleAutoSmsEnabled.value,
   customerScore: Number(source.customer_score || source.customerScore || 0),
-  customerLoyaltyVisitCount: Number(source.customer_loyalty_visit_count || source.customerLoyaltyVisitCount || 0),
+  customerLoyaltyVisitCount: Math.max(
+    source.is_piece_wash || source.isPieceWash ? 0 : 1,
+    Number(source.customer_loyalty_visit_count || source.customerLoyaltyVisitCount || 0)
+  ),
   customerLoyaltyDiscountPercent: Number(source.customer_loyalty_discount_percent || source.customerLoyaltyDiscountPercent || 0),
   applyLoyaltyDiscount: source.job?.apply_loyalty_discount !== false,
   apply_loyalty_discount: source.job?.apply_loyalty_discount !== false,
@@ -1560,6 +1563,26 @@ const mapVehicleToDraft = (source = {}) => ({
       unit_price: Number(line.unit_price || line.line_total || 0),
       adjusted_price: Number(line.line_total || line.unit_price || 0),
       discount_amount: Number(line.discount_amount || 0)
+    }))
+    : [],
+  products: Array.isArray(source.job?.product_lines)
+    ? source.job.product_lines.map((line) => ({
+      id: line.product,
+      product_id: line.product,
+      name: line.product_name,
+      quantity: Number(line.quantity || 0),
+      sale_price: Number(line.unit_price || 0),
+      lineTotal: Number(line.line_total || 0)
+    }))
+    : [],
+  productLines: Array.isArray(source.job?.product_lines)
+    ? source.job.product_lines.map((line) => ({
+      id: line.product,
+      product_id: line.product,
+      name: line.product_name,
+      quantity: Number(line.quantity || 0),
+      sale_price: Number(line.unit_price || 0),
+      lineTotal: Number(line.line_total || 0)
     }))
     : [],
   staffId: source.job?.assigned_worker || null,
@@ -3143,6 +3166,7 @@ const buildCreateOrUpdatePayload = (payload, status) => {
       }))
       : [],
     services: payload?.services || [],
+    products: Array.isArray(payload?.products) ? payload.products : [],
     manual_discount_total: Number(payload?.manual_discount_total || 0),
     apply_loyalty_discount: payload?.apply_loyalty_discount !== false,
     share: payload?.share || {},
@@ -3299,7 +3323,9 @@ const cars = computed(() => vehicles.value.map((item) => ({
   badgeBg: '#eef2ff',
   badgeText: '#334155',
   time: formatDateTime(item.check_in_at),
-  sortTime: item.check_in_at,
+  sortTime: item.status === 'released'
+    ? (item.released_at || item.check_in_at)
+    : item.check_in_at,
   plateLeft: item.plate_left || '--',
   plateLetter: item.plate_letter || '-',
   plateMid: item.plate_mid || '---',

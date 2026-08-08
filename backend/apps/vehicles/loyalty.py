@@ -66,16 +66,19 @@ def normalize_plate(
     plate_letter='',
     plate_mid='',
     plate_right='',
+    plate_type='car',
 ):
-    left = str(plate_left or '').strip()
-    letter = str(plate_letter or '').strip()
-    mid = str(plate_mid or '').strip()
-    right = str(plate_right or '').strip()
-    if left and letter and mid and right:
-        return f'{left} {letter} {mid} {right}'
-    if mid and letter and not left and not right:
-        return f'{mid} {letter}'
-    return str(plate_number or '').strip()
+    from .plate_normalize import normalize_plate_parts
+
+    parts = normalize_plate_parts(
+        plate_number=plate_number,
+        plate_left=plate_left,
+        plate_letter=plate_letter,
+        plate_mid=plate_mid,
+        plate_right=plate_right,
+        plate_type=plate_type,
+    )
+    return parts['plate_number']
 
 
 def persian_visit_ordinal(visit_number):
@@ -138,39 +141,60 @@ def get_or_create_plate_loyalty(
     plate_letter='',
     plate_mid='',
     plate_right='',
+    plate_type='car',
     now=None,
 ):
-    normalized_plate = normalize_plate(
+    from .plate_normalize import normalize_plate_parts, plate_letter_lookup_variants
+
+    parts = normalize_plate_parts(
         plate_number=plate_number,
         plate_left=plate_left,
         plate_letter=plate_letter,
         plate_mid=plate_mid,
         plate_right=plate_right,
+        plate_type=plate_type,
     )
+    normalized_plate = parts.get('plate_number') or ''
     if not tenant or not normalized_plate:
         return None
     now = timezone.localtime(now or timezone.now())
-    profile, _created = PlateLoyaltyProfile.objects.get_or_create(
-        tenant=tenant,
-        plate_number=normalized_plate,
-        defaults={
-            'plate_left': str(plate_left or '').strip(),
-            'plate_letter': str(plate_letter or '').strip(),
-            'plate_mid': str(plate_mid or '').strip(),
-            'plate_right': str(plate_right or '').strip(),
-            'first_order_at': now,
-            'last_cycle_started_at': now,
-            'is_active': True,
-        },
-    )
+    profile = PlateLoyaltyProfile.objects.filter(tenant=tenant, plate_number=normalized_plate).first()
+    if profile is None:
+        # Merge legacy profiles that used short alef ("ا") or latin letters.
+        letter_variants = plate_letter_lookup_variants(parts.get('plate_letter') or plate_letter)
+        legacy_numbers = []
+        for letter in letter_variants:
+            if parts.get('plate_left') and letter and parts.get('plate_mid') and parts.get('plate_right'):
+                legacy_numbers.append(
+                    f"{parts['plate_left']} {letter} {parts['plate_mid']} {parts['plate_right']}"
+                )
+            elif parts.get('plate_mid') and letter and not parts.get('plate_left') and not parts.get('plate_right'):
+                legacy_numbers.append(f"{parts['plate_mid']} {letter}")
+        legacy_numbers = [item for item in dict.fromkeys(legacy_numbers) if item and item != normalized_plate]
+        if legacy_numbers:
+            profile = (
+                PlateLoyaltyProfile.objects.filter(tenant=tenant, plate_number__in=legacy_numbers)
+                .order_by('-visit_count', '-updated_at', '-id')
+                .first()
+            )
+            if profile and profile.plate_number != normalized_plate:
+                profile.plate_number = normalized_plate
+                profile.save(update_fields=['plate_number', 'updated_at'])
+    if profile is None:
+        profile = PlateLoyaltyProfile.objects.create(
+            tenant=tenant,
+            plate_number=normalized_plate,
+            plate_left=parts.get('plate_left', ''),
+            plate_letter=parts.get('plate_letter', ''),
+            plate_mid=parts.get('plate_mid', ''),
+            plate_right=parts.get('plate_right', ''),
+            first_order_at=now,
+            last_cycle_started_at=now,
+            is_active=True,
+        )
     changed_fields = []
-    for field_name, raw_value in (
-        ('plate_left', plate_left),
-        ('plate_letter', plate_letter),
-        ('plate_mid', plate_mid),
-        ('plate_right', plate_right),
-    ):
-        normalized_value = str(raw_value or '').strip()
+    for field_name in ('plate_left', 'plate_letter', 'plate_mid', 'plate_right'):
+        normalized_value = str(parts.get(field_name) or '').strip()
         if normalized_value != getattr(profile, field_name):
             setattr(profile, field_name, normalized_value)
             changed_fields.append(field_name)
@@ -256,14 +280,26 @@ def apply_loyalty_visit(profile, *, discount_percent_per_half_star=0, now=None):
 
 
 def count_loyalty_vehicle_entries(profile):
-    if not profile or not profile.tenant_id or not profile.plate_number:
+    if not profile or not profile.tenant_id:
         return 0
     from .models import VehicleEntry
+    from .plate_normalize import plate_letter_lookup_variants
+
+    plate_numbers = {str(profile.plate_number or '').strip()}
+    letter_variants = plate_letter_lookup_variants(profile.plate_letter)
+    for letter in letter_variants:
+        if profile.plate_left and letter and profile.plate_mid and profile.plate_right:
+            plate_numbers.add(f'{profile.plate_left} {letter} {profile.plate_mid} {profile.plate_right}')
+        elif profile.plate_mid and letter and not profile.plate_left and not profile.plate_right:
+            plate_numbers.add(f'{profile.plate_mid} {letter}')
+    plate_numbers = [item for item in plate_numbers if item]
+    if not plate_numbers:
+        return 0
 
     return (
         VehicleEntry.objects.filter(
             tenant=profile.tenant,
-            plate_number=profile.plate_number,
+            plate_number__in=plate_numbers,
             is_piece_wash=False,
         )
         .exclude(status=VehicleEntry.Status.CANCELLED)
@@ -275,12 +311,21 @@ def rebuild_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None
     if not profile:
         return None
     from .models import VehicleEntry
+    from .plate_normalize import plate_letter_lookup_variants
 
     now = timezone.localtime(now or timezone.now())
+    plate_numbers = {str(profile.plate_number or '').strip()}
+    letter_variants = plate_letter_lookup_variants(profile.plate_letter)
+    for letter in letter_variants:
+        if profile.plate_left and letter and profile.plate_mid and profile.plate_right:
+            plate_numbers.add(f'{profile.plate_left} {letter} {profile.plate_mid} {profile.plate_right}')
+        elif profile.plate_mid and letter and not profile.plate_left and not profile.plate_right:
+            plate_numbers.add(f'{profile.plate_mid} {letter}')
+    plate_numbers = [item for item in plate_numbers if item]
     vehicles = list(
         VehicleEntry.objects.filter(
             tenant=profile.tenant,
-            plate_number=profile.plate_number,
+            plate_number__in=plate_numbers,
             is_piece_wash=False,
         )
         .exclude(status=VehicleEntry.Status.CANCELLED)

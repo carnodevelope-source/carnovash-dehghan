@@ -305,7 +305,7 @@
                 <div class="sms-log-main">
                   <div class="sms-log-head">
                     <strong>{{ log.recipient_name || log.phone || 'گیرنده نامشخص' }}</strong>
-                    <small>{{ log.target_label || log.phone || 'بدون برچسب' }}</small>
+                    <small>{{ log.event_label || log.target_label || log.phone || 'بدون برچسب' }}</small>
                   </div>
                   <p class="sms-log-message">{{ logMessageText(log) }}</p>
                   <div class="sms-log-meta">

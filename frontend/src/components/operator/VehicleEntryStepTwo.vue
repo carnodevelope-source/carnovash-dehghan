@@ -58,14 +58,81 @@
       </section>
     </div>
 
+    <div v-if="isProductPickerOpen" class="service-picker-overlay" role="dialog" aria-modal="true">
+      <section class="service-picker-panel product-picker-panel">
+        <header class="service-picker-head">
+          <div>
+            <h4>اقلام فروشگاهی</h4>
+            <p>{{ toFaNumber(selectedProductCount) }} قلم انتخاب شده</p>
+          </div>
+          <button type="button" class="icon-btn" aria-label="بستن" @click="closeProductPicker">
+            ×
+          </button>
+        </header>
+
+        <div class="product-picker-toolbar">
+          <input v-model="productSearch" type="text" placeholder="جستجوی محصول..." />
+        </div>
+
+        <div class="product-picker-grid">
+          <article
+            v-for="product in filteredPickerProducts"
+            :key="product.id"
+            class="product-picker-card"
+            :class="{ selected: getTempProductQty(product.id) > 0, unavailable: Number(product.available_quantity || 0) <= 0 }"
+          >
+            <div class="product-picker-copy">
+              <h5>{{ product.name }}</h5>
+              <p :class="{ 'stock-empty': Number(product.available_quantity || 0) <= 0 }">
+                موجودی: {{ toFaNumber(product.available_quantity || 0) }}
+              </p>
+              <strong>{{ formatMoney(product.sale_price) }}</strong>
+            </div>
+            <div class="product-qty-controls">
+              <button type="button" @click="decreaseTempProduct(product.id)">−</button>
+              <input
+                type="number"
+                min="0"
+                :max="Number(product.available_quantity || 0)"
+                :value="getTempProductQty(product.id)"
+                @input="setTempProductQty(product.id, $event.target.value)"
+              />
+              <button
+                type="button"
+                :disabled="Number(product.available_quantity || 0) <= getTempProductQty(product.id)"
+                @click="increaseTempProduct(product.id)"
+              >
+                +
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <p v-if="!loading && !filteredPickerProducts.length" class="empty">محصولی پیدا نشد.</p>
+        <div v-if="loading" class="empty spinner-empty">
+          <BaseSpinner size="52px" color="#1d4ed8" ball-color="#60a5fa" label="   ..." />
+        </div>
+
+        <footer class="service-picker-foot">
+          <button type="button" class="secondary-foot-btn" @click="closeProductPicker">انصراف</button>
+          <button type="button" class="primary-btn" @click="confirmProductPicker">تایید اقلام</button>
+        </footer>
+      </section>
+    </div>
+
     <div class="step-two-grid">
       <section class="col services-col">
         <div class="col-head">
           <div class="service-title-row">
-            <h4>خدمات</h4>
-            <button v-if="!isPieceWash" type="button" class="edit-services-btn" @click="openServicePicker">
-              ویرایش
-            </button>
+            <h4>خدمات و اقلام</h4>
+            <div class="service-title-actions">
+              <button v-if="!isPieceWash" type="button" class="edit-services-btn" @click="openServicePicker">
+                خدمات
+              </button>
+              <button type="button" class="edit-services-btn products-edit-btn" @click="openProductPicker">
+                اقلام فروشگاهی
+              </button>
+            </div>
           </div>
         </div>
 
@@ -114,7 +181,34 @@
             </article>
           </template>
 
-          <p v-if="!loading && !isPieceWash && !selectedServices.length" class="empty">برای انتخاب خدمات روی ویرایش بزنید.</p>
+          <article
+            v-for="product in selectedProducts"
+            :key="`product-${product.id}`"
+            class="service-card selected listed-service-card product-selected-card"
+          >
+            <div class="service-body">
+              <div class="service-head">
+                <h5>{{ product.name }}</h5>
+                <strong>{{ formatMoney(product.lineTotal) }}</strong>
+              </div>
+              <div class="service-meta-row product-selected-meta">
+                <p>{{ toFaNumber(product.quantity) }} عدد × {{ formatMoney(product.sale_price) }}</p>
+                <div class="inline-product-qty">
+                  <button type="button" @click="decreaseSelectedProduct(product.id)">−</button>
+                  <span>{{ toFaNumber(product.quantity) }}</span>
+                  <button
+                    type="button"
+                    :disabled="Number(product.available_quantity || 0) <= Number(product.quantity || 0)"
+                    @click="increaseSelectedProduct(product.id)"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <p v-if="!loading && !isPieceWash && !selectedServices.length && !selectedProducts.length" class="empty">برای انتخاب خدمات یا اقلام فروشگاهی روی دکمه‌های بالا بزنید.</p>
           <div v-if="loading" class="empty spinner-empty">
             <BaseSpinner size="52px" color="#1d4ed8" ball-color="#60a5fa" label="   ..." />
           </div>
@@ -203,6 +297,19 @@
           <hr />
 
           <section>
+            <h6>اقلام فروشگاهی</h6>
+            <div v-if="selectedProducts.length" class="summary-list">
+              <div v-for="product in selectedProducts" :key="`summary-product-${product.id}`" class="summary-row">
+                <span>{{ product.name }} × {{ toFaNumber(product.quantity) }}</span>
+                <strong>{{ formatMoney(product.lineTotal) }}</strong>
+              </div>
+            </div>
+            <p v-else class="empty">قلم فروشگاهی انتخاب نشده است.</p>
+          </section>
+
+          <hr />
+
+          <section>
             <h6>پرسنل مجری</h6>
             <div v-if="selectedWorkers.length" class="selected-worker-list">
               <div v-for="worker in selectedWorkers" :key="worker.id" class="selected-worker-box">
@@ -241,6 +348,10 @@
             <div class="summary-row">
               <span>مبلغ کل خدمات:</span>
               <strong>{{ formatMoney(servicesTotal) }}</strong>
+            </div>
+            <div class="summary-row">
+              <span>مبلغ اقلام فروشگاهی:</span>
+              <strong>{{ formatMoney(productsTotal) }}</strong>
             </div>
             <div class="summary-row">
               <span>تخفیف مجموعه</span>
@@ -334,9 +445,13 @@ const emit = defineEmits(['back', 'assign', 'close'])
 const loading = ref(false)
 const errorMessage = ref('')
 const services = ref([])
+const products = ref([])
 const workers = ref([])
 const selectedServiceIds = ref([])
 const tempSelectedServiceIds = ref([])
+const productLinesByProductId = ref({})
+const tempProductLinesByProductId = ref({})
+const productSearch = ref('')
 const selectedWorkerIds = ref([])
 const shareType = ref('percent')
 const shareValueInput = ref('40')
@@ -354,6 +469,7 @@ const smsNotificationsEnabled = ref(true)
 const pieceWashPrice = ref(0)
 const pieceDetails = ref('')
 const isServicePickerOpen = ref(false)
+const isProductPickerOpen = ref(false)
 const hasOpenedInitialServicePicker = ref(false)
 const activeVehicleKey = ref('')
 const actionLocked = ref(false)
@@ -502,6 +618,28 @@ const selectedServices = computed(() => {
     })
 })
 
+const selectedProducts = computed(() => products.value
+  .map((product) => {
+    const quantity = Number(productLinesByProductId.value[product.id] || 0)
+    if (quantity <= 0) return null
+    const unitPrice = Number(product.sale_price || 0)
+    return {
+      ...product,
+      quantity,
+      lineTotal: Number((unitPrice * quantity).toFixed(2))
+    }
+  })
+  .filter(Boolean))
+
+const selectedProductCount = computed(() => selectedProducts.value.reduce((sum, item) => sum + Number(item.quantity || 0), 0))
+const filteredPickerProducts = computed(() => {
+  const query = String(productSearch.value || '').trim().toLowerCase()
+  return products.value.filter((item) => {
+    if (!query) return true
+    return String(item.name || '').toLowerCase().includes(query)
+  })
+})
+
 const selectedWorkers = computed(() => {
   const idSet = new Set(selectedWorkerIds.value.map((id) => Number(id)))
   return workers.value.filter((item) => idSet.has(Number(item.id)))
@@ -517,6 +655,7 @@ const serviceListSubtotal = computed(() => selectedServices.value.reduce((sum, i
   return sum + Number((item.adjusted_price ?? item.base_price) || 0) + facilityDiscount
 }, 0))
 const servicesTotal = computed(() => selectedServices.value.reduce((sum, item) => sum + Number((item.adjusted_price ?? item.base_price) || 0), 0))
+const productsTotal = computed(() => selectedProducts.value.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0))
 const facilityDiscountTotal = computed(() => Math.max(0, Number((serviceListSubtotal.value - servicesTotal.value).toFixed(2))))
 const customerLoyaltyDiscountPercent = computed(() => Math.max(0, Number(
   props.vehicleInfo?.customer_loyalty_discount_percent
@@ -531,6 +670,7 @@ const effectiveManualDiscountTotal = computed(() => Math.min(
 ))
 const totalDiscountAmount = computed(() => Number((facilityDiscountTotal.value + effectiveLoyaltyDiscountAmount.value + effectiveManualDiscountTotal.value).toFixed(2)))
 const discountedServicesTotal = computed(() => Math.max(0, servicesTotal.value - effectiveLoyaltyDiscountAmount.value - effectiveManualDiscountTotal.value))
+const shareBaseTotal = computed(() => Number((discountedServicesTotal.value + productsTotal.value).toFixed(2)))
 const manualDiscountPercent = computed(() => (
   servicesTotal.value > 0
     ? Number(((effectiveManualDiscountTotal.value / servicesTotal.value) * 100).toFixed(1))
@@ -544,12 +684,12 @@ const clampedPercent = computed(() => Math.min(100, Math.max(0, shareValueNumeri
 const workerShareAmount = computed(() => {
   if (!primarySelectedWorker.value) return 0
   if (shareType.value === 'fixed') {
-    return Math.min(discountedServicesTotal.value, Math.max(0, shareValueNumeric.value))
+    return Math.min(shareBaseTotal.value, Math.max(0, shareValueNumeric.value))
   }
-  return Math.round((discountedServicesTotal.value * clampedPercent.value) / 100)
+  return Math.round((shareBaseTotal.value * clampedPercent.value) / 100)
 })
 
-const carwashShareAmount = computed(() => Math.max(0, discountedServicesTotal.value - workerShareAmount.value))
+const carwashShareAmount = computed(() => Math.max(0, shareBaseTotal.value - workerShareAmount.value))
 const defaultWorkerSharePercents = (count) => {
   const workerCount = Math.max(0, Number(count || 0))
   if (!workerCount) return []
@@ -646,6 +786,49 @@ const openInitialServicePicker = () => {
   if (hasOpenedInitialServicePicker.value || isPieceWash.value || !services.value.length) return
   hasOpenedInitialServicePicker.value = true
   openServicePicker()
+}
+
+const getTempProductQty = (productId) => Number(tempProductLinesByProductId.value[productId] || 0)
+const setTempProductQty = (productId, rawValue) => {
+  const product = products.value.find((item) => Number(item.id) === Number(productId))
+  if (!product) return
+  const maxQty = Math.max(0, Number(product.available_quantity || 0))
+  const nextQty = Math.max(0, Math.min(maxQty, Math.floor(Number(rawValue || 0))))
+  const next = { ...tempProductLinesByProductId.value }
+  if (nextQty <= 0) delete next[productId]
+  else next[productId] = nextQty
+  tempProductLinesByProductId.value = next
+}
+const increaseTempProduct = (productId) => setTempProductQty(productId, getTempProductQty(productId) + 1)
+const decreaseTempProduct = (productId) => setTempProductQty(productId, getTempProductQty(productId) - 1)
+const openProductPicker = () => {
+  tempProductLinesByProductId.value = { ...productLinesByProductId.value }
+  productSearch.value = ''
+  isProductPickerOpen.value = true
+}
+const closeProductPicker = () => {
+  isProductPickerOpen.value = false
+}
+const confirmProductPicker = () => {
+  productLinesByProductId.value = { ...tempProductLinesByProductId.value }
+  closeProductPicker()
+}
+const increaseSelectedProduct = (productId) => {
+  const product = products.value.find((item) => Number(item.id) === Number(productId))
+  if (!product) return
+  const current = Number(productLinesByProductId.value[productId] || 0)
+  if (current >= Number(product.available_quantity || 0)) return
+  productLinesByProductId.value = {
+    ...productLinesByProductId.value,
+    [productId]: current + 1
+  }
+}
+const decreaseSelectedProduct = (productId) => {
+  const current = Number(productLinesByProductId.value[productId] || 0)
+  const next = { ...productLinesByProductId.value }
+  if (current <= 1) delete next[productId]
+  else next[productId] = current - 1
+  productLinesByProductId.value = next
 }
 
 const workerStatus = (worker) => {
@@ -799,6 +982,10 @@ const buildPayload = () => {
           manual_price_override: Number(item.manual_adjustment || 0) !== 0,
           discount_amount: 0
         })),
+    products: selectedProducts.value.map((item) => ({
+      id: item.id,
+      quantity: Number(item.quantity || 0)
+    })),
     staff: primarySelectedWorker.value
       ? {
           id: primarySelectedWorker.value.id,
@@ -840,6 +1027,7 @@ const hydrateFromVehicleInfo = () => {
     activeVehicleKey.value = nextVehicleKey
     hasOpenedInitialServicePicker.value = false
     isServicePickerOpen.value = false
+    isProductPickerOpen.value = false
   }
   selectedServiceIds.value = [...new Set(vehicle.serviceIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id)))]
   tempSelectedServiceIds.value = [...selectedServiceIds.value]
@@ -858,6 +1046,19 @@ const hydrateFromVehicleInfo = () => {
     accumulator[serviceId] = Number((finalPrice - salePrice).toFixed(2))
     return accumulator
   }, {})
+  const existingProducts = Array.isArray(vehicle.products) ? vehicle.products : (
+    Array.isArray(vehicle.productLines) ? vehicle.productLines : (
+      Array.isArray(props.vehicleInfo?.job?.product_lines) ? props.vehicleInfo.job.product_lines : []
+    )
+  )
+  productLinesByProductId.value = existingProducts.reduce((accumulator, item) => {
+    const productId = Number(item?.id || item?.product_id || item?.product || 0)
+    const quantity = Number(item?.quantity || item?.selected_quantity || 0)
+    if (!productId || quantity <= 0) return accumulator
+    accumulator[productId] = quantity
+    return accumulator
+  }, {})
+  tempProductLinesByProductId.value = { ...productLinesByProductId.value }
   manualDiscountTotal.value = Math.max(0, Number(vehicle.manualDiscountTotal || 0))
   selectedWorkerIds.value = [...new Set((vehicle.staffIds || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))]
   blockedPlatePaymentConfirmed.value = false
@@ -895,14 +1096,15 @@ const loadInitialData = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [serviceResp, workerResp] = await Promise.all([
+    const [serviceResp, workerResp, productResp] = await Promise.all([
       api.get('/services/', {
         params: {
           plate_type: normalizedVehicle.value.plateType,
           tariff_type: normalizedVehicle.value.tariffType,
         },
       }),
-      api.get('/workers/')
+      api.get('/workers/'),
+      api.get('/products/')
     ])
     services.value = (Array.isArray(serviceResp.data) ? serviceResp.data : [])
       .filter((item) => item.is_active !== false)
@@ -914,11 +1116,38 @@ const loadInitialData = async () => {
       }))
       .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
 
+    products.value = (Array.isArray(productResp.data) ? productResp.data : [])
+      .filter((item) => item.is_active !== false)
+      .map((item) => ({
+        ...item,
+        sale_price: Number(item.sale_price || 0),
+        available_quantity: Number(
+          item.available_quantity
+          ?? item.quantity_on_hand
+          ?? item.inventory?.available_quantity
+          ?? item.inventory?.quantity_on_hand
+          ?? 0
+        )
+      }))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'fa'))
+
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
       .filter(isWashAssignableWorker)
     const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
     selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
     tempSelectedServiceIds.value = tempSelectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
+    const validProductIds = new Set(products.value.map((item) => Number(item.id)))
+    productLinesByProductId.value = Object.fromEntries(
+      Object.entries(productLinesByProductId.value)
+        .filter(([id, qty]) => validProductIds.has(Number(id)) && Number(qty) > 0)
+        .map(([id, qty]) => {
+          const product = products.value.find((item) => Number(item.id) === Number(id))
+          const capped = Math.min(Number(qty), Number(product?.available_quantity || 0))
+          return [id, capped]
+        })
+        .filter(([, qty]) => Number(qty) > 0)
+    )
+    tempProductLinesByProductId.value = { ...productLinesByProductId.value }
     if (isPieceWash.value && pieceWashPrice.value <= 0) {
       const pieceWashService = services.value.find((item) => String(item.name || '').trim() === 'قطعه‌شویی')
       pieceWashPrice.value = Number(pieceWashService?.base_price || 0)
@@ -1384,6 +1613,142 @@ onMounted(loadInitialData)
 
 .edit-services-btn:hover {
   background: #dbeafe;
+}
+
+.service-title-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.products-edit-btn {
+  background: #fff7ed;
+  border-color: rgba(234, 88, 12, 0.22);
+  color: #c2410c;
+}
+
+.products-edit-btn:hover {
+  background: #ffedd5;
+}
+
+.product-picker-panel {
+  width: min(980px, 100%);
+}
+
+.product-picker-toolbar {
+  display: grid;
+}
+
+.product-picker-toolbar input {
+  width: 100%;
+  height: 46px;
+  border: 1px solid #bfd7ff;
+  border-radius: 14px;
+  padding: 0 14px;
+  background: #f4f9ff;
+}
+
+.product-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-height: min(420px, 52vh);
+  overflow: auto;
+  padding: 2px;
+}
+
+.product-picker-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #d4e4ff;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #f5faff);
+}
+
+.product-picker-card.selected {
+  border-color: #38bdf8;
+  background: linear-gradient(180deg, #eff8ff, #ffffff);
+  box-shadow: 0 14px 28px -24px rgba(14, 165, 233, 0.7);
+}
+
+.product-picker-card.unavailable {
+  opacity: 0.72;
+}
+
+.product-picker-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.product-picker-copy h5 {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.product-picker-copy p {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.product-picker-copy p.stock-empty {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.product-picker-copy strong {
+  color: #0f4c81;
+  font-size: 13px;
+}
+
+.product-qty-controls,
+.inline-product-qty {
+  display: inline-grid;
+  grid-template-columns: 34px 48px 34px;
+  gap: 6px;
+  align-items: center;
+}
+
+.product-qty-controls button,
+.inline-product-qty button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #bfd7ff;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f4c81;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.product-qty-controls input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid #bfd7ff;
+  border-radius: 12px;
+  text-align: center;
+  background: #fff;
+  font-weight: 800;
+}
+
+.product-selected-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inline-product-qty span {
+  text-align: center;
+  font-weight: 800;
+  color: #0f172a;
 }
 
 .step-two-grid {

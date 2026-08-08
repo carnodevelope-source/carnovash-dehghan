@@ -54,6 +54,24 @@ class VehicleJobServiceLineSerializer(serializers.ModelSerializer):
         ]
 
 
+class VehicleJobProductLineSerializer(serializers.ModelSerializer):
+    product_name = serializers.SerializerMethodField()
+
+    def get_product_name(self, obj):
+        return obj.product.name if obj.product else 'محصول'
+
+    class Meta:
+        model = VehicleJobProduct
+        fields = [
+            'id',
+            'product',
+            'product_name',
+            'quantity',
+            'unit_price',
+            'line_total',
+        ]
+
+
 class VehicleStatusLogSerializer(serializers.ModelSerializer):
     changed_by_name = serializers.SerializerMethodField()
 
@@ -72,6 +90,7 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
     assigned_workers_names = serializers.SerializerMethodField()
     assigned_workers_snapshot = serializers.JSONField(read_only=True)
     service_lines = VehicleJobServiceLineSerializer(many=True, read_only=True)
+    product_lines = VehicleJobProductLineSerializer(many=True, read_only=True)
 
     def _resolve_snapshot_worker_names(self, obj):
         snapshot = obj.assigned_workers_snapshot if isinstance(obj.assigned_workers_snapshot, list) else []
@@ -166,6 +185,7 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
             'completed_at',
             'released_at',
             'service_lines',
+            'product_lines',
         ]
 
 
@@ -329,7 +349,10 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         return timezone.localtime().year
 
     def get_customer_loyalty_visit_count(self, obj):
-        return loyalty_snapshot(self._plate_loyalty(obj)).get('visit_count', 0)
+        if getattr(obj, 'is_piece_wash', False):
+            return 0
+        visit_count = loyalty_snapshot(self._plate_loyalty(obj)).get('visit_count', 0)
+        return max(1, int(visit_count or 0)) if getattr(obj, 'pk', None) else max(0, int(visit_count or 0))
 
     def get_customer_loyalty_discount_percent(self, obj):
         loyalty = loyalty_snapshot(self._plate_loyalty(obj))
@@ -826,6 +849,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         previous_status = instance.status
         initial = getattr(self, 'initial_data', {}) or {}
         services_provided = 'services' in initial
+        products_provided = 'products' in initial
         share_provided = 'share' in initial
         tip_provided = 'tip_amount' in initial
         manual_discount_provided = 'manual_discount_total' in initial
@@ -835,7 +859,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         staff_members_provided = 'staff_members' in initial
 
         services_payload = validated_data.pop('services', None)
-        validated_data.pop('products', None)
+        products_payload = validated_data.pop('products', None) if products_provided else None
         staff_members_payload = validated_data.pop('staff_members', None)
         tip_amount_payload = validated_data.pop('tip_amount', None)
         manual_discount_payload = validated_data.pop('manual_discount_total', None)
@@ -892,6 +916,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         should_sync_job = any([
             services_provided,
+            products_provided,
             share_provided,
             tip_provided,
             manual_discount_provided,
@@ -993,6 +1018,78 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                     is_completed=False,
                     note='به‌روزرسانی از استپ ۲ پذیرش',
                 )
+
+        if products_provided:
+            for existing_line in list(vehicle_job.product_lines.select_related('product').all()):
+                inventory_item, _created = InventoryItem.objects.select_for_update().get_or_create(
+                    product=existing_line.product,
+                    tenant=tenant,
+                    defaults={'quantity_on_hand': 0, 'reserved_quantity': 0, 'min_quantity_alert': 0},
+                )
+                restore_qty = Decimal(str(existing_line.quantity or 0))
+                if restore_qty > 0:
+                    inventory_item.quantity_on_hand = Decimal(str(inventory_item.quantity_on_hand or 0)) + restore_qty
+                    inventory_item.save(update_fields=['quantity_on_hand', 'updated_at'])
+                    StockMovement.objects.create(
+                        tenant=tenant,
+                        inventory_item=inventory_item,
+                        movement_type=StockMovement.MovementType.IN,
+                        quantity=restore_qty,
+                        unit_cost=existing_line.unit_price,
+                        note='بازگشت موجودی قبل از به‌روزرسانی اقلام پذیرش',
+                        reference_type='vehicle_intake_product_adjust',
+                        reference_id=instance.id,
+                        created_by=self.context['request'].user
+                        if getattr(self.context.get('request'), 'user', None) and self.context['request'].user.is_authenticated
+                        else None,
+                    )
+                existing_line.delete()
+
+            products_total = Decimal('0')
+            for item in (products_payload or []):
+                product_id = item.get('id') or item.get('product_id')
+                qty = Decimal(str(item.get('quantity', 0) or 0))
+                if not product_id or qty <= 0:
+                    continue
+                product = Product.objects.filter(id=product_id, is_active=True, tenant=tenant).first()
+                if not product:
+                    continue
+                inventory_item, _created = InventoryItem.objects.select_for_update().get_or_create(
+                    product=product,
+                    tenant=tenant,
+                    defaults={'quantity_on_hand': 0, 'reserved_quantity': 0, 'min_quantity_alert': 0},
+                )
+                if inventory_item.available_quantity < qty:
+                    raise serializers.ValidationError(
+                        {'products': [f'موجودی محصول "{product.name}" کافی نیست.']}
+                    )
+                unit_price = Decimal(str(product.sale_price or 0))
+                line_total = unit_price * qty
+                products_total += line_total
+                VehicleJobProduct.objects.create(
+                    tenant=tenant,
+                    vehicle_job=vehicle_job,
+                    product=product,
+                    quantity=qty,
+                    unit_price=unit_price,
+                    line_total=line_total,
+                )
+                inventory_item.quantity_on_hand = inventory_item.quantity_on_hand - qty
+                inventory_item.save(update_fields=['quantity_on_hand', 'updated_at'])
+                StockMovement.objects.create(
+                    tenant=tenant,
+                    inventory_item=inventory_item,
+                    movement_type=StockMovement.MovementType.OUT,
+                    quantity=qty,
+                    unit_cost=unit_price,
+                    note='مصرف در ثبت پذیرش خودرو',
+                    reference_type='vehicle_intake',
+                    reference_id=instance.id,
+                    created_by=self.context['request'].user
+                    if getattr(self.context.get('request'), 'user', None) and self.context['request'].user.is_authenticated
+                    else None,
+                )
+            vehicle_job.products_total = products_total
 
         service_lines = list(vehicle_job.service_lines.all())
         services_total = vehicle_job.service_lines.aggregate(total=Sum('line_total')).get('total') or Decimal('0')
@@ -1174,6 +1271,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        from .plate_normalize import normalize_plate_parts
+
         plate_type = str(
             attrs.get('plate_type')
             or getattr(self.instance, 'plate_type', VehicleEntry.PlateType.CAR)
@@ -1183,43 +1282,61 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             attrs.get('tariff_type', getattr(self.instance, 'tariff_type', VehicleEntry.TariffType.TYPE_1)),
             plate_type=plate_type,
         )
-        if plate_type == VehicleEntry.PlateType.MOTORCYCLE:
-            attrs['plate_left'] = ''
-            attrs['plate_right'] = ''
-            attrs['plate_mid'] = str(attrs.get('plate_mid', getattr(self.instance, 'plate_mid', '')) or '').strip()[:3]
-            attrs['plate_letter'] = str(attrs.get('plate_letter', getattr(self.instance, 'plate_letter', '')) or '').strip()[:5]
-            if attrs['plate_mid'] and attrs['plate_letter']:
-                attrs['plate_number'] = f"{attrs['plate_mid']} {attrs['plate_letter']}"
+        plate_parts = normalize_plate_parts(
+            plate_number=attrs.get('plate_number', getattr(self.instance, 'plate_number', '')),
+            plate_left=attrs.get('plate_left', getattr(self.instance, 'plate_left', '')),
+            plate_letter=attrs.get('plate_letter', getattr(self.instance, 'plate_letter', '')),
+            plate_mid=attrs.get('plate_mid', getattr(self.instance, 'plate_mid', '')),
+            plate_right=attrs.get('plate_right', getattr(self.instance, 'plate_right', '')),
+            plate_type=plate_type,
+        )
+        attrs['plate_type'] = plate_type
+        attrs['plate_left'] = plate_parts['plate_left']
+        attrs['plate_letter'] = plate_parts['plate_letter']
+        attrs['plate_mid'] = plate_parts['plate_mid']
+        attrs['plate_right'] = plate_parts['plate_right']
+        if plate_parts['plate_number']:
+            attrs['plate_number'] = plate_parts['plate_number']
         return attrs
 
     def validate_plate_left(self, value):
+        from .plate_normalize import normalize_digits
+
         if self._incoming_plate_type() == VehicleEntry.PlateType.MOTORCYCLE:
             return ''
-        normalized = str(value or '').strip()
-        if len(normalized) > 2:
+        normalized = ''.join(ch for ch in normalize_digits(value) if ch.isdigit())[:2]
+        if len(str(value or '').strip()) > 2 and len(normalized) > 2:
             raise serializers.ValidationError('بخش آبی پلاک باید حداکثر ۲ کاراکتر باشد.')
         return normalized
 
     def validate_plate_right(self, value):
+        from .plate_normalize import normalize_digits
+
         if self._incoming_plate_type() == VehicleEntry.PlateType.MOTORCYCLE:
             return ''
-        normalized = str(value or '').strip()
-        if len(normalized) > 2:
+        normalized = ''.join(ch for ch in normalize_digits(value) if ch.isdigit())[:2]
+        if len(str(value or '').strip()) > 2 and len(normalized) > 2:
             raise serializers.ValidationError('بخش دو رقمی پلاک باید حداکثر ۲ کاراکتر باشد.')
         return normalized
 
     def validate_plate_mid(self, value):
-        normalized = str(value or '').strip()
+        from .plate_normalize import normalize_digits
+
+        normalized = ''.join(ch for ch in normalize_digits(value) if ch.isdigit())
         if self._incoming_plate_type() == VehicleEntry.PlateType.MOTORCYCLE:
-            return ''.join(ch for ch in self._normalize_phone(normalized) if ch.isdigit())[:3]
+            return normalized[:3]
         if len(normalized) > 3:
             raise serializers.ValidationError('بخش سه رقمی پلاک باید حداکثر ۳ کاراکتر باشد.')
-        return normalized
+        return normalized[:3]
 
     def validate_plate_letter(self, value):
-        normalized = str(value or '').strip()
+        from .plate_normalize import normalize_digits, normalize_plate_letter
+
         if self._incoming_plate_type() == VehicleEntry.PlateType.MOTORCYCLE:
-            return ''.join(ch for ch in self._normalize_phone(normalized) if ch.isdigit())[:5]
+            return ''.join(ch for ch in normalize_digits(value) if ch.isdigit())[:5]
+        normalized = normalize_plate_letter(value)
+        if str(value or '').strip() and not normalized:
+            raise serializers.ValidationError('حرف پلاک نامعتبر است.')
         if len(normalized) > 5:
             raise serializers.ValidationError('بخش حرف پلاک بیش از حد مجاز است.')
         return normalized
@@ -1417,16 +1534,17 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         normalized = ''.join(ch for ch in normalized if ch.isdigit() or ch == '+')
         return normalized
 
-    def _normalized_plate(self, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
-        left = str(plate_left or '').strip()
-        letter = str(plate_letter or '').strip()
-        mid = str(plate_mid or '').strip()
-        right = str(plate_right or '').strip()
-        if left and letter and mid and right:
-            return f'{left} {letter} {mid} {right}'
-        if mid and letter and not left and not right:
-            return f'{mid} {letter}'
-        return str(plate_number or '').strip()
+    def _normalized_plate(self, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right='', plate_type='car'):
+        from .plate_normalize import normalize_plate_parts
+
+        return normalize_plate_parts(
+            plate_number=plate_number,
+            plate_left=plate_left,
+            plate_letter=plate_letter,
+            plate_mid=plate_mid,
+            plate_right=plate_right,
+            plate_type=plate_type,
+        ).get('plate_number') or ''
 
     def _is_plate_blocked(self, tenant, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right=''):
         return bool(self._find_blocked_plate_record(

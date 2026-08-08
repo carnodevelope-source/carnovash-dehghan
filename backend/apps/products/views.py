@@ -12,7 +12,11 @@ class ProductListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)
-        return Product.objects.filter(tenant=tenant, is_deleted=False).order_by('name')
+        return (
+            Product.objects.filter(tenant=tenant, is_deleted=False)
+            .select_related('inventory_item')
+            .order_by('name')
+        )
 
     def perform_create(self, serializer):
         serializer.save(

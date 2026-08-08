@@ -5,6 +5,20 @@ from .models import Product
 
 
 class ProductSerializer(serializers.ModelSerializer):
+    available_quantity = serializers.SerializerMethodField()
+
+    def get_available_quantity(self, obj):
+        try:
+            inventory = obj.inventory_item
+        except Exception:
+            return 0
+        if inventory is None:
+            return 0
+        try:
+            return float(getattr(inventory, 'available_quantity', 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
     def _generate_unique_sku(self, seed='prd'):
         base = (slugify(seed or '') or 'prd').upper().replace('-', '')
         base = base[:20] or 'PRD'
@@ -38,7 +52,7 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'sku', 'barcode', 'unit', 'description', 'sale_price', 'cost_price',
-            'min_stock', 'is_active', 'created_at', 'updated_at'
+            'min_stock', 'is_active', 'available_quantity', 'created_at', 'updated_at'
         ]
         extra_kwargs = {
             'sku': {'required': False, 'allow_blank': True},
