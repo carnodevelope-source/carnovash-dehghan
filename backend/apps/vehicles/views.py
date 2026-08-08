@@ -16,7 +16,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
-from .models import BlockedPlate, VehicleEntry, VehicleStatusLog
+from .models import BlockedPlate, VehicleEntry, VehicleJob, VehicleStatusLog
 from .loyalty import (
     compute_configured_loyalty_discount,
     compute_loyalty_discount,
@@ -1678,8 +1678,15 @@ class VehicleReleaseCheckoutView(APIView):
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount
 
-        share_base_total = completed_service_totals
+        share_base_total = completed_service_totals + product_totals
         worker_share_base = vehicle.job.worker_share_amount or Decimal('0')
+        if worker_share_base <= 0:
+            payment_type = getattr(vehicle.job, 'worker_payment_type', '') or ''
+            if payment_type == VehicleJob.WorkerPaymentType.PERCENT:
+                percent = min(Decimal('100'), max(Decimal('0'), Decimal(str(vehicle.job.worker_payment_percent or 0))))
+                worker_share_base = self._money((share_base_total * percent) / Decimal('100'))
+            elif payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
+                worker_share_base = min(share_base_total, self._money(vehicle.job.worker_payment_fixed or 0))
         if worker_share_base > share_base_total:
             worker_share_base = share_base_total
 

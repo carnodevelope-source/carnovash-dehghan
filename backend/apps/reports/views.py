@@ -371,17 +371,28 @@ def _job_worker_share_for(job, worker_id):
                 continue
         except (TypeError, ValueError, AttributeError):
             continue
+        # Explicit zero in snapshot is often leftover from assignment/release sync bugs.
+        # Only trust positive snapshot amounts; otherwise fall back to job totals.
         if item.get('worker_share_amount') is not None:
-            return max(Decimal('0'), _normalize_decimal(item.get('worker_share_amount')))
+            snapshot_amount = max(Decimal('0'), _normalize_decimal(item.get('worker_share_amount')))
+            if snapshot_amount > 0:
+                return snapshot_amount
+        break
+
+    total = _normalize_decimal(getattr(job, 'worker_share_amount', 0))
+    if total > 0:
+        distribution_percent = _job_worker_distribution_percent_for(job, worker_id)
+        if distribution_percent > 0:
+            return (total * distribution_percent) / Decimal('100')
+        if len(worker_ids) == 1:
+            return total
 
     commission_percent = _job_worker_commission_percent_for(job)
     if commission_percent > 0:
         worker_base = _job_worker_service_total_for(job, worker_id)
         return (worker_base * commission_percent) / Decimal('100')
 
-    distribution_percent = _job_worker_distribution_percent_for(job, worker_id)
-    total = _normalize_decimal(job.worker_share_amount)
-    return (total * distribution_percent) / Decimal('100')
+    return Decimal('0')
 
 
 def _job_worker_tip_for(job, worker_id):

@@ -199,6 +199,55 @@ class WorkerHourlyReportsTests(APITestCase):
         self.assertEqual(response.data['summary']['worker_total'], 40000.0)
         self.assertEqual(response.data['selected_worker_summary']['wage_total'], 40000.0)
 
+    def test_worker_share_ignores_zero_snapshot_and_uses_job_total(self):
+        """Snapshot amount 0 (assignment/release sync bug) must not zero out report share."""
+        self.worker.payment_type = WorkerProfile.PaymentType.PERCENT
+        self.worker.default_commission_percent = 35
+        self.worker.save(update_fields=['payment_type', 'default_commission_percent'])
+        vehicle = VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='78 د 159 54',
+            plate_left='78',
+            plate_letter='د',
+            plate_mid='159',
+            plate_right='54',
+            car_model='سوزوکی ویتارا',
+            car_color='نوک مدادی',
+            driver_name='طباطبایی',
+            driver_phone='09133511500',
+            status=VehicleEntry.Status.RELEASED,
+        )
+        VehicleJob.objects.create(
+            tenant=self.tenant,
+            vehicle=vehicle,
+            assigned_worker=self.worker,
+            assigned_workers_snapshot=[{
+                'id': self.worker.id,
+                'name': 'کامران شه بخش',
+                'worker_share_percent': 100,
+                'worker_share_amount': 0,
+                'tip_share_amount': 0,
+            }],
+            worker_payment_type=VehicleJob.WorkerPaymentType.PERCENT,
+            worker_payment_percent=35,
+            worker_share_amount=Decimal('227500'),
+            carwash_share_amount=Decimal('422500'),
+            services_total=Decimal('650000'),
+            final_total=Decimal('650000'),
+            released_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.get(
+            reverse('reports-dashboard'),
+            {'worker_id': self.worker.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data['worker_report'][0]
+        self.assertEqual(row['worker_share'], 227500.0)
+        self.assertEqual(response.data['summary']['worker_total'], 227500.0)
+
     def test_insurance_start_month_is_treated_as_paid_and_balance_starts_next_month(self):
         self.worker.insurance_amount = Decimal('1000')
         self.worker.save(update_fields=['insurance_amount'])

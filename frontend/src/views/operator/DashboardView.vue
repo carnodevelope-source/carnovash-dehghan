@@ -6,8 +6,44 @@
     :show-search="true"
     search-placeholder="جستجوی پلاک یا نام..."
     :search-query="search"
+    :search-active="hasPlateFilter"
     @update:search-query="search = $event"
   >
+    <template #search-extra>
+      <div class="plate-search-bar">
+        <select v-model="plateFilter.plateType" class="plate-type-inline" aria-label="نوع وسیله">
+          <option value="">همه</option>
+          <option value="car">خودرو</option>
+          <option value="motorcycle">موتور</option>
+        </select>
+        <PlateEditor
+          class="plate-search-editor"
+          dense
+          :plate-left="plateFilter.plateLeft"
+          :plate-letter="plateFilter.plateLetter"
+          :plate-mid="plateFilter.plateMid"
+          :plate-right="plateFilter.plateRight"
+          :plate-type="plateFilter.plateType || 'car'"
+          :show-type-switch="false"
+          :show-anonymous-toggle="false"
+          :show-piece-wash-toggle="false"
+          @update:plateLeft="plateFilter.plateLeft = $event"
+          @update:plateLetter="plateFilter.plateLetter = $event"
+          @update:plateMid="plateFilter.plateMid = $event"
+          @update:plateRight="plateFilter.plateRight = $event"
+          @update:plateType="plateFilter.plateType = $event"
+        />
+        <button
+          type="button"
+          class="plate-clear-btn"
+          :disabled="!hasPlateFilter"
+          aria-label="پاک کردن پلاک"
+          @click="clearPlateFilter"
+        >
+          ✕
+        </button>
+      </div>
+    </template>
     <div class="dashboard-content">
         <div class="vehicle-toolbar">
           <button class="primary-btn" @click="openVehicleModal">ثبت خودروی جدید</button>
@@ -426,8 +462,10 @@
               </article>
               <article class="summary-stat-card">
                 <span>تخفیف</span>
-                <strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong>
-                <small>{{ formatPercent(releaseSummary.customerDiscountPercent) }}</small>
+                <div class="summary-stat-value">
+                  <strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong>
+                  <small>{{ formatPercent(releaseSummary.customerDiscountPercent) }}</small>
+                </div>
               </article>
               <article class="summary-stat-card accent-card">
                 <span>انعام</span>
@@ -435,8 +473,10 @@
               </article>
               <article v-if="releaseSummary.taxAmount > 0" class="summary-stat-card">
                 <span>مالیات</span>
-                <strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong>
-                <small>{{ formatPercent(releaseSummary.taxPercent) }}</small>
+                <div class="summary-stat-value">
+                  <strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong>
+                  <small>{{ formatPercent(releaseSummary.taxPercent) }}</small>
+                </div>
               </article>
             </div>
             <div class="summary-input-grid">
@@ -931,7 +971,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import VehicleEntryStepOne from '../../components/operator/VehicleEntryStepOne.vue'
 import VehicleEntryStepTwo from '../../components/operator/VehicleEntryStepTwo.vue'
@@ -947,11 +987,18 @@ import api from '../../services/api'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
-import { buildPlateNumber, isAnonymousPlate, isValidIranMobile, normalizeDigits, resolvePlateParts, splitPlate } from '../../utils/plate'
+import { buildPlateNumber, isAnonymousPlate, isValidIranMobile, normalizeDigits, normalizePlateLetter, resolvePlateParts, splitPlate } from '../../utils/plate'
 import { printHtmlElement, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
 
 const search = ref('')
 const debouncedSearch = ref('')
+const plateFilter = reactive({
+  plateType: '',
+  plateLeft: '',
+  plateLetter: '',
+  plateMid: '',
+  plateRight: ''
+})
 const activeFilter = ref('entered')
 const dateRangeMode = ref('today')
 const customDateRange = ref({
@@ -2614,6 +2661,76 @@ watch(search, (value) => {
     debouncedSearch.value = String(value || '')
   }, 120)
 }, { immediate: true })
+
+const hasPlateFilter = computed(() => Boolean(
+  plateFilter.plateLeft
+  || plateFilter.plateLetter
+  || plateFilter.plateMid
+  || plateFilter.plateRight
+  || plateFilter.plateType
+))
+
+const clearPlateFilter = () => {
+  plateFilter.plateType = ''
+  plateFilter.plateLeft = ''
+  plateFilter.plateLetter = ''
+  plateFilter.plateMid = ''
+  plateFilter.plateRight = ''
+}
+
+const normalizePlateFilters = () => {
+  if (plateFilter.plateType !== 'motorcycle' && plateFilter.plateType !== 'car') plateFilter.plateType = ''
+  plateFilter.plateLeft = normalizeDigits(plateFilter.plateLeft).replace(/\D/g, '').slice(0, 2)
+  plateFilter.plateRight = normalizeDigits(plateFilter.plateRight).replace(/\D/g, '').slice(0, 2)
+  plateFilter.plateMid = normalizeDigits(plateFilter.plateMid).replace(/\D/g, '').slice(0, 3)
+  const letterRaw = String(plateFilter.plateLetter || '')
+  const letterLooksMotor = /^\d+$/.test(normalizeDigits(letterRaw).replace(/\D/g, '')) && letterRaw.length > 1
+  if (plateFilter.plateType === 'motorcycle' || (!plateFilter.plateType && letterLooksMotor)) {
+    plateFilter.plateLetter = normalizeDigits(plateFilter.plateLetter).replace(/\D/g, '').slice(0, 5)
+  } else {
+    plateFilter.plateLetter = normalizePlateLetter(plateFilter.plateLetter)
+  }
+  if (plateFilter.plateType === 'motorcycle') {
+    plateFilter.plateLeft = ''
+    plateFilter.plateRight = ''
+  }
+}
+
+watch(
+  () => [
+    plateFilter.plateType,
+    plateFilter.plateLeft,
+    plateFilter.plateLetter,
+    plateFilter.plateMid,
+    plateFilter.plateRight
+  ],
+  () => {
+    normalizePlateFilters()
+  }
+)
+
+const matchesPlateFilter = (item) => {
+  if (!hasPlateFilter.value) return true
+  const itemType = String(item.plateType || 'car').toLowerCase() === 'motorcycle' ? 'motorcycle' : 'car'
+  if (plateFilter.plateType && itemType !== plateFilter.plateType) return false
+
+  const left = String(item.plateLeft || '')
+  const letter = String(item.plateLetter || '')
+  const mid = String(item.plateMid || '')
+  const right = String(item.plateRight || '')
+  const display = String(item.plateDisplay || item.plateNumber || '')
+
+  if (plateFilter.plateLeft && !left.includes(plateFilter.plateLeft) && !display.includes(plateFilter.plateLeft)) return false
+  if (plateFilter.plateMid && !mid.includes(plateFilter.plateMid) && !display.includes(plateFilter.plateMid)) return false
+  if (plateFilter.plateRight && !right.includes(plateFilter.plateRight) && !display.includes(plateFilter.plateRight)) return false
+  if (plateFilter.plateLetter) {
+    const needle = String(plateFilter.plateLetter).toLowerCase()
+    const letterOk = letter.toLowerCase().includes(needle)
+    const displayOk = display.toLowerCase().includes(needle)
+    if (!letterOk && !displayOk) return false
+  }
+  return true
+}
 const hasReleaseProducts = computed(() => (
   Array.isArray(releaseForm.value.availableProducts) && releaseForm.value.availableProducts.length > 0
 ))
@@ -3386,6 +3503,9 @@ const filteredCars = computed(() => {
       item.workerName
     ].join(' ').toLowerCase().includes(query))
   }
+  if (hasPlateFilter.value) {
+    items = items.filter((item) => matchesPlateFilter(item))
+  }
   return [...items].sort((first, second) => {
     const weightMap = { entered: 0, in_progress: 1, released: 3, cancelled: 4 }
     const weightDiff = (weightMap[first.queueBucket] ?? 9) - (weightMap[second.queueBucket] ?? 9)
@@ -3552,6 +3672,55 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .dashboard-content { min-width: 0; width: 100%; max-width: 100%; overflow-x: hidden; }
+.plate-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #dbe5f0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fdfefe, #f3f7fb);
+}
+.plate-type-inline {
+  height: 34px;
+  min-width: 72px;
+  flex: 0 0 auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  padding: 0 8px;
+  background: #fff;
+  font-size: 11px;
+  color: #334155;
+}
+.plate-search-editor {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 280px;
+}
+.plate-search-bar :deep(.plate-editor) { gap: 0; }
+.plate-search-bar :deep(.manual-plate-badge) { max-width: 250px; }
+.plate-search-bar :deep(.plate-editor-dense .plate-input) { height: 28px; font-size: 14px; }
+.plate-search-bar :deep(.plate-editor-dense .manual-plate-car .plate-input.right),
+.plate-search-bar :deep(.plate-editor-dense .manual-plate-car .plate-input.left) { width: 36px; }
+.plate-search-bar :deep(.plate-editor-dense .manual-plate-car .plate-input.mid) { width: 48px; }
+.plate-search-bar :deep(.plate-editor-dense .manual-plate-car .plate-input.letter) { width: 48px; min-width: 44px; }
+.plate-search-bar :deep(.plate-editor-dense .blue-input) { width: 34px !important; font-size: 13px; }
+.plate-search-bar :deep(.plate-editor-dense .manual-plate-blue) { min-width: 34px; font-size: 13px; padding: 4px 0; }
+.plate-clear-btn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+.plate-clear-btn:disabled { opacity: .4; cursor: not-allowed; }
 .primary-btn { height: 40px; border: none; border-radius: 12px; color: #fff; font-weight: 700; padding: 0 16px; background: linear-gradient(135deg, #0058be 0%, #57dffe 100%); cursor: pointer;margin-right: 3%; }
 .vehicle-toolbar { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; }
 .vehicle-toolbar > * { flex: 0 0 auto; }
@@ -3695,10 +3864,12 @@ onBeforeUnmount(() => {
 .release-summary-hero p{margin:8px 0 0;font-size:12px;line-height:1.9;color:rgba(255,255,255,.82)}
 .release-summary-badge{padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);font-size:12px;font-weight:700;white-space:nowrap}
 .summary-stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
-.summary-stat-card{padding:14px;border-radius:18px;border:1px solid #d9e8ff;background:linear-gradient(180deg,#ffffff,#f5faff);display:grid;gap:6px}
-.summary-stat-card span{font-size:12px;color:#64748b}
-.summary-stat-card strong{font-size:15px;color:#0f172a}
-.summary-stat-card small{font-size:11px;color:#0f766e;font-weight:700}
+.summary-stat-card{padding:14px;border-radius:18px;border:1px solid #d9e8ff;background:linear-gradient(180deg,#ffffff,#f5faff);display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.summary-stat-card span{font-size:12px;color:#64748b;flex:0 1 auto;min-width:0}
+.summary-stat-card strong{font-size:15px;color:#0f172a;text-align:left;flex:0 1 auto;min-width:0;overflow-wrap:anywhere}
+.summary-stat-value{display:flex;flex-direction:column;align-items:flex-end;gap:2px;min-width:0}
+.summary-stat-value strong{font-size:15px;color:#0f172a;text-align:left}
+.summary-stat-card small,.summary-stat-value small{font-size:11px;color:#0f766e;font-weight:700}
 .summary-stat-card.accent-card{background:linear-gradient(180deg,#f0fdf9,#ecfeff);border-color:#b8ece6}
 .tip-input-row { margin-top: 10px; display: grid; gap: 6px; }
 .tip-input-row span { color: #64748b; font-size: 12px; }
@@ -3962,6 +4133,24 @@ onBeforeUnmount(() => {
 @media (max-width: 768px) {
   .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .dashboard-content { padding-bottom: 8px; }
+  .plate-search-bar {
+    width: 100%;
+    flex-wrap: wrap;
+    padding: 8px;
+    gap: 8px;
+  }
+  .plate-type-inline {
+    min-width: 88px;
+    height: 36px;
+  }
+  .plate-search-editor {
+    max-width: none;
+    flex: 1 1 180px;
+  }
+  .plate-clear-btn {
+    width: 36px;
+    height: 36px;
+  }
   .filters {
     display: flex;
     flex-wrap: nowrap;
@@ -4201,8 +4390,22 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .summary-stat-card {
-    border-radius: 16px;
-    padding: 12px;
+    border-radius: 14px;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .summary-stat-card span {
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .summary-stat-card strong,
+  .summary-stat-value strong {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .summary-stat-card small,
+  .summary-stat-value small {
+    font-size: 10px;
   }
   .worker-selection-panel,
   .summary-share,
@@ -4325,6 +4528,16 @@ onBeforeUnmount(() => {
   .worker-selection-grid,
   .modern-worker-share-editor {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .summary-stat-card {
+    padding: 9px 10px;
+  }
+  .summary-stat-card span {
+    font-size: 10px;
+  }
+  .summary-stat-card strong,
+  .summary-stat-value strong {
+    font-size: 11px;
   }
   .worker-editor-grid,
   .worker-editor-summary {

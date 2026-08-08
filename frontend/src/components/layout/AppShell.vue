@@ -25,16 +25,39 @@
           <span class="brand">{{ tenantName }}</span>
           <span class="brand-sub">پنل مدیریت</span>
         </div>
-        <div v-if="showSearch" class="search-box">
-          <span class="search-box-icon">
-            <IconlyIcon name="search" size="sm" />
-          </span>
-          <input
-            :value="searchQuery"
-            type="text"
-            :placeholder="searchPlaceholder"
-            @input="onSearchInput"
-          />
+        <button
+          v-if="showSearch && isCompactSearch"
+          type="button"
+          class="mobile-search-toggle"
+          :class="{ active: isMobileSearchOpen || hasActiveSearch }"
+          aria-label="جستجو"
+          :aria-expanded="isMobileSearchOpen"
+          @click="toggleMobileSearch"
+        >
+          <IconlyIcon name="search" size="sm" />
+          <span v-if="hasActiveSearch" class="mobile-search-dot" aria-hidden="true"></span>
+        </button>
+
+        <div
+          v-if="showSearch && !isCompactSearch"
+          class="search-cluster"
+        >
+          <div class="search-cluster-panel">
+            <div class="search-box">
+              <span class="search-box-icon">
+                <IconlyIcon name="search" size="sm" />
+              </span>
+              <input
+                :value="searchQuery"
+                type="text"
+                :placeholder="searchPlaceholder"
+                @input="onSearchInput"
+              />
+            </div>
+            <div v-if="$slots['search-extra']" class="search-extra">
+              <slot name="search-extra" />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -62,6 +85,37 @@
               {{ isLoggingOut ? 'در حال خروج...' : 'خروج از حساب' }}
             </button>
           </div>
+        </div>
+      </div>
+
+      <div
+        v-if="showSearch && isCompactSearch && isMobileSearchOpen"
+        class="search-cluster search-cluster-compact"
+      >
+        <div class="search-cluster-panel">
+          <div class="search-box">
+            <span class="search-box-icon">
+              <IconlyIcon name="search" size="sm" />
+            </span>
+            <input
+              ref="searchInputRef"
+              :value="searchQuery"
+              type="text"
+              :placeholder="searchPlaceholder"
+              @input="onSearchInput"
+            />
+          </div>
+          <div v-if="$slots['search-extra']" class="search-extra">
+            <slot name="search-extra" />
+          </div>
+          <button
+            type="button"
+            class="mobile-search-close"
+            aria-label="بستن جستجو"
+            @click="closeMobileSearch"
+          >
+            ✕
+          </button>
         </div>
       </div>
     </header>
@@ -184,7 +238,8 @@ const props = defineProps({
   hidePageHeader: { type: Boolean, default: false },
   showSearch: { type: Boolean, default: false },
   searchPlaceholder: { type: String, default: 'جستجو...' },
-  searchQuery: { type: String, default: '' }
+  searchQuery: { type: String, default: '' },
+  searchActive: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:searchQuery'])
@@ -198,14 +253,29 @@ const profileMenuRef = ref(null)
 const walletWarning = ref({ active: false, label: '', smsZero: false })
 const supportOpenCount = ref(0)
 const isMobileMenuOpen = ref(false)
+const isMobileSearchOpen = ref(false)
+const isCompactSearch = ref(false)
+const searchInputRef = ref(null)
 const topbarRef = ref(null)
 const topbarHeight = ref(64)
+const hasActiveSearch = computed(() => (
+  props.searchActive || Boolean(String(props.searchQuery || '').trim())
+))
 const mobileLoginArtSrc = `${import.meta.env.BASE_URL}Mobile-bg-640.webp`
 const trialRemainingMs = ref(0)
 let supportCountInterval = null
 let supportCountPollingInFlight = false
 let trialCountdownInterval = null
 let trialExpiryHandled = false
+let compactSearchMedia = null
+
+const syncCompactSearchMode = () => {
+  const nextValue = Boolean(compactSearchMedia?.matches)
+  if (isCompactSearch.value === nextValue) return
+  isCompactSearch.value = nextValue
+  if (!nextValue) isMobileSearchOpen.value = false
+  window.setTimeout(syncTopbarHeight, 30)
+}
 
 const canAccessAttendance = computed(() => hasAttendanceAccess(authStore.user))
 const needsAttendanceUpgrade = computed(() => requiresAttendanceUpgrade(authStore.user))
@@ -329,11 +399,36 @@ const handleLockedFeatureClick = (item) => {
 
 const toggleMobileMenu = () => {
   closeProfileMenu()
+  closeMobileSearch()
   isMobileMenuOpen.value = !isMobileMenuOpen.value
 }
 
 const closeMobileMenu = () => {
   isMobileMenuOpen.value = false
+}
+
+const openMobileSearch = () => {
+  closeMobileMenu()
+  closeProfileMenu()
+  isMobileSearchOpen.value = true
+  window.setTimeout(() => {
+    searchInputRef.value?.focus?.()
+    syncTopbarHeight()
+  }, 30)
+}
+
+const closeMobileSearch = () => {
+  if (!isMobileSearchOpen.value) return
+  isMobileSearchOpen.value = false
+  window.setTimeout(syncTopbarHeight, 30)
+}
+
+const toggleMobileSearch = () => {
+  if (isMobileSearchOpen.value) {
+    closeMobileSearch()
+    return
+  }
+  openMobileSearch()
 }
 
 const toggleProfileMenu = () => {
@@ -381,6 +476,7 @@ const onWindowResize = () => {
 const onWindowKeydown = (event) => {
   if (event.key === 'Escape') {
     closeMobileMenu()
+    closeMobileSearch()
     closeProfileMenu()
   }
 }
@@ -444,6 +540,13 @@ onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   window.addEventListener('resize', onWindowResize)
   window.addEventListener('keydown', onWindowKeydown)
+  compactSearchMedia = window.matchMedia('(max-width: 900px)')
+  syncCompactSearchMode()
+  if (compactSearchMedia.addEventListener) {
+    compactSearchMedia.addEventListener('change', syncCompactSearchMode)
+  } else if (compactSearchMedia.addListener) {
+    compactSearchMedia.addListener(syncCompactSearchMode)
+  }
   syncTopbarHeight()
   syncBodyScroll()
   syncTrialCountdown()
@@ -455,11 +558,16 @@ onMounted(() => {
 
 watch(() => route.fullPath, () => {
   closeMobileMenu()
+  closeMobileSearch()
   closeProfileMenu()
 })
 
 watch(isMobileMenuOpen, () => {
   syncBodyScroll()
+})
+
+watch(isMobileSearchOpen, () => {
+  syncTopbarHeight()
 })
 
 watch(trialEndsAtMs, () => {
@@ -471,6 +579,11 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('resize', onWindowResize)
   window.removeEventListener('keydown', onWindowKeydown)
+  if (compactSearchMedia?.removeEventListener) {
+    compactSearchMedia.removeEventListener('change', syncCompactSearchMode)
+  } else if (compactSearchMedia?.removeListener) {
+    compactSearchMedia.removeListener(syncCompactSearchMode)
+  }
   if (supportCountInterval) window.clearInterval(supportCountInterval)
   if (trialCountdownInterval) window.clearInterval(trialCountdownInterval)
   document.body.classList.remove('mobile-menu-open')
@@ -599,7 +712,32 @@ onBeforeUnmount(() => {
 }
 .brand-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand-sub { font-size: 12px; color: #64748b; border-right: 1px solid #cbd5e1; padding-right: 8px; }
+.search-cluster {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.search-cluster-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .search-box { flex: 1 1 0; min-width: 0; position: relative; }
+.search-extra {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.mobile-search-toggle {
+  display: none;
+}
+.mobile-search-close {
+  display: none;
+}
 .search-box-icon {
   position: absolute;
   right: 12px;
@@ -1040,6 +1178,10 @@ onBeforeUnmount(() => {
     min-width: 0;
   }
 
+  .search-cluster-panel {
+    flex-wrap: wrap;
+  }
+
   .search-box input {
     width: 100%;
   }
@@ -1067,6 +1209,92 @@ onBeforeUnmount(() => {
   .mobile-menu-toggle {
     display: inline-grid;
     place-items: center;
+  }
+
+  .mobile-search-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 40px;
+    height: 40px;
+    border: 1px solid #d8e0ea;
+    border-radius: 12px;
+    background: #fff;
+    color: #0f172a;
+    cursor: pointer;
+    flex: 0 0 auto;
+    padding: 0;
+    --iconly-filter: brightness(0) saturate(100%) invert(31%) sepia(73%) saturate(1584%) hue-rotate(201deg) brightness(96%) contrast(98%);
+  }
+
+  .mobile-search-toggle.active {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+  }
+
+  .mobile-search-dot {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #2563eb;
+    box-shadow: 0 0 0 2px #fff;
+  }
+
+  .search-cluster-compact {
+    display: block;
+    width: 100%;
+    flex: 1 0 100%;
+    order: 30;
+    margin-top: 4px;
+  }
+
+  .search-cluster-compact .search-cluster-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: start;
+    padding: 10px;
+    border: 1px solid #e3e6ed;
+    border-radius: 14px;
+    background: #f8fafc;
+  }
+
+  .search-cluster-compact .search-box {
+    grid-column: 1 / 2;
+  }
+
+  .search-cluster-compact .search-extra {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .mobile-search-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid #d8e0ea;
+    border-radius: 12px;
+    background: #fff;
+    color: #0f172a;
+    cursor: pointer;
+    font: inherit;
+    font-size: 15px;
+  }
+
+  .topbar {
+    height: auto;
+    min-height: 64px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    flex-wrap: wrap;
+    align-items: center;
   }
 
   .sidebar {
@@ -1265,6 +1493,18 @@ onBeforeUnmount(() => {
     height: 36px;
   }
 
+  .mobile-search-toggle {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .mobile-search-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
   .mobile-menu-toggle {
     width: 36px;
     height: 36px;
@@ -1286,7 +1526,7 @@ onBeforeUnmount(() => {
 
   .search-box input {
     font-size: 11px;
-    padding: 0 9px;
+    padding: 0 34px 0 10px;
   }
 
   .profile-caret {
