@@ -1640,7 +1640,7 @@ const mapVehicleToDraft = (source = {}) => ({
     }))
     : [],
   staffId: source.job?.assigned_worker || null,
-  staffMembers: Array.isArray(source.job?.assigned_workers_snapshot)
+  staffMembers: Array.isArray(source.job?.assigned_workers_snapshot) && source.job.assigned_workers_snapshot.length
     ? source.job.assigned_workers_snapshot
       .map((item) => ({
         id: Number(item?.id || 0),
@@ -1648,12 +1648,25 @@ const mapVehicleToDraft = (source = {}) => ({
         worker_share_percent: Math.max(0, Math.min(100, Number(item?.worker_share_percent || 0)))
       }))
       .filter((item) => item.id > 0)
-    : [],
-  staffIds: Array.isArray(source.job?.assigned_workers_snapshot)
+    : (
+      source.job?.assigned_worker
+        ? [{
+            id: Number(source.job.assigned_worker),
+            name: String(source.job?.assigned_worker_name || '').trim(),
+            worker_share_percent: Math.max(0, Math.min(100, Number(source.job?.worker_share_percent || 100)))
+          }]
+        : []
+    ),
+  staffIds: Array.isArray(source.job?.assigned_workers_snapshot) && source.job.assigned_workers_snapshot.length
     ? source.job.assigned_workers_snapshot
       .map((item) => Number(item?.id))
       .filter((id) => Number.isFinite(id) && id > 0)
-    : []
+    : (
+      source.job?.assigned_worker
+        ? [Number(source.job.assigned_worker)].filter((id) => Number.isFinite(id) && id > 0)
+        : []
+    ),
+  job: source.job || null
 })
 const unassignedWorkerLabels = new Set(['تخصیص نشده', 'نیرو تخصیص نشده', 'بدون نیرو'])
 const normalizeWorkerName = (value) => String(value || '').trim()
@@ -1692,11 +1705,17 @@ const handleCardAction = async (car) => {
     await openReleaseModal(car)
     return
   }
-  const source = vehicleStore.vehicles.find((item) => item.id === car.id)
-  if (!source) return
-  vehicleDraft.value = mapVehicleToDraft(source)
-  modalStep.value = (car.statusKey === 'entered' && !hasCompletedStepOneData(source)) ? 1 : 2
-  showVehicleModal.value = true
+  try {
+    const { data } = await api.get(`/vehicles/${car.id}/`)
+    vehicleStore.selectedVehicle = data
+    vehicleDraft.value = mapVehicleToDraft(data)
+    vehicleEditFlow.value = data.status === 'released' ? 'released' : 'active'
+    modalStep.value = (data.status === 'entered' && !hasCompletedStepOneData(data)) ? 1 : 2
+    showVehicleModal.value = true
+  } catch (error) {
+    console.error('handleCardAction error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'بارگذاری اطلاعات مراجعه ناموفق بود.'), { title: 'ویرایش مراجعه' })
+  }
 }
 const closeReleaseModal = (options = {}) => {
   const force = options?.force === true
@@ -3273,6 +3292,16 @@ const buildCreateOrUpdatePayload = (payload, status) => {
   const right = String(resolvedParts.right || '').trim()
   const rebuiltPlate = buildPlateNumber({ left, letter, mid, right, plateType }) || plateRaw
   const isAnonymous = Boolean(payload?.vehicle?.isAnonymous)
+    || (
+      !Boolean(payload?.vehicle?.isPieceWash)
+      && (
+        (
+          String(payload?.vehicle?.model || '').trim() === '1111'
+          && String(payload?.vehicle?.color || '').trim() === '1111'
+        )
+        || String(payload?.vehicle?.plate || payload?.vehicle?.plate_number || '').trim() === '1111'
+      )
+    )
   const isPieceWash = Boolean(payload?.vehicle?.isPieceWash)
   const aiConfidence = normalizeAiConfidence(payload?.vehicle?.aiConfidence)
 
@@ -3301,20 +3330,28 @@ const buildCreateOrUpdatePayload = (payload, status) => {
     is_piece_wash: isPieceWash,
     piece_details: (payload?.vehicle?.pieceDetails || '').trim(),
     status,
-    worker_id: payload?.staff?.id || null,
-    worker_name: payload?.staff?.name || '',
+    ...(payload?.staff || Array.isArray(payload?.staffMembers)
+      ? {
+          worker_id: payload?.staff?.id || null,
+          worker_name: payload?.staff?.name || ''
+        }
+      : {}),
     staff_members: Array.isArray(payload?.staffMembers)
       ? payload.staffMembers.map((item) => ({
         id: item?.id,
         name: item?.name || '',
         worker_share_percent: Math.max(0, Math.min(100, Number(item?.worker_share_percent || 0)))
       }))
-      : [],
-    services: payload?.services || [],
-    products: Array.isArray(payload?.products) ? payload.products : [],
-    manual_discount_total: Number(payload?.manual_discount_total || 0),
-    apply_loyalty_discount: payload?.apply_loyalty_discount !== false,
-    share: payload?.share || {},
+      : undefined,
+    services: Array.isArray(payload?.services) ? payload.services : undefined,
+    products: Array.isArray(payload?.products) ? payload.products : undefined,
+    manual_discount_total: (payload?.manual_discount_total != null || payload?.manualDiscountTotal != null)
+      ? Number((payload?.manual_discount_total ?? payload?.manualDiscountTotal) || 0)
+      : undefined,
+    apply_loyalty_discount: (payload?.apply_loyalty_discount != null || payload?.applyLoyaltyDiscount != null)
+      ? ((payload?.apply_loyalty_discount ?? payload?.applyLoyaltyDiscount) !== false)
+      : undefined,
+    share: payload?.share || undefined,
     intake_source: payload?.vehicle?.aiImageBase64 ? 'ai' : undefined,
     ai_confidence: payload?.vehicle?.aiImageBase64 ? aiConfidence : undefined,
     ai_session_id: payload?.vehicle?.aiImageBase64 ? (payload?.vehicle?.aiSessionId || '') : undefined,
@@ -3332,8 +3369,17 @@ const buildCreateOrUpdatePayload = (payload, status) => {
   }
 }
 
+const compactVehiclePayload = (body) => Object.fromEntries(
+  Object.entries(body).filter(([, value]) => value !== undefined)
+)
+
 const fetchPlateBlockedStatus = async (payload) => {
-  if (payload?.isAnonymous || payload?.vehicle?.isAnonymous || payload?.isPieceWash || payload?.vehicle?.isPieceWash) return { is_blocked: false }
+  const isAnonymous = Boolean(payload?.isAnonymous || payload?.vehicle?.isAnonymous)
+    || (
+      String(payload?.model || payload?.vehicle?.model || '').trim() === '1111'
+      && String(payload?.color || payload?.vehicle?.color || '').trim() === '1111'
+    )
+  if (isAnonymous || payload?.isPieceWash || payload?.vehicle?.isPieceWash) return { is_blocked: false }
   const plateType = String(payload?.plateType || payload?.vehicle?.plateType || payload?.vehicle?.plate_type || 'car').trim() || 'car'
   const plateRaw = (payload?.plate || payload?.vehicle?.plate || '').trim()
   const resolvedParts = resolvePlateParts({
@@ -3356,7 +3402,7 @@ const fetchPlateBlockedStatus = async (payload) => {
 }
 
 const saveVehicle = async (payload, status) => {
-  const body = buildCreateOrUpdatePayload(payload, status)
+  const body = compactVehiclePayload(buildCreateOrUpdatePayload(payload, status))
   const editingId = payload?.vehicle?.id || vehicleDraft.value?.id || null
   if (editingId) {
     // Image/OCR audit already ran on create; re-uploading slows assign/refer a lot.

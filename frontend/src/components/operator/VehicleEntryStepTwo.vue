@@ -520,6 +520,15 @@ const normalizedVehicle = computed(() => {
     ),
     note: String(data.note || data.notes || '').trim(),
     isPieceWash: Boolean(data.isPieceWash || data.is_piece_wash),
+    isAnonymous: Boolean(
+      data.isAnonymous
+      || data.is_anonymous
+      || (
+        String(data.model || data.car_model || '').trim() === '1111'
+        && String(data.color || data.car_color || '').trim() === '1111'
+      )
+      || String(data.plate || data.plate_number || '').trim() === '1111'
+    ),
     pieceDetails: String(data.pieceDetails || data.piece_details || '').trim(),
     pieceWashPrice: Number(data.pieceWashPrice || 0),
     aiSessionId: String(data.aiSessionId || '').trim(),
@@ -536,6 +545,16 @@ const normalizedVehicle = computed(() => {
     aiLatencyMs: data.aiLatencyMs ?? null,
     serviceIds: Array.isArray(data.serviceIds) ? data.serviceIds.map((id) => Number(id)) : [],
     services: Array.isArray(data.services) ? data.services : [],
+    products: Array.isArray(data.products)
+      ? data.products
+      : (Array.isArray(data.productLines) ? data.productLines : (
+        Array.isArray(data.job?.product_lines) ? data.job.product_lines : []
+      )),
+    productLines: Array.isArray(data.productLines)
+      ? data.productLines
+      : (Array.isArray(data.products) ? data.products : (
+        Array.isArray(data.job?.product_lines) ? data.job.product_lines : []
+      )),
     manualDiscountTotal: Number(data.manualDiscountTotal ?? data.manual_discount_total ?? 0),
     staffMembers: Array.isArray(data.staffMembers || data.staff_members)
       ? (data.staffMembers || data.staff_members)
@@ -788,8 +807,93 @@ const toggleTempService = (id) => {
 }
 const openInitialServicePicker = () => {
   if (hasOpenedInitialServicePicker.value || isPieceWash.value || !services.value.length) return
+  // فقط وقتی از قبل خدمات/اقلام دارد (حالت ویرایش) خودکار باز نشود
+  if (selectedServiceIds.value.length || Object.keys(productLinesByProductId.value).length) return
   hasOpenedInitialServicePicker.value = true
   openServicePicker()
+}
+
+const resolveExistingProductLines = (vehicle = normalizedVehicle.value) => {
+  const source = Array.isArray(vehicle?.products) && vehicle.products.length
+    ? vehicle.products
+    : (Array.isArray(vehicle?.productLines) ? vehicle.productLines : [])
+  return source
+    .map((item) => ({
+      id: Number(item?.id || item?.product_id || item?.product || 0),
+      name: String(item?.name || item?.product_name || '').trim() || 'محصول',
+      quantity: Math.max(0, Number(item?.quantity || item?.selected_quantity || 0)),
+      sale_price: Number(item?.sale_price || item?.unit_price || 0),
+      lineTotal: Number(item?.lineTotal || item?.line_total || 0)
+    }))
+    .filter((item) => item.id > 0 && item.quantity > 0)
+}
+
+const resolveExistingServiceLines = (vehicle = normalizedVehicle.value) => {
+  const source = Array.isArray(vehicle?.services) ? vehicle.services : []
+  return source
+    .map((item) => ({
+      id: Number(item?.id || item?.service_id || item?.service || 0),
+      name: String(item?.name || item?.title || item?.service_name || '').trim() || 'خدمت',
+      base_price: Number(item?.unit_price ?? item?.base_price ?? item?.price ?? 0),
+      list_price: Number(item?.list_price ?? item?.list_unit_price ?? item?.unit_price ?? item?.base_price ?? 0),
+      adjusted_price: Number(item?.adjusted_price ?? item?.price ?? item?.line_total ?? item?.unit_price ?? item?.base_price ?? 0),
+      discount_amount: Number(item?.discount_amount || 0)
+    }))
+    .filter((item) => item.id > 0)
+}
+
+const mergeCatalogWithExistingSelections = () => {
+  const existingServices = resolveExistingServiceLines()
+  if (existingServices.length) {
+    const byId = new Map(services.value.map((item) => [Number(item.id), item]))
+    existingServices.forEach((line) => {
+      const current = byId.get(line.id)
+      if (!current) {
+        byId.set(line.id, {
+          id: line.id,
+          name: line.name,
+          description: '',
+          base_price: line.base_price,
+          list_price: line.list_price,
+          estimated_duration_minutes: 0,
+          is_active: true,
+          display_order: 9999
+        })
+        return
+      }
+      byId.set(line.id, {
+        ...current,
+        base_price: Number(line.base_price || current.base_price || 0),
+        list_price: Number(line.list_price || current.list_price || current.base_price || 0)
+      })
+    })
+    services.value = Array.from(byId.values())
+  }
+
+  const existingProducts = resolveExistingProductLines()
+  if (existingProducts.length) {
+    const byId = new Map(products.value.map((item) => [Number(item.id), item]))
+    existingProducts.forEach((line) => {
+      const current = byId.get(line.id)
+      const selectedQty = Number(line.quantity || 0)
+      if (!current) {
+        byId.set(line.id, {
+          id: line.id,
+          name: line.name,
+          sale_price: Number(line.sale_price || 0),
+          available_quantity: selectedQty,
+          is_active: true
+        })
+        return
+      }
+      byId.set(line.id, {
+        ...current,
+        sale_price: Number(line.sale_price || current.sale_price || 0),
+        available_quantity: Number(current.available_quantity || 0) + selectedQty
+      })
+    })
+    products.value = Array.from(byId.values()).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'fa'))
+  }
 }
 
 const getTempProductQty = (productId) => Number(tempProductLinesByProductId.value[productId] || 0)
@@ -959,6 +1063,7 @@ const buildPayload = () => {
       smsNotificationsEnabled: normalizedVehicle.value.smsAutoSendEnabled !== false && smsNotificationsEnabled.value,
       note: vehicle.note,
       isPieceWash: vehicle.isPieceWash,
+      isAnonymous: vehicle.isAnonymous,
       pieceDetails: pieceDetails.value.trim(),
       aiSessionId: vehicle.aiSessionId,
       aiRawText: vehicle.aiRawText,
@@ -1033,33 +1138,23 @@ const hydrateFromVehicleInfo = () => {
     isServicePickerOpen.value = false
     isProductPickerOpen.value = false
   }
-  selectedServiceIds.value = [...new Set(vehicle.serviceIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id)))]
+  const existingServices = resolveExistingServiceLines(vehicle)
+  selectedServiceIds.value = [...new Set([
+    ...vehicle.serviceIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id) && id > 0),
+    ...existingServices.map((item) => Number(item.id))
+  ])]
   tempSelectedServiceIds.value = [...selectedServiceIds.value]
-  const existingServices = Array.isArray(vehicle.services) ? vehicle.services : []
   servicePriceAdjustments.value = existingServices.reduce((accumulator, item) => {
-    const serviceId = Number(item?.id || item?.service_id || 0)
+    const serviceId = Number(item.id || 0)
     if (!serviceId) return accumulator
-    const salePrice = Number(
-      item?.unit_price
-      ?? item?.resolved_sale_price
-      ?? item?.sale_price
-      ?? item?.base_price
-      ?? 0
-    )
-    const finalPrice = Number(item?.adjusted_price ?? item?.price ?? item?.base_price ?? 0)
+    const salePrice = Number(item.base_price || 0)
+    const finalPrice = Number(item.adjusted_price ?? item.base_price ?? 0)
     accumulator[serviceId] = Number((finalPrice - salePrice).toFixed(2))
     return accumulator
   }, {})
-  const existingProducts = Array.isArray(vehicle.products) ? vehicle.products : (
-    Array.isArray(vehicle.productLines) ? vehicle.productLines : (
-      Array.isArray(props.vehicleInfo?.job?.product_lines) ? props.vehicleInfo.job.product_lines : []
-    )
-  )
+  const existingProducts = resolveExistingProductLines(vehicle)
   productLinesByProductId.value = existingProducts.reduce((accumulator, item) => {
-    const productId = Number(item?.id || item?.product_id || item?.product || 0)
-    const quantity = Number(item?.quantity || item?.selected_quantity || 0)
-    if (!productId || quantity <= 0) return accumulator
-    accumulator[productId] = quantity
+    accumulator[item.id] = Number(item.quantity || 0)
     return accumulator
   }, {})
   tempProductLinesByProductId.value = { ...productLinesByProductId.value }
@@ -1076,6 +1171,7 @@ const hydrateFromVehicleInfo = () => {
   }, {})
   workerSharePercents.value = normalizeWorkerSharePercents(selectedWorkerIds.value, existingWorkerSharePercents)
   ensureDefaultWorkerSelection()
+  mergeCatalogWithExistingSelections()
   openInitialServicePicker()
 }
 
@@ -1137,6 +1233,29 @@ const loadInitialData = async () => {
 
     workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
       .filter(isWashAssignableWorker)
+
+    const existingStaff = Array.isArray(normalizedVehicle.value.staffMembers)
+      ? normalizedVehicle.value.staffMembers
+      : []
+    if (existingStaff.length) {
+      const byId = new Map(workers.value.map((item) => [Number(item.id), item]))
+      existingStaff.forEach((member) => {
+        if (byId.has(Number(member.id))) return
+        byId.set(Number(member.id), {
+          id: Number(member.id),
+          full_name: member.name || `نیرو #${member.id}`,
+          role: 'worker',
+          is_available: true,
+          tip_share_percent: 0,
+          payment_type: 'percent',
+          payment_value: 0
+        })
+      })
+      workers.value = Array.from(byId.values())
+    }
+
+    mergeCatalogWithExistingSelections()
+
     const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
     selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
     tempSelectedServiceIds.value = tempSelectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
