@@ -1,12 +1,12 @@
 ﻿from decimal import Decimal
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import ROUND_HALF_UP
 from secrets import token_urlsafe
 from urllib.parse import quote_plus, unquote_plus
 
 from django.db import transaction
-from django.db.models import Q, Sum, Value
+from django.db.models import Count, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import redirect
@@ -24,6 +24,20 @@ from .serializers import (
     WalletWithdrawSerializer,
 )
 from apps.auth.models import CarWashFeaturePurchase, SupportTicket, SupportTicketMessage
+
+
+def _parse_wallet_day(value, *, end_of_day=False):
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.strptime(raw[:10], '%Y-%m-%d')
+    except ValueError:
+        return None
+    combined = datetime.combine(parsed.date(), time.max if end_of_day else time.min)
+    if timezone.is_naive(combined):
+        return timezone.make_aware(combined)
+    return combined
 
 
 FEATURE_OPTION_CATALOG = {
@@ -597,9 +611,19 @@ class WalletDashboardView(WalletBaseMixin, APIView):
         self._collect_due_installments(tenant, request.user)
         tx_type = str(request.query_params.get('type', 'all')).strip().lower()
         query = str(request.query_params.get('q', '')).strip()
+        start_at = _parse_wallet_day(request.query_params.get('start'))
+        end_at = _parse_wallet_day(request.query_params.get('end'), end_of_day=True)
 
         wallets = Wallet.objects.filter(tenant=tenant, is_active=True, id__in=[default_wallet.id, sms_wallet.id]).order_by('id')
         transactions = CashflowTransaction.objects.select_related('wallet').filter(tenant=tenant).order_by('-transacted_at')
+        period_transactions = CashflowTransaction.objects.select_related('wallet').filter(tenant=tenant)
+
+        if start_at:
+            transactions = transactions.filter(transacted_at__gte=start_at)
+            period_transactions = period_transactions.filter(transacted_at__gte=start_at)
+        if end_at:
+            transactions = transactions.filter(transacted_at__lte=end_at)
+            period_transactions = period_transactions.filter(transacted_at__lte=end_at)
 
         if tx_type in {'payments', 'withdraw', 'withdrawal', 'withdrawals'}:
             transactions = transactions.filter(direction=CashflowTransaction.Direction.OUT)
@@ -612,6 +636,24 @@ class WalletDashboardView(WalletBaseMixin, APIView):
                 | Q(wallet__name__icontains=query)
                 | Q(reference_type__icontains=query)
             )
+
+        period_totals = period_transactions.aggregate(
+            deposits_total=Coalesce(
+                Sum('amount', filter=Q(direction=CashflowTransaction.Direction.IN)),
+                Value(Decimal('0')),
+            ),
+            withdrawals_total=Coalesce(
+                Sum('amount', filter=Q(direction=CashflowTransaction.Direction.OUT)),
+                Value(Decimal('0')),
+            ),
+            sms_sent_count=Coalesce(
+                Count(
+                    'id',
+                    filter=Q(wallet_id=sms_wallet.id, direction=CashflowTransaction.Direction.OUT),
+                ),
+                Value(0),
+            ),
+        )
 
         transactions = transactions[:100]
         totals = Wallet.objects.filter(tenant=tenant, is_active=True, id__in=[default_wallet.id, sms_wallet.id]).aggregate(
@@ -645,6 +687,13 @@ class WalletDashboardView(WalletBaseMixin, APIView):
                     'deposits_total': tx_totals['deposits_total'],
                     'payments_total': tx_totals['payments_total'],
                     'withdrawals_total': tx_totals['payments_total'],
+                },
+                'period_summary': {
+                    'start': request.query_params.get('start') or '',
+                    'end': request.query_params.get('end') or '',
+                    'sms_sent_count': period_totals['sms_sent_count'] or 0,
+                    'deposits_total': period_totals['deposits_total'],
+                    'withdrawals_total': period_totals['withdrawals_total'],
                 },
                 'license_status': license_status_for_tenant(tenant),
                 'wallets': WalletSerializer(wallets, many=True).data,

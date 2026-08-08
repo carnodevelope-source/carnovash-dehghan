@@ -25,18 +25,6 @@
           <span class="brand">{{ tenantName }}</span>
           <span class="brand-sub">پنل مدیریت</span>
         </div>
-        <button
-          v-if="showSearch && isCompactSearch"
-          type="button"
-          class="mobile-search-toggle"
-          :class="{ active: isMobileSearchOpen || hasActiveSearch }"
-          aria-label="جستجو"
-          :aria-expanded="isMobileSearchOpen"
-          @click="toggleMobileSearch"
-        >
-          <IconlyIcon name="search" size="sm" />
-          <span v-if="hasActiveSearch" class="mobile-search-dot" aria-hidden="true"></span>
-        </button>
 
         <div
           v-if="showSearch && !isCompactSearch"
@@ -62,6 +50,19 @@
       </div>
 
       <div class="topbar-right">
+        <button
+          v-if="showSearch && isCompactSearch"
+          type="button"
+          class="mobile-search-toggle"
+          :class="{ active: isMobileSearchOpen || hasActiveSearch }"
+          aria-label="جستجو"
+          :aria-expanded="isMobileSearchOpen"
+          @click="toggleMobileSearch"
+        >
+          <IconlyIcon name="search" size="sm" />
+          <span v-if="hasActiveSearch" class="mobile-search-dot" aria-hidden="true"></span>
+        </button>
+
         <div ref="profileMenuRef" class="profile-menu">
           <button type="button" class="profile-button" @click="toggleProfileMenu">
             <span class="profile-button-icon">
@@ -654,6 +655,8 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .brand-mark {
   width: 26px;
@@ -710,8 +713,14 @@ onBeforeUnmount(() => {
 .mobile-menu-toggle.open span:nth-child(3) {
   transform: translateY(-6px) rotate(-45deg);
 }
-.brand-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.brand-sub { font-size: 12px; color: #64748b; border-right: 1px solid #cbd5e1; padding-right: 8px; }
+.brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.brand-sub { font-size: 12px; color: #64748b; border-right: 1px solid #cbd5e1; padding-right: 8px; flex: 0 0 auto; }
 .search-cluster {
   flex: 1 1 0;
   min-width: 0;
@@ -1422,16 +1431,23 @@ onBeforeUnmount(() => {
     padding: 12px 14px;
   }
 
+  .topbar-right {
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+
   .brand-wrap {
     display: flex;
     align-items: center;
     gap: 6px;
-    min-width: 72px;
-    max-width: 110px;
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 auto;
   }
 
   .brand {
-    font-size: 12px;
+    font-size: 13px;
+    max-width: none;
   }
 
   .brand-sub {
@@ -1516,12 +1532,12 @@ onBeforeUnmount(() => {
   }
 
   .brand-wrap {
-    min-width: 58px;
-    max-width: 82px;
+    min-width: 0;
+    max-width: none;
   }
 
   .brand {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .search-box input {

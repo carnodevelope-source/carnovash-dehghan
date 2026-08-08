@@ -27,6 +27,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
 
 class ProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ProductSerializer
+    http_method_names = ['get', 'delete', 'head', 'options']
 
     def get_queryset(self):
         tenant = getattr(self.request.user, 'tenant', None)

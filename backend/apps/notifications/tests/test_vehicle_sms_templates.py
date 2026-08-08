@@ -66,6 +66,31 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('۱،۲۵۰،۰۰۰ تومان', message)
         self.assertLess(message.index('پلاک: 67 - 345 ب 22'), message.index('شست‌وشوی ویژه'))
 
+    def test_assignment_sms_renders_car_model_aliases(self):
+        tenant = SimpleNamespace(name='کارواش یک')
+        job = SimpleNamespace(final_total=0, services_total=0, service_lines=[])
+        vehicle = SimpleNamespace(
+            admission_number=1001,
+            tenant=tenant,
+            job=job,
+            driver_name='سارا',
+            driver_gender='female',
+            car_model='پژو ۲۰۷',
+            plate_number='11 الف 111 11',
+            ready_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        settings_obj = SimpleNamespace(
+            sms_vehicle_assigned_template='ماشین [نام ماشین] / مدل [مدل خودرو]',
+            sms_vehicle_assigned_invoice_template='',
+        )
+
+        message, context = build_vehicle_assignment_sms(settings_obj, vehicle)
+
+        self.assertEqual(context['[نام ماشین]'], 'پژو ۲۰۷')
+        self.assertEqual(context['[مدل خودرو]'], 'پژو ۲۰۷')
+        self.assertIn('ماشین پژو ۲۰۷ / مدل پژو ۲۰۷', message)
+
     def test_assignment_invoice_sms_shows_tariff_discount_and_final_total(self):
         tenant = SimpleNamespace(name='کارواش یک')
         job = SimpleNamespace(

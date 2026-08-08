@@ -82,7 +82,7 @@
         <template v-else-if="activeTab === 'products'">
           <div class="head-row">
             <h2>مدیریت محصولات</h2>
-            <div class="head-actions">
+            <div class="head-actions products-head-actions">
               <button class="secondary-btn btn-with-icon" @click="openProductPurchaseModal()"><IconlyIcon name="buy" size="sm" />ثبت خرید جدید</button>
               <button class="primary-btn btn-with-icon" @click="openProductModal()"><IconlyIcon name="plus" size="sm" />افزودن محصول</button>
             </div>
@@ -111,7 +111,6 @@
                   <td>{{ formatDate(item.updated_at) }}</td>
                   <td>{{ item.is_active ? 'بله' : 'خیر' }}</td>
                   <td>
-                    <button class="table-btn" @click.stop="openProductModal(item)">ویرایش</button>
                     <button class="table-btn danger" @click.stop="deleteProduct(item)">حذف</button>
                   </td>
                 </tr>
@@ -456,8 +455,16 @@
               </div>
               <div class="sms-token-panel">
                 <strong>متغیرهای قابل استفاده</strong>
+                <p class="sms-token-help">
+                  هر متغیر را داخل متن پیامک بنویسید؛ هنگام ارسال با مقدار واقعی همان سفارش جایگزین می‌شود.
+                  متغیرها در پیام تخصیص و ترخیص یکسان کار می‌کنند؛ فقط متغیرهای مربوط به همان مرحله مقدار دارند.
+                </p>
                 <div class="sms-token-list">
-                  <code v-for="token in smsTemplateTokens" :key="token">{{ token }}</code>
+                  <code
+                    v-for="token in smsTemplateTokens"
+                    :key="token.key"
+                    :title="token.hint"
+                  >{{ token.key }}</code>
                 </div>
               </div>
             </section>
@@ -1077,30 +1084,32 @@ const fixedDiscountPreviewLabel = computed(() => fixedDiscountVisitItems
   .join('، '))
 const expensesTotal = computed(() => filteredExpenses.value.reduce((sum, item) => sum + Number(item.amount || 0), 0))
 const smsTemplateTokens = [
-  '[نام مشتری]',
-  '[جنسیت مشتری]',
-  '[نام کارواش]',
-  '[شماره پذیرش]',
-  '[پلاک]',
-  '[ساعت تخصیص]',
-  '[تاریخ تخصیص]',
-  '[خلاصه خدمات]',
-  '[جمع کل]',
-  '[جمع نرخ نامه]',
-  '[ساعت ترخیص]',
-  '[تاریخ ترخیص]',
-  '[امتیاز مشتری]',
-  '[درصد تخفیف مراجعه بعد]',
-  '[درصد تخفیف امتیاز مشتری]',
-  '[تعداد مراجعات]',
-  '[تعداد مراجعه]',
-  '[انعام]',
-  '[تخفیف مجموعه]',
-  '[تخفیف امتیاز مشتری]',
-  '[تخفیف دستی]',
-  '[مالیات]',
-  '[مبلغ نهایی]',
-  '[جمع تخفیف]'
+  { key: '[نام مشتری]', hint: 'نام مشتری با عنوان (آقا/خانم)' },
+  { key: '[جنسیت مشتری]', hint: 'عنوان جنسیت مشتری' },
+  { key: '[نام کارواش]', hint: 'نام مجموعه کارواش' },
+  { key: '[شماره پذیرش]', hint: 'شماره پذیرش خودرو' },
+  { key: '[پلاک]', hint: 'پلاک خودرو به فرمت خوانا' },
+  { key: '[مدل خودرو]', hint: 'اسم/مدل ماشین ثبت‌شده در پذیرش' },
+  { key: '[نام ماشین]', hint: 'همان مدل خودرو؛ برای متن‌های ساده‌تر' },
+  { key: '[ساعت تخصیص]', hint: 'ساعت پذیرش/تخصیص (پیام تخصیص)' },
+  { key: '[تاریخ تخصیص]', hint: 'تاریخ شمسی پذیرش (پیام تخصیص)' },
+  { key: '[خلاصه خدمات]', hint: 'لیست خدمات و اقلام انتخاب‌شده' },
+  { key: '[جمع کل]', hint: 'جمع مبلغ قبل از تخفیف و مالیات' },
+  { key: '[جمع نرخ نامه]', hint: 'معادل جمع کل بر اساس نرخ‌نامه' },
+  { key: '[ساعت ترخیص]', hint: 'ساعت ترخیص (پیام ترخیص)' },
+  { key: '[تاریخ ترخیص]', hint: 'تاریخ شمسی ترخیص (پیام ترخیص)' },
+  { key: '[امتیاز مشتری]', hint: 'امتیاز باشگاه مشتریان' },
+  { key: '[درصد تخفیف مراجعه بعد]', hint: 'درصد تخفیف پیشنهادی مراجعه بعد' },
+  { key: '[درصد تخفیف امتیاز مشتری]', hint: 'درصد تخفیف بر اساس امتیاز' },
+  { key: '[تعداد مراجعات]', hint: 'تعداد دفعات مراجعه پلاک' },
+  { key: '[تعداد مراجعه]', hint: 'همان تعداد مراجعات' },
+  { key: '[انعام]', hint: 'مبلغ انعام ثبت‌شده' },
+  { key: '[تخفیف مجموعه]', hint: 'تخفیف تعریف‌شده مجموعه' },
+  { key: '[تخفیف امتیاز مشتری]', hint: 'مبلغ تخفیف باشگاه مشتریان' },
+  { key: '[تخفیف دستی]', hint: 'تخفیف دستی اپراتور' },
+  { key: '[مالیات]', hint: 'مبلغ مالیات سفارش' },
+  { key: '[مبلغ نهایی]', hint: 'مبلغ قابل پرداخت نهایی' },
+  { key: '[جمع تخفیف]', hint: 'جمع همه تخفیف‌های سفارش' }
 ]
 const SMS_CHARS_PER_SEGMENT = 70
 const SMS_PRICE_PER_SEGMENT = 185
@@ -1216,6 +1225,8 @@ const smsPreviewContext = computed(() => {
     '[نام کارواش]': authStore.user?.tenant_name || authStore.user?.tenant?.name || 'سونامی',
     '[شماره پذیرش]': '۱۰۰۰',
     '[پلاک]': '67 - 345 ب 22',
+    '[مدل خودرو]': 'پژو ۲۰۷',
+    '[نام ماشین]': 'پژو ۲۰۷',
     '[ساعت تخصیص]': '10:30',
     '[تاریخ تخصیص]': '1405/04/22',
     '[خلاصه خدمات]': 'روشویی : ۷۰،۰۰۰ تومان\nواکس بدنه : ۱۲۰،۰۰۰ تومان',
@@ -1496,18 +1507,19 @@ const openWorkerModal = (item = null) => {
 }
 
 const openProductModal = (item = null) => {
+  if (item?.id) return
   modal.open = true
   modal.type = 'products'
-  modal.id = item?.id || null
-  modal.title = modal.id ? 'ویرایش محصول' : 'افزودن محصول'
+  modal.id = null
+  modal.title = 'افزودن محصول'
   Object.assign(forms.product, {
-    name: item?.name || '',
-    description: item?.description || '',
-    sale_price: toThousandsDisplay(item?.sale_price),
-    cost_price: toThousandsDisplay(item?.cost_price),
-    unit: item?.unit || 'unit',
-    min_stock: Number(item?.min_stock || 0),
-    is_active: item?.is_active ?? true
+    name: '',
+    description: '',
+    sale_price: toThousandsDisplay(0),
+    cost_price: toThousandsDisplay(0),
+    unit: 'unit',
+    min_stock: 0,
+    is_active: true
   })
 }
 
@@ -1674,8 +1686,7 @@ const submitModal = async () => {
         sale_price: fromThousandsInput(forms.product.sale_price),
         cost_price: fromThousandsInput(forms.product.cost_price)
       }
-      if (modal.id) await api.patch(`/products/${modal.id}/`, payload)
-      else await api.post('/products/', payload)
+      await api.post('/products/', payload)
       t('محصول ذخیره شد')
     } else if (modal.type === 'product_purchase') {
       const payload = {
@@ -1748,7 +1759,12 @@ const toggleWorkerAvailability = async (item) => {
   t(nextAvailability ? 'پرسنل فعال شد' : 'پرسنل غیرفعال شد')
   await loadAll()
 }
-const deleteProduct = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/products/${item.id}/`); t('حذف شد'); await loadAll() }
+const deleteProduct = async (item) => {
+  if (!confirm('محصول از لیست و کارتابل حذف می‌شود، اما در گزارشات و سوابق باقی می‌ماند. ادامه می‌دهید؟')) return
+  await api.delete(`/products/${item.id}/`)
+  t('محصول حذف شد')
+  await loadAll()
+}
 const deleteExpense = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/inventory/expenses/${item.id}/`); t('حذف شد'); await loadAll() }
 const deleteService = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/services/${item.id}/`); t('حذف شد'); await loadAll() }
 
@@ -1884,23 +1900,25 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 }
 .sms-token-panel {
   display: grid;
-  gap: 10px;
-  padding: 14px;
-  border-radius: 20px;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
   border: 1px dashed #b7c9e5;
-  background: linear-gradient(180deg, #ffffff, #f3f8ff);
+  background: #f8fbff;
 }
-.sms-token-panel strong { color: #0f172a; font-size: 13px; }
-.sms-token-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.sms-token-panel strong { color: #0f172a; font-size: 12px; }
+.sms-token-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .sms-token-list code {
-  padding: 7px 10px;
+  padding: 3px 7px;
   border-radius: 999px;
   background: #e0f2fe;
   color: #075985;
   border: 1px solid #bae6fd;
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  cursor: help;
 }
 .row-check { display: flex !important; align-items: center; gap: 8px; }
 .full { grid-column: 1 / -1; }
@@ -2196,6 +2214,21 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   .general-settings-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .products-head-actions {
+    flex-direction: row;
+    align-items: stretch;
+    flex-wrap: nowrap;
+  }
+
+  .products-head-actions .btn-with-icon {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    white-space: nowrap;
+    font-size: 12px;
+    padding-inline: 8px;
   }
 
   .tabs-bar {

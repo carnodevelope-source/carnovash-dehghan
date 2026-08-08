@@ -471,7 +471,7 @@
                 <span>انعام</span>
                 <strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong>
               </article>
-              <article v-if="releaseSummary.taxAmount > 0" class="summary-stat-card">
+              <article class="summary-stat-card">
                 <span>مالیات</span>
                 <div class="summary-stat-value">
                   <strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong>
@@ -829,7 +829,7 @@
               <p><span>جمع کل</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
               <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
-              <p v-if="releaseSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
+              <p><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
               <p class="thermal-payable-total"><span>قیمت نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </section>
 
@@ -843,9 +843,8 @@
 
           <template v-else>
           <header class="invoice-sheet-head">
-            <div>
+            <div class="invoice-sheet-brand">
               <small>{{ invoiceCarwashContactLine || invoiceCarwashName }}</small>
-              <small v-if="invoiceReceiptHeaderNote" class="receipt-custom-note">{{ invoiceReceiptHeaderNote }}</small>
               <strong>فاکتور نهایی سفارش</strong>
               <span>شماره فاکتور: {{ invoiceNumber }}</span>
             </div>
@@ -854,6 +853,7 @@
               <span>تاریخ صدور: {{ invoiceIssuedAt }}</span>
               <span>تیپ نرخنامه: {{ invoiceTariffTypeNumber }}</span>
             </div>
+            <small v-if="invoiceReceiptHeaderNote" class="receipt-custom-note invoice-header-note">{{ invoiceReceiptHeaderNote }}</small>
           </header>
 
           <section class="invoice-identity-grid">
@@ -949,7 +949,7 @@
               <p v-if="releaseSummary.manualDiscountAmount > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(releaseSummary.manualDiscountAmount) }}</strong></p>
               <p><span>جمع تخفیف</span><strong>{{ formatMoney(releaseSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(releaseSummary.tipAmount) }}</strong></p>
-              <p v-if="releaseSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
+              <p><span>مالیات</span><strong>{{ formatMoney(releaseSummary.taxAmount) }}</strong></p>
               <p class="invoice-grand-total"><span>قیمت نهایی</span><strong>{{ formatMoney(releaseSummary.finalTotal) }}</strong></p>
             </div>
           </section>
@@ -993,6 +993,13 @@ import { printHtmlElement, resolvePrintErrorMessage } from '../../utils/receiptP
 const search = ref('')
 const debouncedSearch = ref('')
 const plateFilter = reactive({
+  plateType: '',
+  plateLeft: '',
+  plateLetter: '',
+  plateMid: '',
+  plateRight: ''
+})
+const debouncedPlateFilter = ref({
   plateType: '',
   plateLeft: '',
   plateLetter: '',
@@ -2655,11 +2662,12 @@ const filteredReleaseProducts = computed(() => {
   return items.filter((item) => `${item.name || ''} ${item.sku || ''}`.includes(query))
 })
 let searchDebounceTimer = null
+let plateDebounceTimer = null
 watch(search, (value) => {
   if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
   searchDebounceTimer = window.setTimeout(() => {
     debouncedSearch.value = String(value || '')
-  }, 120)
+  }, 180)
 }, { immediate: true })
 
 const hasPlateFilter = computed(() => Boolean(
@@ -2670,30 +2678,48 @@ const hasPlateFilter = computed(() => Boolean(
   || plateFilter.plateType
 ))
 
+const hasDebouncedPlateFilter = computed(() => Boolean(
+  debouncedPlateFilter.value.plateLeft
+  || debouncedPlateFilter.value.plateLetter
+  || debouncedPlateFilter.value.plateMid
+  || debouncedPlateFilter.value.plateRight
+  || debouncedPlateFilter.value.plateType
+))
+
 const clearPlateFilter = () => {
+  if (plateDebounceTimer) window.clearTimeout(plateDebounceTimer)
   plateFilter.plateType = ''
   plateFilter.plateLeft = ''
   plateFilter.plateLetter = ''
   plateFilter.plateMid = ''
   plateFilter.plateRight = ''
+  debouncedPlateFilter.value = {
+    plateType: '',
+    plateLeft: '',
+    plateLetter: '',
+    plateMid: '',
+    plateRight: ''
+  }
 }
 
-const normalizePlateFilters = () => {
-  if (plateFilter.plateType !== 'motorcycle' && plateFilter.plateType !== 'car') plateFilter.plateType = ''
-  plateFilter.plateLeft = normalizeDigits(plateFilter.plateLeft).replace(/\D/g, '').slice(0, 2)
-  plateFilter.plateRight = normalizeDigits(plateFilter.plateRight).replace(/\D/g, '').slice(0, 2)
-  plateFilter.plateMid = normalizeDigits(plateFilter.plateMid).replace(/\D/g, '').slice(0, 3)
-  const letterRaw = String(plateFilter.plateLetter || '')
+const normalizePlateFilterSnapshot = (source = {}) => {
+  let plateType = source.plateType === 'motorcycle' || source.plateType === 'car' ? source.plateType : ''
+  let plateLeft = normalizeDigits(source.plateLeft).replace(/\D/g, '').slice(0, 2)
+  let plateRight = normalizeDigits(source.plateRight).replace(/\D/g, '').slice(0, 2)
+  let plateMid = normalizeDigits(source.plateMid).replace(/\D/g, '').slice(0, 3)
+  const letterRaw = String(source.plateLetter || '')
   const letterLooksMotor = /^\d+$/.test(normalizeDigits(letterRaw).replace(/\D/g, '')) && letterRaw.length > 1
-  if (plateFilter.plateType === 'motorcycle' || (!plateFilter.plateType && letterLooksMotor)) {
-    plateFilter.plateLetter = normalizeDigits(plateFilter.plateLetter).replace(/\D/g, '').slice(0, 5)
+  let plateLetter = ''
+  if (plateType === 'motorcycle' || (!plateType && letterLooksMotor)) {
+    plateLetter = normalizeDigits(letterRaw).replace(/\D/g, '').slice(0, 5)
   } else {
-    plateFilter.plateLetter = normalizePlateLetter(plateFilter.plateLetter)
+    plateLetter = normalizePlateLetter(letterRaw)
   }
-  if (plateFilter.plateType === 'motorcycle') {
-    plateFilter.plateLeft = ''
-    plateFilter.plateRight = ''
+  if (plateType === 'motorcycle') {
+    plateLeft = ''
+    plateRight = ''
   }
+  return { plateType, plateLeft, plateLetter, plateMid, plateRight }
 }
 
 watch(
@@ -2705,29 +2731,31 @@ watch(
     plateFilter.plateRight
   ],
   () => {
-    normalizePlateFilters()
-  }
+    if (plateDebounceTimer) window.clearTimeout(plateDebounceTimer)
+    plateDebounceTimer = window.setTimeout(() => {
+      debouncedPlateFilter.value = normalizePlateFilterSnapshot(plateFilter)
+    }, 180)
+  },
+  { immediate: true }
 )
 
-const matchesPlateFilter = (item) => {
-  if (!hasPlateFilter.value) return true
+const matchesPlateFilter = (item, plate) => {
+  if (!plate) return true
   const itemType = String(item.plateType || 'car').toLowerCase() === 'motorcycle' ? 'motorcycle' : 'car'
-  if (plateFilter.plateType && itemType !== plateFilter.plateType) return false
+  if (plate.plateType && itemType !== plate.plateType) return false
 
-  const left = String(item.plateLeft || '')
-  const letter = String(item.plateLetter || '')
-  const mid = String(item.plateMid || '')
-  const right = String(item.plateRight || '')
-  const display = String(item.plateDisplay || item.plateNumber || '')
+  const left = String(item.plateLeftKey || '')
+  const letter = String(item.plateLetterKey || '')
+  const mid = String(item.plateMidKey || '')
+  const right = String(item.plateRightKey || '')
+  const display = String(item.plateDisplay || '')
 
-  if (plateFilter.plateLeft && !left.includes(plateFilter.plateLeft) && !display.includes(plateFilter.plateLeft)) return false
-  if (plateFilter.plateMid && !mid.includes(plateFilter.plateMid) && !display.includes(plateFilter.plateMid)) return false
-  if (plateFilter.plateRight && !right.includes(plateFilter.plateRight) && !display.includes(plateFilter.plateRight)) return false
-  if (plateFilter.plateLetter) {
-    const needle = String(plateFilter.plateLetter).toLowerCase()
-    const letterOk = letter.toLowerCase().includes(needle)
-    const displayOk = display.toLowerCase().includes(needle)
-    if (!letterOk && !displayOk) return false
+  if (plate.plateLeft && !left.includes(plate.plateLeft) && !display.includes(plate.plateLeft)) return false
+  if (plate.plateMid && !mid.includes(plate.plateMid) && !display.includes(plate.plateMid)) return false
+  if (plate.plateRight && !right.includes(plate.plateRight) && !display.includes(plate.plateRight)) return false
+  if (plate.plateLetter) {
+    const needle = String(plate.plateLetter).toLowerCase()
+    if (!letter.toLowerCase().includes(needle) && !display.toLowerCase().includes(needle)) return false
   }
   return true
 }
@@ -3429,46 +3457,75 @@ const handleStepTwoAssign = async (payload) => {
     window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
   }
 }
-const cars = computed(() => vehicles.value.map((item) => ({
-  id: item.id,
-  admission_number: item.admission_number,
-  admissionNumber: item.admission_number,
-  statusKey: item.status,
-  queueBucket: item.status === 'released' ? 'released' : item.status === 'cancelled' ? 'cancelled' : item.status === 'ready_to_settle' ? 'in_progress' : 'entered',
-  status: item.status === 'cancelled' ? 'لغو' : item.status === 'released' ? 'ترخیص شده' : item.status === 'ready_to_settle' ? 'در حال انجام' : 'در انتظار تکمیل',
-  color: item.status === 'cancelled' ? '#ef4444' : item.status === 'released' ? '#f59e0b' : item.status === 'in_progress' ? '#0058be' : '#16a34a',
-  badgeBg: '#eef2ff',
-  badgeText: '#334155',
-  time: formatDateTime(item.check_in_at),
-  sortTime: item.status === 'released'
+const cars = computed(() => vehicles.value.map((item) => {
+  const plateLeftKey = String(item.plate_left || '').trim()
+  const plateLetterKey = String(item.plate_letter || '').trim()
+  const plateMidKey = String(item.plate_mid || '').trim()
+  const plateRightKey = String(item.plate_right || '').trim()
+  const plateDisplay = String(item.plate_number || '').trim() || '-'
+  const sortTime = item.status === 'released'
     ? (item.released_at || item.check_in_at)
-    : item.check_in_at,
-  plateLeft: item.plate_left || '--',
-  plateLetter: item.plate_letter || '-',
-  plateMid: item.plate_mid || '---',
-  plateRight: item.plate_right || '--',
-  plateType: item.plate_type || 'car',
-  tariff_type: item.tariff_type || 'type_1',
-  tariffType: item.tariff_type || 'type_1',
-  model: item.car_model,
-  colorName: item.car_color,
-  plateDisplay: item.plate_number || '-',
-  service: Array.isArray(item.job?.service_lines) && item.job.service_lines.length
-    ? item.job.service_lines.map((line) => line.service_name || 'خدمت').join('، ')
-    : 'خدمت ثبت نشده',
-  driverName: item.driver_name,
-  driver_gender: item.driver_gender,
-  driverGender: item.driver_gender,
-  driverPhone: item.driver_phone,
-  isPlateBlocked: Boolean(item.is_plate_blocked),
-  customerScore: Number(item.customer_score || 0),
-  customerLoyaltyDiscountPercent: Number(item.customer_loyalty_discount_percent || 0),
-  finalTotal: item.job?.final_total || item.job?.services_total || 0,
-  carwashShare: item.job?.carwash_share_amount || 0,
-  workerName: assignedWorkersLabel(item.job),
-  action: item.status === 'released' ? 'ترخیص انجام شد' : item.status === 'ready_to_settle' ? 'ترخیص خودرو' : item.status === 'cancelled' ? 'لغو شده' : 'تکمیل اطلاعات',
-  actionClass: item.status === 'ready_to_settle' ? 'action-release' : item.status === 'released' || item.status === 'cancelled' ? 'action-done' : 'action-complete'
-})))
+    : item.check_in_at
+  const driverName = item.driver_name || ''
+  const driverPhone = item.driver_phone || ''
+  const model = item.car_model || ''
+  const workerName = assignedWorkersLabel(item.job)
+  const searchText = [
+    plateLeftKey,
+    plateLetterKey,
+    plateMidKey,
+    plateRightKey,
+    plateDisplay,
+    model,
+    driverName,
+    driverPhone,
+    workerName
+  ].join(' ').toLowerCase()
+  return {
+    id: item.id,
+    admission_number: item.admission_number,
+    admissionNumber: item.admission_number,
+    statusKey: item.status,
+    queueBucket: item.status === 'released' ? 'released' : item.status === 'cancelled' ? 'cancelled' : item.status === 'ready_to_settle' ? 'in_progress' : 'entered',
+    status: item.status === 'cancelled' ? 'لغو' : item.status === 'released' ? 'ترخیص شده' : item.status === 'ready_to_settle' ? 'در حال انجام' : 'در انتظار تکمیل',
+    color: item.status === 'cancelled' ? '#ef4444' : item.status === 'released' ? '#f59e0b' : item.status === 'in_progress' ? '#0058be' : '#16a34a',
+    badgeBg: '#eef2ff',
+    badgeText: '#334155',
+    time: formatDateTime(item.check_in_at),
+    sortTime,
+    sortMs: Date.parse(sortTime) || 0,
+    plateLeft: plateLeftKey || '--',
+    plateLetter: plateLetterKey || '-',
+    plateMid: plateMidKey || '---',
+    plateRight: plateRightKey || '--',
+    plateLeftKey,
+    plateLetterKey,
+    plateMidKey,
+    plateRightKey,
+    plateType: item.plate_type || 'car',
+    tariff_type: item.tariff_type || 'type_1',
+    tariffType: item.tariff_type || 'type_1',
+    model,
+    colorName: item.car_color,
+    plateDisplay,
+    searchText,
+    service: Array.isArray(item.job?.service_lines) && item.job.service_lines.length
+      ? item.job.service_lines.map((line) => line.service_name || 'خدمت').join('، ')
+      : 'خدمت ثبت نشده',
+    driverName,
+    driver_gender: item.driver_gender,
+    driverGender: item.driver_gender,
+    driverPhone,
+    isPlateBlocked: Boolean(item.is_plate_blocked),
+    customerScore: Number(item.customer_score || 0),
+    customerLoyaltyDiscountPercent: Number(item.customer_loyalty_discount_percent || 0),
+    finalTotal: item.job?.final_total || item.job?.services_total || 0,
+    carwashShare: item.job?.carwash_share_amount || 0,
+    workerName,
+    action: item.status === 'released' ? 'ترخیص انجام شد' : item.status === 'ready_to_settle' ? 'ترخیص خودرو' : item.status === 'cancelled' ? 'لغو شده' : 'تکمیل اطلاعات',
+    actionClass: item.status === 'ready_to_settle' ? 'action-release' : item.status === 'released' || item.status === 'cancelled' ? 'action-done' : 'action-complete'
+  }
+}))
 
 const counts = computed(() => {
   const data = { entered: 0, in_progress: 0, released: 0, cancelled: 0 }
@@ -3487,31 +3544,23 @@ const filterItems = computed(() => [
 ])
 
 const filteredCars = computed(() => {
-  let items = cars.value
-  if (activeFilter.value !== 'all') items = items.filter((item) => item.queueBucket === activeFilter.value)
-  if (debouncedSearch.value.trim()) {
-    const query = debouncedSearch.value.trim().toLowerCase()
-    items = items.filter((item) => [
-      item.plateLeft,
-      item.plateLetter,
-      item.plateMid,
-      item.plateRight,
-      item.plateDisplay,
-      item.model,
-      item.driverName,
-      item.driverPhone,
-      item.workerName
-    ].join(' ').toLowerCase().includes(query))
+  const weightMap = { entered: 0, in_progress: 1, released: 3, cancelled: 4 }
+  const query = debouncedSearch.value.trim().toLowerCase()
+  const plate = hasDebouncedPlateFilter.value ? debouncedPlateFilter.value : null
+  const bucket = activeFilter.value
+  const items = []
+  for (const item of cars.value) {
+    if (bucket !== 'all' && item.queueBucket !== bucket) continue
+    if (query && !item.searchText.includes(query)) continue
+    if (plate && !matchesPlateFilter(item, plate)) continue
+    items.push(item)
   }
-  if (hasPlateFilter.value) {
-    items = items.filter((item) => matchesPlateFilter(item))
-  }
-  return [...items].sort((first, second) => {
-    const weightMap = { entered: 0, in_progress: 1, released: 3, cancelled: 4 }
+  items.sort((first, second) => {
     const weightDiff = (weightMap[first.queueBucket] ?? 9) - (weightMap[second.queueBucket] ?? 9)
     if (weightDiff !== 0) return weightDiff
-    return new Date(first.sortTime).getTime() - new Date(second.sortTime).getTime()
+    return first.sortMs - second.sortMs
   })
+  return items
 })
 const cancelVehicle = async () => {
   if (!selectedVehicle.value?.id) return
@@ -3664,6 +3713,7 @@ onBeforeUnmount(() => {
   unlockBodyScrollForModal()
   if (vehicleCardsRefreshTimer.value) window.clearInterval(vehicleCardsRefreshTimer.value)
   if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
+  if (plateDebounceTimer) window.clearTimeout(plateDebounceTimer)
   if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)
   revokeInvoicePdfUrl()
   window.removeEventListener('resize', syncReleaseMobileState)
@@ -4017,7 +4067,9 @@ onBeforeUnmount(() => {
 .invoice-sheet-thermal *{border-color:#000!important}
 .invoice-sheet-head{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);justify-content:space-between;gap:8px;padding:10px 12px;border-radius:10px;background:linear-gradient(135deg,#0f172a,#0f4c81 58%,#0ea5e9);color:#fff;min-width:0;max-width:100%}
 .invoice-sheet-head > *{min-width:0}
+.invoice-sheet-head .invoice-header-note{grid-column:1/-1;text-align:center;justify-self:center;width:100%;max-width:100%;margin-top:2px}
 .invoice-sheet-head small{display:block;font-size:10px;color:rgba(255,255,255,.72);letter-spacing:0}
+.receipt-custom-note{white-space:pre-line;overflow-wrap:anywhere;word-break:break-word;text-align:center;line-height:1.7}
 .invoice-sheet-head strong{display:block;font-size:18px;line-height:1.35;margin-top:2px;overflow-wrap:anywhere}
 .invoice-sheet-head span{display:block;margin-top:3px;color:rgba(255,255,255,.78);font-size:10px;overflow-wrap:anywhere}
 .invoice-sheet-meta{display:grid;gap:4px;justify-items:end;min-width:0;align-content:center}
@@ -4060,7 +4112,7 @@ onBeforeUnmount(() => {
 .thermal-sheet-head{display:grid;justify-items:center;gap:5px;padding:3px 0 8px;border-bottom:2px solid #000;text-align:center}
 .thermal-sheet-head strong{font-size:26px;font-weight:900;line-height:1.22}
 .thermal-sheet-head span{font-size:13px;font-weight:800;line-height:1.5;max-width:100%;overflow-wrap:anywhere}
-.thermal-sheet-head small{font-size:11px;font-weight:800;line-height:1.65;max-width:100%;overflow-wrap:anywhere}
+.thermal-sheet-head small{font-size:11px;font-weight:800;line-height:1.65;max-width:100%;overflow-wrap:anywhere;white-space:pre-line;text-align:center}
 .thermal-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 10px;padding:8px 0;border-bottom:2px solid #000}
 .thermal-info-grid p{margin:0;display:flex;align-items:center;gap:4px;font-size:12px;line-height:1.55;min-width:0}
 .thermal-info-grid span{flex:0 0 auto;font-weight:700}

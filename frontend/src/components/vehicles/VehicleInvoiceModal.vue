@@ -96,7 +96,7 @@
               <p><span>جمع کل</span><strong>{{ formatMoney(invoiceSubtotal) }}</strong></p>
               <p><span>جمع تخفیف</span><strong>{{ formatMoney(invoiceSummary.discountAmount) }}</strong></p>
               <p><span>انعام</span><strong>{{ formatMoney(invoiceSummary.tipAmount) }}</strong></p>
-              <p v-if="invoiceSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(invoiceSummary.taxAmount) }}</strong></p>
+              <p><span>مالیات</span><strong>{{ formatMoney(invoiceSummary.taxAmount) }}</strong></p>
               <p class="thermal-payable-total"><span>قیمت نهایی</span><strong>{{ formatMoney(invoiceSummary.finalTotal) }}</strong></p>
             </section>
 
@@ -110,9 +110,8 @@
 
           <template v-else>
             <header class="invoice-sheet-head">
-              <div>
+              <div class="invoice-sheet-brand">
                 <small>{{ invoiceCarwashContactLine || invoiceCarwashName }}</small>
-                <small v-if="invoiceReceiptHeaderNote" class="receipt-custom-note">{{ invoiceReceiptHeaderNote }}</small>
                 <strong>فاکتور نهایی سفارش</strong>
                 <span>شماره فاکتور: {{ invoiceNumber }}</span>
               </div>
@@ -121,6 +120,7 @@
                 <span>تاریخ صدور: {{ invoiceIssuedAt }}</span>
                 <span>تیپ نرخنامه: {{ invoiceTariffTypeNumber }}</span>
               </div>
+              <small v-if="invoiceReceiptHeaderNote" class="receipt-custom-note invoice-header-note">{{ invoiceReceiptHeaderNote }}</small>
             </header>
 
             <section class="invoice-identity-grid">
@@ -216,7 +216,7 @@
                 <p v-if="invoiceSummary.manualDiscountAmount > 0"><span>تخفیف دستی</span><strong>{{ formatMoney(invoiceSummary.manualDiscountAmount) }}</strong></p>
                 <p><span>جمع تخفیف</span><strong>{{ formatMoney(invoiceSummary.discountAmount) }}</strong></p>
                 <p><span>انعام</span><strong>{{ formatMoney(invoiceSummary.tipAmount) }}</strong></p>
-                <p v-if="invoiceSummary.taxAmount > 0"><span>مالیات</span><strong>{{ formatMoney(invoiceSummary.taxAmount) }}</strong></p>
+                <p><span>مالیات</span><strong>{{ formatMoney(invoiceSummary.taxAmount) }}</strong></p>
                 <p class="invoice-grand-total"><span>قیمت نهایی</span><strong>{{ formatMoney(invoiceSummary.finalTotal) }}</strong></p>
               </div>
             </section>
@@ -1094,11 +1094,26 @@ onBeforeUnmount(() => {
   max-width: 100%;
 }
 .invoice-sheet-head > * { min-width: 0; }
+.invoice-sheet-head .invoice-header-note {
+  grid-column: 1 / -1;
+  text-align: center;
+  justify-self: center;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 2px;
+}
 .invoice-sheet-head small {
   display: block;
   font-size: 10px;
   color: rgba(255, 255, 255, .72);
   letter-spacing: 0;
+}
+.receipt-custom-note {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: center;
+  line-height: 1.7;
 }
 .invoice-sheet-head strong {
   display: block;
@@ -1302,6 +1317,8 @@ onBeforeUnmount(() => {
   line-height: 1.65;
   max-width: 100%;
   overflow-wrap: anywhere;
+  white-space: pre-line;
+  text-align: center;
 }
 .thermal-info-grid {
   display: grid;

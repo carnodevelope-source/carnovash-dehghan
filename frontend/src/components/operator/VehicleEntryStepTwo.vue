@@ -88,17 +88,19 @@
               </p>
               <strong>{{ formatMoney(product.sale_price) }}</strong>
             </div>
-            <div class="product-qty-controls">
-              <button type="button" @click="decreaseTempProduct(product.id)">−</button>
+            <div class="product-qty-controls" aria-label="تعداد محصول">
+              <button type="button" aria-label="کاهش" @click="decreaseTempProduct(product.id)">−</button>
               <input
                 type="number"
                 min="0"
                 :max="Number(product.available_quantity || 0)"
                 :value="getTempProductQty(product.id)"
+                aria-label="تعداد"
                 @input="setTempProductQty(product.id, $event.target.value)"
               />
               <button
                 type="button"
+                aria-label="افزایش"
                 :disabled="Number(product.available_quantity || 0) <= getTempProductQty(product.id)"
                 @click="increaseTempProduct(product.id)"
               >
@@ -124,7 +126,6 @@
       <section class="col services-col">
         <div class="col-head">
           <div class="service-title-row">
-            <h4>خدمات و اقلام</h4>
             <div class="service-title-actions">
               <button v-if="!isPieceWash" type="button" class="edit-services-btn" @click="openServicePicker">
                 خدمات
@@ -187,22 +188,25 @@
             class="service-card selected listed-service-card product-selected-card"
           >
             <div class="service-body">
-              <div class="service-head">
-                <h5>{{ product.name }}</h5>
-                <strong>{{ formatMoney(product.lineTotal) }}</strong>
-              </div>
-              <div class="service-meta-row product-selected-meta">
-                <p>{{ toFaNumber(product.quantity) }} عدد × {{ formatMoney(product.sale_price) }}</p>
-                <div class="inline-product-qty">
-                  <button type="button" @click="decreaseSelectedProduct(product.id)">−</button>
-                  <span>{{ toFaNumber(product.quantity) }}</span>
-                  <button
-                    type="button"
-                    :disabled="Number(product.available_quantity || 0) <= Number(product.quantity || 0)"
-                    @click="increaseSelectedProduct(product.id)"
-                  >
-                    +
-                  </button>
+              <div class="service-head product-selected-head">
+                <div class="product-selected-copy">
+                  <h5>{{ product.name }}</h5>
+                  <p class="product-unit-price">هر عدد {{ formatMoney(product.sale_price) }}</p>
+                </div>
+                <div class="product-selected-side">
+                  <div class="inline-product-qty" aria-label="تعداد محصول">
+                    <button type="button" aria-label="کاهش" @click="decreaseSelectedProduct(product.id)">−</button>
+                    <span>{{ toFaNumber(product.quantity) }}</span>
+                    <button
+                      type="button"
+                      aria-label="افزایش"
+                      :disabled="Number(product.available_quantity || 0) <= Number(product.quantity || 0)"
+                      @click="increaseSelectedProduct(product.id)"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <strong class="product-line-total">{{ formatMoney(product.lineTotal) }}</strong>
                 </div>
               </div>
             </div>
@@ -1521,9 +1525,15 @@ onMounted(loadInitialData)
   transform: translateX(-18px);
 }
 
-.service-picker-head,
-.service-picker-foot,
 .service-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.service-picker-head,
+.service-picker-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1652,7 +1662,7 @@ onMounted(loadInitialData)
 .product-picker-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
   max-height: min(420px, 52vh);
   overflow: auto;
   padding: 2px;
@@ -1660,19 +1670,20 @@ onMounted(loadInitialData)
 
 .product-picker-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  padding: 10px;
   border: 1px solid #d4e4ff;
-  border-radius: 18px;
+  border-radius: 14px;
   background: linear-gradient(180deg, #ffffff, #f5faff);
+  min-width: 0;
 }
 
 .product-picker-card.selected {
   border-color: #38bdf8;
   background: linear-gradient(180deg, #eff8ff, #ffffff);
-  box-shadow: 0 14px 28px -24px rgba(14, 165, 233, 0.7);
+  box-shadow: 0 10px 20px -20px rgba(14, 165, 233, 0.7);
 }
 
 .product-picker-card.unavailable {
@@ -1681,19 +1692,21 @@ onMounted(loadInitialData)
 
 .product-picker-copy {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
 .product-picker-copy h5 {
   margin: 0;
-  font-size: 14px;
+  font-size: 12px;
+  line-height: 1.35;
   color: #0f172a;
+  overflow-wrap: anywhere;
 }
 
 .product-picker-copy p {
   margin: 0;
-  font-size: 12px;
+  font-size: 10px;
   color: #64748b;
 }
 
@@ -1704,51 +1717,138 @@ onMounted(loadInitialData)
 
 .product-picker-copy strong {
   color: #0f4c81;
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .product-qty-controls,
 .inline-product-qty {
   display: inline-grid;
-  grid-template-columns: 34px 48px 34px;
-  gap: 6px;
+  grid-template-columns: 24px 28px 24px;
+  gap: 0;
   align-items: center;
+  flex-shrink: 0;
+  width: max-content;
+  border: 1px solid #cfe0f8;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.product-qty-controls {
+  width: 100%;
+  max-width: none;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
 }
 
 .product-qty-controls button,
 .inline-product-qty button {
-  width: 34px;
-  height: 34px;
-  border: 1px solid #bfd7ff;
-  border-radius: 12px;
-  background: #fff;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 0;
+  background: #f3f8ff;
   color: #0f4c81;
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 800;
+  line-height: 1;
   cursor: pointer;
+  padding: 0;
+}
+
+.product-qty-controls button {
+  width: auto;
+  height: 28px;
+}
+
+.product-qty-controls button:disabled,
+.inline-product-qty button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.product-qty-controls button:not(:disabled):active,
+.inline-product-qty button:not(:disabled):active {
+  background: #dbeafe;
 }
 
 .product-qty-controls input {
   width: 100%;
-  height: 34px;
-  border: 1px solid #bfd7ff;
-  border-radius: 12px;
+  height: 28px;
+  border: 0;
+  border-inline: 1px solid #d7e6fb;
+  border-radius: 0;
   text-align: center;
   background: #fff;
+  font-size: 12px;
   font-weight: 800;
+  color: #0f172a;
+  -moz-appearance: textfield;
 }
 
-.product-selected-meta {
+.product-qty-controls input::-webkit-outer-spin-button,
+.product-qty-controls input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.product-selected-card .service-body {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.product-selected-card {
+  padding: 10px 12px !important;
+}
+
+.product-selected-card .product-selected-copy h5 {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.product-selected-head {
+  align-items: center;
+  gap: 8px;
+}
+
+.product-selected-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.product-unit-price {
+  margin: 0;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+.product-selected-side {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+.product-line-total {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 .inline-product-qty span {
+  display: grid;
+  place-items: center;
+  min-height: 24px;
   text-align: center;
+  font-size: 11px;
   font-weight: 800;
   color: #0f172a;
+  border-inline: 1px solid #d7e6fb;
+  background: #fff;
 }
 
 .step-two-grid {
@@ -2626,6 +2726,54 @@ onMounted(loadInitialData)
 
   .service-bubble-price {
     font-size: 9px;
+  }
+
+  .product-picker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .product-picker-card {
+    padding: 8px;
+    gap: 6px;
+    border-radius: 12px;
+  }
+
+  .product-picker-copy h5 {
+    font-size: 11px;
+  }
+
+  .product-picker-copy p,
+  .product-picker-copy strong {
+    font-size: 10px;
+  }
+
+  .product-qty-controls {
+    width: 100%;
+    grid-template-columns: 26px minmax(0, 1fr) 26px;
+  }
+
+  .product-qty-controls button,
+  .product-qty-controls input {
+    height: 26px;
+  }
+
+  .inline-product-qty {
+    width: max-content;
+    max-width: none;
+    grid-template-columns: 22px 24px 22px;
+  }
+
+  .inline-product-qty button,
+  .inline-product-qty span {
+    width: auto;
+    height: 22px;
+    min-height: 22px;
+    font-size: 11px;
+  }
+
+  .service-title-row {
+    justify-content: flex-start;
   }
 
   .step-two {

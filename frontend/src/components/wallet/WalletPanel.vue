@@ -248,6 +248,38 @@
         </div>
       </header>
 
+      <div class="period-insight-row">
+        <div class="period-range-block">
+          <div class="period-range-chips" role="tablist" aria-label="بازه زمانی">
+            <button
+              v-for="option in periodRangeOptions"
+              :key="option.key"
+              type="button"
+              class="period-chip"
+              :class="{ active: periodFilters.rangeKey === option.key }"
+              @click="setPeriodRange(option.key)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <div v-if="periodFilters.rangeKey === 'custom'" class="period-custom-dates">
+            <BaseDatePicker v-model="periodFilters.startJalali" placeholder="شروع شمسی" />
+            <BaseDatePicker v-model="periodFilters.endJalali" placeholder="پایان شمسی" />
+          </div>
+        </div>
+        <article class="period-stat-card">
+          <span>پیامک ارسال‌شده</span>
+          <strong>{{ Number(state.periodSummary.sms_sent_count || 0).toLocaleString('fa-IR') }}</strong>
+        </article>
+        <article class="period-stat-card">
+          <span>واریز / برداشت بازه</span>
+          <strong class="period-flow-values">
+            <em class="in">+{{ money(state.periodSummary.deposits_total) }}</em>
+            <em class="out">-{{ money(state.periodSummary.withdrawals_total) }}</em>
+          </strong>
+        </article>
+      </div>
+
       <div v-if="state.loading" class="history-state">
         <BaseSpinner size="62px" color="#0f5cc0" ball-color="#5fb7ff" label="در حال بارگذاری اطلاعات کیف پول..." />
       </div>
@@ -683,7 +715,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../services/api'
+import BaseDatePicker from '../base/BaseDatePicker.vue'
 import BaseSpinner from '../base/BaseSpinner.vue'
+import { formatJalaliDate, parseJalaliToIso } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { useAuthStore } from '../../store/auth.store'
@@ -713,6 +747,13 @@ const state = reactive({
     deposits_total: 0,
     withdrawals_total: 0
   },
+  periodSummary: {
+    start: '',
+    end: '',
+    sms_sent_count: 0,
+    deposits_total: 0,
+    withdrawals_total: 0
+  },
   wallets: [],
   transactions: [],
   options: [],
@@ -720,6 +761,72 @@ const state = reactive({
   licenseStatus: {},
   optionsLoading: false
 })
+
+const periodRangeOptions = [
+  { key: 'today', label: 'امروز' },
+  { key: 'yesterday', label: 'دیروز' },
+  { key: 'month', label: 'این ماه' },
+  { key: 'custom', label: 'بازه دلخواه' }
+]
+
+const periodFilters = reactive({
+  rangeKey: 'today',
+  startJalali: '',
+  endJalali: ''
+})
+
+const toIsoDate = (value) => {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const resolvePeriodRangeDates = (rangeKey) => {
+  const now = new Date()
+  if (rangeKey === 'today') {
+    const iso = toIsoDate(now)
+    return { start: iso, end: iso }
+  }
+  if (rangeKey === 'yesterday') {
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    const iso = toIsoDate(yesterday)
+    return { start: iso, end: iso }
+  }
+  if (rangeKey === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { start: toIsoDate(start), end: toIsoDate(now) }
+  }
+  return { start: '', end: '' }
+}
+
+const buildPeriodQuery = () => {
+  if (periodFilters.rangeKey === 'custom') {
+    let start = parseJalaliToIso(periodFilters.startJalali)
+    let end = parseJalaliToIso(periodFilters.endJalali)
+    if (start && end && start > end) {
+      const temp = start
+      start = end
+      end = temp
+    }
+    return { start: start || undefined, end: end || undefined }
+  }
+  const quick = resolvePeriodRangeDates(periodFilters.rangeKey)
+  return { start: quick.start || undefined, end: quick.end || undefined }
+}
+
+const setPeriodRange = (rangeKey) => {
+  periodFilters.rangeKey = rangeKey
+  if (rangeKey !== 'custom') {
+    periodFilters.startJalali = ''
+    periodFilters.endJalali = ''
+  } else if (!periodFilters.startJalali || !periodFilters.endJalali) {
+    const todayIso = toIsoDate(new Date())
+    periodFilters.startJalali = formatJalaliDate(todayIso).replace(/-/g, '/')
+    periodFilters.endJalali = periodFilters.startJalali
+  }
+}
 
 const actionModal = reactive({
   open: false,
@@ -1040,8 +1147,14 @@ const loadWalletDashboard = async () => {
   state.loading = true
   state.error = ''
   try {
+    const periodQuery = buildPeriodQuery()
     const { data } = await api.get('/payments/wallet/dashboard/', {
-      params: { type: state.filterType, q: (props.searchQuery || '').trim() || undefined }
+      params: {
+        type: state.filterType,
+        q: (props.searchQuery || '').trim() || undefined,
+        start: periodQuery.start,
+        end: periodQuery.end
+      }
     })
     state.summary = {
       total_balance: Number(data?.summary?.total_balance || 0),
@@ -1049,6 +1162,13 @@ const loadWalletDashboard = async () => {
       sms_balance: Number(data?.summary?.sms_balance || 0),
       deposits_total: Number(data?.summary?.deposits_total || 0),
       withdrawals_total: Number(data?.summary?.withdrawals_total ?? data?.summary?.payments_total ?? 0)
+    }
+    state.periodSummary = {
+      start: data?.period_summary?.start || periodQuery.start || '',
+      end: data?.period_summary?.end || periodQuery.end || '',
+      sms_sent_count: Number(data?.period_summary?.sms_sent_count || 0),
+      deposits_total: Number(data?.period_summary?.deposits_total || 0),
+      withdrawals_total: Number(data?.period_summary?.withdrawals_total || 0)
     }
     state.wallets = Array.isArray(data?.wallets) ? data.wallets : []
     state.transactions = Array.isArray(data?.transactions) ? data.transactions : []
@@ -1369,6 +1489,14 @@ watch(() => props.searchQuery, async () => {
   await loadWalletDashboard()
 })
 
+watch(
+  () => [periodFilters.rangeKey, periodFilters.startJalali, periodFilters.endJalali],
+  async () => {
+    if (periodFilters.rangeKey === 'custom' && (!periodFilters.startJalali || !periodFilters.endJalali)) return
+    await loadWalletDashboard()
+  }
+)
+
 watch(() => [actionModal.walletId, actionModal.type, actionModal.destinationType], () => {
   if (!actionModal.open) return
   if (actionModal.destinationType === 'wallet') {
@@ -1600,6 +1728,19 @@ onMounted(async () => {
 .history-title-wrap p{margin:0 0 8px;color:#94a3b8;font-size:12px;font-weight:700}
 .history-head h2{margin:0;color:#0f172a;font-size:30px;line-height:1}
 .history-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.period-insight-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(140px,0.7fr) minmax(180px,1fr);gap:12px;align-items:stretch;margin:0 0 16px}
+.period-range-block{display:grid;gap:10px;padding:12px 14px;border:1px solid #dbe7f5;border-radius:18px;background:linear-gradient(180deg,#fff,#f7fbff);min-width:0}
+.period-range-chips{display:flex;flex-wrap:wrap;gap:8px}
+.period-chip{height:34px;padding:0 12px;border:1px solid #d7e5f8;border-radius:999px;background:#fff;color:#334155;font:inherit;font-size:12px;font-weight:800;cursor:pointer}
+.period-chip.active{background:linear-gradient(135deg,#0f4c81,#0ea5e9);border-color:transparent;color:#fff}
+.period-custom-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.period-stat-card{display:grid;align-content:center;gap:6px;padding:12px 14px;border:1px solid #dbe7f5;border-radius:18px;background:linear-gradient(180deg,#fff,#f8fafc);min-width:0}
+.period-stat-card span{color:#64748b;font-size:12px;font-weight:700}
+.period-stat-card strong{color:#0f172a;font-size:18px;line-height:1.2}
+.period-flow-values{display:flex;flex-wrap:wrap;gap:8px 12px;font-style:normal}
+.period-flow-values em{font-style:normal;font-size:14px;font-weight:800}
+.period-flow-values .in{color:#0f766e}
+.period-flow-values .out{color:#dc2626}
 .wallet-switch{height:42px;border:1px solid var(--wallet-border);border-radius:14px;padding:0 14px;background:#fff;color:#0f172a;box-shadow:inset 0 1px 2px rgba(15,23,42,.03)}
 .filter-pill{display:flex;gap:4px;padding:5px;background:linear-gradient(180deg,#f1f5f9,#eaf0f5);border-radius:999px;border:1px solid #dde7f3}
 .filter-pill button,.refresh-btn,.close-btn,.submit-btn,.quick-amounts button{border:0;cursor:pointer}
@@ -1789,6 +1930,9 @@ onMounted(async () => {
   .options-head h2,.history-head h2{font-size:14px !important;font-weight:700;line-height:1.25}
   .history-head{margin-bottom:10px}
   .history-controls{flex-direction:column;align-items:stretch;gap:8px}
+  .period-insight-row{grid-template-columns:1fr;gap:8px;margin-bottom:10px}
+  .period-range-block,.period-stat-card{padding:10px 12px;border-radius:14px}
+  .period-custom-dates{grid-template-columns:1fr}
   .filter-pill{width:100%;justify-content:space-between;flex-wrap:wrap;padding:3px;gap:2px}
   .filter-pill button{height:30px;padding:0 10px;font-size:10px;font-weight:700}
   .wallet-switch,.refresh-btn{height:32px;font-size:10px;border-radius:10px;padding:0 12px}
