@@ -1122,6 +1122,11 @@ const hasOperatorModalOpen = computed(() => (
 ))
 const stepTwoSubmitLabel = computed(() => {
   if (vehicleEditFlow.value === 'released') return 'ادامه'
+  const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || ''
+  // Referred / incomplete entries still need a real assign action.
+  if (vehicleEditFlow.value && ['entered', 'assigned', 'in_progress'].includes(currentStatus)) {
+    return 'تایید و تخصیص کار'
+  }
   if (vehicleEditFlow.value) return 'ثبت'
   return 'تایید و تخصیص کار'
 })
@@ -3466,14 +3471,24 @@ const handleStepTwoBack = async () => {
   window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
 }
 
+const resolveAssignStatus = () => {
+  const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || 'ready_to_settle'
+  // Editing a released visit must keep released; completing a referred/incomplete
+  // entry (entered/assigned/in_progress) must advance to ready_to_settle so the
+  // board moves it from «در انتظار تکمیل» to «در حال انجام».
+  if (vehicleEditFlow.value === 'released') return currentStatus
+  if (['entered', 'assigned', 'in_progress'].includes(currentStatus)) return 'ready_to_settle'
+  return currentStatus || 'ready_to_settle'
+}
+
 const handleStepTwoAssign = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
   stepTransitionLoading.value = true
   try {
     if (vehicleEditFlow.value) {
-      const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || 'ready_to_settle'
-      const savedVehicle = await saveVehicle(payload, currentStatus)
+      const nextStatus = resolveAssignStatus()
+      const savedVehicle = await saveVehicle(payload, nextStatus)
       if (vehicleEditFlow.value === 'released') {
         closeVehicleModal({ force: true })
         await openReleaseModal({
