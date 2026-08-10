@@ -45,9 +45,9 @@ export function formatRelativeDate(value) {
 }
 
 export function formatDaysRemaining(endsAt) {
-  if (!endsAt) return 'بدون انقضا'
+  if (!endsAt) return ''
   const end = new Date(endsAt)
-  if (Number.isNaN(end.getTime())) return '—'
+  if (Number.isNaN(end.getTime())) return ''
   const today = new Date()
   const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
   const startEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate())

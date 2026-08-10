@@ -49,6 +49,40 @@ def money(value):
     return Decimal(str(value or 0)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
+PAYMENT_PLAN_LABELS = {
+    'cash': 'نقدی',
+    'installment': 'اقساطی',
+    'manual': 'ثبت مدیریتی',
+}
+
+
+def resolve_plan_for_product(product, purchase=None):
+    """Pick the service plan that matches the real payment method — never invent installment."""
+    plans = list(product.plans.filter(is_active=True))
+    if not plans:
+        return None
+
+    def by_code(code):
+        return next((item for item in plans if item.code == code), None)
+
+    payment_plan = (getattr(purchase, 'payment_plan', None) or '').strip() if purchase else ''
+    remaining = money(getattr(purchase, 'remaining_amount', 0)) if purchase else Decimal('0')
+    installment_months = int(getattr(purchase, 'installment_months', 0) or 0) if purchase else 0
+
+    if payment_plan == CarWashFeaturePurchase.PaymentPlan.CASH:
+        return by_code('cash') or by_code('annual') or by_code('perpetual') or plans[0]
+    if payment_plan == CarWashFeaturePurchase.PaymentPlan.INSTALLMENT and (remaining > 0 or installment_months > 0):
+        return by_code('installment') or plans[0]
+    if payment_plan == CarWashFeaturePurchase.PaymentPlan.INSTALLMENT and remaining <= 0:
+        # Fully settled installment purchase still keeps installment plan identity.
+        return by_code('installment') or by_code('cash') or plans[0]
+    if payment_plan == CarWashFeaturePurchase.PaymentPlan.MANUAL:
+        if remaining > 0 and installment_months > 0:
+            return by_code('installment') or plans[0]
+        return by_code('cash') or by_code('annual') or by_code('perpetual') or plans[0]
+    return by_code('cash') or by_code('annual') or by_code('perpetual') or sorted(plans, key=lambda p: p.sort_order)[0]
+
+
 def compute_totals(base_amount, discount_amount=0, tax_percent=VAT_PERCENT):
     base = money(base_amount)
     discount = money(discount_amount)
@@ -633,6 +667,20 @@ def seed_catalog_from_legacy():
         if legacy:
             ServicePlan.objects.update_or_create(
                 product=product,
+                code='cash',
+                defaults={
+                    'title': 'نقدی',
+                    'billing_cycle': ServicePlan.BillingCycle.CUSTOM,
+                    'duration_days': 365,
+                    'base_price': money(legacy.get('base_price')),
+                    'tax_percent': VAT_PERCENT,
+                    'is_active': legacy.get('is_available', True),
+                    'sort_order': 1,
+                    'renewal_terms': 'پرداخت یکجای نقدی',
+                },
+            )
+            ServicePlan.objects.update_or_create(
+                product=product,
                 code='installment',
                 defaults={
                     'title': 'اقساطی',
@@ -643,8 +691,8 @@ def seed_catalog_from_legacy():
                     'installment_months': int(legacy.get('installment_months') or 0),
                     'monthly_installment_amount': money(legacy.get('monthly_installment_amount')),
                     'tax_percent': VAT_PERCENT,
-                    'is_active': legacy.get('is_available', True),
-                    'sort_order': 1,
+                    'is_active': legacy.get('is_available', True) and not legacy.get('cash_only', False),
+                    'sort_order': 2,
                     'renewal_terms': 'تمدید سالانه طبق تعرفه روز',
                 },
             )
@@ -659,10 +707,23 @@ def seed_catalog_from_legacy():
                         'base_price': money(legacy.get('annual_renewal_amount')),
                         'tax_percent': VAT_PERCENT,
                         'is_active': True,
-                        'sort_order': 2,
+                        'sort_order': 3,
                     },
                 )
         else:
+            ServicePlan.objects.update_or_create(
+                product=product,
+                code='cash',
+                defaults={
+                    'title': 'نقدی',
+                    'billing_cycle': ServicePlan.BillingCycle.CUSTOM,
+                    'duration_days': 365,
+                    'base_price': Decimal('0'),
+                    'tax_percent': VAT_PERCENT,
+                    'is_active': True,
+                    'sort_order': 1,
+                },
+            )
             ServicePlan.objects.update_or_create(
                 product=product,
                 code='annual',
@@ -673,7 +734,7 @@ def seed_catalog_from_legacy():
                     'base_price': Decimal('0'),
                     'tax_percent': VAT_PERCENT,
                     'is_active': True,
-                    'sort_order': 1,
+                    'sort_order': 2,
                 },
             )
         if key == ServiceProduct.ProductKey.WALLET:
@@ -703,7 +764,7 @@ def backfill_subscriptions_from_feature_purchases():
             product = ServiceProduct.objects.filter(project=project, product_key=purchase.feature_key).first()
         if not product:
             continue
-        plan = product.plans.filter(is_active=True).order_by('sort_order').first()
+        plan = resolve_plan_for_product(product, purchase)
         sub, was_created = ServiceSubscription.objects.get_or_create(
             tenant=purchase.tenant,
             product=product,
@@ -727,6 +788,35 @@ def backfill_subscriptions_from_feature_purchases():
                 'cost_amount': product.default_cost,
             },
         )
+        if not was_created:
+            correct_plan = resolve_plan_for_product(product, purchase)
+            dirty = False
+            if correct_plan and sub.plan_id != correct_plan.id:
+                sub.plan = correct_plan
+                dirty = True
+            if sub.feature_purchase_id != purchase.id:
+                sub.feature_purchase = purchase
+                dirty = True
+            expected_payment = (
+                ServiceSubscription.PaymentStatus.SETTLED
+                if money(purchase.remaining_amount) <= 0
+                else ServiceSubscription.PaymentStatus.PARTIAL
+            )
+            if sub.payment_status != expected_payment:
+                sub.payment_status = expected_payment
+                dirty = True
+            if money(sub.paid_amount) != money(purchase.paid_amount):
+                sub.paid_amount = money(purchase.paid_amount)
+                dirty = True
+            if money(sub.remaining_amount) != money(purchase.remaining_amount):
+                sub.remaining_amount = money(purchase.remaining_amount)
+                dirty = True
+            if money(sub.final_amount) != money(purchase.total_amount):
+                sub.final_amount = money(purchase.total_amount)
+                sub.base_amount = money(purchase.total_amount)
+                dirty = True
+            if dirty:
+                sub.save()
         if was_created:
             created += 1
             if plan and purchase.is_active:
@@ -823,7 +913,7 @@ def sync_subscription_from_feature_purchase(purchase, *, actor=None, cashflow=No
         product = ServiceProduct.objects.filter(project=project, product_key=purchase.feature_key).first()
     if not product:
         return None
-    plan = product.plans.filter(is_active=True).order_by('sort_order').first()
+    plan = resolve_plan_for_product(product, purchase)
     now = timezone.now()
     sub, created = ServiceSubscription.objects.select_for_update().get_or_create(
         tenant=purchase.tenant,
@@ -878,7 +968,11 @@ def sync_subscription_from_feature_purchase(purchase, *, actor=None, cashflow=No
             plan=plan,
             subscription=sub,
             status=ServiceOrder.Status.ACTIVATED,
-            payment_method=ServiceOrder.PaymentMethod.WALLET,
+            payment_method=(
+                ServiceOrder.PaymentMethod.INSTALLMENT
+                if purchase.payment_plan == CarWashFeaturePurchase.PaymentPlan.INSTALLMENT
+                else ServiceOrder.PaymentMethod.WALLET
+            ),
             base_amount=money(purchase.total_amount),
             final_amount=money(purchase.total_amount),
             paid_amount=amount,
@@ -887,7 +981,7 @@ def sync_subscription_from_feature_purchase(purchase, *, actor=None, cashflow=No
             paid_at=now,
             activated_at=now,
             created_by=actor,
-            meta={'source': 'feature_purchase', 'purchase_id': purchase.id},
+            meta={'source': 'feature_purchase', 'purchase_id': purchase.id, 'payment_plan': purchase.payment_plan},
         )
         if created or not sub.periods.exists():
             period = ServicePeriod.objects.create(

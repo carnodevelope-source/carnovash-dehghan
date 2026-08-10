@@ -15,6 +15,7 @@ import HqPageHeader from '../shared/HqPageHeader.vue'
 import HqKpiCard from '../shared/HqKpiCard.vue'
 import HqStatusBadge from '../shared/HqStatusBadge.vue'
 import HqEmptyState from '../shared/HqEmptyState.vue'
+import HqTrendChart from '../shared/HqTrendChart.vue'
 import '../../styles/hq-ui.css'
 
 const props = defineProps({ carwashes: { type: Array, default: () => [] } })
@@ -167,8 +168,27 @@ const featureHint = computed(() => {
   return r > 0 ? 'نیاز به پیگیری تسویه' : 'بدون مانده'
 })
 
-const shareTrends = computed(() => (snap.trends || []).slice(-12))
-const shareTrendMax = computed(() => Math.max(...shareTrends.value.map((t) => Math.max(Number(t.hq_share_total || 0), Number(t.rah_share_total || 0))), 1))
+const shareTrends = computed(() => {
+  const rows = [...(snap.trends || [])]
+    .filter((t) => t?.date)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .map((t) => ({
+      date: t.date,
+      hq_share_total: Number(t.hq_share_total || 0),
+      rah_share_total: Number(t.rah_share_total || 0),
+      wallet_deposit_total: Number(t.wallet_deposit_total || 0),
+      wallet_withdraw_total: Number(t.wallet_withdraw_total || 0),
+      paid_amount: Number(t.paid_amount || 0),
+      net_amount: Number(t.net_amount || 0),
+      sms_cost_total: Number(t.sms_cost_total || 0)
+    }))
+  // Keep chart readable: prefer last ~45 daily points for denser real trends.
+  return rows.length > 45 ? rows.slice(-45) : rows
+})
+const shareSeries = [
+  { key: 'hq_share_total', label: 'کارنو', color: '#1976d2', fill: 'rgba(25, 118, 210, 0.22)' },
+  { key: 'rah_share_total', label: 'آراکار', color: '#7c3aed', fill: 'rgba(124, 58, 237, 0.18)' }
+]
 
 const compositionItems = computed(() => {
   const items = (snap.feature_summary || []).map((f) => ({
@@ -392,16 +412,12 @@ onMounted(() => { applyQueryFromRoute(); loadReports(); if (ui.tenant) loadTenan
       </div>
 
       <div class="analysis-grid">
-        <article class="chart-card">
-          <h3>روند سهم‌ها</h3>
-          <div v-if="!shareTrends.length" class="chart-empty">در این بازه روند ثبت نشده است.</div>
-          <div v-else class="area-chart">
-            <div v-for="(t, i) in shareTrends" :key="t.date || i" class="area-col" :title="`${formatJalaliDate(t.date)} — کارنو ${formatMoney(t.hq_share_total)} / آراکار ${formatMoney(t.rah_share_total)}`">
-              <div class="bar hq" :style="{ height: `${Math.max(8, (Number(t.hq_share_total || 0) / shareTrendMax) * 100)}%` }" />
-              <div class="bar rah" :style="{ height: `${Math.max(8, (Number(t.rah_share_total || 0) / shareTrendMax) * 100)}%` }" />
-            </div>
+        <article class="chart-card trend-card">
+          <div class="chart-head">
+            <h3>روند سهم‌ها</h3>
+            <p>بر اساس تراکنش‌های واقعی بازه انتخابی — شناور برای جزئیات روزانه</p>
           </div>
-          <div class="legend"><span class="dot hq" /> کارنو <span class="dot rah" /> آراکار</div>
+          <HqTrendChart :points="shareTrends" :series="shareSeries" :height="240" />
         </article>
         <article class="chart-card comp">
           <h3>ترکیب سهم کارنو</h3>
@@ -832,6 +848,10 @@ onMounted(() => { applyQueryFromRoute(); loadReports(); if (ui.tenant) loadTenan
   box-shadow: 0 10px 24px rgba(15, 37, 69, 0.03);
 }
 .chart-card h3 { margin: 0 0 0.85rem; font-size: 15px; color: #0c3d78; font-weight: 750; }
+.chart-head { margin-bottom: 0.55rem; }
+.chart-head h3 { margin: 0; }
+.chart-head p { margin: 0.28rem 0 0; color: #6b7c93; font-size: 12px; line-height: 1.5; }
+.trend-card { min-height: 320px; }
 .area-chart, .bar-chart { display: flex; align-items: flex-end; gap: 5px; min-height: 150px; padding: 0.25rem 0.1rem; }
 .area-col, .bar-col { flex: 1; display: flex; align-items: flex-end; gap: 2px; justify-content: center; min-width: 0; }
 .bar {
@@ -955,7 +975,7 @@ onMounted(() => { applyQueryFromRoute(); loadReports(); if (ui.tenant) loadTenan
 }
 .drawer-backdrop {
   position: fixed; inset: 0; background: rgba(12, 28, 52, 0.38);
-  backdrop-filter: blur(2px); z-index: 100; display: flex; justify-content: flex-start;
+  backdrop-filter: blur(2px); z-index: 240; display: flex; justify-content: flex-start;
 }
 .drawer {
   width: min(560px, 100vw); height: 100%; background: #fff; padding: 1.1rem;

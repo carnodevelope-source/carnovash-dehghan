@@ -268,7 +268,7 @@ class SubscriptionListView(SubscriptionsHqBaseView):
             return forbidden
         qs = _apply_subscription_filters(
             ServiceSubscription.objects.select_related(
-                'tenant', 'project', 'product', 'plan', 'sales_owner', 'support_owner'
+                'tenant', 'project', 'product', 'plan', 'sales_owner', 'support_owner', 'feature_purchase'
             ),
             request,
         )
@@ -510,7 +510,7 @@ class SpecializedReportView(SubscriptionsHqBaseView):
         product_key = self.PRODUCT_ALIASES.get(report_key, report_key)
         qs = _apply_subscription_filters(
             ServiceSubscription.objects.filter(product__product_key=product_key).select_related(
-                'tenant', 'project', 'product', 'plan'
+                'tenant', 'project', 'product', 'plan', 'feature_purchase'
             ),
             request,
         )

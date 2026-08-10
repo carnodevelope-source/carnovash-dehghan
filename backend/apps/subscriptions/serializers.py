@@ -58,8 +58,12 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
     project_code = serializers.CharField(source='project.code', read_only=True)
     product_title = serializers.CharField(source='product.title', read_only=True)
     product_key = serializers.CharField(source='product.product_key', read_only=True)
-    plan_title = serializers.CharField(source='plan.title', read_only=True, default='')
+    plan_title = serializers.SerializerMethodField()
     plan_code = serializers.CharField(source='plan.code', read_only=True, default='')
+    plan_billing_cycle = serializers.CharField(source='plan.billing_cycle', read_only=True, default='')
+    plan_installment_months = serializers.IntegerField(source='plan.installment_months', read_only=True, default=0)
+    feature_payment_plan = serializers.CharField(source='feature_purchase.payment_plan', read_only=True, default='')
+    feature_payment_plan_label = serializers.SerializerMethodField()
     days_remaining = serializers.SerializerMethodField()
     usage_percent = serializers.SerializerMethodField()
     sales_owner_name = serializers.SerializerMethodField()
@@ -72,7 +76,9 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
         model = ServiceSubscription
         fields = [
             'id', 'tenant', 'client_name', 'project', 'project_name', 'project_code', 'product',
-            'product_title', 'product_key', 'plan', 'plan_title', 'plan_code', 'status', 'payment_status',
+            'product_title', 'product_key', 'plan', 'plan_title', 'plan_code', 'plan_billing_cycle',
+            'plan_installment_months', 'feature_payment_plan', 'feature_payment_plan_label',
+            'status', 'payment_status',
             'auto_renew', 'purchased_at', 'activated_at', 'starts_at', 'ends_at', 'grace_ends_at',
             'last_renewed_at', 'last_paid_at', 'last_activity_at', 'base_amount', 'discount_amount',
             'tax_amount', 'final_amount', 'paid_amount', 'remaining_amount', 'usage_cap',
@@ -81,6 +87,38 @@ class ServiceSubscriptionSerializer(serializers.ModelSerializer):
             'contract_number', 'meta', 'created_at', 'updated_at', 'share_owner', 'share_owner_label',
             'accent',
         ]
+
+    def get_plan_title(self, obj):
+        from .services import PAYMENT_PLAN_LABELS
+
+        purchase = getattr(obj, 'feature_purchase', None)
+        payment_plan = getattr(purchase, 'payment_plan', '') if purchase else ''
+        if payment_plan in PAYMENT_PLAN_LABELS:
+            return PAYMENT_PLAN_LABELS[payment_plan]
+        plan = obj.plan if obj.plan_id else None
+        if plan:
+            code = (plan.code or '').strip().lower()
+            code_labels = {
+                'cash': 'نقدی',
+                'installment': 'اقساطی',
+                'annual': 'سالانه',
+                'perpetual': 'دائمی',
+                'manual': 'ثبت مدیریتی',
+            }
+            if code in code_labels:
+                return code_labels[code]
+            if plan.title:
+                return plan.title
+        return ''
+
+    def get_feature_payment_plan_label(self, obj):
+        from .services import PAYMENT_PLAN_LABELS
+
+        purchase = getattr(obj, 'feature_purchase', None)
+        payment_plan = getattr(purchase, 'payment_plan', '') if purchase else ''
+        if payment_plan in PAYMENT_PLAN_LABELS:
+            return PAYMENT_PLAN_LABELS[payment_plan]
+        return self.get_plan_title(obj)
 
     def get_days_remaining(self, obj):
         return obj.days_remaining

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../../services/api'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
@@ -71,8 +71,70 @@ const detail = ref(null)
 const detailTab = ref('overview')
 const detailLoading = ref(false)
 const openRowMenuId = ref(null)
+const rowMenuStyle = ref({})
 const moreFiltersOpen = ref(false)
 const headerMenuOpen = ref(false)
+const OVERLAY_Z = 240
+
+function closeFloatingMenus() {
+  openRowMenuId.value = null
+  moreFiltersOpen.value = false
+  headerMenuOpen.value = false
+}
+
+function positionRowMenu(anchorEl) {
+  if (!anchorEl) return
+  const rect = anchorEl.getBoundingClientRect()
+  const menuWidth = 220
+  const maxMenuHeight = 360
+  const pad = 8
+  let left = rect.right - menuWidth
+  left = Math.max(pad, Math.min(left, window.innerWidth - menuWidth - pad))
+  const spaceBelow = window.innerHeight - rect.bottom - pad
+  const spaceAbove = rect.top - pad
+  const placeBelow = spaceBelow >= Math.min(240, spaceAbove)
+  const top = placeBelow
+    ? rect.bottom + 6
+    : Math.max(pad, rect.top - Math.min(maxMenuHeight, spaceAbove) - 6)
+  const available = placeBelow ? spaceBelow : Math.max(120, top === pad ? spaceAbove : rect.top - top - 6)
+  rowMenuStyle.value = {
+    position: 'fixed',
+    top: `${Math.round(top)}px`,
+    left: `${Math.round(left)}px`,
+    width: `${menuWidth}px`,
+    maxHeight: `${Math.round(Math.min(maxMenuHeight, available))}px`,
+    zIndex: String(OVERLAY_Z + 1)
+  }
+}
+
+function toggleRowMenu(event, rowId) {
+  event.preventDefault()
+  event.stopPropagation()
+  const anchor = event.currentTarget
+  if (!(anchor instanceof Element)) return
+  const id = Number(rowId)
+  if (Number(openRowMenuId.value) === id) {
+    openRowMenuId.value = null
+    return
+  }
+  moreFiltersOpen.value = false
+  headerMenuOpen.value = false
+  positionRowMenu(anchor)
+  openRowMenuId.value = id
+  nextTick(() => positionRowMenu(anchor))
+}
+
+function onDocPointerDown(event) {
+  if (openRowMenuId.value == null && !moreFiltersOpen.value && !headerMenuOpen.value) return
+  const target = event.target
+  if (!(target instanceof Element)) return
+  if (target.closest('[data-hq-float-menu]') || target.closest('[data-hq-menu-trigger]')) return
+  closeFloatingMenus()
+}
+
+function onViewportChange() {
+  if (openRowMenuId.value != null) closeFloatingMenus()
+}
 
 const filters = reactive({
   search: '',
@@ -285,6 +347,11 @@ const alertsGrouped = computed(() => {
     groups[key].push(item)
   })
   return groups
+})
+
+const activeMenuRow = computed(() => {
+  if (openRowMenuId.value == null) return null
+  return rows.value.find((r) => Number(r.id) === Number(openRowMenuId.value)) || null
 })
 
 const ACTION_META = {
@@ -563,7 +630,7 @@ function openAction(row, action) {
   actionModal.generalError = ''
   actionModal.confirmDebt = false
   actionModal.loading = false
-  openRowMenuId.value = null
+  closeFloatingMenus()
 }
 
 function closeActionModal() {
@@ -854,7 +921,16 @@ watch(toast, (msg) => {
 
 onMounted(async () => {
   applyRouteQuery()
+  document.addEventListener('mousedown', onDocPointerDown)
+  window.addEventListener('resize', onViewportChange)
+  window.addEventListener('scroll', onViewportChange, true)
   await refreshAll()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onDocPointerDown)
+  window.removeEventListener('resize', onViewportChange)
+  window.removeEventListener('scroll', onViewportChange, true)
 })
 </script>
 
@@ -872,8 +948,8 @@ onMounted(async () => {
         </button>
         <button v-if="canExport" type="button" class="btn ghost" @click="exportCsv">خروجی CSV</button>
         <div v-if="authStore.isHqAdmin" class="menu-wrap">
-          <button type="button" class="btn ghost icon" aria-label="منوی بیشتر" @click="headerMenuOpen = !headerMenuOpen">⋯</button>
-          <div v-if="headerMenuOpen" class="menu-pop">
+          <button type="button" class="btn ghost icon" data-hq-menu-trigger aria-label="منوی بیشتر" @click="headerMenuOpen = !headerMenuOpen; moreFiltersOpen = false; openRowMenuId = null">⋯</button>
+          <div v-if="headerMenuOpen" class="menu-pop" data-hq-float-menu>
             <button type="button" @click="seedConfirm = true; headerMenuOpen = false">همگام‌سازی کاتالوگ</button>
           </div>
         </div>
@@ -947,8 +1023,8 @@ onMounted(async () => {
         <option v-for="item in SERVICE_PAYMENT_OPTIONS" :key="item.value || 'pay'" :value="item.value">{{ item.label }}</option>
       </select>
       <div class="menu-wrap">
-        <button type="button" class="btn ghost" @click="moreFiltersOpen = !moreFiltersOpen">فیلترهای بیشتر</button>
-        <div v-if="moreFiltersOpen" class="menu-pop filters-pop">
+        <button type="button" class="btn ghost" data-hq-menu-trigger @click="moreFiltersOpen = !moreFiltersOpen; headerMenuOpen = false; openRowMenuId = null">فیلترهای بیشتر</button>
+        <div v-if="moreFiltersOpen" class="menu-pop filters-pop" data-hq-float-menu>
           <label>کلاینت<select v-model="tenantId" class="ctrl wide">
             <option value="">همه کلاینت‌ها</option>
             <option v-for="item in activeCarwashes" :key="item.id" :value="String(item.id)">{{ item.name }}</option>
@@ -1116,29 +1192,28 @@ onMounted(async () => {
                   <HqStatusBadge kind="share" :value="row.share_owner" />
                 </div>
               </td>
-              <td>{{ row.plan_title || '—' }}</td>
+              <td>{{ row.feature_payment_plan_label || row.plan_title || '—' }}</td>
               <td><HqStatusBadge :value="row.status" /></td>
               <td>{{ formatJalaliDate(row.purchased_at) }}</td>
               <td>
                 <div class="ends-cell">
                   <span>{{ row.ends_at ? formatJalaliDate(row.ends_at) : '—' }}</span>
-                  <small>{{ formatDaysRemaining(row.ends_at) }}</small>
+                  <small v-if="row.ends_at && formatDaysRemaining(row.ends_at)">{{ formatDaysRemaining(row.ends_at) }}</small>
                 </div>
               </td>
               <td v-if="seeFinancial" class="money">{{ formatMoney(row.final_amount) }}</td>
               <td v-if="seeFinancial" class="money">{{ formatMoney(row.paid_amount) }}</td>
               <td v-if="seeFinancial" class="money" :class="{ settled: Number(row.remaining_amount || 0) <= 0 }">{{ remainingLabel(row.remaining_amount) }}</td>
               <td class="sticky-end ops" @click.stop>
-                <div class="menu-wrap">
-                  <button type="button" class="btn ghost sm" @click="openRowMenuId = openRowMenuId === row.id ? null : row.id">عملیات</button>
-                  <div v-if="openRowMenuId === row.id" class="menu-pop actions-pop">
-                    <template v-for="group in groupedActions(row)" :key="group.key">
-                      <p class="group-label">{{ group.label }}</p>
-                      <button v-for="item in group.items" :key="item.action" type="button" @click="openAction(row, item.action)">{{ item.label }}</button>
-                    </template>
-                    <button type="button" @click="openDetail(row)">مشاهده جزئیات</button>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  class="btn ghost sm"
+                  data-hq-menu-trigger
+                  :aria-expanded="Number(openRowMenuId) === Number(row.id)"
+                  @mousedown.stop.prevent="toggleRowMenu($event, row.id)"
+                >
+                  عملیات
+                </button>
               </td>
             </tr>
           </tbody>
@@ -1159,180 +1234,204 @@ onMounted(async () => {
       <button type="button" class="btn ghost" @click="openBulk('sms_expiry')">پیامک انقضا</button>
     </div>
 
-    <div v-if="alertsOpen" class="overlay" @click.self="alertsOpen = false">
-      <aside class="drawer">
-        <header class="drawer-head">
-          <h3>مرکز هشدارها</h3>
-          <button type="button" class="btn ghost" @click="alertsOpen = false">بستن</button>
-        </header>
-        <div v-if="!alerts.length" class="drawer-body">
-          <HqEmptyState title="هشدار فعالی وجود ندارد." description="وضعیت شبکه در حالت پایدار است." />
-        </div>
-        <div v-else class="drawer-body">
-          <section v-for="(label, severity) in { critical: 'بحرانی', warning: 'هشدار', info: 'اطلاع' }" :key="severity">
-            <template v-if="alertsGrouped[severity]?.length">
-              <h4 :class="severity">{{ label }} ({{ formatFaNumber(alertsGrouped[severity].length) }})</h4>
-              <article v-for="alert in alertsGrouped[severity]" :key="alert.id" class="alert-item">
-                <strong>{{ alert.title }}</strong>
-                <p>{{ alert.client_name }} — {{ alert.product_title }}</p>
-                <small>{{ alert.message }}</small>
-                <button type="button" class="btn link" @click="openAlertSubscription(alert)">مشاهده اشتراک</button>
-              </article>
-            </template>
-          </section>
-        </div>
-      </aside>
-    </div>
+    <Teleport to="body">
+      <div
+        v-if="activeMenuRow"
+        class="hq-float-menu menu-pop actions-pop"
+        data-hq-float-menu
+        :style="rowMenuStyle"
+      >
+        <template v-for="group in groupedActions(activeMenuRow)" :key="group.key">
+          <p class="group-label">{{ group.label }}</p>
+          <button
+            v-for="item in group.items"
+            :key="item.action"
+            type="button"
+            @click="openAction(activeMenuRow, item.action)"
+          >
+            {{ item.label }}
+          </button>
+        </template>
+        <button type="button" @click="openDetail(activeMenuRow); closeFloatingMenus()">مشاهده جزئیات</button>
+      </div>
+    </Teleport>
 
-    <div v-if="detail" class="overlay" @click.self="detail = null">
-      <aside class="drawer detail-drawer">
-        <header class="drawer-head">
-          <div v-if="detail.loading" class="sk-head" />
-          <div v-else>
-            <h3>{{ detail.subscription?.product_title }}</h3>
-            <p>{{ detail.subscription?.client_name }}</p>
-            <HqStatusBadge :value="detail.subscription?.status" />
-            <small v-if="detail.subscription?.contract_number || detail.subscription?.license_code" class="muted">
-              {{ detail.subscription?.contract_number || detail.subscription?.license_code }}
-            </small>
+    <Teleport to="body">
+      <div v-if="alertsOpen" class="hq-overlay overlay" @click.self="alertsOpen = false">
+        <aside class="drawer">
+          <header class="drawer-head">
+            <h3>مرکز هشدارها</h3>
+            <button type="button" class="btn ghost" @click="alertsOpen = false">بستن</button>
+          </header>
+          <div v-if="!alerts.length" class="drawer-body">
+            <HqEmptyState title="هشدار فعالی وجود ندارد." description="" />
           </div>
-          <button type="button" class="btn ghost" @click="detail = null">بستن</button>
-        </header>
-        <div v-if="detailLoading" class="drawer-body"><div class="sk-row" /><div class="sk-row" /><div class="sk-row" /></div>
-        <template v-else>
-          <div class="summary-grid">
-            <article><small>تاریخ خرید</small><strong>{{ formatJalaliDate(detail.subscription?.purchased_at) }}</strong></article>
-            <article><small>فعال‌سازی</small><strong>{{ formatJalaliDate(detail.subscription?.activated_at) }}</strong></article>
-            <article><small>شروع</small><strong>{{ formatJalaliDate(detail.subscription?.starts_at) }}</strong></article>
-            <article><small>انقضا</small><strong>{{ detail.subscription?.ends_at ? formatJalaliDate(detail.subscription.ends_at) : '—' }}</strong></article>
-            <article><small>پلن</small><strong>{{ detail.subscription?.plan_title || '—' }}</strong></article>
-            <article v-if="detail.subscription?.usage_cap != null">
-              <small>مصرف</small>
-              <div class="usage">
-                <div class="usage-bar"><i :style="{ width: `${Math.min(100, Number(detail.subscription?.usage_percent || 0))}%` }" /></div>
-                <span>{{ formatFaNumber(detail.subscription?.usage_used) }} از {{ formatFaNumber(detail.subscription?.usage_cap) }}</span>
-              </div>
-            </article>
+          <div v-else class="drawer-body">
+            <section v-for="(label, severity) in { critical: 'بحرانی', warning: 'هشدار', info: 'اطلاع' }" :key="severity">
+              <template v-if="alertsGrouped[severity]?.length">
+                <h4 :class="severity">{{ label }} ({{ formatFaNumber(alertsGrouped[severity].length) }})</h4>
+                <article v-for="alert in alertsGrouped[severity]" :key="alert.id" class="alert-item">
+                  <strong>{{ alert.title }}</strong>
+                  <p>{{ alert.client_name }} — {{ alert.product_title }}</p>
+                  <small>{{ alert.message }}</small>
+                  <button type="button" class="btn link" @click="openAlertSubscription(alert)">مشاهده اشتراک</button>
+                </article>
+              </template>
+            </section>
           </div>
-          <div v-if="seeFinancial" class="summary-grid financial">
-            <article><small>مبلغ نهایی</small><strong>{{ formatMoney(detail.subscription?.final_amount) }}</strong></article>
-            <article><small>پرداخت‌شده</small><strong>{{ formatMoney(detail.subscription?.paid_amount) }}</strong></article>
-            <article><small>مانده</small><strong>{{ remainingLabel(detail.subscription?.remaining_amount) }}</strong></article>
-            <article><small>وضعیت پرداخت</small><HqStatusBadge kind="payment" :value="detail.subscription?.payment_status" /></article>
-          </div>
-          <div class="drawer-tabs" role="tablist">
-            <button type="button" role="tab" :class="{ active: detailTab === 'overview' }" @click="detailTab = 'overview'">نمای کلی</button>
-            <button type="button" role="tab" :class="{ active: detailTab === 'periods' }" @click="detailTab = 'periods'">دوره‌ها</button>
-            <button v-if="seeFinancial" type="button" role="tab" :class="{ active: detailTab === 'payments' }" @click="detailTab = 'payments'">پرداخت‌ها</button>
-            <button type="button" role="tab" :class="{ active: detailTab === 'audit' }" @click="detailTab = 'audit'">تاریخچه</button>
-          </div>
-          <div class="drawer-body">
-            <div v-if="detailTab === 'overview'">
-              <p class="muted">{{ detail.subscription?.product_title }} — {{ detail.subscription?.client_name }}</p>
+        </aside>
+      </div>
+
+      <div v-if="detail" class="hq-overlay overlay" @click.self="detail = null">
+        <aside class="drawer detail-drawer">
+          <header class="drawer-head">
+            <div v-if="detail.loading" class="sk-head" />
+            <div v-else>
+              <h3>{{ detail.subscription?.product_title }}</h3>
+              <p>{{ detail.subscription?.client_name }}</p>
+              <HqStatusBadge :value="detail.subscription?.status" />
+              <small v-if="detail.subscription?.contract_number || detail.subscription?.license_code" class="muted">
+                {{ detail.subscription?.contract_number || detail.subscription?.license_code }}
+              </small>
             </div>
-            <ul v-else-if="detailTab === 'periods'" class="timeline">
-              <li v-for="period in detail.periods || []" :key="period.id">
-                <strong>{{ period.kind }}</strong>
-                <span>{{ formatJalaliDate(period.starts_at) }} تا {{ period.ends_at ? formatJalaliDate(period.ends_at) : '—' }}</span>
-                <small v-if="seeFinancial">{{ formatMoney(period.final_amount) }}</small>
-              </li>
-              <li v-if="!(detail.periods || []).length"><HqEmptyState title="دوره‌ای ثبت نشده است." /></li>
-            </ul>
-            <ul v-else-if="detailTab === 'payments' && seeFinancial" class="timeline">
-              <li v-for="payment in detail.payments || []" :key="payment.id">
-                <strong>{{ formatMoney(payment.amount) }}</strong>
-                <span>{{ payment.method || '—' }} — {{ formatJalaliDateTime(payment.paid_at) }}</span>
-              </li>
-              <li v-if="!(detail.payments || []).length"><HqEmptyState title="سابقه پرداختی وجود ندارد." /></li>
-            </ul>
-            <ul v-else class="timeline">
-              <li v-for="log in detail.audit_logs || []" :key="log.id">
-                <strong>{{ log.action }}</strong>
-                <span>{{ log.actor_name || 'سیستم' }} — {{ log.reason || log.note || 'بدون توضیح' }}</span>
-                <small>{{ formatJalaliDateTime(log.created_at) }}</small>
-              </li>
-              <li v-if="!(detail.audit_logs || []).length"><HqEmptyState title="تاریخچه‌ای ثبت نشده است." /></li>
-            </ul>
+            <button type="button" class="btn ghost" @click="detail = null">بستن</button>
+          </header>
+          <div v-if="detailLoading" class="drawer-body"><div class="sk-row" /><div class="sk-row" /><div class="sk-row" /></div>
+          <template v-else>
+            <div class="summary-grid">
+              <article><small>تاریخ خرید</small><strong>{{ formatJalaliDate(detail.subscription?.purchased_at) }}</strong></article>
+              <article><small>فعال‌سازی</small><strong>{{ formatJalaliDate(detail.subscription?.activated_at) }}</strong></article>
+              <article><small>شروع</small><strong>{{ formatJalaliDate(detail.subscription?.starts_at) }}</strong></article>
+              <article><small>انقضا</small><strong>{{ detail.subscription?.ends_at ? formatJalaliDate(detail.subscription.ends_at) : '—' }}</strong></article>
+              <article><small>پلن</small><strong>{{ detail.subscription?.feature_payment_plan_label || detail.subscription?.plan_title || '—' }}</strong></article>
+              <article v-if="detail.subscription?.usage_cap != null">
+                <small>مصرف</small>
+                <div class="usage">
+                  <div class="usage-bar"><i :style="{ width: `${Math.min(100, Number(detail.subscription?.usage_percent || 0))}%` }" /></div>
+                  <span>{{ formatFaNumber(detail.subscription?.usage_used) }} از {{ formatFaNumber(detail.subscription?.usage_cap) }}</span>
+                </div>
+              </article>
+            </div>
+            <div v-if="seeFinancial" class="summary-grid financial">
+              <article><small>مبلغ نهایی</small><strong>{{ formatMoney(detail.subscription?.final_amount) }}</strong></article>
+              <article><small>پرداخت‌شده</small><strong>{{ formatMoney(detail.subscription?.paid_amount) }}</strong></article>
+              <article><small>مانده</small><strong>{{ remainingLabel(detail.subscription?.remaining_amount) }}</strong></article>
+              <article><small>وضعیت پرداخت</small><HqStatusBadge kind="payment" :value="detail.subscription?.payment_status" /></article>
+            </div>
+            <div class="drawer-tabs" role="tablist">
+              <button type="button" role="tab" :class="{ active: detailTab === 'overview' }" @click="detailTab = 'overview'">نمای کلی</button>
+              <button type="button" role="tab" :class="{ active: detailTab === 'periods' }" @click="detailTab = 'periods'">دوره‌ها</button>
+              <button v-if="seeFinancial" type="button" role="tab" :class="{ active: detailTab === 'payments' }" @click="detailTab = 'payments'">پرداخت‌ها</button>
+              <button type="button" role="tab" :class="{ active: detailTab === 'audit' }" @click="detailTab = 'audit'">تاریخچه</button>
+            </div>
+            <div class="drawer-body">
+              <div v-if="detailTab === 'overview'">
+                <p class="muted">{{ detail.subscription?.product_title }} — {{ detail.subscription?.client_name }}</p>
+              </div>
+              <ul v-else-if="detailTab === 'periods'" class="timeline">
+                <li v-for="period in detail.periods || []" :key="period.id">
+                  <strong>{{ period.kind }}</strong>
+                  <span>{{ formatJalaliDate(period.starts_at) }} تا {{ period.ends_at ? formatJalaliDate(period.ends_at) : '—' }}</span>
+                  <small v-if="seeFinancial">{{ formatMoney(period.final_amount) }}</small>
+                </li>
+                <li v-if="!(detail.periods || []).length"><HqEmptyState title="دوره‌ای ثبت نشده است." /></li>
+              </ul>
+              <ul v-else-if="detailTab === 'payments' && seeFinancial" class="timeline">
+                <li v-for="payment in detail.payments || []" :key="payment.id">
+                  <strong>{{ formatMoney(payment.amount) }}</strong>
+                  <span>{{ payment.method || '—' }} — {{ formatJalaliDateTime(payment.paid_at) }}</span>
+                </li>
+                <li v-if="!(detail.payments || []).length"><HqEmptyState title="سابقه پرداختی وجود ندارد." /></li>
+              </ul>
+              <ul v-else class="timeline">
+                <li v-for="log in detail.audit_logs || []" :key="log.id">
+                  <strong>{{ log.action }}</strong>
+                  <span>{{ log.actor_name || 'سیستم' }} — {{ log.reason || log.note || '—' }}</span>
+                  <small>{{ formatJalaliDateTime(log.created_at) }}</small>
+                </li>
+                <li v-if="!(detail.audit_logs || []).length"><HqEmptyState title="تاریخچه‌ای ثبت نشده است." /></li>
+              </ul>
+            </div>
+            <footer v-if="getValidActions(detail.subscription).length" class="drawer-foot">
+              <button
+                v-for="item in getValidActions(detail.subscription).slice(0, 3)"
+                :key="item.action"
+                type="button"
+                class="btn ghost"
+                @click="openAction(detail.subscription, item.action)"
+              >
+                {{ item.label }}
+              </button>
+            </footer>
+          </template>
+        </aside>
+      </div>
+
+      <div v-if="actionModal.open" class="hq-overlay overlay" @click.self="closeActionModal">
+        <div class="modal" role="dialog" aria-modal="true">
+          <header>
+            <h3>{{ ACTION_META[actionModal.action]?.label }}</h3>
+            <p>{{ actionModal.subscription?.client_name }} — {{ actionModal.subscription?.product_title }}</p>
+          </header>
+          <div class="modal-body">
+            <p class="muted">وضعیت فعلی: <HqStatusBadge :value="actionModal.subscription?.status" /></p>
+            <p v-if="ACTION_META[actionModal.action]?.warn" class="warn">{{ ACTION_META[actionModal.action].warn }}</p>
+            <label v-if="ACTION_META[actionModal.action]?.needsDays">تعداد روز<input v-model.number="actionModal.days" type="number" min="1" class="ctrl wide" /></label>
+            <label v-if="ACTION_META[actionModal.action]?.needsAmount">مبلغ (تومان)<input v-model="actionModal.amount" type="number" min="0" class="ctrl wide" /></label>
+            <label v-if="ACTION_META[actionModal.action]?.needsPlan">پلن<select v-model="actionModal.plan_id" class="ctrl wide">
+              <option v-for="plan in catalog.products.find(p => p.id === actionModal.subscription?.product)?.plans || []" :key="plan.id" :value="plan.id">{{ plan.title }}</option>
+            </select></label>
+            <label v-if="actionModal.action === 'register_payment'">کد پیگیری<input v-model="actionModal.tracking_code" type="text" class="ctrl wide" /></label>
+            <label v-if="ACTION_META[actionModal.action]?.needsReason">دلیل *<input v-model="actionModal.reason" type="text" class="ctrl wide" required /></label>
+            <label>یادداشت<textarea v-model="actionModal.note" rows="2" class="ctrl wide" /></label>
+            <label v-if="ACTION_META[actionModal.action]?.needsConfirm" class="check">
+              <input v-model="actionModal.confirmDebt" type="checkbox" /> تأیید بخشش بدهی
+            </label>
+            <p v-if="actionModal.fieldError" class="field-error">{{ actionModal.fieldError }}</p>
+            <p v-if="actionModal.generalError" class="field-error">{{ actionModal.generalError }}</p>
           </div>
-          <footer v-if="getValidActions(detail.subscription).length" class="drawer-foot">
+          <footer>
+            <button type="button" class="btn ghost" :disabled="actionModal.loading" @click="closeActionModal">انصراف</button>
             <button
-              v-for="item in getValidActions(detail.subscription).slice(0, 3)"
-              :key="item.action"
               type="button"
-              class="btn ghost"
-              @click="openAction(detail.subscription, item.action)"
+              class="btn"
+              :class="ACTION_META[actionModal.action]?.tone || 'primary'"
+              :disabled="actionModal.loading"
+              @click="submitAction"
             >
-              {{ item.label }}
+              {{ actionModal.loading ? 'در حال اجرا…' : ACTION_META[actionModal.action]?.cta }}
             </button>
           </footer>
-        </template>
-      </aside>
-    </div>
-
-    <div v-if="actionModal.open" class="overlay" @click.self="closeActionModal">
-      <div class="modal" role="dialog" aria-modal="true">
-        <header>
-          <h3>{{ ACTION_META[actionModal.action]?.label }}</h3>
-          <p>{{ actionModal.subscription?.client_name }} — {{ actionModal.subscription?.product_title }}</p>
-        </header>
-        <div class="modal-body">
-          <p class="muted">وضعیت فعلی: <HqStatusBadge :value="actionModal.subscription?.status" /></p>
-          <p v-if="ACTION_META[actionModal.action]?.warn" class="warn">{{ ACTION_META[actionModal.action].warn }}</p>
-          <label v-if="ACTION_META[actionModal.action]?.needsDays">تعداد روز<input v-model.number="actionModal.days" type="number" min="1" class="ctrl wide" /></label>
-          <label v-if="ACTION_META[actionModal.action]?.needsAmount">مبلغ (تومان)<input v-model="actionModal.amount" type="number" min="0" class="ctrl wide" /></label>
-          <label v-if="ACTION_META[actionModal.action]?.needsPlan">پلن<select v-model="actionModal.plan_id" class="ctrl wide">
-            <option v-for="plan in catalog.products.find(p => p.id === actionModal.subscription?.product)?.plans || []" :key="plan.id" :value="plan.id">{{ plan.title }}</option>
-          </select></label>
-          <label v-if="actionModal.action === 'register_payment'">کد پیگیری<input v-model="actionModal.tracking_code" type="text" class="ctrl wide" /></label>
-          <label v-if="ACTION_META[actionModal.action]?.needsReason">دلیل *<input v-model="actionModal.reason" type="text" class="ctrl wide" required /></label>
-          <label>یادداشت<textarea v-model="actionModal.note" rows="2" class="ctrl wide" /></label>
-          <label v-if="ACTION_META[actionModal.action]?.needsConfirm" class="check">
-            <input v-model="actionModal.confirmDebt" type="checkbox" /> تأیید بخشش بدهی
-          </label>
-          <p v-if="actionModal.fieldError" class="field-error">{{ actionModal.fieldError }}</p>
-          <p v-if="actionModal.generalError" class="field-error">{{ actionModal.generalError }}</p>
         </div>
-        <footer>
-          <button type="button" class="btn ghost" :disabled="actionModal.loading" @click="closeActionModal">انصراف</button>
-          <button
-            type="button"
-            class="btn"
-            :class="ACTION_META[actionModal.action]?.tone || 'primary'"
-            :disabled="actionModal.loading"
-            @click="submitAction"
-          >
-            {{ actionModal.loading ? 'در حال اجرا…' : ACTION_META[actionModal.action]?.cta }}
-          </button>
-        </footer>
       </div>
-    </div>
 
-    <div v-if="bulkModal.open" class="overlay" @click.self="bulkModal.open = false">
-      <div class="modal">
-        <header><h3>عملیات گروهی</h3></header>
-        <div class="modal-body">
-          <p>{{ formatFaNumber(selectedIds.length) }} اشتراک انتخاب شده — {{ bulkModal.action }}</p>
-          <label>دلیل<input v-model="bulkModal.reason" type="text" class="ctrl wide" /></label>
-          <label>یادداشت<textarea v-model="bulkModal.note" rows="2" class="ctrl wide" /></label>
-          <p v-if="bulkModal.error" class="field-error">{{ bulkModal.error }}</p>
+      <div v-if="bulkModal.open" class="hq-overlay overlay" @click.self="bulkModal.open = false">
+        <div class="modal">
+          <header><h3>عملیات گروهی</h3></header>
+          <div class="modal-body">
+            <p>{{ formatFaNumber(selectedIds.length) }} اشتراک انتخاب شده — {{ bulkModal.action }}</p>
+            <label>دلیل<input v-model="bulkModal.reason" type="text" class="ctrl wide" /></label>
+            <label>یادداشت<textarea v-model="bulkModal.note" rows="2" class="ctrl wide" /></label>
+            <p v-if="bulkModal.error" class="field-error">{{ bulkModal.error }}</p>
+          </div>
+          <footer>
+            <button type="button" class="btn ghost" :disabled="bulkModal.loading" @click="bulkModal.open = false">انصراف</button>
+            <button type="button" class="btn primary" :disabled="bulkModal.loading" @click="submitBulk">{{ bulkModal.loading ? 'در حال اجرا…' : 'اجرای گروهی' }}</button>
+          </footer>
         </div>
-        <footer>
-          <button type="button" class="btn ghost" :disabled="bulkModal.loading" @click="bulkModal.open = false">انصراف</button>
-          <button type="button" class="btn primary" :disabled="bulkModal.loading" @click="submitBulk">{{ bulkModal.loading ? 'در حال اجرا…' : 'اجرای گروهی' }}</button>
-        </footer>
       </div>
-    </div>
 
-    <div v-if="seedConfirm" class="overlay" @click.self="seedConfirm = false">
-      <div class="modal">
-        <header><h3>همگام‌سازی کاتالوگ</h3></header>
-        <div class="modal-body"><p>کاتالوگ سرویس‌ها از منبع legacy همگام‌سازی شود؟</p></div>
-        <footer>
-          <button type="button" class="btn ghost" @click="seedConfirm = false">انصراف</button>
-          <button type="button" class="btn primary" :disabled="seedLoading" @click="seedCatalog">{{ seedLoading ? 'در حال اجرا…' : 'تأیید همگام‌سازی' }}</button>
-        </footer>
+      <div v-if="seedConfirm" class="hq-overlay overlay" @click.self="seedConfirm = false">
+        <div class="modal">
+          <header><h3>همگام‌سازی کاتالوگ</h3></header>
+          <div class="modal-body"><p>کاتالوگ سرویس‌ها از منبع legacy همگام‌سازی شود؟</p></div>
+          <footer>
+            <button type="button" class="btn ghost" @click="seedConfirm = false">انصراف</button>
+            <button type="button" class="btn primary" :disabled="seedLoading" @click="seedCatalog">{{ seedLoading ? 'در حال اجرا…' : 'تأیید همگام‌سازی' }}</button>
+          </footer>
+        </div>
       </div>
-    </div>
+    </Teleport>
   </section>
 </template>
 
@@ -1623,7 +1722,7 @@ tbody tr:hover { background: rgba(232, 242, 252, 0.55); }
   backdrop-filter: blur(2px);
   display: flex;
   justify-content: flex-start;
-  z-index: 40;
+  z-index: 240;
 }
 .drawer, .modal {
   background: #fff;
@@ -1715,9 +1814,16 @@ tbody tr:hover { background: rgba(232, 242, 252, 0.55); }
   border: 1px solid rgba(25, 118, 210, 0.14);
   border-radius: 12px;
   box-shadow: 0 14px 28px rgba(15, 37, 69, 0.12);
-  z-index: 6;
+  z-index: 241;
   padding: 0.4rem;
   display: grid;
+}
+.hq-float-menu.menu-pop {
+  position: fixed;
+  inset-inline-start: auto;
+  top: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .menu-pop button, .filters-pop label {
   text-align: right;
