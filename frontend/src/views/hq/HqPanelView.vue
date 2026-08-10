@@ -841,617 +841,11 @@
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'reports'" class="glass-card report-shell hq-report-pro">
-        <div class="report-command-hero report-command-hero-compact">
-          <div class="report-command-copy">
-            <h2>گزارشات مرکزی</h2>
-            <p>سهم کارنو، سهم آراکار، کیف پول و عملکرد شعب در یک نگاه.</p>
-          </div>
-        </div>
-
-        <div class="report-workspace-tabs" role="tablist" aria-label="تب‌های گزارشات HQ">
-          <button type="button" :class="{ active: reportWorkspaceTab === 'internal' }" @click="reportWorkspaceTab = 'internal'">گزارش داخلی HQ</button>
-          <button type="button" :class="{ active: reportWorkspaceTab === 'carwash' }" @click="reportWorkspaceTab = 'carwash'">گزارشات کارواش‌ها</button>
-          <button type="button" :class="{ active: reportWorkspaceTab === 'wallet' }" @click="reportWorkspaceTab = 'wallet'">ریز کیف پول</button>
-          <button type="button" :class="{ active: reportWorkspaceTab === 'network' }" @click="reportWorkspaceTab = 'network'">نمای شبکه</button>
-        </div>
-
-        <div class="report-control-deck">
-          <div>
-            <span class="report-control-label">بازه زمانی</span>
-            <div class="report-range-chips">
-              <button
-                v-for="option in reportRangeOptions"
-                :key="option.key"
-                type="button"
-                class="report-range-chip"
-                :class="{ active: reportFilter.rangeKey === option.key }"
-                @click="setReportRange(option.key)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-          </div>
-          <div class="report-filters compact">
-            <BaseDatePicker v-model="reportFilter.start" placeholder="1405/01/01" />
-            <BaseDatePicker v-model="reportFilter.end" placeholder="1405/01/30" />
-          </div>
-          <div class="report-period-card compact">
-            <small>بازه انتخابی</small>
-            <strong>{{ reportPeriodLabel }}</strong>
-          </div>
-        </div>
-
-        <template v-if="reportWorkspaceTab === 'internal'">
-          <div class="share-split-grid">
-            <article class="share-card hq">
-              <small>سهم کارنو</small>
-              <strong>{{ money(reports.summary.hq_share_total || 0) }}</strong>
-              <p>شارژ کیف پول پیامک و هزینه وارد کردن مشتریان با اکسل.</p>
-            </article>
-            <article class="share-card rah">
-              <small>سهم آراکار</small>
-              <strong>{{ money(reports.summary.rah_share_total || 0) }}</strong>
-              <p>درآمد عملیاتی، پرداخت‌ها، هزینه‌ها، فروش خدمات و گزارش‌های اجرایی کارواش‌ها.</p>
-            </article>
-            <article class="share-card neutral">
-              <small>مانده اقساط آپشن‌ها</small>
-              <strong>{{ money(reports.summary.feature_remaining_total || 0) }}</strong>
-              <p>مانده پرداخت نشده قابلیت‌های خریداری‌شده در کل مجموعه.</p>
-            </article>
-          </div>
-
-          <div class="hq-share-tabs" role="tablist" aria-label="تب‌های سهم کارنو">
-            <button
-              v-for="tab in hqShareTabs"
-              :key="tab.key"
-              type="button"
-              :class="{ active: hqShareTab === tab.key }"
-              @click="hqShareTab = tab.key"
-            >
-              {{ tab.label }}
-            </button>
-          </div>
-
-          <div class="report-detail-grid">
-            <article class="report-focus-card">
-              <small>{{ hqShareTab === 'sms_wallet' ? 'کیف پول پیامک' : selectedHqFeature?.label || 'سهم کارنو' }}</small>
-              <strong>{{ money(hqShareFeatureTotal) }}</strong>
-              <p>{{ hqShareTab === 'sms_wallet' ? 'هزینه‌های کسرشده بابت ارسال پیامک که سهم کارنو هستند؛ شارژ کیف پول سهم محسوب نمی‌شود.' : selectedHqFeature?.description || 'ریز پرداختی‌های این قابلیت در مجموعه.' }}</p>
-            </article>
-            <article class="report-focus-card">
-              <small>تعداد ردیف</small>
-              <strong>{{ toFa(selectedHqFeatureRows.length) }}</strong>
-              <p>همه موارد مرتبط با تب انتخابی، بدون مخفی شدن در جدول‌های عمومی.</p>
-            </article>
-          </div>
-
-          <div class="table-wrap report-table-wrap rich-table">
-            <table>
-              <thead>
-                <tr v-if="hqShareTab === 'sms_wallet'">
-                  <th>ردیف</th><th>کارواش</th><th>کیف پول</th><th>نوع</th><th>مبلغ</th><th>شرح</th><th>زمان</th><th>سهم</th>
-                </tr>
-                <tr v-else>
-                  <th>ردیف</th><th>کارواش</th><th>قابلیت</th><th>پلن پرداخت</th><th>پرداخت شده</th><th>مانده</th><th>اقساط</th><th>سهم</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, index) in selectedHqFeatureRows" :key="`${hqShareTab}-${row.id || row.tenant_id || index}`">
-                  <template v-if="hqShareTab === 'sms_wallet'">
-                    <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
-                  <td><button type="button" class="tenant-ledger-link" @click="openPaymentDetailModal(row.tenant_id)">{{ row.tenant_name }}</button></td>
-                    <td>{{ row.wallet_name }}</td>
-                    <td><span class="direction-pill" :class="row.direction">{{ walletDirectionLabel(row.direction) }}</span></td>
-                    <td>{{ money(row.amount) }}</td>
-                    <td>{{ row.description || row.reference_type || '-' }}</td>
-                    <td>{{ dateTime(row.transacted_at) }}</td>
-                    <td>{{ shareGroupLabel(row.share_group) }}</td>
-                  </template>
-                  <template v-else>
-                    <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
-                    <td>{{ row.tenant_name }}</td>
-                    <td>{{ row.feature?.label }}</td>
-                    <td>{{ paymentPlanLabel(row.feature?.payment_plan) }}</td>
-                    <td>{{ money(row.feature?.paid_amount) }}</td>
-                    <td>{{ money(row.feature?.remaining_amount) }}</td>
-                    <td>{{ row.feature?.installment_months ? `${toFa(row.feature.installment_months)} قسط` : '-' }}</td>
-                    <td>{{ shareGroupLabel(row.feature?.share_group) }}</td>
-                  </template>
-                </tr>
-                <tr v-if="!selectedHqFeatureRows.length">
-                  <td colspan="8">برای این تب هنوز ردیفی در بازه انتخابی ثبت نشده است.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="table-wrap report-table-wrap rich-table">
-            <div class="table-section-title">
-              <h3>سهم آراکار، درآمد و هزینه‌های عملیاتی</h3>
-              <span>{{ toFa(rahShareRows.length) }} کارواش</span>
-            </div>
-            <table>
-              <thead><tr><th>رتبه</th><th>کارواش</th><th>درآمد وصولی</th><th>هزینه</th><th>خالص راه</th><th>مطالبات</th><th>خودرو</th><th>وضعیت</th></tr></thead>
-              <tbody>
-                <tr v-for="(row, index) in rahShareRows" :key="`rah-${row.tenant_id}`">
-                  <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
-                  <td><strong>{{ row.tenant_name }}</strong><small class="row-sub">{{ formatDate(row.last_activity_at) }}</small></td>
-                  <td>{{ money(row.paid_amount) }}</td>
-                  <td>{{ money(row.expense_total) }}</td>
-                  <td>{{ money(row.rah_share_total) }}</td>
-                  <td>{{ money(row.pending_amount) }}</td>
-                  <td>{{ toFa(row.vehicles_count || 0) }}</td>
-                  <td><span class="health-pill" :class="row.health">{{ healthLabel(row.health) }}</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
-
-        <template v-else-if="reportWorkspaceTab === 'carwash'">
-          <div class="tenant-report-layout">
-            <aside class="tenant-report-list">
-              <div class="table-toolbar">
-                <input v-model.trim="carwashQuery" class="table-search" placeholder="جستجو در کارواش‌ها..." />
-              </div>
-              <button
-                v-for="item in reportCarwashes"
-                :key="item.id"
-                type="button"
-                class="tenant-report-item"
-                :class="{ active: String(item.id) === String(selectedReportTenantId) }"
-                @click="selectedReportTenantId = String(item.id)"
-              >
-                <strong>{{ item.name }}</strong>
-                <span>{{ item.manager?.full_name || 'بدون مدیر' }}</span>
-              </button>
-            </aside>
-
-            <div class="tenant-report-main">
-              <div class="tenant-report-head">
-                <div>
-                  <span class="report-eyebrow">گزارش کامل کارواش</span>
-                  <h3>{{ selectedTenantReport.tenant?.name || 'یک کارواش را انتخاب کنید' }}</h3>
-                </div>
-                <button type="button" class="refresh-btn" :disabled="tenantReport.loading || !selectedReportTenantId" @click="loadTenantReports">به‌روزرسانی</button>
-              </div>
-
-              <div v-if="tenantReport.error" class="error-box" role="alert">{{ tenantReport.error }}</div>
-              <div v-else-if="tenantReport.loading" class="empty-note">در حال دریافت گزارش کارواش انتخابی...</div>
-              <template v-else>
-                <div class="report-kpi-grid tenant-kpis finance-kpi-grid">
-                  <article class="report-kpi-card spotlight"><small>مبلغ نهایی</small><strong>{{ money(tenantFinalAmount()) }}</strong><span>بعد از تخفیف، شامل انعام</span></article>
-                  <article class="report-kpi-card"><small>قبل از تخفیف</small><strong>{{ money(tenantBeforeDiscountAmount()) }}</strong><span>مبلغ نهایی + جمع تخفیف</span></article>
-                  <article class="report-kpi-card"><small>جمع تخفیف</small><strong>{{ money(tenantSummaryAmount('discount_total')) }}</strong><span>تخفیف مجموعه، امتیاز و دستی</span></article>
-                  <article class="report-kpi-card"><small>حق کارواش</small><strong>{{ money(tenantSummaryAmount('carwash_total')) }}</strong><span>سهم شعبه بعد از تسویه سهم‌ها</span></article>
-                  <article class="report-kpi-card"><small>حق نیرو</small><strong>{{ money(tenantSummaryAmount('worker_total')) }}</strong><span>سهم اجرای خدمات</span></article>
-                  <article class="report-kpi-card"><small>انعام</small><strong>{{ money(tenantSummaryAmount('tips_total')) }}</strong><span>انعام ثبت‌شده روی سفارش‌ها</span></article>
-                  <article class="report-kpi-card"><small>پرداختنی نیرو</small><strong>{{ money(tenantSummaryAmount('payable_worker_total')) }}</strong><span>مانده حقوق محاسبه‌شده</span></article>
-                  <article class="report-kpi-card"><small>بیمه</small><strong>{{ money(tenantSummaryAmount('insurance_total')) }}</strong><span>مانده حق بیمه</span></article>
-                  <article class="report-kpi-card"><small>تعداد خودرو</small><strong>{{ toFa(tenantSummaryAmount('vehicles_count')) }}</strong><span>کل مراجعات بازه</span></article>
-                </div>
-
-                <div class="hq-share-tabs compact" role="tablist" aria-label="تب‌های گزارش کارواش">
-                  <button
-                    v-for="tab in tenantReportTabs"
-                    :key="tab.key"
-                    type="button"
-                    :class="{ active: tenantReportTab === tab.key }"
-                    @click="tenantReportTab = tab.key"
-                  >
-                    {{ tab.label }}
-                  </button>
-                </div>
-
-                <div class="table-wrap report-table-wrap rich-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th v-for="column in tenantReportColumns" :key="column[0]">{{ column[1] }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(row, index) in tenantReportRows" :key="`${tenantReportTab}-${row.id || row.vehicle_id || index}`">
-                        <td v-for="column in tenantReportColumns" :key="column[0]">{{ tenantCellValue(row, column) }}</td>
-                      </tr>
-                      <tr v-if="!tenantReportRows.length">
-                        <td :colspan="tenantReportColumns.length || 1">در این تب برای بازه انتخابی رکوردی پیدا نشد.</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </template>
-            </div>
-          </div>
-        </template>
-
-        <template v-else-if="reportWorkspaceTab === 'wallet'">
-          <div class="report-kpi-grid">
-            <article class="report-kpi-card spotlight"><small>کل موجودی کیف پول</small><strong>{{ money(reports.summary.wallet_balance_total || 0) }}</strong></article>
-            <article class="report-kpi-card"><small>کل واریزی‌ها</small><strong>{{ money(reports.summary.wallet_deposit_total || 0) }}</strong></article>
-            <article class="report-kpi-card"><small>کل برداشت‌ها</small><strong>{{ money(reports.summary.wallet_withdraw_total || 0) }}</strong></article>
-            <article class="report-kpi-card"><small>شارژ درگاه</small><strong>{{ money(reports.summary.wallet_gateway_charge_total || 0) }}</strong></article>
-            <article class="report-kpi-card"><small>شارژ دستی</small><strong>{{ money(reports.summary.wallet_manual_charge_total || 0) }}</strong></article>
-            <article class="report-kpi-card"><small>کیف پول پیامک</small><strong>{{ money(reports.summary.wallet_sms_balance_total || 0) }}</strong></article>
-            <article class="report-kpi-card"><small>SMS ارسال‌شده</small><strong>{{ toFa(reports.summary.sms_sent_count || 0) }}</strong></article>
-            <article class="report-kpi-card"><small>هزینه کل SMS</small><strong>{{ money(reports.summary.sms_cost_total || 0) }}</strong></article>
-          </div>
-          <div class="table-wrap report-table-wrap rich-table">
-            <table>
-              <thead><tr><th>ردیف</th><th>کارواش</th><th>کیف پول</th><th>نوع کیف پول</th><th>ورودی/خروجی</th><th>مبلغ</th><th>شرح</th><th>مرجع</th><th>ثبت‌کننده</th><th>زمان</th><th>سهم</th></tr></thead>
-              <tbody>
-                <tr v-for="(row, index) in walletLedgerRows" :key="row.id">
-                  <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
-                  <td><button type="button" class="tenant-ledger-link" @click="openPaymentDetailModal(row.tenant_id)">{{ row.tenant_name }}</button></td>
-                  <td>{{ row.wallet_name }}</td>
-                  <td>{{ row.wallet_type === 'sms' ? 'پیامک' : 'عادی' }}</td>
-                  <td><span class="direction-pill" :class="row.direction">{{ walletDirectionLabel(row.direction) }}</span></td>
-                  <td>{{ money(row.amount) }}</td>
-                  <td>{{ row.description || '-' }}</td>
-                  <td>{{ row.reference_type || '-' }}</td>
-                  <td>{{ row.created_by_name || '-' }}</td>
-                  <td>{{ dateTime(row.transacted_at) }}</td>
-                  <td>{{ shareGroupLabel(row.share_group) }}</td>
-                </tr>
-                <tr v-if="!walletLedgerRows.length"><td colspan="11">تراکنشی برای بازه انتخابی وجود ندارد.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
-
-        <template v-else>
-          <div class="report-tabs network-tabs">
-            <button v-for="tab in reportTabs" :key="tab.key" type="button" class="report-tab-btn" :class="{ active: reportTab === tab.key }" @click="reportTab = tab.key">{{ tab.label }}</button>
-          </div>
-          <div class="report-kpi-grid report-money-kpis">
-            <article v-if="reportTab === 'revenue'" class="report-kpi-card spotlight"><small>درآمد وصول‌شده</small><strong>{{ money(reports.summary.paid_amount || 0) }}</strong><span class="delta-badge" :class="deltaClass(reports.summary.revenue_change_percent)">{{ formatPercentChange(reports.summary.revenue_change_percent) }}</span></article>
-            <article v-if="reportTab === 'revenue'" class="report-kpi-card"><small>قبل از تخفیف</small><strong>{{ money(hqBeforeDiscountAmount()) }}</strong><span>درآمد وصول‌شده + تخفیف</span></article>
-            <article v-if="reportTab === 'revenue'" class="report-kpi-card"><small>جمع تخفیف</small><strong>{{ money(hqSummaryAmount('discount_total')) }}</strong><span>تخفیف ثبت‌شده پرداخت‌های موفق</span></article>
-            <article v-if="reportTab === 'revenue'" class="report-kpi-card"><small>خالص شبکه</small><strong>{{ money(reports.summary.net_total || 0) }}</strong><span class="delta-badge" :class="deltaClass(reports.summary.net_change_percent)">{{ formatPercentChange(reports.summary.net_change_percent) }}</span></article>
-            <article v-if="reportTab === 'revenue'" class="report-kpi-card"><small>تعداد خودرو</small><strong>{{ toFa(reports.summary.vehicles_count || 0) }}</strong></article>
-            <article v-if="reportTab === 'wallet'" class="report-kpi-card spotlight"><small>موجودی کل کیف پول‌ها</small><strong>{{ money(reports.summary.wallet_balance_total || 0) }}</strong></article>
-            <article v-if="reportTab === 'wallet'" class="report-kpi-card"><small>واریز کل</small><strong>{{ money(reports.summary.wallet_deposit_total || 0) }}</strong></article>
-            <article v-if="reportTab === 'wallet'" class="report-kpi-card"><small>برداشت کل</small><strong>{{ money(reports.summary.wallet_withdraw_total || 0) }}</strong></article>
-          </div>
-          <div class="table-wrap report-table-wrap rich-table">
-            <table v-if="reportTab === 'revenue'">
-              <thead><tr><th>رتبه</th><th>کارواش</th><th>وضعیت</th><th>درآمد وصولی</th><th>قبل از تخفیف</th><th>تخفیف</th><th>خالص</th><th>میانگین فاکتور</th><th>مطالبات</th><th>پرداخت موفق</th></tr></thead>
-              <tbody>
-                <tr v-for="(row, index) in reportRows" :key="row.tenant_id">
-                  <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td><td><strong>{{ row.tenant_name }}</strong><small class="row-sub">{{ formatDate(row.last_activity_at) }}</small></td><td><span class="health-pill" :class="row.health">{{ healthLabel(row.health) }}</span></td><td>{{ money(row.paid_amount) }}</td><td>{{ money(rowBeforeDiscountAmount(row)) }}</td><td>{{ money(row.discount_total) }}</td><td>{{ money(row.net_amount) }}</td><td>{{ money(row.average_ticket) }}</td><td>{{ money(row.pending_amount) }}</td><td>{{ toFa(row.payments_count || 0) }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <table v-else>
-              <thead><tr><th>رتبه</th><th>کارواش</th><th>وضعیت شارژ</th><th>موجودی کل</th><th>موجودی عادی</th><th>موجودی پیامک</th><th>واریز</th><th>برداشت</th><th>شارژ درگاه</th><th>شارژ دستی</th></tr></thead>
-              <tbody>
-                <tr v-for="(row, index) in reportRows" :key="row.tenant_id">
-                  <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td><td><strong>{{ row.tenant_name }}</strong><small class="row-sub">{{ formatDate(row.last_activity_at) }}</small></td><td><span class="health-pill" :class="row.wallet_charge_health">{{ walletHealthLabel(row.wallet_charge_health) }}</span></td><td>{{ money(row.wallet_balance) }}</td><td>{{ money(row.wallet_regular_balance) }}</td><td>{{ money(row.wallet_sms_balance) }}</td><td>{{ money(row.wallet_deposit_total) }}</td><td>{{ money(row.wallet_withdraw_total) }}</td><td>{{ money(row.wallet_gateway_charge_total) }}</td><td>{{ money(row.wallet_manual_charge_total) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
+      <section v-else-if="activeTab === 'reports'" class="hq-module-shell reports-module-shell">
+        <HqReportsPanel :carwashes="reportCarwashes" />
       </section>
 
-      <section v-else-if="false" class="glass-card report-shell">
-        <div class="report-top-grid">
-          <div class="report-hero">
-            <div class="report-hero-copy">
-              <span class="report-eyebrow">گزارش زنده همه کارواش‌ها</span>
-              <h3>{{ reportTab === 'wallet' ? 'وضعیت کیف پول و شارژ پنل همه کارواش‌ها' : 'عملکرد واقعی شبکه بر اساس سفارش، پرداخت و خرید انبار' }}</h3>
-              <p>{{ reportTab === 'wallet' ? 'در این نما برای هر کارواش مانده کیف پول، مجموع واریز، برداشت، شارژ درگاه و وضعیت شارژ پنل از روی دیتابیس واقعی نمایش داده می‌شود.' : 'این بخش از داده‌های واقعی دیتابیس همه شعبه‌ها ساخته می‌شود و وضعیت مالی، عملیاتی و بازدهی هر کارواش را در یک نمای واحد نشان می‌دهد.' }}</p>
-            </div>
-            <div class="report-glance-strip">
-              <article class="glance-chip">
-                <small>{{ reportTab === 'wallet' ? 'کارواش دارای تراکنش' : 'کارواش فعال' }}</small>
-                <strong>{{ toFa(reports.summary.active_tenants_count || 0) }}</strong>
-              </article>
-              <article class="glance-chip">
-                <small>{{ reportTab === 'wallet' ? 'کل تراکنش کیف پول' : 'کل پرداخت موفق' }}</small>
-                <strong>{{ toFa(reportTab === 'wallet' ? reports.summary.wallet_transactions_count || 0 : reports.summary.payments_count || 0) }}</strong>
-              </article>
-              <article class="glance-chip">
-                <small>{{ reportTab === 'wallet' ? 'بازه فعال' : 'نرخ وصول' }}</small>
-                <strong>{{ reportTab === 'wallet' ? reportPeriodLabel : `${toFa(reports.summary.collection_rate || 0)}٪` }}</strong>
-              </article>
-            </div>
-          </div>
-
-          <aside class="report-control-rail">
-            <div class="report-control-block">
-              <span class="report-control-label">نوع گزارش</span>
-              <div class="report-tabs">
-                <button
-                  v-for="tab in reportTabs"
-                  :key="tab.key"
-                  type="button"
-                  class="report-tab-btn"
-                  :class="{ active: reportTab === tab.key }"
-                  @click="reportTab = tab.key"
-                >
-                  {{ tab.label }}
-                </button>
-              </div>
-            </div>
-            <div class="report-control-block">
-              <span class="report-control-label">بازه زمانی</span>
-              <div class="report-range-chips">
-                <button
-                  v-for="option in reportRangeOptions"
-                  :key="option.key"
-                  type="button"
-                  class="report-range-chip"
-                  :class="{ active: reportFilter.rangeKey === option.key }"
-                  @click="setReportRange(option.key)"
-                >
-                  {{ option.label }}
-                </button>
-              </div>
-            </div>
-            <div class="report-filters">
-              <BaseDatePicker v-model="reportFilter.start" placeholder="1405/01/01" />
-              <BaseDatePicker v-model="reportFilter.end" placeholder="1405/01/30" />
-            </div>
-            <div class="report-period-card">
-              <small>بازه انتخابی</small>
-              <strong>{{ reportPeriodLabel }}</strong>
-            </div>
-          </aside>
-        </div>
-
-        <div class="report-body-grid">
-          <div class="report-main-col">
-            <div class="report-kpi-grid">
-              <article v-if="reportTab === 'revenue'" class="report-kpi-card spotlight">
-                <small>درآمد وصول‌شده</small>
-                <strong>{{ money(reports.summary.paid_amount || 0) }}</strong>
-                <span class="delta-badge" :class="deltaClass(reports.summary.revenue_change_percent)">
-                  {{ formatPercentChange(reports.summary.revenue_change_percent) }}
-                </span>
-              </article>
-              <article v-if="reportTab === 'revenue'" class="report-kpi-card">
-                <small>خالص شبکه</small>
-                <strong>{{ money(reports.summary.net_total || 0) }}</strong>
-                <span class="delta-badge" :class="deltaClass(reports.summary.net_change_percent)">
-                  {{ formatPercentChange(reports.summary.net_change_percent) }}
-                </span>
-              </article>
-              <article v-if="reportTab === 'revenue'" class="report-kpi-card">
-                <small>تعداد خودرو</small>
-                <strong>{{ toFa(reports.summary.vehicles_count || 0) }}</strong>
-                <span class="delta-badge" :class="deltaClass(reports.summary.vehicles_change_percent)">
-                  {{ formatPercentChange(reports.summary.vehicles_change_percent) }}
-                </span>
-              </article>
-              <article v-if="reportTab === 'revenue'" class="report-kpi-card">
-                <small>هزینه خریدها</small>
-                <strong>{{ money(reports.summary.expense_total || 0) }}</strong>
-                <span>از انبار و خریدهای ثبت‌شده</span>
-              </article>
-              <article v-if="reportTab === 'revenue'" class="report-kpi-card">
-                <small>میانگین فاکتور</small>
-                <strong>{{ money(reports.summary.average_ticket || 0) }}</strong>
-                <span>{{ toFa(reports.summary.payments_count || 0) }} پرداخت موفق</span>
-              </article>
-              <article v-if="reportTab === 'revenue'" class="report-kpi-card">
-                <small>نرخ تکمیل</small>
-                <strong>{{ toFa(reports.summary.completion_rate || 0) }}٪</strong>
-                <span>{{ toFa(reports.summary.active_tenants_count || 0) }} کارواش فعال از {{ toFa(reports.summary.tenants_count || 0) }}</span>
-              </article>
-
-              <article v-if="reportTab === 'wallet'" class="report-kpi-card spotlight">
-                <small>موجودی کل کیف پول‌ها</small>
-                <strong>{{ money(reports.summary.wallet_balance_total || 0) }}</strong>
-                <span>مانده واقعی همه کارواش‌ها</span>
-              </article>
-              <article v-if="reportTab === 'wallet'" class="report-kpi-card">
-                <small>واریز کل</small>
-                <strong>{{ money(reports.summary.wallet_deposit_total || 0) }}</strong>
-                <span>{{ toFa(reports.summary.wallet_transactions_count || 0) }} تراکنش</span>
-              </article>
-              <article v-if="reportTab === 'wallet'" class="report-kpi-card">
-                <small>برداشت کل</small>
-                <strong>{{ money(reports.summary.wallet_withdraw_total || 0) }}</strong>
-                <span>خروجی ثبت‌شده کیف پول</span>
-              </article>
-              <article v-if="reportTab === 'wallet'" class="report-kpi-card">
-                <small>شارژ از درگاه</small>
-                <strong>{{ money(reports.summary.wallet_gateway_charge_total || 0) }}</strong>
-                <span>شارژ آنلاین پنل</span>
-              </article>
-              <article v-if="reportTab === 'wallet'" class="report-kpi-card">
-                <small>شارژ دستی</small>
-                <strong>{{ money(reports.summary.wallet_manual_charge_total || 0) }}</strong>
-                <span>واریز داخلی/دستی</span>
-              </article>
-              <article v-if="reportTab === 'wallet'" class="report-kpi-card">
-                <small>موجودی پیامک</small>
-                <strong>{{ money(reports.summary.wallet_sms_balance_total || 0) }}</strong>
-                <span>از کل {{ money(reports.summary.wallet_regular_balance_total || 0) }} موجودی عادی</span>
-              </article>
-            </div>
-
-            <article class="report-trend-card report-trend-surface">
-              <div class="card-head">
-                <h3>روند {{ reportTabs.find((item) => item.key === reportTab)?.label }}</h3>
-                <span>۱۲ بازه آخر</span>
-              </div>
-              <div class="trend-bars" v-if="reportTrendItems.length">
-                <div v-for="item in reportTrendItems" :key="item.date" class="trend-bar-item">
-                  <small>{{ formatDate(item.date) }}</small>
-                  <div class="trend-bar-shell">
-                    <div class="trend-bar-fill" :style="trendBarStyle(item)"></div>
-                  </div>
-                  <strong>{{ money(trendValue(item)) }}</strong>
-                </div>
-              </div>
-              <div v-else class="empty-note">در این بازه داده‌ای برای روند وجود ندارد.</div>
-            </article>
-
-            <div class="table-wrap report-table-wrap">
-              <table v-if="reportTab === 'revenue'">
-                <thead>
-                  <tr>
-                    <th>رتبه</th>
-                    <th>کارواش</th>
-                    <th>وضعیت</th>
-                    <th>درآمد وصولی</th>
-                    <th>خالص</th>
-                    <th>میانگین فاکتور</th>
-                    <th>مطالبات</th>
-                    <th>پرداخت موفق</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(row, index) in reportRows" :key="row.tenant_id">
-                    <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
-                    <td>
-                      <strong>{{ row.tenant_name }}</strong>
-                      <small class="row-sub">{{ formatDate(row.last_activity_at) }}</small>
-                    </td>
-                    <td><span class="health-pill" :class="row.health">{{ healthLabel(row.health) }}</span></td>
-                    <td>{{ money(row.paid_amount) }}</td>
-                    <td>{{ money(row.net_amount) }}</td>
-                    <td>{{ money(row.average_ticket) }}</td>
-                    <td>{{ money(row.pending_amount) }}</td>
-                    <td>{{ toFa(row.payments_count || 0) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <table v-else>
-                <thead>
-                  <tr>
-                    <th>رتبه</th>
-                    <th>کارواش</th>
-                    <th>وضعیت شارژ</th>
-                    <th>موجودی کل</th>
-                    <th>موجودی عادی</th>
-                    <th>موجودی پیامک</th>
-                    <th>واریز</th>
-                    <th>برداشت</th>
-                    <th>شارژ درگاه</th>
-                    <th>شارژ دستی</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(row, index) in reportRows" :key="row.tenant_id">
-                    <td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td>
-                    <td>
-                      <strong>{{ row.tenant_name }}</strong>
-                      <small class="row-sub">{{ formatDate(row.last_activity_at) }}</small>
-                    </td>
-                    <td><span class="health-pill" :class="row.wallet_charge_health">{{ walletHealthLabel(row.wallet_charge_health) }}</span></td>
-                    <td>{{ money(row.wallet_balance) }}</td>
-                    <td>{{ money(row.wallet_regular_balance) }}</td>
-                    <td>{{ money(row.wallet_sms_balance) }}</td>
-                    <td>{{ money(row.wallet_deposit_total) }}</td>
-                    <td>{{ money(row.wallet_withdraw_total) }}</td>
-                    <td>{{ money(row.wallet_gateway_charge_total) }}</td>
-                    <td>{{ money(row.wallet_manual_charge_total) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <aside class="report-side-col">
-            <div class="report-insight-grid">
-              <article v-if="reportTab === 'revenue' && highlightRow('top_revenue')" class="report-highlight-card success">
-                <small>بیشترین درآمد</small>
-                <strong>{{ highlightRow('top_revenue').tenant_name }}</strong>
-                <p>{{ money(highlightRow('top_revenue').paid_amount) }}</p>
-                <span>{{ toFa(highlightRow('top_revenue').vehicles_count || 0) }} خودرو</span>
-              </article>
-              <article v-if="reportTab === 'revenue' && highlightRow('top_volume')" class="report-highlight-card info">
-                <small>بیشترین حجم کار</small>
-                <strong>{{ highlightRow('top_volume').tenant_name }}</strong>
-                <p>{{ toFa(highlightRow('top_volume').vehicles_count || 0) }} خودرو</p>
-                <span>نرخ تکمیل {{ toFa(highlightRow('top_volume').completion_rate || 0) }}٪</span>
-              </article>
-              <article v-if="reportTab === 'revenue' && highlightRow('watchlist')" class="report-highlight-card warn">
-                <small>نیازمند توجه</small>
-                <strong>{{ highlightRow('watchlist').tenant_name }}</strong>
-                <p>خالص {{ money(highlightRow('watchlist').net_amount) }}</p>
-                <span>مطالبات {{ money(highlightRow('watchlist').pending_amount) }}</span>
-              </article>
-
-              <article v-if="reportTab === 'wallet' && highlightRow('top_wallet_balance')" class="report-highlight-card success">
-                <small>بیشترین موجودی</small>
-                <strong>{{ highlightRow('top_wallet_balance').tenant_name }}</strong>
-                <p>{{ money(highlightRow('top_wallet_balance').wallet_balance) }}</p>
-                <span>موجودی عادی {{ money(highlightRow('top_wallet_balance').wallet_regular_balance) }}</span>
-              </article>
-              <article v-if="reportTab === 'wallet' && highlightRow('top_wallet_deposit')" class="report-highlight-card info">
-                <small>بیشترین شارژ</small>
-                <strong>{{ highlightRow('top_wallet_deposit').tenant_name }}</strong>
-                <p>{{ money(highlightRow('top_wallet_deposit').wallet_deposit_total) }}</p>
-                <span>درگاه {{ money(highlightRow('top_wallet_deposit').wallet_gateway_charge_total) }}</span>
-              </article>
-              <article v-if="reportTab === 'wallet' && highlightRow('wallet_watchlist')" class="report-highlight-card warn">
-                <small>نیازمند شارژ</small>
-                <strong>{{ highlightRow('wallet_watchlist').tenant_name }}</strong>
-                <p>موجودی {{ money(highlightRow('wallet_watchlist').wallet_balance) }}</p>
-                <span>برداشت {{ money(highlightRow('wallet_watchlist').wallet_withdraw_total) }}</span>
-              </article>
-            </div>
-
-            <article class="report-side-stats">
-              <div v-if="reportTab === 'revenue'" class="mini-stat">
-                <small>مطالبات باز</small>
-                <strong>{{ money(reports.summary.pending_amount || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'revenue'" class="mini-stat">
-                <small>مبلغ خدمات</small>
-                <strong>{{ money(reports.summary.services_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'revenue'" class="mini-stat">
-                <small>مبلغ محصولات</small>
-                <strong>{{ money(reports.summary.products_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'revenue'" class="mini-stat">
-                <small>انعام ثبت‌شده</small>
-                <strong>{{ money(reports.summary.tips_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'revenue'" class="mini-stat">
-                <small>تخفیف ثبت‌شده</small>
-                <strong>{{ money(reports.summary.discount_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'revenue'" class="mini-stat">
-                <small>نرخ وصول</small>
-                <strong>{{ toFa(reports.summary.collection_rate || 0) }}٪</strong>
-              </div>
-
-              <div v-if="reportTab === 'wallet'" class="mini-stat">
-                <small>موجودی عادی</small>
-                <strong>{{ money(reports.summary.wallet_regular_balance_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'wallet'" class="mini-stat">
-                <small>موجودی پیامک</small>
-                <strong>{{ money(reports.summary.wallet_sms_balance_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'wallet'" class="mini-stat">
-                <small>شارژ از درگاه</small>
-                <strong>{{ money(reports.summary.wallet_gateway_charge_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'wallet'" class="mini-stat">
-                <small>شارژ دستی</small>
-                <strong>{{ money(reports.summary.wallet_manual_charge_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'wallet'" class="mini-stat">
-                <small>واریز کل</small>
-                <strong>{{ money(reports.summary.wallet_deposit_total || 0) }}</strong>
-              </div>
-              <div v-if="reportTab === 'wallet'" class="mini-stat">
-                <small>برداشت کل</small>
-                <strong>{{ money(reports.summary.wallet_withdraw_total || 0) }}</strong>
-              </div>
-            </article>
-          </aside>
-        </div>
-      </section>
-
-      <section v-else-if="activeTab === 'services'" class="glass-card services-tab-shell">
+      <section v-else-if="activeTab === 'services'" class="hq-module-shell services-module-shell">
         <HqServicesPanel :carwashes="reportCarwashes" />
       </section>
     </main>
@@ -1538,11 +932,12 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../../services/api'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
 import HqServicesPanel from './HqServicesPanel.vue'
+import HqReportsPanel from '../../modules/hq/components/reports/HqReportsPanel.vue'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman } from '../../utils/money'
@@ -1555,6 +950,7 @@ import {
 } from '../../utils/ticketAlert'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const allTabs = [
@@ -1562,8 +958,8 @@ const allTabs = [
   { key: 'carwashes', label: 'کارواش‌ها', meta: 'ثبت و نظارت' },
   { key: 'tickets', label: 'مرکز تیکت', meta: 'پاسخ چت‌محور' },
   { key: 'team', label: 'تیم مرکزی', meta: 'ساخت پشتیبان' },
-  { key: 'services', label: 'سرویس‌ها و قابلیت‌ها', meta: 'اشتراک و لایسنس' },
-  { key: 'reports', label: 'گزارشات', meta: 'تحلیل تاریخی و مالی' }
+  { key: 'services', label: 'سرویس‌ها و اشتراک‌ها', meta: 'اشتراک و لایسنس' },
+  { key: 'reports', label: 'گزارشات مرکزی', meta: 'تحلیل تاریخی و مالی' }
 ]
 const activeTab = ref(authStore.isHqAdmin ? 'overview' : 'tickets')
 const isMobileSidebarOpen = ref(false)
@@ -1591,6 +987,32 @@ const hqFreshnessLabel = computed(() => `آخرین تازه‌سازی: ${forma
 const selectTab = (tabKey) => {
   activeTab.value = tabKey
   isMobileSidebarOpen.value = false
+  const nextQuery = { ...route.query, tab: tabKey }
+  if (tabKey !== 'reports') {
+    delete nextQuery.workspace
+    delete nextQuery.networkTab
+    delete nextQuery.hqShare
+    delete nextQuery.health
+    delete nextQuery.compare
+  }
+  if (tabKey !== 'services') {
+    delete nextQuery.report
+    delete nextQuery.status
+    delete nextQuery.payment
+    delete nextQuery.ordering
+    delete nextQuery.page
+    delete nextQuery.search
+    delete nextQuery.project
+    delete nextQuery.product
+    delete nextQuery.has_debt
+    delete nextQuery.near_expiry
+    delete nextQuery.date_from
+    delete nextQuery.date_to
+  }
+  if (tabKey !== 'reports' && tabKey !== 'services') {
+    delete nextQuery.tenant
+  }
+  router.replace({ query: nextQuery })
 }
 
 const toggleMobileSidebar = () => {
@@ -2905,24 +2327,11 @@ watch(activeTab, async (tab) => {
     await Promise.all([loadTickets(), loadTeam()])
   }
   if (tab === 'team' && authStore.isHqAdmin) await loadTeam()
-  if (tab === 'reports' && authStore.isHqAdmin) {
-    if (!carwashes.value.length) await loadCarwashes()
-    if (!selectedReportTenantId.value && reportCarwashes.value[0]?.id) selectedReportTenantId.value = String(reportCarwashes.value[0].id)
-    await Promise.all([loadReports(), selectedReportTenantId.value ? loadTenantReports() : Promise.resolve()])
+  if ((tab === 'reports' || tab === 'services') && (authStore.isHqAdmin || authStore.isHqFinance || authStore.isHqProjectManager || authStore.isHq)) {
+    if (!carwashes.value.length && (authStore.isHqAdmin || authStore.isHqFinance || authStore.isHqProjectManager)) {
+      await loadCarwashes()
+    }
   }
-  if (tab === 'services') {
-    if (!carwashes.value.length) await loadCarwashes()
-  }
-})
-
-watch(() => [reportFilter.start, reportFilter.end], async () => {
-  if (activeTab.value === 'reports' && authStore.isHqAdmin) {
-    await Promise.all([loadReports(), selectedReportTenantId.value ? loadTenantReports() : Promise.resolve()])
-  }
-})
-
-watch(selectedReportTenantId, async () => {
-  if (activeTab.value === 'reports' && authStore.isHqAdmin) await loadTenantReports()
 })
 
 watch(ticketScope, async () => {
@@ -2933,15 +2342,24 @@ onMounted(async () => {
   window.addEventListener('pointerdown', unlockTicketAlerts, { once: true })
   window.addEventListener('keydown', unlockTicketAlerts, { once: true })
   document.addEventListener('visibilitychange', handleVisibilityRefresh)
+
+  const queryTab = String(route.query.tab || '').trim()
+  if (queryTab && visibleTabs.value.some((item) => item.key === queryTab)) {
+    activeTab.value = queryTab
+  } else if (!authStore.isHqAdmin) {
+    activeTab.value = visibleTabs.value[0]?.key || 'tickets'
+  }
+
   if (authStore.isHqAdmin) {
     await loadOverview()
     await loadCarwashes()
     await loadTeam()
   } else {
-    activeTab.value = 'tickets'
     await loadTeam()
+    if (authStore.isHqFinance || authStore.isHqProjectManager) {
+      await loadCarwashes()
+    }
   }
-  setReportRange('month')
   if (activeTab.value === 'tickets') await loadTickets()
   // Seed alert baseline so the first poll does not treat existing tickets as new.
   await pollTicketAlerts()
@@ -2961,21 +2379,28 @@ onBeforeUnmount(() => {
 <style scoped>
 :global(body) {
   background:
-    radial-gradient(circle at top left, rgba(13, 110, 253, 0.12), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(2, 132, 199, 0.12), transparent 28%),
-    #f3f7fb;
+    radial-gradient(circle at top left, rgba(25, 118, 210, 0.10), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(2, 132, 199, 0.08), transparent 28%),
+    #edf3fb;
+}
+
+.hq-module-shell {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 .hq-page {
   --bg-card: rgba(255, 255, 255, 0.9);
   --bg-soft: rgba(255, 255, 255, 0.7);
   --line: rgba(148, 163, 184, 0.14);
-  --text: #0f172a;
+  --text: #0f2545;
   --muted: #64748b;
-  --primary: #0f5dd7;
-  --primary-soft: rgba(15, 93, 215, 0.12);
-  --success-soft: rgba(22, 163, 74, 0.14);
-  --warn-soft: rgba(245, 158, 11, 0.14);
+  --primary: #1976d2;
+  --primary-soft: rgba(25, 118, 210, 0.12);
+  --success-soft: rgba(76, 175, 80, 0.14);
+  --warn-soft: rgba(217, 119, 6, 0.14);
   min-height: 100vh;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);

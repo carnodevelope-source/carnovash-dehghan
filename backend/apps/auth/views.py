@@ -177,6 +177,13 @@ def _is_hq_admin(user):
     return _platform_role(user) == User.PlatformRoles.HQ_ADMIN
 
 
+def _can_see_hq_reports(user):
+    return _platform_role(user) in {
+        User.PlatformRoles.HQ_ADMIN,
+        User.PlatformRoles.HQ_FINANCE,
+    }
+
+
 def _default_hq_support_user():
     return (
         User.objects.filter(platform_role=User.PlatformRoles.HQ_SUPPORT, is_active=True, is_deleted=False)
@@ -2275,9 +2282,8 @@ def _percent_change(current, previous):
 
 class HqCarWashReportsView(HqBaseView):
     def get(self, request, pk):
-        forbidden = self.forbid_if_not_hq_admin(request)
-        if forbidden:
-            return forbidden
+        if not _can_see_hq_reports(request.user):
+            return Response({'detail': 'دسترسی گزارشات فقط برای مدیرکل و مالی HQ است.'}, status=status.HTTP_403_FORBIDDEN)
 
         tenant = _hq_visible_carwashes().filter(pk=pk, is_active=True).first()
         if not tenant:
@@ -2302,9 +2308,8 @@ class HqCarWashReportsView(HqBaseView):
 
 class HqReportsView(HqBaseView):
     def get(self, request):
-        forbidden = self.forbid_if_not_hq_admin(request)
-        if forbidden:
-            return forbidden
+        if not _can_see_hq_reports(request.user):
+            return Response({'detail': 'دسترسی گزارشات فقط برای مدیرکل و مالی HQ است.'}, status=status.HTTP_403_FORBIDDEN)
 
         start = _parse_dt(request.query_params.get('start'))
         end = _parse_dt(request.query_params.get('end'), end_of_day=True)

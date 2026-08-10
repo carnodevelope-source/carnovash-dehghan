@@ -1,0 +1,187 @@
+/* Shared HQ surface polish — light SaaS, calm blues, soft depth */
+
+.hq-surface {
+  --hq-ink: #0f2545;
+  --hq-ink-soft: #5b6b82;
+  --hq-title: #0c3d78;
+  --hq-line: rgba(25, 118, 210, 0.12);
+  --hq-line-strong: rgba(25, 118, 210, 0.22);
+  --hq-fill: #ffffff;
+  --hq-fill-soft: #f5f8fc;
+  --hq-fill-mute: #eef3fa;
+  --hq-blue: #1976d2;
+  --hq-blue-deep: #0f62b3;
+  --hq-blue-tint: #e8f2fc;
+  --hq-violet: #6d28d9;
+  --hq-violet-tint: #f3eaff;
+  --hq-radius: 16px;
+  --hq-radius-sm: 12px;
+  --hq-ease: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hq-surface {
+  color: var(--hq-ink);
+  display: grid;
+  gap: 1.1rem;
+  padding: 0.15rem 0 1.75rem;
+}
+
+.hq-surface :where(button, input, select, textarea) {
+  font: inherit;
+}
+
+.hq-surface .hq-soft-card {
+  background: var(--hq-fill);
+  border: 1px solid var(--hq-line);
+  border-radius: var(--hq-radius);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 10px 28px rgba(15, 37, 69, 0.035);
+}
+
+.hq-surface .hq-chip,
+.hq-surface .hq-seg button,
+.hq-surface .hq-pill-tab {
+  border: 1px solid var(--hq-line);
+  background: var(--hq-fill-soft);
+  color: var(--hq-ink);
+  border-radius: 999px;
+  min-height: 38px;
+  padding: 0 0.95rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  transition: background var(--hq-ease), border-color var(--hq-ease), color var(--hq-ease), transform var(--hq-ease);
+}
+
+.hq-surface .hq-chip:hover,
+.hq-surface .hq-seg button:hover,
+.hq-surface .hq-pill-tab:hover {
+  border-color: var(--hq-line-strong);
+  background: #fff;
+}
+
+.hq-surface .hq-chip.active,
+.hq-surface .hq-seg button.active,
+.hq-surface .hq-pill-tab.active {
+  background: var(--hq-blue);
+  border-color: var(--hq-blue);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(25, 118, 210, 0.22);
+}
+
+.hq-surface .hq-btn {
+  border: 0;
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 0 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  transition: background var(--hq-ease), box-shadow var(--hq-ease), transform var(--hq-ease), opacity var(--hq-ease);
+}
+
+.hq-surface .hq-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.hq-surface .hq-btn.primary {
+  background: linear-gradient(180deg, #2b86e0 0%, #1976d2 100%);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(25, 118, 210, 0.24);
+}
+
+.hq-surface .hq-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #1f7adb 0%, #0f62b3 100%);
+}
+
+.hq-surface .hq-btn.ghost {
+  background: var(--hq-blue-tint);
+  color: var(--hq-blue-deep);
+}
+
+.hq-surface .hq-btn.ghost:hover:not(:disabled) {
+  background: #dcecfb;
+}
+
+.hq-surface .hq-btn.sm {
+  min-height: 34px;
+  padding: 0 0.8rem;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.hq-surface .hq-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.hq-surface .hq-table-shell {
+  overflow: auto;
+  border: 1px solid var(--hq-line);
+  border-radius: var(--hq-radius);
+  background: var(--hq-fill);
+  box-shadow: 0 10px 28px rgba(15, 37, 69, 0.03);
+}
+
+.hq-surface .hq-table-shell table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.hq-surface .hq-table-shell thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: right;
+  padding: 0.82rem 0.75rem;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--hq-ink-soft);
+  background: linear-gradient(180deg, #f8fbff 0%, #f3f7fc 100%);
+  border-bottom: 1px solid var(--hq-line);
+  white-space: nowrap;
+}
+
+.hq-surface .hq-table-shell td {
+  padding: 0.88rem 0.75rem;
+  border-bottom: 1px solid rgba(226, 234, 245, 0.9);
+  vertical-align: middle;
+}
+
+.hq-surface .hq-table-shell tbody tr {
+  transition: background var(--hq-ease);
+}
+
+.hq-surface .hq-table-shell tbody tr:hover {
+  background: rgba(232, 242, 252, 0.55);
+}
+
+.hq-surface .hq-table-shell tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.hq-surface .hq-link {
+  border: 0;
+  background: none;
+  color: var(--hq-blue);
+  cursor: pointer;
+  font-weight: 650;
+  padding: 0;
+}
+
+.hq-surface .hq-link:hover {
+  color: var(--hq-blue-deep);
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hq-surface * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
