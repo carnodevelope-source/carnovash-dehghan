@@ -84,7 +84,7 @@
               </button>
               <button class="export-action-btn pdf" :disabled="exportState.pdfLoading" @click="exportPdf">
                 <IconlyIcon name="download" size="sm" />
-                {{ exportState.pdfLoading ? 'در حال ساخت PDF...' : 'خروجی PDF' }}
+                {{ exportState.pdfLoading ? (activeTab === 'worker' ? 'در حال آماده‌سازی...' : 'در حال ساخت PDF...') : (activeTab === 'worker' ? 'خروجی / چاپ' : 'خروجی PDF') }}
               </button>
             </section>
           </div>
@@ -370,7 +370,7 @@
   <div v-if="pdfFormatModal.open" class="modal-overlay" @click.self="closePdfFormatModal">
     <section class="modal-panel pdf-format-panel">
       <header class="modal-head">
-        <h3>انتخاب قالب PDF</h3>
+        <h3>{{ activeTab === 'worker' ? 'انتخاب قالب خروجی' : 'انتخاب قالب PDF' }}</h3>
         <button class="close-btn" @click="closePdfFormatModal">✕</button>
       </header>
       <div class="pdf-format-body">
@@ -389,7 +389,7 @@
           @click="selectPdfFormat('receipt')"
         >
           <strong>فیش</strong>
-          <span>{{ selectedWorkerSummary?.worker_id ? 'مخصوص پرینتر حرارتی' : 'اول نیرو را انتخاب کنید' }}</span>
+          <span>{{ selectedWorkerSummary?.worker_id ? 'چاپ مستقیم مثل فاکتور' : 'اول نیرو را انتخاب کنید' }}</span>
         </button>
       </div>
     </section>
@@ -441,6 +441,7 @@ import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { normalizeDigits, normalizePlateLetter as normalizePlateLetterUtil } from '../../utils/plate'
 import { resolveApiErrorMessage } from '../../utils/apiError'
+import { printHtmlElement, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
 import { sectionHelpByPage } from '../../config/pageHelp'
 import HelpTip from '../../components/base/HelpTip.vue'
 
@@ -1035,8 +1036,8 @@ const buildWorkerReceiptElement = () => {
   const style = document.createElement('style')
   style.textContent = `
     .worker-receipt-pdf,.worker-receipt-pdf *{box-sizing:border-box;color:#000!important;background:#fff!important;background-color:#fff!important;box-shadow:none!important;text-shadow:none!important;border-color:#000!important;font-family:Tahoma,Arial,sans-serif!important;font-weight:900!important;letter-spacing:0!important}
-    .worker-receipt-pdf{width:80mm;max-width:80mm;min-width:0;padding:3mm;direction:rtl;line-height:1.45;font-size:11px;overflow:hidden}
-    .worker-receipt-pdf header{display:grid;gap:4px;text-align:center;padding-bottom:7px;border-bottom:2px solid #000}
+    .worker-receipt-pdf{width:80mm;max-width:80mm;min-width:0;min-height:0;height:auto;padding:2mm 3mm 3mm;margin:0;direction:rtl;line-height:1.45;font-size:11px;overflow:hidden;align-content:start}
+    .worker-receipt-pdf header{display:grid;gap:4px;text-align:center;padding:0 0 7px;margin:0;border-bottom:2px solid #000}
     .worker-receipt-pdf header strong{font-size:13px;line-height:1.6}
     .worker-receipt-pdf header span{font-size:11px;line-height:1.6}
     .worker-receipt-pdf table{width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px;border:2px solid #000}
@@ -1088,30 +1089,26 @@ const exportPdfAsPaper = async (paper = 'a4') => {
 
 const exportWorkerReceiptPdf = async () => {
   if (activeTab.value !== 'worker' || !selectedWorkerSummary.value?.worker_id) {
-    errorMessage.value = 'برای ساخت فیش، اول یک نیرو را از فیلتر انتخاب کنید.'
+    errorMessage.value = 'برای چاپ فیش، اول یک نیرو را از فیلتر انتخاب کنید.'
     return
   }
   await fetchReports()
   await nextTick()
   const receiptElement = buildWorkerReceiptElement()
   try {
-    const html2pdfModule = await import('html2pdf.js')
-    const html2pdf = html2pdfModule.default || html2pdfModule
-    const pageHeight = Math.max(120, Math.min(600, 78 + (workerReceiptRows.value.length * 12)))
-    await nextTick()
-    const worker = html2pdf()
-      .set({
-        margin: 0,
-        filename: `worker-receipt-${selectedWorkerSummary.value.worker_id}.pdf`,
-        image: { type: 'jpeg', quality: 1 },
-        html2canvas: { scale: 3, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: [80, pageHeight], orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-      })
-      .from(receiptElement.querySelector('.worker-receipt-pdf'))
-      .toPdf()
-    const pdf = await worker.get('pdf')
-    downloadBlob(pdf.output('blob'), `worker-receipt-${selectedWorkerSummary.value.worker_id}.pdf`)
+    const receiptNode = receiptElement.querySelector('.worker-receipt-pdf')
+    if (!receiptNode) throw new Error('محتوای فیش پیدا نشد.')
+    await printHtmlElement(receiptNode, {
+      widthMm: 80,
+      marginMm: 1.5,
+      marginTopMm: 0,
+      marginRightMm: 1.5,
+      marginBottomMm: 1.5,
+      marginLeftMm: 1.5,
+      minHeightMm: 80,
+      thermal: true,
+      formatLabel: 'فیش حق نیرو'
+    })
   } finally {
     receiptElement.remove()
   }
@@ -1130,7 +1127,9 @@ const selectPdfFormat = async (format) => {
     else await exportPdfAsPaper(format)
   } catch (error) {
     console.error('exportPdf error:', error)
-    errorMessage.value = 'ساخت خروجی PDF ناموفق بود.'
+    errorMessage.value = format === 'receipt'
+      ? resolvePrintErrorMessage(error)
+      : 'ساخت خروجی PDF ناموفق بود.'
   } finally {
     exportState.pdfLoading = false
   }

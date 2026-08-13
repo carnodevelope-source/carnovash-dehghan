@@ -844,6 +844,7 @@ const resolveExistingServiceLines = (vehicle = normalizedVehicle.value) => {
 
 const mergeCatalogWithExistingSelections = () => {
   const existingServices = resolveExistingServiceLines()
+  const nextAdjustments = { ...servicePriceAdjustments.value }
   if (existingServices.length) {
     const byId = new Map(services.value.map((item) => [Number(item.id), item]))
     existingServices.forEach((line) => {
@@ -861,13 +862,24 @@ const mergeCatalogWithExistingSelections = () => {
         })
         return
       }
+      // Keep catalog prices for the current tariff tip so tip changes reprice services.
+      const catalogBase = Number(current.base_price || 0)
+      const catalogList = Number(current.list_price || current.base_price || 0)
+      const storedSale = Number(line.base_price || 0)
+      const storedFinal = Number(line.adjusted_price ?? line.base_price ?? 0)
       byId.set(line.id, {
         ...current,
-        base_price: Number(line.base_price || current.base_price || 0),
-        list_price: Number(line.list_price || current.list_price || current.base_price || 0)
+        base_price: catalogBase,
+        list_price: catalogList
       })
+      if (Math.abs(storedSale - catalogBase) < 0.01) {
+        nextAdjustments[line.id] = Number((storedFinal - catalogBase).toFixed(2))
+      } else {
+        nextAdjustments[line.id] = 0
+      }
     })
     services.value = Array.from(byId.values())
+    servicePriceAdjustments.value = nextAdjustments
   }
 
   const existingProducts = resolveExistingProductLines()

@@ -499,3 +499,103 @@ def loyalty_snapshot(profile):
         'visit_count': int(profile.visit_count or 0),
         'discount_percent': float(profile.next_discount_percent or 0),
     }
+
+
+def visit_score_for_count(visit_count):
+    """Score earned on a specific absolute visit number (cycle-aware)."""
+    position = cycle_visit_position(visit_count)
+    if position <= 0:
+        return Decimal('0')
+    earned = HALF_STAR * Decimal(str(position))
+    if earned > MAX_STARS:
+        earned = MAX_STARS
+    return earned
+
+
+def order_loyalty_from_profile(profile, *, settings_obj=None, discount_percent=None):
+    """Build frozen loyalty fields from the profile state after apply_loyalty_visit."""
+    if not profile:
+        return {
+            'score': Decimal('0'),
+            'visit_count': 0,
+            'discount_percent': Decimal('0'),
+        }
+    visit_count = int(getattr(profile, 'visit_count', 0) or 0)
+    visit_score = getattr(profile, '_loyalty_visit_score', None)
+    if visit_score is None:
+        visit_score = visit_score_for_count(visit_count)
+    score = Decimal(str(visit_score or 0))
+    if discount_percent is None:
+        percent, _amount = compute_configured_loyalty_discount(
+            base_amount=0,
+            profile=profile,
+            settings_obj=settings_obj,
+            visit_count=visit_count,
+            score=score,
+        )
+        discount_percent = percent
+    return {
+        'score': score,
+        'visit_count': visit_count,
+        'discount_percent': Decimal(str(discount_percent or 0)),
+    }
+
+
+def resolve_vehicle_loyalty_snapshot(vehicle, *, settings_obj=None, fallback_profile=None):
+    """Prefer per-order frozen loyalty; fall back to live profile only when unset."""
+    if vehicle is not None and getattr(vehicle, 'loyalty_score_snapshot', None) is not None:
+        visit_count = int(getattr(vehicle, 'loyalty_visit_count_snapshot', 0) or 0)
+        score = Decimal(str(vehicle.loyalty_score_snapshot or 0))
+        if getattr(vehicle, 'loyalty_discount_percent_snapshot', None) is not None:
+            discount_percent = Decimal(str(vehicle.loyalty_discount_percent_snapshot or 0))
+        else:
+            discount_percent, _amount = compute_configured_loyalty_discount(
+                base_amount=0,
+                profile=fallback_profile,
+                settings_obj=settings_obj,
+                visit_count=visit_count,
+                score=score,
+            )
+        return {
+            'score': float(score),
+            'visit_count': visit_count,
+            'discount_percent': float(discount_percent or 0),
+            'from_snapshot': True,
+        }
+
+    live = loyalty_snapshot(fallback_profile)
+    return {
+        'score': live.get('score', 0),
+        'visit_count': live.get('visit_count', 0),
+        'discount_percent': live.get('discount_percent', 0),
+        'from_snapshot': False,
+    }
+
+
+def apply_vehicle_loyalty_snapshot(vehicle, *, profile=None, settings_obj=None, discount_percent=None):
+    """Persist frozen loyalty values onto the vehicle entry."""
+    if vehicle is None:
+        return None
+    if getattr(vehicle, 'is_piece_wash', False):
+        vehicle.loyalty_score_snapshot = Decimal('0')
+        vehicle.loyalty_visit_count_snapshot = 0
+        vehicle.loyalty_discount_percent_snapshot = Decimal('0')
+    else:
+        payload = order_loyalty_from_profile(
+            profile,
+            settings_obj=settings_obj,
+            discount_percent=discount_percent,
+        )
+        vehicle.loyalty_score_snapshot = payload['score']
+        vehicle.loyalty_visit_count_snapshot = payload['visit_count']
+        vehicle.loyalty_discount_percent_snapshot = payload['discount_percent']
+    vehicle.save(
+        update_fields=[
+            'loyalty_score_snapshot',
+            'loyalty_visit_count_snapshot',
+            'loyalty_discount_percent_snapshot',
+            'updated_at',
+        ]
+    )
+    return vehicle
+

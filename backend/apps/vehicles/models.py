@@ -130,6 +130,12 @@ class VehicleEntry(TimestampedModel):
     plate_right = models.CharField(max_length=2, blank=True)
     plate_type = models.CharField(max_length=20, choices=PlateType.choices, default=PlateType.CAR)
     tariff_type = models.CharField(max_length=20, choices=TariffType.choices, default=TariffType.TYPE_1)
+    # Frozen loyalty values for THIS order (not live plate profile).
+    loyalty_score_snapshot = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
+    loyalty_visit_count_snapshot = models.PositiveIntegerField(null=True, blank=True)
+    loyalty_discount_percent_snapshot = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True
+    )
     car_model = models.CharField(max_length=120)
     car_color = models.CharField(max_length=60)
     driver_name = models.CharField(max_length=120)

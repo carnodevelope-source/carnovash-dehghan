@@ -365,12 +365,16 @@ const invoicePrintPageOptions = computed(() => ({
   heightMm: invoicePageMetrics.value.printHeightMm,
   minHeightMm: invoicePageMetrics.value.printMinHeightMm || invoicePageMetrics.value.minHeight,
   marginMm: invoicePageMetrics.value.printMarginMm,
+  marginTopMm: invoiceIsThermal.value ? 0 : invoicePageMetrics.value.printMarginMm,
+  marginRightMm: invoicePageMetrics.value.printMarginMm,
+  marginBottomMm: invoicePageMetrics.value.printMarginMm,
+  marginLeftMm: invoicePageMetrics.value.printMarginMm,
   thermal: Boolean(invoicePageMetrics.value.thermal)
 }))
 const invoiceSheetStyle = computed(() => ({
   width: `${invoicePageMetrics.value.width}mm`,
   maxWidth: `${invoicePageMetrics.value.width}mm`,
-  minHeight: `${invoicePageMetrics.value.minHeight}mm`,
+  minHeight: invoiceIsThermal.value ? 'auto' : `${invoicePageMetrics.value.minHeight}mm`,
   padding: `${invoicePageMetrics.value.padding}mm`,
   gap: `${invoicePageMetrics.value.gap}px`
 }))
@@ -742,7 +746,9 @@ const buildInvoicePdf = async () => {
     const html2pdf = html2pdfModule.default || html2pdfModule
     const worker = html2pdf()
       .set({
-        margin: invoicePageMetrics.value.margin,
+        margin: invoiceIsThermal.value
+          ? [0, invoicePageMetrics.value.margin?.[1] ?? 1, invoicePageMetrics.value.margin?.[2] ?? 1, invoicePageMetrics.value.margin?.[3] ?? 1]
+          : invoicePageMetrics.value.margin,
         filename: `${invoiceFileLabel.value}.pdf`,
         image: { type: 'png', quality: 1 },
         html2canvas: {
@@ -753,7 +759,9 @@ const buildInvoicePdf = async () => {
           scrollX: 0,
           scrollY: 0,
           windowWidth: invoiceTemplateRef.value.scrollWidth,
-          windowHeight: invoiceTemplateRef.value.scrollHeight
+          windowHeight: invoiceTemplateRef.value.scrollHeight,
+          x: 0,
+          y: 0
         },
         jsPDF: { unit: 'mm', format: invoicePageMetrics.value.format, orientation: 'portrait' },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
