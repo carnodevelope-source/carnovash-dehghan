@@ -122,7 +122,7 @@
             <table>
               <thead><tr><th>ردیف</th><th>نام راننده</th><th>جنسیت</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>وضعیت</th><th>حق کارواش</th><th>حق نیرو</th><th>تخفیف</th><th>مالیات</th><th>انعام</th><th>نام نیرو</th><th>خدمات</th><th>تاریخ</th></tr></thead>
               <tbody>
-                <template v-for="row in data.overall_report" :key="`o-${serviceRowKey(row)}`">
+                <template v-for="row in pagedTables.overall.rows" :key="`o-${serviceRowKey(row)}`">
                   <tr class="clickable-row" :class="{ expanded: isServicesExpanded(row) }" @click="openVehicleDetail(row.vehicle_id)">
                     <td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ formatGender(row.driver_gender) }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
                       :plate-number="row.plate_number"
@@ -146,12 +146,21 @@
               </tbody>
             </table>
           </div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.overall.page"
+            :pages="pagedTables.overall.pages"
+            :total="pagedTables.overall.total"
+            :from="pagedTables.overall.from"
+            :to="pagedTables.overall.to"
+            @update:page="setTablePage('overall', $event)"
+          />
         </template>
 
         <template v-else-if="activeTab === 'carwash'">
           <h3>گزارش حق کارواش</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>حق کارواش</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.carwash_report" :key="`c-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+            <tr v-for="row in pagedTables.carwash.rows" :key="`c-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
                       :plate-number="row.plate_number"
                       :plate-left="row.plate_left"
                       :plate-letter="row.plate_letter"
@@ -161,6 +170,15 @@
                       compact
                     /></span></td><td>{{ money(row.carwash_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.carwash.page"
+            :pages="pagedTables.carwash.pages"
+            :total="pagedTables.carwash.total"
+            :from="pagedTables.carwash.from"
+            :to="pagedTables.carwash.to"
+            @update:page="setTablePage('carwash', $event)"
+          />
         </template>
 
         <template v-else-if="activeTab === 'worker'">
@@ -188,7 +206,7 @@
             <article class="payout-card"><p>مانده انعام قابل پرداخت</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
           </div>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>مبلغ سفارش بدون انعام</th><th>انعام</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.worker_report" :key="`w-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+            <tr v-for="row in pagedTables.worker.rows" :key="`w-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
                       :plate-number="row.plate_number"
                       :plate-left="row.plate_left"
                       :plate-letter="row.plate_letter"
@@ -198,6 +216,15 @@
                       compact
                     /></span></td><td>{{ money(row.final_total_without_tip ?? row.service_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.worker.page"
+            :pages="pagedTables.worker.pages"
+            :total="pagedTables.worker.total"
+            :from="pagedTables.worker.from"
+            :to="pagedTables.worker.to"
+            @update:page="setTablePage('worker', $event)"
+          />
           <div v-if="selectedWorkerSummary" class="transactions-shell">
             <div class="worker-head">
               <h3>تراکنش‌های مالی {{ selectedWorkerSummary.worker_name }}</h3>
@@ -207,16 +234,25 @@
               </div>
             </div>
             <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نوع</th><th>مبلغ</th><th>ماه بیمه</th><th>سفارش</th><th>توضیح</th><th>زمان</th></tr></thead><tbody>
-              <tr v-for="(row, index) in selectedWorkerTransactions" :key="row.id"><td>{{ Number(index + 1).toLocaleString('fa-IR') }}</td><td>{{ payoutKindLabel(row.kind) }}</td><td>{{ money(row.amount) }}</td><td>{{ row.reference_month || '-' }}</td><td>{{ row.vehicle_job_id || '-' }}</td><td>{{ row.note || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+              <tr v-for="row in pagedTables.workerTx.rows" :key="row.id"><td>{{ faNumber(row._pageRow) }}</td><td>{{ payoutKindLabel(row.kind) }}</td><td>{{ money(row.amount) }}</td><td>{{ row.reference_month || '-' }}</td><td>{{ row.vehicle_job_id || '-' }}</td><td>{{ row.note || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
               <tr v-if="!selectedWorkerTransactions.length"><td colspan="7">تراکنشی ثبت نشده است.</td></tr>
             </tbody></table></div>
+            <ReportPager
+              v-if="!exportAllRows"
+              :page="pagedTables.workerTx.page"
+              :pages="pagedTables.workerTx.pages"
+              :total="pagedTables.workerTx.total"
+              :from="pagedTables.workerTx.from"
+              :to="pagedTables.workerTx.to"
+              @update:page="setTablePage('workerTx', $event)"
+            />
           </div>
         </template>
 
         <template v-else-if="activeTab === 'tips'">
           <h3>گزارش انعام</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>انعام</th><th>نام نیرو</th><th>کالا</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.tips_report" :key="`t-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+            <tr v-for="row in pagedTables.tips.rows" :key="`t-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
                       :plate-number="row.plate_number"
                       :plate-left="row.plate_left"
                       :plate-letter="row.plate_letter"
@@ -226,6 +262,15 @@
                       compact
                     /></span></td><td>{{ money(row.tip_amount) }}</td><td>{{ row.worker_name }}</td><td>{{ row.products || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.tips.page"
+            :pages="pagedTables.tips.pages"
+            :total="pagedTables.tips.total"
+            :from="pagedTables.tips.from"
+            :to="pagedTables.tips.to"
+            @update:page="setTablePage('tips', $event)"
+          />
         </template>
 
         <template v-else-if="activeTab === 'discount'">
@@ -234,7 +279,7 @@
             تخفیف امتیاز مشتری همان تخفیف باشگاه مشتریان است که بر اساس امتیاز و دفعات مراجعه پلاک در بازه انتخابی ثبت شده است.
           </p>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>شماره</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>تخفیف امتیاز / مراجعه</th><th>تخفیف مجموعه</th><th>تخفیف دستی</th><th>جمع تخفیف</th><th>تاریخ</th></tr></thead><tbody>
-            <tr v-for="row in data.discount_report" :key="`d-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)">
+            <tr v-for="row in pagedTables.discount.rows" :key="`d-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)">
               <td>{{ row.row }}</td>
               <td>{{ row.driver_name }}</td>
               <td>{{ row.driver_phone }}</td>
@@ -257,12 +302,21 @@
             </tr>
             <tr v-if="!data.discount_report.length"><td colspan="11">در این بازه تخفیفی ثبت نشده است.</td></tr>
           </tbody></table></div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.discount.page"
+            :pages="pagedTables.discount.pages"
+            :total="pagedTables.discount.total"
+            :from="pagedTables.discount.from"
+            :to="pagedTables.discount.to"
+            @update:page="setTablePage('discount', $event)"
+          />
         </template>
 
         <template v-else-if="activeTab === 'revenue'">
           <h3>گزارش درآمد</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>تاریخ</th><th>راننده</th><th>شماره</th><th>مدل خودرو</th><th>رنگ</th><th class="col-plate">پلاک</th><th>روش پرداخت</th><th>وضعیت پرداخت</th><th>خدمات</th><th>محصولات</th><th>تخفیف</th><th>انعام</th><th>مالیات</th><th>مبلغ نهایی</th><th>وصول شده</th><th>مانده</th><th>شماره چک</th><th>سررسید</th></tr></thead><tbody>
-            <tr v-for="row in data.revenue_report" :key="`r-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+            <tr v-for="row in pagedTables.revenue.rows" :key="`r-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ dateTime(row.created_at) }}</td><td>{{ row.driver_name }}</td><td>{{ row.driver_phone }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
                       :plate-number="row.plate_number"
                       :plate-left="row.plate_left"
                       :plate-letter="row.plate_letter"
@@ -272,21 +326,39 @@
                       compact
                     /></span></td><td>{{ paymentMethodLabel(row.payment_method) }}</td><td>{{ paymentStateLabel(row.payment_status) }}</td><td>{{ money(row.service_amount) }}</td><td>{{ money(row.product_amount) }}</td><td>{{ money(row.discount_amount) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.tax_amount) }}</td><td>{{ money(row.final_total) }}</td><td>{{ money(row.received_amount) }}</td><td>{{ money(row.outstanding_amount) }}</td><td>{{ row.cheque_number || '-' }}</td><td>{{ dateOnly(row.reminder_due_at) }}</td></tr>
           </tbody></table></div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.revenue.page"
+            :pages="pagedTables.revenue.pages"
+            :total="pagedTables.revenue.total"
+            :from="pagedTables.revenue.from"
+            :to="pagedTables.revenue.to"
+            @update:page="setTablePage('revenue', $event)"
+          />
         </template>
 
         <template v-else-if="activeTab === 'attendance'">
           <h3>گزارش ورود و خروج</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام پرسنل</th><th>نوع رویداد</th><th>منبع ثبت</th><th>زمان</th></tr></thead><tbody>
-            <tr v-for="row in data.attendance_report" :key="`a-${row.row}`"><td>{{ row.row }}</td><td>{{ row.worker_name }}</td><td>{{ row.event_type === 'in' ? 'ورود' : 'خروج' }}</td><td>{{ row.source === 'manager' ? 'مدیر' : row.source === 'link' ? 'لینک پرسنل' : (row.source || '-') }}</td><td>{{ dateTime(row.event_at) }}</td></tr>
+            <tr v-for="row in pagedTables.attendance.rows" :key="`a-${row.row}`"><td>{{ row.row }}</td><td>{{ row.worker_name }}</td><td>{{ row.event_type === 'in' ? 'ورود' : 'خروج' }}</td><td>{{ row.source === 'manager' ? 'مدیر' : row.source === 'link' ? 'لینک پرسنل' : (row.source || '-') }}</td><td>{{ dateTime(row.event_at) }}</td></tr>
             <tr v-if="!data.attendance_report.length"><td colspan="5">رکوردی برای این بازه پیدا نشد.</td></tr>
           </tbody></table></div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.attendance.page"
+            :pages="pagedTables.attendance.pages"
+            :total="pagedTables.attendance.total"
+            :from="pagedTables.attendance.from"
+            :to="pagedTables.attendance.to"
+            @update:page="setTablePage('attendance', $event)"
+          />
         </template>
 
         <template v-else-if="activeTab === 'blacklist'">
           <h3>گزارش لیست سیاه</h3>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th class="col-plate">پلاک</th><th>نوع وسیله</th><th>توضیح</th><th>ثبت کننده</th><th>تاریخ ثبت</th></tr></thead><tbody>
             <tr
-              v-for="row in data.blacklist_report"
+              v-for="row in pagedTables.blacklist.rows"
               :key="`b-${row.id || row.row}`"
               class="clickable-row"
               @click="openBlacklistRow(row)"
@@ -308,6 +380,15 @@
             </tr>
             <tr v-if="!data.blacklist_report.length"><td colspan="6">پلاکی در لیست سیاه برای این بازه پیدا نشد.</td></tr>
           </tbody></table></div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.blacklist.page"
+            :pages="pagedTables.blacklist.pages"
+            :total="pagedTables.blacklist.total"
+            :from="pagedTables.blacklist.from"
+            :to="pagedTables.blacklist.to"
+            @update:page="setTablePage('blacklist', $event)"
+          />
         </template>
 
       </section>
@@ -444,6 +525,7 @@ import { resolveApiErrorMessage } from '../../utils/apiError'
 import { printHtmlElement, resolvePrintErrorMessage } from '../../utils/receiptPrinter'
 import { sectionHelpByPage } from '../../config/pageHelp'
 import HelpTip from '../../components/base/HelpTip.vue'
+import ReportPager from '../../components/reports/ReportPager.vue'
 
 const activeTab = ref('overall')
 const authStore = useAuthStore()
@@ -507,6 +589,19 @@ const data = reactive({
 const expandedServiceRows = ref({})
 const selectedWorkerSummary = ref(null)
 const selectedWorkerTransactions = ref([])
+const REPORT_PAGE_SIZE = 50
+const exportAllRows = ref(false)
+const tablePage = reactive({
+  overall: 1,
+  carwash: 1,
+  worker: 1,
+  workerTx: 1,
+  tips: 1,
+  discount: 1,
+  revenue: 1,
+  attendance: 1,
+  blacklist: 1
+})
 const vehicleModal = reactive({ open: false, loading: false, data: null })
 const blacklistModal = reactive({ open: false, submitting: false, row: null, error: '' })
 const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '' })
@@ -529,6 +624,58 @@ const tabs = [
 const moneyInputValue = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
 const parseMoneyInput = (value) => fromThousandsTomanInput(normalizeDigits(value))
 
+const paginateList = (rows, page, { numbered = false } = {}) => {
+  const list = Array.isArray(rows) ? rows : []
+  const total = list.length
+  const pages = Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE) || 1)
+  const safePage = Math.min(Math.max(1, Number(page) || 1), pages)
+  if (exportAllRows.value) {
+    const mapped = numbered
+      ? list.map((row, index) => ({ ...row, _pageRow: index + 1 }))
+      : list
+    return { rows: mapped, total, pages, page: 1, from: total ? 1 : 0, to: total, pageSize: REPORT_PAGE_SIZE }
+  }
+  const start = (safePage - 1) * REPORT_PAGE_SIZE
+  const slice = list.slice(start, start + REPORT_PAGE_SIZE)
+  const mapped = numbered
+    ? slice.map((row, index) => ({ ...row, _pageRow: start + index + 1 }))
+    : slice
+  return {
+    rows: mapped,
+    total,
+    pages,
+    page: safePage,
+    from: total ? start + 1 : 0,
+    to: Math.min(start + REPORT_PAGE_SIZE, total),
+    pageSize: REPORT_PAGE_SIZE
+  }
+}
+
+const pagedTables = computed(() => ({
+  overall: paginateList(data.overall_report, tablePage.overall),
+  carwash: paginateList(data.carwash_report, tablePage.carwash),
+  worker: paginateList(data.worker_report, tablePage.worker),
+  workerTx: paginateList(selectedWorkerTransactions.value, tablePage.workerTx, { numbered: true }),
+  tips: paginateList(data.tips_report, tablePage.tips),
+  discount: paginateList(data.discount_report, tablePage.discount),
+  revenue: paginateList(data.revenue_report, tablePage.revenue),
+  attendance: paginateList(data.attendance_report, tablePage.attendance),
+  blacklist: paginateList(data.blacklist_report, tablePage.blacklist)
+}))
+
+const resetTablePages = () => {
+  Object.keys(tablePage).forEach((key) => { tablePage[key] = 1 })
+}
+
+const setTablePage = (key, page) => {
+  const meta = pagedTables.value[key]
+  const pages = Math.max(1, Number(meta?.pages) || 1)
+  tablePage[key] = Math.min(Math.max(1, Number(page) || 1), pages)
+  nextTick(() => {
+    reportExportRef.value?.querySelector('.table-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
+}
+
 const insuranceMonthOptions = [
   { value: '01', label: 'فروردین' },
   { value: '02', label: 'اردیبهشت' },
@@ -545,6 +692,7 @@ const insuranceMonthOptions = [
 ]
 
 const money = (v) => formatThousandsToman(v)
+const faNumber = (value) => Number(value || 0).toLocaleString('fa-IR')
 const dateTime = (v) => formatJalaliDate(v)
 const dateOnly = (v) => formatJalaliDate(v)
 const receiptDateTime = (v) => formatJalaliDateTime(v)
@@ -938,6 +1086,7 @@ const fetchReports = async () => {
     data.revenue_report = payload.revenue_report || []
     selectedWorkerSummary.value = payload.selected_worker_summary || null
     selectedWorkerTransactions.value = payload.selected_worker_transactions || []
+    resetTablePages()
   } catch (error) {
     if (token !== fetchToken) return
     errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری گزارشات ناموفق بود.')
@@ -1068,23 +1217,28 @@ const buildWorkerReceiptElement = () => {
 
 const exportPdfAsPaper = async (paper = 'a4') => {
   if (!reportExportRef.value) return
+  exportAllRows.value = true
   await nextTick()
-  const html2pdfModule = await import('html2pdf.js')
-  const html2pdf = html2pdfModule.default || html2pdfModule
-  const format = paper === 'a5' ? 'a5' : 'a4'
-  const worker = html2pdf()
-    .set({
-      margin: format === 'a5' ? 6 : 8,
-      filename: `reports-${activeTab.value}-${format}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format, orientation: 'landscape' },
-      pagebreak: { mode: ['css', 'legacy'] }
-    })
-    .from(reportExportRef.value)
-    .toPdf()
-  const pdf = await worker.get('pdf')
-  downloadBlob(pdf.output('blob'), `reports-${activeTab.value}-${format}.pdf`)
+  try {
+    const html2pdfModule = await import('html2pdf.js')
+    const html2pdf = html2pdfModule.default || html2pdfModule
+    const format = paper === 'a5' ? 'a5' : 'a4'
+    const worker = html2pdf()
+      .set({
+        margin: format === 'a5' ? 6 : 8,
+        filename: `reports-${activeTab.value}-${format}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format, orientation: 'landscape' },
+        pagebreak: { mode: ['css', 'legacy'] }
+      })
+      .from(reportExportRef.value)
+      .toPdf()
+    const pdf = await worker.get('pdf')
+    downloadBlob(pdf.output('blob'), `reports-${activeTab.value}-${format}.pdf`)
+  } finally {
+    exportAllRows.value = false
+  }
 }
 
 const exportWorkerReceiptPdf = async () => {
