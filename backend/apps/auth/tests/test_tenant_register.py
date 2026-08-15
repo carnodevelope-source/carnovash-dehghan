@@ -53,6 +53,29 @@ class TenantRegisterTests(APITestCase):
         self.assertEqual(response.data['registration']['ticket_id'], ticket.id)
         self.assertEqual(ticket.attachments.count(), 1)
 
+    def test_register_succeeds_without_identity_documents(self):
+        response = self.client.post(
+            reverse('tenant-register'),
+            {
+                'carwash_name': 'کارواش بدون مدرک',
+                'carwash_address': 'اصفهان',
+                'manager_first_name': 'سارا',
+                'manager_last_name': 'احمدی',
+                'manager_username': 'no-doc-manager',
+                'manager_phone': '09120000009',
+                'manager_password': 'pass12345',
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        tenant = CarWash.objects.get(name='کارواش بدون مدرک')
+        ticket = SupportTicket.objects.get(tenant=tenant, is_registration_request=True)
+        self.assertEqual(ticket.attachments.count(), 0)
+        self.assertEqual(response.data['registration']['documents_count'], 0)
+        self.assertIn('بدون مدرک', ticket.messages.first().body)
+        self.assertNotIn('همراه با مدارک', response.data['registration']['message'])
+
     def test_pending_registration_cannot_log_in_before_support_approval(self):
         self.client.post(
             reverse('tenant-register'),

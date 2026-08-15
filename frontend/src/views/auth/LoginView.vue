@@ -83,9 +83,9 @@
                 <textarea v-model.trim="registerForm.carwash_address" rows="3" placeholder="شهر، خیابان، پلاک یا توضیح موقعیت" />
               </label>
               <label class="field field-soft full">
-                <span>مدارک شناسایی کسب‌وکار</span>
+                <span>مدارک شناسایی کسب‌وکار <em class="optional-mark">(اختیاری)</em></span>
                 <input type="file" multiple accept=".jpg,.jpeg,.png,.pdf,.webp" @change="onRegisterDocumentsChange" />
-                <small class="upload-hint">حداقل یک فایل بارگذاری کنید. فرمت‌های مجاز: تصویر یا PDF</small>
+                <small class="upload-hint">اختیاری است. در صورت تمایل تصویر یا PDF بارگذاری کنید.</small>
                 <div v-if="registerForm.business_identity_documents.length" class="upload-file-list">
                   <span v-for="file in registerForm.business_identity_documents" :key="`${file.name}-${file.size}`">{{ file.name }}</span>
                 </div>
@@ -282,10 +282,6 @@ const submitRegister = async () => {
   const phoneError = iranMobileErrorMessage(registerForm.manager_phone, { label: 'شماره موبایل مدیر' })
   if (phoneError) {
     registerError.value = phoneError
-    return
-  }
-  if (!registerForm.business_identity_documents.length) {
-    registerError.value = 'بارگذاری حداقل یک مدرک شناسایی کسب‌وکار الزامی است.'
     return
   }
 
@@ -669,6 +665,12 @@ const submitRegister = async () => {
 .upload-hint {
   color: #64748b;
   font-size: 12px;
+}
+
+.optional-mark {
+  font-style: normal;
+  font-weight: 600;
+  color: #64748b;
 }
 
 .upload-file-list {

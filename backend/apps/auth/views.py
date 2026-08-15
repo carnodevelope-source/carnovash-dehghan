@@ -582,8 +582,6 @@ class TenantRegisterView(APIView):
             return Response({'carwash_slug': ['این شناسه قبلا ثبت شده است.']}, status=status.HTTP_400_BAD_REQUEST)
 
         documents = request.FILES.getlist('business_identity_documents')
-        if not documents:
-            return Response({'business_identity_documents': ['بارگذاری حداقل یک مدرک شناسایی کسب‌وکار الزامی است.']}, status=status.HTTP_400_BAD_REQUEST)
 
         tenant = CarWash.objects.create(
             name=data['carwash_name'],
@@ -616,7 +614,11 @@ class TenantRegisterView(APIView):
                 f'نام کاربری: {manager.username}\n'
                 f'شماره موبایل: {manager.phone}\n'
                 f'آدرس: {tenant.address or "-"}\n'
-                f'لطفا مدارک کسب‌وکار را بررسی و در صورت تایید، حساب را فعال کنید.'
+                + (
+                    'مدارک شناسایی کسب‌وکار پیوست شده است؛ لطفا بررسی و در صورت تایید، حساب را فعال کنید.'
+                    if documents
+                    else 'مدارک شناسایی کسب‌وکار بارگذاری نشده است. در صورت نیاز می‌توانید از متقاضی بخواهید بعدا ارسال کند.'
+                )
             ),
             category=SupportTicket.Category.ACCOUNT,
             priority=SupportTicket.Priority.HIGH,
@@ -628,7 +630,11 @@ class TenantRegisterView(APIView):
         SupportTicketMessage.objects.create(
             ticket=ticket,
             sender=manager,
-            body='درخواست ثبت‌نام و مدارک شناسایی کسب‌وکار برای بررسی پشتیبانی ارسال شد.',
+            body=(
+                'درخواست ثبت‌نام همراه با مدارک شناسایی کسب‌وکار برای بررسی پشتیبانی ارسال شد.'
+                if documents
+                else 'درخواست ثبت‌نام بدون مدرک شناسایی کسب‌وکار برای بررسی پشتیبانی ارسال شد.'
+            ),
         )
         for uploaded_file in documents:
             SupportTicketAttachment.objects.create(
@@ -662,7 +668,11 @@ class TenantRegisterView(APIView):
                     'status': PendingTenantRegistration.Status.PENDING,
                     'ticket_id': ticket.id,
                     'documents_count': len(documents),
-                    'message': 'درخواست ثبت‌نام شما همراه با مدارک برای پشتیبانی ارسال شد. بعد از تایید، پیامک فعال‌سازی ارسال می‌شود و لاگین شما باز خواهد شد.',
+                    'message': (
+                        'درخواست ثبت‌نام شما همراه با مدارک برای پشتیبانی ارسال شد. بعد از تایید، پیامک فعال‌سازی ارسال می‌شود و لاگین شما باز خواهد شد.'
+                        if documents
+                        else 'درخواست ثبت‌نام شما برای پشتیبانی ارسال شد. بعد از تایید، پیامک فعال‌سازی ارسال می‌شود و لاگین شما باز خواهد شد.'
+                    ),
                 },
             },
             status=status.HTTP_201_CREATED,
