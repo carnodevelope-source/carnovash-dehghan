@@ -52,8 +52,8 @@
             />
           </div>
           <div class="result-card">
-            <small>مدل و رنگ</small>
-            <strong>{{ detectedModelColor }}</strong>
+            <small>مدل خودرو</small>
+            <strong>{{ detectedModelLabel }}</strong>
           </div>
         </div>
 
@@ -260,11 +260,7 @@ const aiRecognitionSnapshot = ref({
   convertedPlateType: 'car',
   imageBase64: '',
   confidence: null,
-  latencyMs: null,
-  color: '',
-  colorConfidence: null,
-  colorReliable: false,
-  colorStable: false
+  latencyMs: null
 })
 
 const cameraVideoRef = ref(null)
@@ -292,13 +288,6 @@ const normalizeAiConfidence = (value) => {
   const numericValue = Number(value)
   if (!Number.isFinite(numericValue)) return null
   return Math.round(Math.min(999.99, Math.max(0, numericValue)) * 100) / 100
-}
-const normalizeAiColor = (data = {}) => {
-  const color = String(data?.color || data?.car_color || '').trim()
-  if (!color) return ''
-  const normalized = color.toLowerCase()
-  if (['unknown', 'none', 'null', '-', 'n/a'].includes(normalized)) return ''
-  return color
 }
 const isAnonymousVisit = (data = {}) => {
   if (Boolean(data.isPieceWash || data.is_piece_wash)) return false
@@ -407,11 +396,7 @@ const hydrateForm = (data = {}) => {
     convertedPlateType: String(data.aiConvertedPlateType || form.plateType || 'car').trim() || 'car',
     imageBase64: String(data.aiImageBase64 || '').trim(),
     confidence: normalizeAiConfidence(data.aiConfidence),
-    latencyMs: data.aiLatencyMs ?? null,
-    color: String(data.aiColor || data.color || data.car_color || '').trim(),
-    colorConfidence: normalizeAiConfidence(data.aiColorConfidence ?? data.color_confidence),
-    colorReliable: Boolean(data.aiColorReliable ?? data.color_reliable),
-    colorStable: Boolean(data.aiColorStable ?? data.color_stable)
+    latencyMs: data.aiLatencyMs ?? null
   }
   syncLetterSuggestions(form.plateType === 'car' ? form.plateLetter : '')
 }
@@ -642,8 +627,6 @@ const applyRecognizedPlate = (data) => {
   form.plateLetter = letter
   form.plateMid = mid
   form.plateRight = plateType === 'motorcycle' ? '' : right
-  const aiColor = normalizeAiColor(data)
-  if (aiColor) form.color = aiColor
   detectedPlateSnapshot.value = {
     left: plateType === 'motorcycle' ? '' : left,
     letter,
@@ -716,11 +699,7 @@ const recognizePlateImage = async (imageDataUrl) => {
       convertedPlateType: recognizedPlateType,
       imageBase64: imageDataUrl,
       confidence: recognizedConfidence,
-      latencyMs: data?.latency_ms ?? null,
-      color: normalizeAiColor(data),
-      colorConfidence: normalizeAiConfidence(data?.color_confidence),
-      colorReliable: Boolean(data?.color_reliable),
-      colorStable: Boolean(data?.color_stable)
+      latencyMs: data?.latency_ms ?? null
     }
     if (data?.mode === 'stub') {
       setCameraMessage(data?.detail || 'مدل واقعی تشخیص پلاک هنوز روی سرویس AI نصب نشده است.', true)
@@ -731,25 +710,22 @@ const recognizePlateImage = async (imageDataUrl) => {
       return
     }
     if (!applyRecognizedPlate(data)) {
-      const aiColor = normalizeAiColor(data)
-      if (aiColor && !form.isAnonymous && !form.isPieceWash) form.color = aiColor
       const extractedText = String(data?.persian_text || data?.text || '').trim()
       const aiReason = String(data?.reason || '').trim()
       setCameraMessage(
         extractedText
-          ? `متن پلاک خوانده شد اما فرم آن کامل نیست: ${extractedText}${aiColor ? ` | رنگ ${aiColor}` : ''}`
-          : `پلاک در تصویر پیدا نشد${aiReason ? ` (${aiReason})` : ''}${aiColor ? ` | رنگ ${aiColor}` : ''}. عکس واضح‌تر و نزدیک‌تر بگیرید.`,
+          ? `متن پلاک خوانده شد اما فرم آن کامل نیست: ${extractedText}`
+          : `پلاک در تصویر پیدا نشد${aiReason ? ` (${aiReason})` : ''}. عکس واضح‌تر و نزدیک‌تر بگیرید.`,
         true
       )
       return
     }
     const correctedFromHistory = await tryResolveLetterFromHistory()
     const confidenceText = cameraState.lastConfidence ? ` | اطمینان ${(cameraState.lastConfidence * 100).toFixed(0)}٪` : ''
-    const colorText = form.color ? ` | رنگ ${form.color}` : ''
     setCameraMessage(
       correctedFromHistory
-        ? `پلاک ${plate.value} از روی سابقه مشتری اصلاح و ثبت شد${colorText}${confidenceText}.`
-        : `پلاک ${plate.value} ثبت شد${colorText}${confidenceText}.`
+        ? `پلاک ${plate.value} از روی سابقه مشتری اصلاح و ثبت شد${confidenceText}.`
+        : `پلاک ${plate.value} ثبت شد${confidenceText}.`
     )
     if (isMobileViewport.value) isAiPanelCollapsed.value = true
   } catch (error) {
@@ -852,8 +828,8 @@ const cameraHintText = computed(() => {
   if (cameraState.loading) return 'در حال تشخیص پلاک...'
   return 'در حال آماده‌سازی دوربین...'
 })
-const detectedModelColor = computed(() => {
-  const text = `${form.model.trim()} ${form.color.trim()}`.trim()
+const detectedModelLabel = computed(() => {
+  const text = form.model.trim()
   return text || '---'
 })
 const letterSuggestionOptions = computed(() => letterSuggestions.value)

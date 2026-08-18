@@ -1980,7 +1980,10 @@ const confirmReleaseServicePicker = () => {
       service_id: serviceId,
       service_name: service.name,
       quantity: 1,
+      list_unit_price: Number(service.list_price || service.base_price || 0),
+      unit_price: Number(service.base_price || 0),
       line_total: Number(service.base_price || 0),
+      discount_amount: Math.max(0, Number(service.list_price || service.base_price || 0) - Number(service.base_price || 0)),
       is_completed: true,
       is_selected: true
     })
@@ -2392,7 +2395,8 @@ const openReleaseModal = async (car) => {
       availableServicesToAdd: Array.isArray(data?.job?.available_services) ? data.job.available_services.map((item) => ({
         id: Number(item.id),
         name: item.name,
-        base_price: Number(item.base_price || 0)
+        base_price: Number(item.base_price || 0),
+        list_price: Number(item.list_price || item.base_price || 0)
       })) : [],
       selectedServiceToAdd: 0
     }
@@ -2600,9 +2604,14 @@ const invoicePaymentStatusLabel = computed(() => (
   releaseSummary.value.finalTotal > 0 ? paymentStatusLabel(releaseCandidate.value?.payment_status) : 'تسویه شده'
 ))
 const invoiceServiceLineListTotal = (line) => {
-  return Number(line?.line_total || 0) + Number(line?.discount_amount || 0)
+  const quantity = Math.max(1, Number(line?.quantity || 1) || 1)
+  const listUnit = Number(line?.list_unit_price || 0)
+  if (listUnit > 0) return Number((listUnit * quantity).toFixed(2))
+  return Number((Number(line?.line_total || 0) + Number(line?.discount_amount || 0)).toFixed(2))
 }
-const invoiceSubtotal = computed(() => Number((releaseSummary.value.servicesTotal + releaseSummary.value.productsTotal).toFixed(2)))
+const invoiceSubtotal = computed(() => Number((
+  Number(releaseSummary.value.serviceListSubtotal || 0) + Number(releaseSummary.value.productsTotal || 0)
+).toFixed(2)))
 const invoiceDueDateLabel = computed(() => (
   releaseForm.value.creditDueDate && ['credit', 'cheque', 'manual'].includes(releaseForm.value.paymentMethod)
     ? releaseForm.value.creditDueDate
@@ -2802,7 +2811,10 @@ const addServiceFromSystem = (rawServiceId = null) => {
     service_id: service.id,
     service_name: service.name,
     quantity: 1,
-    line_total: service.base_price,
+    list_unit_price: Number(service.list_price || service.base_price || 0),
+    unit_price: Number(service.base_price || 0),
+    line_total: Number(service.base_price || 0),
+    discount_amount: Math.max(0, Number(service.list_price || service.base_price || 0) - Number(service.base_price || 0)),
     is_completed: true
   })
   releaseForm.value.newServiceLines.push({

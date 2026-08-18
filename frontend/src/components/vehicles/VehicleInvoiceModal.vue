@@ -287,7 +287,8 @@ const invoiceMeta = reactive({
   taxAmount: 0,
   finalTotal: 0,
   servicesTotal: 0,
-  productsTotal: 0
+  productsTotal: 0,
+  serviceListSubtotal: 0
 })
 
 const invoicePresetOptions = [
@@ -418,9 +419,12 @@ const invoiceServiceLines = computed(() => {
 const invoiceProductLines = computed(() => (
   Array.isArray(invoiceMeta.productLines) ? invoiceMeta.productLines : []
 ))
-const invoiceServiceLineListTotal = (line) => (
-  Number(line?.line_total || 0) + Number(line?.discount_amount || 0)
-)
+const invoiceServiceLineListTotal = (line) => {
+  const quantity = Math.max(1, Number(line?.quantity || 1) || 1)
+  const listUnit = Number(line?.list_unit_price || 0)
+  if (listUnit > 0) return Number((listUnit * quantity).toFixed(2))
+  return Number((Number(line?.line_total || 0) + Number(line?.discount_amount || 0)).toFixed(2))
+}
 const invoiceSummary = computed(() => ({
   facilityDiscountAmount: Number(invoiceMeta.facilityDiscountAmount || 0),
   customerDiscountAmount: Number(invoiceMeta.customerDiscountAmount || 0),
@@ -430,10 +434,11 @@ const invoiceSummary = computed(() => ({
   taxAmount: Number(invoiceMeta.taxAmount || 0),
   finalTotal: Number(invoiceMeta.finalTotal || 0),
   servicesTotal: Number(invoiceMeta.servicesTotal || 0),
-  productsTotal: Number(invoiceMeta.productsTotal || 0)
+  productsTotal: Number(invoiceMeta.productsTotal || 0),
+  serviceListSubtotal: Number(invoiceMeta.serviceListSubtotal || 0)
 }))
 const invoiceSubtotal = computed(() => Number((
-  invoiceSummary.value.servicesTotal + invoiceSummary.value.productsTotal
+  (invoiceSummary.value.serviceListSubtotal || invoiceSummary.value.servicesTotal) + invoiceSummary.value.productsTotal
 ).toFixed(2)))
 
 const invoiceAdmissionNumber = computed(() => Number(
@@ -555,6 +560,7 @@ const resetInvoiceMeta = () => {
   invoiceMeta.finalTotal = 0
   invoiceMeta.servicesTotal = 0
   invoiceMeta.productsTotal = 0
+  invoiceMeta.serviceListSubtotal = 0
 }
 
 const hydrateFromVehicleFallback = () => {
@@ -564,8 +570,15 @@ const hydrateFromVehicleFallback = () => {
     (sum, line) => sum + Number(line?.line_total || 0),
     0
   )
-  const serviceListSubtotal = serviceLines.reduce(
-    (sum, line) => sum + Number(line?.line_total || 0) + Number(line?.discount_amount || 0),
+  const serviceListSubtotal = Number(job.service_list_subtotal || 0) || serviceLines.reduce(
+    (sum, line) => {
+      const quantity = Math.max(1, Number(line?.quantity || 1) || 1)
+      const listUnit = Number(line?.list_unit_price || 0)
+      const listTotal = listUnit > 0
+        ? listUnit * quantity
+        : Number(line?.line_total || 0) + Number(line?.discount_amount || 0)
+      return sum + listTotal
+    },
     0
   ) || (servicesTotal + Number(job.facility_discount_total || 0))
   const productsTotal = Number(job.products_total || 0)
@@ -583,6 +596,7 @@ const hydrateFromVehicleFallback = () => {
     id: line.id,
     service_name: line.service_name,
     quantity: Number(line.quantity || 1),
+    list_unit_price: Number(line.list_unit_price || 0),
     line_total: Number(line.line_total || 0),
     discount_amount: Number(line.discount_amount || 0),
     is_completed: line.is_completed !== false
@@ -600,6 +614,7 @@ const hydrateFromVehicleFallback = () => {
   invoiceMeta.finalTotal = finalTotal
   invoiceMeta.servicesTotal = servicesTotal
   invoiceMeta.productsTotal = productsTotal
+  invoiceMeta.serviceListSubtotal = serviceListSubtotal
   invoiceMeta.paymentBreakdownLabel = ''
 }
 
@@ -627,6 +642,7 @@ const loadInvoiceContext = async () => {
         id: line.id,
         service_name: line.service_name,
         quantity: Number(line.quantity || 1),
+        list_unit_price: Number(line.list_unit_price || 0),
         line_total: Number(line.line_total || 0),
         discount_amount: Number(line.discount_amount || 0),
         is_completed: line.is_completed !== false
@@ -716,6 +732,7 @@ const loadInvoiceContext = async () => {
     invoiceMeta.finalTotal = finalTotal
     invoiceMeta.servicesTotal = servicesTotal
     invoiceMeta.productsTotal = productsTotal
+    invoiceMeta.serviceListSubtotal = serviceListSubtotal
     invoiceMeta.paymentBreakdownLabel = ''
 
     syncInvoiceLayoutFromPrinterSettings(settings.receipt_printer_paper_width || '80mm')

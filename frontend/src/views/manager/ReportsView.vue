@@ -115,6 +115,7 @@
 
       <section ref="reportExportRef" class="table-card">
         <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
+        <p v-if="syncNotice" class="sync-notice">{{ syncNotice }}</p>
 
         <template v-if="activeTab === 'overall'">
           <h3>گزارش کل</h3>
@@ -591,6 +592,10 @@ const selectedWorkerSummary = ref(null)
 const selectedWorkerTransactions = ref([])
 const REPORT_PAGE_SIZE = 50
 const exportAllRows = ref(false)
+const lastWorkerSyncSignature = ref('')
+let workerSyncTimer = null
+let workerSyncInFlight = false
+let workerSyncRequestToken = 0
 const tablePage = reactive({
   overall: 1,
   carwash: 1,
@@ -880,6 +885,21 @@ const buildReportParams = () => {
   }
 }
 
+const buildWorkerSyncSignature = () => JSON.stringify({
+  tab: activeTab.value,
+  workerId: filters.workerId || '',
+  rangeKey: filters.rangeKey,
+  startJalali: filters.startJalali || '',
+  endJalali: filters.endJalali || '',
+  q: (filters.q || '').trim(),
+  insuranceMonthJalali: filters.insuranceMonthJalali || '',
+  plateType: filters.plateType || '',
+  plateLeft: filters.plateLeft || '',
+  plateLetter: filters.plateLetter || '',
+  plateMid: filters.plateMid || '',
+  plateRight: filters.plateRight || ''
+})
+
 const payoutButtonLabel = computed(() => `پرداخت حقوق ${selectedWorkerSummary.value?.worker_name || ''}`)
 const insurancePayoutButtonLabel = computed(() => `پرداخت حق بیمه ${selectedWorkerSummary.value?.worker_name || ''}`)
 const tipPayoutButtonLabel = computed(() => `پرداخت انعام ${selectedWorkerSummary.value?.worker_name || ''}`)
@@ -1058,13 +1078,16 @@ const fetchWorkers = async () => {
 }
 
 let fetchToken = 0
-const fetchReports = async () => {
+const fetchReports = async ({ withSync = false, syncLimit = null, skipWorkerAutoSync = false } = {}) => {
   const token = ++fetchToken
   errorMessage.value = ''
   try {
-    const { data: payload } = await api.get('/reports/dashboard/', {
-      params: buildReportParams()
-    })
+    const params = {
+      ...buildReportParams(),
+      ...(withSync ? { sync: 1 } : {}),
+      ...(withSync && syncLimit != null ? { sync_limit: syncLimit } : {})
+    }
+    const { data: payload } = await api.get('/reports/dashboard/', { params })
     if (token !== fetchToken) return
     Object.assign(summary, payload.summary || {})
     Object.assign(sectionTotals.overall, payload.section_totals?.overall || {})
@@ -1087,10 +1110,45 @@ const fetchReports = async () => {
     selectedWorkerSummary.value = payload.selected_worker_summary || null
     selectedWorkerTransactions.value = payload.selected_worker_transactions || []
     resetTablePages()
+    if (!skipWorkerAutoSync && !withSync && activeTab.value === 'worker') {
+      scheduleWorkerReportSync()
+    }
   } catch (error) {
     if (token !== fetchToken) return
     errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری گزارشات ناموفق بود.')
   }
+}
+
+const syncWorkerReportRows = async ({ full = false } = {}) => {
+  if (activeTab.value !== 'worker') return
+  if (workerSyncInFlight) return
+  const signature = buildWorkerSyncSignature()
+  if (!full && signature === lastWorkerSyncSignature.value) return
+
+  workerSyncInFlight = true
+  const token = ++workerSyncRequestToken
+  try {
+    await fetchReports({
+      withSync: true,
+      syncLimit: full ? null : REPORT_PAGE_SIZE,
+      skipWorkerAutoSync: true
+    })
+    if (token === workerSyncRequestToken) {
+      lastWorkerSyncSignature.value = signature
+    }
+  } finally {
+    if (token === workerSyncRequestToken) {
+      workerSyncInFlight = false
+    }
+  }
+}
+
+const scheduleWorkerReportSync = ({ full = false, delayMs = 120 } = {}) => {
+  if (activeTab.value !== 'worker') return
+  if (workerSyncTimer) clearTimeout(workerSyncTimer)
+  workerSyncTimer = setTimeout(() => {
+    syncWorkerReportRows({ full })
+  }, delayMs)
 }
 
 const downloadBlob = (blob, filename) => {
@@ -1572,7 +1630,15 @@ let filterTimer = null
 watch(() => [filters.q, filters.rangeKey, filters.startJalali, filters.endJalali, filters.workerId, filters.insuranceMonthJalali, filters.plateType, filters.plateLeft, filters.plateLetter, filters.plateMid, filters.plateRight], () => {
   normalizePlateFilters()
   if (filterTimer) clearTimeout(filterTimer)
-  filterTimer = setTimeout(fetchReports, 280)
+  filterTimer = setTimeout(() => {
+    lastWorkerSyncSignature.value = ''
+    fetchReports({ withSync: true, skipWorkerAutoSync: true })
+  }, 280)
+})
+
+watch(activeTab, (tab) => {
+  if (tab !== 'worker') return
+  scheduleWorkerReportSync()
 })
 
 watch(() => [payoutModal.target, payoutModal.mode, payoutModal.insuranceMonth], () => {

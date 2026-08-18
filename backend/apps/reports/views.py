@@ -2,6 +2,7 @@ from datetime import datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.http import HttpResponse
+from django.db import transaction
 from django.db.models import Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -395,6 +396,267 @@ def _job_worker_share_for(job, worker_id):
     return Decimal('0')
 
 
+def _money_q(value):
+    return _normalize_decimal(value).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def _query_flag(value):
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _parse_sync_limit(value, default=None):
+    if value is None or str(value).strip() == '':
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed < 0:
+        return default
+    return parsed
+
+
+def _snapshot_items(job):
+    snapshot = getattr(job, 'assigned_workers_snapshot', None)
+    if not isinstance(snapshot, list):
+        return []
+    return [dict(item) for item in snapshot if isinstance(item, dict)]
+
+
+def _recover_job_commission_percent(job):
+    """Return (percent, should_persist) for percent-paid jobs with a missing commission rate."""
+    stored = min(Decimal('100'), max(Decimal('0'), _normalize_decimal(getattr(job, 'worker_payment_percent', 0))))
+    if stored > 0:
+        return stored, False
+    worker = getattr(job, 'assigned_worker', None)
+    if not worker:
+        return Decimal('0'), False
+    payment_type = str(getattr(worker, 'payment_type', '') or '').strip().lower()
+    if payment_type and payment_type != WorkerProfile.PaymentType.PERCENT:
+        return Decimal('0'), False
+    recovered = min(Decimal('100'), max(Decimal('0'), _normalize_decimal(getattr(worker, 'default_commission_percent', 0))))
+    if recovered <= 0:
+        return Decimal('0'), False
+    return recovered, True
+
+
+def _expected_worker_share_total(job, share_base):
+    share_base = max(Decimal('0'), _money_q(share_base))
+    payment_type = getattr(job, 'worker_payment_type', '') or VehicleJob.WorkerPaymentType.PERCENT
+    stored_share = min(share_base, _money_q(getattr(job, 'worker_share_amount', 0)))
+    if payment_type == VehicleJob.WorkerPaymentType.HOURLY:
+        return stored_share, False, _normalize_decimal(getattr(job, 'worker_payment_percent', 0))
+    if payment_type == VehicleJob.WorkerPaymentType.FIXED:
+        expected = min(share_base, _money_q(getattr(job, 'worker_payment_fixed', 0)))
+        if expected <= 0:
+            worker = getattr(job, 'assigned_worker', None)
+            expected = min(share_base, _money_q(getattr(worker, 'default_fixed_wage', 0))) if worker else Decimal('0')
+        if expected <= 0:
+            expected = stored_share
+        return expected, False, _normalize_decimal(getattr(job, 'worker_payment_percent', 0))
+
+    percent, persist_percent = _recover_job_commission_percent(job)
+    if percent <= 0 and share_base > 0 and stored_share > 0:
+        percent = min(Decimal('100'), _money_q((stored_share * Decimal('100')) / share_base))
+        persist_percent = percent > 0
+    if percent > 0:
+        return _money_q((share_base * percent) / Decimal('100')), persist_percent, percent
+    return stored_share, persist_percent, percent
+
+
+def _distribute_by_percent(total, percents):
+    total = _money_q(total)
+    count = len(percents)
+    if count <= 0:
+        return []
+    if total <= 0:
+        return [Decimal('0')] * count
+    amounts = []
+    distributed = Decimal('0')
+    for index, percent in enumerate(percents):
+        if index == count - 1:
+            amount = max(Decimal('0'), total - distributed)
+        else:
+            amount = _money_q((total * max(Decimal('0'), _normalize_decimal(percent))) / Decimal('100'))
+        amounts.append(amount)
+        distributed += amount
+    return amounts
+
+
+def _build_synced_snapshot(job, worker_share_total, tip_amount):
+    worker_ids = _job_worker_ids(job)
+    snapshot = _snapshot_items(job)
+    by_id = {}
+    for item in snapshot:
+        try:
+            worker_id = int(item.get('id'))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if worker_id > 0:
+            by_id[worker_id] = item
+    ordered_ids = []
+    for worker_id in worker_ids:
+        if worker_id not in ordered_ids:
+            ordered_ids.append(int(worker_id))
+    if not ordered_ids and job.assigned_worker_id:
+        ordered_ids = [int(job.assigned_worker_id)]
+    if not ordered_ids:
+        return snapshot, False
+
+    percents = []
+    for worker_id in ordered_ids:
+        item = by_id.get(worker_id) or {}
+        if item.get('worker_share_percent') is not None:
+            percents.append(_job_worker_distribution_percent_for(job, worker_id))
+        else:
+            percents.append(Decimal('0'))
+    percent_total = sum(percents, Decimal('0'))
+    if percent_total <= 0:
+        equal = _money_q(Decimal('100') / Decimal(str(len(ordered_ids))))
+        percents = [equal] * len(ordered_ids)
+        remainder = Decimal('100') - (equal * (len(ordered_ids) - 1))
+        percents[-1] = remainder
+        percent_total = Decimal('100')
+    elif abs(percent_total - Decimal('100')) > Decimal('0.05'):
+        scaled = []
+        scaled_sum = Decimal('0')
+        for index, percent in enumerate(percents):
+            if index == len(percents) - 1:
+                scaled.append(max(Decimal('0'), Decimal('100') - scaled_sum))
+            else:
+                value = _money_q((percent * Decimal('100')) / percent_total)
+                scaled.append(value)
+                scaled_sum += value
+        percents = scaled
+
+    tip_percents = []
+    for worker_id in ordered_ids:
+        item = by_id.get(worker_id) or {}
+        if item.get('tip_share_percent') is not None:
+            tip_percents.append(min(Decimal('100'), max(Decimal('0'), _normalize_decimal(item.get('tip_share_percent')))))
+        else:
+            tip_percents.append(Decimal('0'))
+    if sum(tip_percents, Decimal('0')) <= 0 and _money_q(tip_amount) > 0:
+        tip_percents = list(percents)
+
+    share_amounts = _distribute_by_percent(worker_share_total, percents)
+    tip_amounts = _distribute_by_percent(tip_amount, tip_percents)
+    assigned_name = _worker_name(getattr(job, 'assigned_worker', None))
+    synced = []
+    changed = len(snapshot) != len(ordered_ids)
+    for index, worker_id in enumerate(ordered_ids):
+        item = by_id.get(worker_id) or {}
+        name = str(item.get('name') or '').strip()
+        if not name or name == '-':
+            if job.assigned_worker_id and int(job.assigned_worker_id) == worker_id:
+                name = assigned_name if assigned_name != '-' else name
+        next_item = {
+            **item,
+            'id': worker_id,
+            'name': name or item.get('name') or '',
+            'worker_share_percent': float(_money_q(percents[index])),
+            'worker_share_amount': float(share_amounts[index]),
+            'tip_share_percent': float(_money_q(tip_percents[index])),
+            'tip_share_amount': float(tip_amounts[index]),
+        }
+        if (
+            _money_q(item.get('worker_share_amount')) != share_amounts[index]
+            or _money_q(item.get('tip_share_amount')) != tip_amounts[index]
+            or _money_q(item.get('worker_share_percent')) != _money_q(percents[index])
+            or int(item.get('id') or 0) != worker_id
+        ):
+            changed = True
+        synced.append(next_item)
+    return synced, changed
+
+
+def _expected_carwash_share(job, share_base, worker_share_total, tip_amount, workers_tip_share_amount):
+    post_sale_discount = min(
+        _money_q(getattr(job, 'services_total', 0)),
+        _money_q(getattr(job, 'loyalty_discount_total', 0)) + _money_q(getattr(job, 'manual_discount_total', 0)),
+    )
+    return max(
+        Decimal('0'),
+        _money_q(share_base)
+        - _money_q(worker_share_total)
+        + max(Decimal('0'), _money_q(tip_amount) - _money_q(workers_tip_share_amount))
+        - post_sale_discount,
+    )
+
+
+def _expected_final_total(job, share_base, tip_amount):
+    stored = _money_q(getattr(job, 'final_total', 0))
+    if stored > 0:
+        return stored
+    service_list = _money_q(getattr(job, 'service_list_subtotal', 0))
+    if service_list <= 0:
+        service_list = _money_q(getattr(job, 'services_total', 0))
+    products_total = _money_q(getattr(job, 'products_total', 0))
+    discount_total = _job_discount_total(job)
+    tax_total = _money_q(getattr(job, 'tax_total', 0))
+    computed = max(Decimal('0'), service_list - discount_total) + products_total + tax_total + _money_q(tip_amount)
+    if computed <= 0:
+        computed = max(Decimal('0'), _money_q(share_base) - discount_total) + tax_total + _money_q(tip_amount)
+    return _money_q(computed)
+
+
+def _sync_released_job_financials(job):
+    """Persist missing worker share / snapshot / tip split so reports stop showing 0."""
+    if not job:
+        return False
+    share_base = _job_share_base_total(job)
+    tip_amount = _money_q(getattr(job, 'tip_amount', 0))
+    expected_share, persist_percent, percent = _expected_worker_share_total(job, share_base)
+    snapshot, snapshot_changed = _build_synced_snapshot(job, expected_share, tip_amount)
+    workers_tip = sum((_money_q(item.get('tip_share_amount')) for item in snapshot), Decimal('0'))
+    expected_carwash = _expected_carwash_share(job, share_base, expected_share, tip_amount, workers_tip)
+    expected_final = _expected_final_total(job, share_base, tip_amount)
+
+    update_fields = []
+    if persist_percent and _money_q(getattr(job, 'worker_payment_percent', 0)) != _money_q(percent):
+        job.worker_payment_percent = _money_q(percent)
+        update_fields.append('worker_payment_percent')
+    if _money_q(getattr(job, 'worker_share_amount', 0)) != expected_share:
+        job.worker_share_amount = expected_share
+        update_fields.append('worker_share_amount')
+    if snapshot_changed:
+        job.assigned_workers_snapshot = snapshot
+        update_fields.append('assigned_workers_snapshot')
+    if _money_q(getattr(job, 'workers_tip_share_amount', 0) or 0) != workers_tip:
+        job.workers_tip_share_amount = workers_tip if workers_tip > 0 else None
+        update_fields.append('workers_tip_share_amount')
+    stored_carwash = _money_q(getattr(job, 'carwash_share_amount', 0))
+    if stored_carwash != expected_carwash and (
+        'worker_share_amount' in update_fields or (stored_carwash <= 0 and expected_carwash > 0)
+    ):
+        job.carwash_share_amount = expected_carwash
+        update_fields.append('carwash_share_amount')
+    if _money_q(getattr(job, 'final_total', 0)) <= 0 and expected_final > 0:
+        job.final_total = expected_final
+        update_fields.append('final_total')
+    if not update_fields:
+        return False
+    if 'updated_at' not in update_fields:
+        update_fields.append('updated_at')
+    with transaction.atomic():
+        job.save(update_fields=update_fields)
+    return True
+
+
+def _sync_released_jobs(jobs, limit=None):
+    synced = 0
+    checked = 0
+    for job in jobs:
+        if not job:
+            continue
+        if limit is not None and checked >= limit:
+            break
+        checked += 1
+        if _sync_released_job_financials(job):
+            synced += 1
+    return synced
+
+
 def _job_worker_tip_for(job, worker_id):
     snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
     for item in snapshot:
@@ -670,6 +932,14 @@ class ReportsDashboardView(APIView):
             plate_number=plate_number,
             plate_type=plate_type,
         )
+        sync_jobs = _query_flag(request.query_params.get('sync'))
+        synced_jobs = 0
+        if sync_jobs:
+            sync_limit = _parse_sync_limit(request.query_params.get('sync_limit'), default=None)
+            synced_jobs = _sync_released_jobs(
+                (getattr(vehicle, 'job', None) for vehicle in vehicles),
+                limit=sync_limit,
+            )
 
         rows = []
         worker_jobs = []
@@ -1051,7 +1321,10 @@ class ReportsDashboardView(APIView):
                 'plate_right': plate_right,
                 'plate_type': plate_type,
                 'insurance_month': insurance_month,
+                'sync': sync_jobs,
+                'sync_limit': _parse_sync_limit(request.query_params.get('sync_limit'), default=None),
             },
+            'synced_jobs': synced_jobs,
             'summary': {
                 'vehicles_count': len(rows),
                 'carwash_total': float(total_carwash),
