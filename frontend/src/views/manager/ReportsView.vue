@@ -736,6 +736,9 @@ const overallFinalAmount = () => {
   if (explicitTotal > 0) return explicitTotal
   return overallAmount('carwash_total') + overallAmount('worker_total') + overallAmount('tips_total')
 }
+const overallFinalAmountWithoutTip = () => (
+  Math.max(0, Math.round(overallFinalAmount()) - Math.round(overallAmount('tips_total')))
+)
 const overallBeforeDiscountAmount = () => (
   Math.round(overallFinalAmount()) + Math.round(overallAmount('discount_total'))
 )
@@ -744,6 +747,7 @@ const visibleSummaryCards = computed(() => {
     return [
       { key: 'visits_count', label: 'کل مراجعات', value: Number(overallAmount('vehicles_count')).toLocaleString('fa-IR') },
       { key: 'final_total', label: 'مبلغ نهایی', value: money(overallFinalAmount()) },
+      { key: 'final_total_without_tip', label: 'مبلغ نهایی بدون انعام', value: money(overallFinalAmountWithoutTip()) },
       { key: 'carwash_total', label: 'حق کارواش', value: money(overallAmount('carwash_total')) },
       { key: 'worker_total', label: 'حق نیرو', value: money(overallAmount('worker_total')) },
       { key: 'tips_total', label: 'انعام', value: money(overallAmount('tips_total')) },
