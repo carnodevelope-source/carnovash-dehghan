@@ -984,6 +984,7 @@ import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.v
 import { useAuthStore } from '../../store/auth.store'
 import { useVehicleStore } from '../../store/vehicle.store'
 import api from '../../services/api'
+import { LIVE_EVENT_NAME, createLiveEventSource, parseLiveEvent } from '../../services/live'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
@@ -1109,6 +1110,8 @@ const vehicleStore = useVehicleStore()
 const authStore = useAuthStore()
 const { vehicles, selectedVehicle } = storeToRefs(vehicleStore)
 const vehicleCardsRefreshTimer = ref(null)
+const vehicleLiveRefreshTimer = ref(null)
+const vehicleLiveStream = ref(null)
 const vehicleCardsRefreshInFlight = ref(false)
 const hasOperatorModalOpen = computed(() => (
   showVehicleModal.value
@@ -1482,7 +1485,37 @@ const refreshVehicleCardsFromDatabase = async () => {
 }
 const startVehicleCardsAutoRefresh = () => {
   if (vehicleCardsRefreshTimer.value) window.clearInterval(vehicleCardsRefreshTimer.value)
-  vehicleCardsRefreshTimer.value = window.setInterval(refreshVehicleCardsFromDatabase, 10000)
+  vehicleLiveStream.value?.close()
+  vehicleLiveStream.value = createLiveEventSource()
+  vehicleLiveStream.value?.addEventListener('open', () => {
+    void refreshVehicleCardsFromDatabase()
+  })
+  vehicleLiveStream.value?.addEventListener('message', (event) => {
+    const payload = parseLiveEvent(event.data)
+    if (!payload?.type || !String(payload.type).startsWith('vehicle.')) return
+    if (vehicleLiveRefreshTimer.value) window.clearTimeout(vehicleLiveRefreshTimer.value)
+    vehicleLiveRefreshTimer.value = window.setTimeout(refreshVehicleCardsFromDatabase, 300)
+  })
+  vehicleCardsRefreshTimer.value = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return
+    void refreshVehicleCardsFromDatabase()
+  }, 60000)
+}
+
+const onGlobalLiveEvent = (event) => {
+  const type = String(event?.detail?.type || '')
+  if (!type) return
+  if (
+    type.startsWith('worker.')
+    || type.startsWith('service.')
+    || type.startsWith('product.')
+    || type.startsWith('inventory.')
+    || type.startsWith('payment.')
+    || type === 'settings.updated'
+  ) {
+    if (vehicleLiveRefreshTimer.value) window.clearTimeout(vehicleLiveRefreshTimer.value)
+    vehicleLiveRefreshTimer.value = window.setTimeout(refreshVehicleCardsFromDatabase, 400)
+  }
 }
 const selectDatePreset = (mode) => {
   dateRangeMode.value = mode
@@ -3769,6 +3802,7 @@ const loadVehicleSmsSettings = async () => {
 onMounted(() => {
   fetchVehiclesForActiveRange()
   startVehicleCardsAutoRefresh()
+  window.addEventListener(LIVE_EVENT_NAME, onGlobalLiveEvent)
   loadVehicleSmsSettings()
   syncReleaseMobileState()
   window.addEventListener('resize', syncReleaseMobileState)
@@ -3793,6 +3827,9 @@ watch(
 onBeforeUnmount(() => {
   unlockBodyScrollForModal()
   if (vehicleCardsRefreshTimer.value) window.clearInterval(vehicleCardsRefreshTimer.value)
+  if (vehicleLiveRefreshTimer.value) window.clearTimeout(vehicleLiveRefreshTimer.value)
+  vehicleLiveStream.value?.close()
+  window.removeEventListener(LIVE_EVENT_NAME, onGlobalLiveEvent)
   if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
   if (plateDebounceTimer) window.clearTimeout(plateDebounceTimer)
   if (invoiceRenderTimer.value) window.clearTimeout(invoiceRenderTimer.value)

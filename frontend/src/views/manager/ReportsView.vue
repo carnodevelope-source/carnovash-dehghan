@@ -509,8 +509,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
+import { LIVE_EVENT_NAME } from '../../services/live'
 import { useAuthStore } from '../../store/auth.store'
 import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
@@ -529,6 +530,7 @@ import HelpTip from '../../components/base/HelpTip.vue'
 import ReportPager from '../../components/reports/ReportPager.vue'
 
 const activeTab = ref('overall')
+let liveReloadTimer = null
 const authStore = useAuthStore()
 const workers = ref([])
 const errorMessage = ref('')
@@ -1653,6 +1655,31 @@ watch(() => [payoutModal.target, payoutModal.mode, payoutModal.insuranceMonth], 
 onMounted(async () => {
   await fetchWorkers()
   await fetchReports()
+  window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+})
+
+const onLiveEvent = (event) => {
+  const type = String(event?.detail?.type || '')
+  if (
+    type.startsWith('vehicle.')
+    || type.startsWith('worker.')
+    || type.startsWith('payment.')
+    || type.startsWith('inventory.')
+    || type.startsWith('expense.')
+    || type.startsWith('service.')
+    || type === 'settings.updated'
+  ) {
+    if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+    liveReloadTimer = window.setTimeout(() => {
+      void fetchReports()
+      if (type.startsWith('worker.')) void fetchWorkers()
+    }, 700)
+  }
+}
+
+onBeforeUnmount(() => {
+  if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+  window.removeEventListener(LIVE_EVENT_NAME, onLiveEvent)
 })
 </script>
 

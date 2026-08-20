@@ -814,8 +814,9 @@
   </AppShell>
 </template>
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '../../services/api'
+import { LIVE_EVENT_NAME } from '../../services/live'
 import { useAuthStore } from '../../store/auth.store'
 import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
@@ -929,6 +930,7 @@ const forms = reactive({
 
 const toast = reactive({ show: false, type: 'success', msg: '' })
 let timer = null
+let liveReloadTimer = null
 
 const t = (msg, type = 'success') => {
   toast.show = true
@@ -1793,9 +1795,33 @@ const deleteProduct = async (item) => {
 const deleteExpense = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/inventory/expenses/${item.id}/`); t('حذف شد'); await loadAll() }
 const deleteService = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/services/${item.id}/`); t('حذف شد'); await loadAll() }
 
+const onLiveEvent = (event) => {
+  const type = String(event?.detail?.type || '')
+  if (
+    type.startsWith('worker.')
+    || type.startsWith('service.')
+    || type.startsWith('product.')
+    || type.startsWith('inventory.')
+    || type.startsWith('expense.')
+    || type.startsWith('notification.')
+    || type === 'settings.updated'
+  ) {
+    if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+    liveReloadTimer = window.setTimeout(() => {
+      void loadAll()
+    }, 500)
+  }
+}
+
 onMounted(async () => {
   await authStore.fetchMe()
   await loadAll()
+  window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+})
+
+onBeforeUnmount(() => {
+  if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+  window.removeEventListener(LIVE_EVENT_NAME, onLiveEvent)
 })
 </script>
 

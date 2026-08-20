@@ -228,6 +228,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../store/auth.store'
 import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
+import { createLiveEventSource, dispatchLiveEvent, parseLiveEvent } from '../../services/live'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, getFeatureLockNotice, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
 import { notifyWarning } from '../../utils/notify'
 import IconlyIcon from '../base/IconlyIcon.vue'
@@ -265,6 +266,8 @@ const hasActiveSearch = computed(() => (
 const mobileLoginArtSrc = `${import.meta.env.BASE_URL}Mobile-bg-640.webp`
 const trialRemainingMs = ref(0)
 let supportCountInterval = null
+let supportCountLiveRefreshTimer = null
+let supportCountLiveStream = null
 let supportCountPollingInFlight = false
 let trialCountdownInterval = null
 let trialExpiryHandled = false
@@ -537,6 +540,50 @@ const loadSupportOpenCount = async () => {
   }
 }
 
+const stopSupportCountLive = () => {
+  if (supportCountInterval) {
+    window.clearInterval(supportCountInterval)
+    supportCountInterval = null
+  }
+  if (supportCountLiveRefreshTimer) {
+    window.clearTimeout(supportCountLiveRefreshTimer)
+    supportCountLiveRefreshTimer = null
+  }
+  supportCountLiveStream?.close()
+  supportCountLiveStream = null
+}
+
+const startSupportCountLive = () => {
+  stopSupportCountLive()
+  supportCountLiveStream = createLiveEventSource()
+  supportCountLiveStream?.addEventListener('open', () => {
+    void loadSupportOpenCount()
+    void loadWalletWarning()
+  })
+  supportCountLiveStream?.addEventListener('message', (event) => {
+    const payload = parseLiveEvent(event.data)
+    if (!payload?.type) return
+    dispatchLiveEvent(payload)
+    const type = String(payload.type)
+    if (type.startsWith('support.')) {
+      if (supportCountLiveRefreshTimer) window.clearTimeout(supportCountLiveRefreshTimer)
+      supportCountLiveRefreshTimer = window.setTimeout(loadSupportOpenCount, 400)
+    }
+    if (
+      type.startsWith('payment.')
+      || type.startsWith('subscription.')
+      || type.startsWith('notification.')
+      || type === 'settings.updated'
+    ) {
+      void loadWalletWarning()
+    }
+  })
+  supportCountInterval = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return
+    void loadSupportOpenCount()
+  }, 60000)
+}
+
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   window.addEventListener('resize', onWindowResize)
@@ -553,7 +600,7 @@ onMounted(() => {
   syncTrialCountdown()
   loadWalletWarning()
   loadSupportOpenCount()
-  supportCountInterval = window.setInterval(loadSupportOpenCount, 10000)
+  startSupportCountLive()
   trialCountdownInterval = window.setInterval(syncTrialCountdown, 1000)
 })
 
@@ -585,7 +632,7 @@ onBeforeUnmount(() => {
   } else if (compactSearchMedia?.removeListener) {
     compactSearchMedia.removeListener(syncCompactSearchMode)
   }
-  if (supportCountInterval) window.clearInterval(supportCountInterval)
+  stopSupportCountLive()
   if (trialCountdownInterval) window.clearInterval(trialCountdownInterval)
   document.body.classList.remove('mobile-menu-open')
 })

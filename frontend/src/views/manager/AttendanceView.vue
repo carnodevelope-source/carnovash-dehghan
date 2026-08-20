@@ -286,13 +286,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import HelpTip from '../../components/base/HelpTip.vue'
 import { sectionHelpByPage } from '../../config/pageHelp'
 import api from '../../services/api'
+import { LIVE_EVENT_NAME } from '../../services/live'
 import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 
@@ -325,6 +326,7 @@ const dateTime = (value) => formatJalaliDateTime(value)
 const dateLabel = (value) => formatJalaliDate(value)
 const loadLabel = (value) => ({ free: 'آزاد', normal: 'نرمال', busy: 'شلوغ' }[value] || '-')
 const sourceLabel = (value) => ({ manager: 'ثبت مدیر', link: 'لینک نیرو' }[value] || value || '-')
+let liveReloadTimer = null
 
 const filteredWorkers = computed(() => {
   const query = String(filters.value.q || '').trim().toLowerCase()
@@ -527,7 +529,26 @@ const refreshToken = async (worker) => {
   }
 }
 
-onMounted(loadDashboard)
+const onLiveEvent = (event) => {
+  const type = String(event?.detail?.type || '')
+  if (type.startsWith('worker.')) {
+    if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+    liveReloadTimer = window.setTimeout(() => {
+      void loadDashboard()
+      if (activeTab.value === 'reports') void loadAttendanceReports()
+    }, 500)
+  }
+}
+
+onMounted(() => {
+  void loadDashboard()
+  window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+})
+
+onBeforeUnmount(() => {
+  if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+  window.removeEventListener(LIVE_EVENT_NAME, onLiveEvent)
+})
 
 let reportFilterTimer = null
 watch(() => [activeTab.value, reportFilters.rangeKey, reportFilters.startJalali, reportFilters.endJalali, reportFilters.q, reportFilters.workerId], () => {

@@ -712,9 +712,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../../services/api'
+import { LIVE_EVENT_NAME } from '../../services/live'
 import BaseDatePicker from '../base/BaseDatePicker.vue'
 import BaseSpinner from '../base/BaseSpinner.vue'
 import { formatJalaliDate, parseJalaliToIso } from '../../utils/date'
@@ -728,6 +729,7 @@ const props = defineProps({
 
 const router = useRouter()
 const authStore = useAuthStore()
+let liveReloadTimer = null
 
 const reloadAfterOptionChange = () => {
   window.setTimeout(() => {
@@ -1517,6 +1519,22 @@ watch(() => [actionModal.walletId, actionModal.type, actionModal.destinationType
 onMounted(async () => {
   applyGatewayResultMessage()
   await Promise.all([loadWalletDashboard(), loadWalletOptions()])
+  window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+})
+
+const onLiveEvent = (event) => {
+  const type = String(event?.detail?.type || '')
+  if (type.startsWith('payment.') || type.startsWith('subscription.') || type.startsWith('wallet.')) {
+    if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+    liveReloadTimer = window.setTimeout(() => {
+      void Promise.all([loadWalletDashboard(), loadWalletOptions()])
+    }, 500)
+  }
+}
+
+onBeforeUnmount(() => {
+  if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+  window.removeEventListener(LIVE_EVENT_NAME, onLiveEvent)
 })
 </script>
 

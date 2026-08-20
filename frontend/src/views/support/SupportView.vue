@@ -342,6 +342,7 @@ import AppShell from '../../components/layout/AppShell.vue'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
 import api from '../../services/api'
+import { createLiveEventSource, parseLiveEvent } from '../../services/live'
 import { formatJalaliDateTime } from '../../utils/date'
 import { formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
@@ -354,6 +355,8 @@ const activeCategoryTab = ref('all')
 const tickets = ref([])
 const messageThreadRef = ref(null)
 let supportPollingTimer = null
+let supportLiveRefreshTimer = null
+let supportLiveStream = null
 let supportPollingInFlight = false
 
 const getEmptyContext = () => ({
@@ -767,7 +770,7 @@ const loadTickets = async (options = {}) => {
 }
 
 const refreshTicketsQuietly = async () => {
-  if (supportPollingInFlight || ticketModal.open || detailState.sendingReply) return
+  if (supportPollingInFlight || ticketModal.open || detailState.sendingReply || document.visibilityState === 'hidden') return
   supportPollingInFlight = true
   try {
     await loadTickets({
@@ -778,6 +781,34 @@ const refreshTicketsQuietly = async () => {
   } finally {
     supportPollingInFlight = false
   }
+}
+
+const stopSupportLive = () => {
+  if (supportPollingTimer) {
+    window.clearInterval(supportPollingTimer)
+    supportPollingTimer = null
+  }
+  if (supportLiveRefreshTimer) {
+    window.clearTimeout(supportLiveRefreshTimer)
+    supportLiveRefreshTimer = null
+  }
+  supportLiveStream?.close()
+  supportLiveStream = null
+}
+
+const startSupportLive = () => {
+  stopSupportLive()
+  supportLiveStream = createLiveEventSource()
+  supportLiveStream?.addEventListener('open', () => {
+    void refreshTicketsQuietly()
+  })
+  supportLiveStream?.addEventListener('message', (event) => {
+    const payload = parseLiveEvent(event.data)
+    if (!payload?.type || !String(payload.type).startsWith('support.')) return
+    if (supportLiveRefreshTimer) window.clearTimeout(supportLiveRefreshTimer)
+    supportLiveRefreshTimer = window.setTimeout(refreshTicketsQuietly, 350)
+  })
+  supportPollingTimer = window.setInterval(refreshTicketsQuietly, 60000)
 }
 
 const submitTicket = async () => {
@@ -837,11 +868,11 @@ onMounted(async () => {
       router.replace({ path: route.path, query: {} })
     }
   }
-  supportPollingTimer = window.setInterval(refreshTicketsQuietly, 10000)
+  startSupportLive()
 })
 
 onBeforeUnmount(() => {
-  if (supportPollingTimer) window.clearInterval(supportPollingTimer)
+  stopSupportLive()
 })
 </script>
 

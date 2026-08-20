@@ -934,6 +934,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../../services/api'
+import { LIVE_EVENT_NAME, createLiveEventSource, parseLiveEvent } from '../../services/live'
 import BaseDatePicker from '../../components/base/BaseDatePicker.vue'
 import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
 import HqServicesPanel from './HqServicesPanel.vue'
@@ -964,6 +965,8 @@ const allTabs = [
 const activeTab = ref(authStore.isHqAdmin ? 'overview' : 'tickets')
 const isMobileSidebarOpen = ref(false)
 let hqTicketPollingTimer = null
+let hqTicketLiveRefreshTimer = null
+let hqTicketLiveStream = null
 let hqTicketPollingInFlight = false
 let knownTicketIds = new Set()
 let knownTicketActivity = new Map()
@@ -2044,7 +2047,7 @@ const selectTicket = async (ticketId, options = {}) => {
 }
 
 const refreshTicketsQuietly = async () => {
-  if (hqTicketPollingInFlight) return
+  if (hqTicketPollingInFlight || document.visibilityState === 'hidden') return
   hqTicketPollingInFlight = true
   try {
     // Unfiltered alert poll so new tickets are not missed when inbox filters are active.
@@ -2057,6 +2060,54 @@ const refreshTicketsQuietly = async () => {
     })
   } finally {
     hqTicketPollingInFlight = false
+  }
+}
+
+const stopHqTicketLive = () => {
+  if (hqTicketPollingTimer) {
+    window.clearInterval(hqTicketPollingTimer)
+    hqTicketPollingTimer = null
+  }
+  if (hqTicketLiveRefreshTimer) {
+    window.clearTimeout(hqTicketLiveRefreshTimer)
+    hqTicketLiveRefreshTimer = null
+  }
+  hqTicketLiveStream?.close()
+  hqTicketLiveStream = null
+}
+
+const startHqTicketLive = () => {
+  stopHqTicketLive()
+  hqTicketLiveStream = createLiveEventSource()
+  hqTicketLiveStream?.addEventListener('open', () => {
+    void refreshTicketsQuietly()
+  })
+  hqTicketLiveStream?.addEventListener('message', (event) => {
+    const payload = parseLiveEvent(event.data)
+    if (!payload?.type || !String(payload.type).startsWith('support.')) return
+    if (hqTicketLiveRefreshTimer) window.clearTimeout(hqTicketLiveRefreshTimer)
+    hqTicketLiveRefreshTimer = window.setTimeout(refreshTicketsQuietly, 350)
+  })
+  hqTicketPollingTimer = window.setInterval(refreshTicketsQuietly, 60000)
+}
+
+const onGlobalLiveEvent = (event) => {
+  const type = String(event?.detail?.type || '')
+  if (!type) return
+  if (
+    type.startsWith('subscription.')
+    || type.startsWith('payment.')
+    || type.startsWith('worker.')
+    || type.startsWith('service.')
+    || type.startsWith('inventory.')
+    || type === 'settings.updated'
+  ) {
+    if (hqTicketLiveRefreshTimer) window.clearTimeout(hqTicketLiveRefreshTimer)
+    hqTicketLiveRefreshTimer = window.setTimeout(() => {
+      if (activeTab.value === 'overview') void loadOverview()
+      if (activeTab.value === 'carwashes') void loadCarwashes()
+      if (activeTab.value === 'tickets') void refreshTicketsQuietly()
+    }, 500)
   }
 }
 
@@ -2341,6 +2392,7 @@ watch(ticketScope, async () => {
 onMounted(async () => {
   window.addEventListener('pointerdown', unlockTicketAlerts, { once: true })
   window.addEventListener('keydown', unlockTicketAlerts, { once: true })
+  window.addEventListener(LIVE_EVENT_NAME, onGlobalLiveEvent)
   document.addEventListener('visibilitychange', handleVisibilityRefresh)
 
   const queryTab = String(route.query.tab || '').trim()
@@ -2363,15 +2415,14 @@ onMounted(async () => {
   if (activeTab.value === 'tickets') await loadTickets()
   // Seed alert baseline so the first poll does not treat existing tickets as new.
   await pollTicketAlerts()
-  hqTicketPollingTimer = window.setInterval(async () => {
-    await refreshTicketsQuietly()
-  }, 10000)
+  startHqTicketLive()
 })
 
 onBeforeUnmount(() => {
-  if (hqTicketPollingTimer) window.clearInterval(hqTicketPollingTimer)
+  stopHqTicketLive()
   window.removeEventListener('pointerdown', unlockTicketAlerts)
   window.removeEventListener('keydown', unlockTicketAlerts)
+  window.removeEventListener(LIVE_EVENT_NAME, onGlobalLiveEvent)
   document.removeEventListener('visibilitychange', handleVisibilityRefresh)
 })
 </script>

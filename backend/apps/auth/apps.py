@@ -9,5 +9,6 @@ class AuthConfig(AppConfig):
 
     def ready(self):
         from .scheduler import start_internal_scheduler
+        from . import signals  # noqa: F401
 
         start_internal_scheduler()

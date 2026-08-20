@@ -832,12 +832,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import HelpTip from '../../components/base/HelpTip.vue'
 import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import api from '../../services/api'
+import { LIVE_EVENT_NAME } from '../../services/live'
 import { useAuthStore } from '../../store/auth.store'
 import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
@@ -861,6 +862,7 @@ const actionIcons = {
 const activePlan = ref('simple')
 const searchQuery = ref('')
 const loading = ref(false)
+let liveReloadTimer = null
 const smsSending = ref(false)
 const templateSaving = ref(false)
 const customers = ref([])
@@ -1728,6 +1730,27 @@ const exportCustomers = () => {
 
 onMounted(async () => {
   await loadCustomerClubData()
+  window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+})
+
+const onLiveEvent = (event) => {
+  const type = String(event?.detail?.type || '')
+  if (
+    type.startsWith('notification.')
+    || type.startsWith('vehicle.')
+    || type.startsWith('payment.')
+    || type === 'settings.updated'
+  ) {
+    if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+    liveReloadTimer = window.setTimeout(() => {
+      void loadCustomerClubData({ showLoading: false })
+    }, 600)
+  }
+}
+
+onBeforeUnmount(() => {
+  if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+  window.removeEventListener(LIVE_EVENT_NAME, onLiveEvent)
 })
 </script>
 
