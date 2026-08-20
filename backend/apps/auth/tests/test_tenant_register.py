@@ -52,6 +52,10 @@ class TenantRegisterTests(APITestCase):
         self.assertEqual(response.data['registration']['status'], PendingTenantRegistration.Status.PENDING)
         self.assertEqual(response.data['registration']['ticket_id'], ticket.id)
         self.assertEqual(ticket.attachments.count(), 1)
+        self.assertIn('▸ اطلاعات کارواش', ticket.message)
+        self.assertIn('کارواش ستاره', ticket.message)
+        self.assertIn('setare-manager', ticket.message)
+        self.assertIn('09120000000', ticket.message)
 
     def test_register_succeeds_without_identity_documents(self):
         response = self.client.post(
@@ -73,7 +77,7 @@ class TenantRegisterTests(APITestCase):
         ticket = SupportTicket.objects.get(tenant=tenant, is_registration_request=True)
         self.assertEqual(ticket.attachments.count(), 0)
         self.assertEqual(response.data['registration']['documents_count'], 0)
-        self.assertIn('بدون مدرک', ticket.messages.first().body)
+        self.assertIn('بارگذاری نشده', ticket.message)
         self.assertNotIn('همراه با مدارک', response.data['registration']['message'])
 
     def test_pending_registration_cannot_log_in_before_support_approval(self):
@@ -169,3 +173,7 @@ class TenantRegisterTests(APITestCase):
             ).exists()
         )
         mock_send_provider_sms.assert_called_once()
+        sms_text = mock_send_provider_sms.call_args[0][1]
+        self.assertIn('تیم پشتیبانی سامانه کارنوواش', sms_text)
+        self.assertIn('درخواست ثبت‌نام شما تایید شد', sms_text)
+        self.assertIn('approve-manager', sms_text)

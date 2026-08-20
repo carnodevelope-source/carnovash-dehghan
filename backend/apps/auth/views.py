@@ -30,6 +30,9 @@ from .sms import (
 from .support_tickets import (
     apply_hq_ticket_visibility,
     calculate_wallet_card_deposit_amounts as _calculate_wallet_card_deposit_amounts,
+    build_registration_ticket_body,
+    build_registration_ticket_subject,
+    build_registration_approval_ticket_note,
     claim_ticket_if_unassigned,
     close_stale_support_tickets,
     is_payment_support_ticket,
@@ -604,22 +607,19 @@ class TenantRegisterView(APIView):
         manager.set_password(data['manager_password'])
         manager.save(update_fields=['password'])
         assignee = None
+        document_names = [str(getattr(uploaded_file, 'name', '') or '').strip() for uploaded_file in documents]
+        document_names = [name for name in document_names if name]
+        registration_ticket_body = build_registration_ticket_body(
+            tenant=tenant,
+            manager=manager,
+            documents_count=len(documents),
+            document_names=document_names,
+        )
         ticket = SupportTicket.objects.create(
             tenant=tenant,
             created_by=manager,
-            subject=f'درخواست تایید ثبت‌نام کارواش: {tenant.name}',
-            message=(
-                f'ثبت‌نام جدید برای کارواش «{tenant.name}» ثبت شد.\n'
-                f'مدیر: {manager.full_name or manager.username}\n'
-                f'نام کاربری: {manager.username}\n'
-                f'شماره موبایل: {manager.phone}\n'
-                f'آدرس: {tenant.address or "-"}\n'
-                + (
-                    'مدارک شناسایی کسب‌وکار پیوست شده است؛ لطفا بررسی و در صورت تایید، حساب را فعال کنید.'
-                    if documents
-                    else 'مدارک شناسایی کسب‌وکار بارگذاری نشده است. در صورت نیاز می‌توانید از متقاضی بخواهید بعدا ارسال کند.'
-                )
-            ),
+            subject=build_registration_ticket_subject(tenant.name),
+            message=registration_ticket_body,
             category=SupportTicket.Category.ACCOUNT,
             priority=SupportTicket.Priority.HIGH,
             status=SupportTicket.Status.OPEN,
@@ -630,11 +630,7 @@ class TenantRegisterView(APIView):
         SupportTicketMessage.objects.create(
             ticket=ticket,
             sender=manager,
-            body=(
-                'درخواست ثبت‌نام همراه با مدارک شناسایی کسب‌وکار برای بررسی پشتیبانی ارسال شد.'
-                if documents
-                else 'درخواست ثبت‌نام بدون مدرک شناسایی کسب‌وکار برای بررسی پشتیبانی ارسال شد.'
-            ),
+            body=registration_ticket_body,
         )
         for uploaded_file in documents:
             SupportTicketAttachment.objects.create(
@@ -1660,10 +1656,12 @@ class HqTicketApproveRegistrationView(HqBaseView):
             'message': 'رمز عبور موقت برای ارسال پیامک در دسترس نیست.',
         }
 
-        note_body = (
-            'مدارک کسب‌وکار تایید شد و حساب کارواش فعال گردید.'
-            if sms_result.get('ok') else
-            f'مدارک کسب‌وکار تایید شد و حساب فعال گردید، اما ارسال پیامک ناموفق بود: {sms_result.get("message") or "-"}'
+        note_body = build_registration_approval_ticket_note(
+            carwash_name=tenant.name,
+            username=manager.username,
+            reviewer_name=getattr(request.user, 'full_name', '') or getattr(request.user, 'username', ''),
+            sms_sent=bool(sms_result.get('ok')),
+            sms_error=sms_result.get('message'),
         )
         message = SupportTicketMessage.objects.create(
             ticket=ticket,

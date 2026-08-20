@@ -132,10 +132,13 @@ def send_user_credentials_sms(*, tenant, tenant_name, phone, username, password,
 
 def send_registration_credentials_sms(*, tenant, carwash_name, phone, username, password, created_by=None):
     text = (
-        f'ثبت کارواش {carwash_name} انجام شد.\n'
+        'تیم پشتیبانی سامانه کارنوواش\n'
+        'درخواست ثبت‌نام شما تایید شد.\n\n'
+        f'کارواش: {carwash_name}\n'
         f'نام کاربری: {username}\n'
-        f'رمز عبور: {password}\n'
-        f'با تشکر از انتخاب خوب شما  -  کارنوواش'
+        f'رمز عبور: {password}\n\n'
+        'اکنون می‌توانید وارد پنل کارنوواش شوید.\n'
+        'با تشکر از همراهی شما'
     )
     return send_logged_sms(
         tenant=tenant,

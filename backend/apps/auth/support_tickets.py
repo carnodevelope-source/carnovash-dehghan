@@ -195,3 +195,80 @@ def send_payment_ticket_sms_to_simple_supporters(ticket):
         return send_provider_sms(None, body, phones)
     except Exception as exc:
         return {'sent': False, 'error': str(exc)}
+
+
+def _format_registration_document_status(documents_count, document_names=None):
+    names = [str(name or '').strip() for name in (document_names or []) if str(name or '').strip()]
+    if documents_count <= 0:
+        return (
+            '  • وضعیت: بارگذاری نشده\n'
+            '  • توضیح: متقاضی مدرک شناسایی کسب‌وکار پیوست نکرده است.'
+        )
+    lines = [f'  • وضعیت: {documents_count} فایل پیوست شده']
+    for index, name in enumerate(names[:10], start=1):
+        lines.append(f'  • فایل {index}: {name}')
+    if len(names) > 10:
+        lines.append(f'  • ... و {len(names) - 10} فایل دیگر')
+    return '\n'.join(lines)
+
+
+def build_registration_ticket_subject(carwash_name):
+    clean_name = str(carwash_name or '').strip() or 'کارواش جدید'
+    return f'درخواست تایید ثبت‌نام | {clean_name}'
+
+
+def build_registration_ticket_body(*, tenant, manager, documents_count=0, document_names=None, submitted_at=None):
+    submitted_at = submitted_at or timezone.localtime(timezone.now())
+    submitted_label = submitted_at.strftime('%Y/%m/%d %H:%M')
+    manager_name = str(getattr(manager, 'full_name', '') or getattr(manager, 'username', '') or '-').strip()
+    username = str(getattr(manager, 'username', '') or '-').strip()
+    phone = str(getattr(manager, 'phone', '') or '-').strip()
+    carwash_name = str(getattr(tenant, 'name', '') or '-').strip()
+    slug = str(getattr(tenant, 'slug', '') or '-').strip()
+    address = str(getattr(tenant, 'address', '') or '').strip() or 'ثبت نشده'
+    document_block = _format_registration_document_status(documents_count, document_names)
+
+    return (
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+        'درخواست ثبت‌نام کارواش جدید\n'
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n'
+        '▸ زمان ثبت درخواست\n'
+        f'  • {submitted_label}\n\n'
+        '▸ اطلاعات کارواش\n'
+        f'  • نام: {carwash_name}\n'
+        f'  • شناسه: {slug}\n'
+        f'  • آدرس: {address}\n'
+        '  • وضعیت حساب: غیرفعال (منتظر تایید HQ)\n\n'
+        '▸ اطلاعات مدیر\n'
+        f'  • نام: {manager_name}\n'
+        f'  • نام کاربری: {username}\n'
+        f'  • موبایل: {phone}\n'
+        '  • نقش: مدیر کارواش\n\n'
+        '▸ مدارک شناسایی کسب‌وکار\n'
+        f'{document_block}\n\n'
+        '▸ اقدام پشتیبانی\n'
+        '  • مدارک و اطلاعات را بررسی کنید.\n'
+        '  • در صورت تایید، گزینه «تایید و فعال‌سازی» را بزنید.\n'
+        '  • پس از تایید، پیامک فعال‌سازی برای مدیر ارسال می‌شود.'
+    )
+
+
+def build_registration_approval_ticket_note(*, carwash_name, username, reviewer_name='', sms_sent=False, sms_error=''):
+    reviewer = str(reviewer_name or '').strip() or 'تیم پشتیبانی HQ'
+    sms_line = '  • پیامک فعال‌سازی: ارسال شد.'
+    if not sms_sent:
+        sms_line = f'  • پیامک فعال‌سازی: ارسال نشد ({str(sms_error or "-").strip()})'
+    return (
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+        'تایید ثبت‌نام کارواش\n'
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n'
+        '▸ نتیجه بررسی\n'
+        '  • وضعیت: تایید و فعال‌سازی شد\n'
+        f'  • بررسی‌کننده: {reviewer}\n\n'
+        '▸ اطلاعات فعال‌شده\n'
+        f'  • کارواش: {str(carwash_name or "-").strip()}\n'
+        f'  • نام کاربری مدیر: {str(username or "-").strip()}\n'
+        f'{sms_line}\n\n'
+        '▸ پیام برای متقاضی\n'
+        '  • تیم پشتیبانی سامانه کارنوواش درخواست ثبت‌نام را تایید کرد.'
+    )
