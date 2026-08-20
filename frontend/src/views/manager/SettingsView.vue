@@ -423,7 +423,11 @@
                         <span>فعال</span>
                       </label>
                     </span>
-                    <textarea v-model.trim="generalSettings.sms_vehicle_assigned_template" rows="14" />
+                    <textarea
+                      v-model.trim="generalSettings.sms_vehicle_assigned_template"
+                      rows="14"
+                      @focus="activeSmsTemplateField = 'assigned'"
+                    />
                   </label>
                   <div class="sms-preview-panel">
                     <div class="sms-preview-head">
@@ -442,7 +446,11 @@
                         <span>فعال</span>
                       </label>
                     </span>
-                    <textarea v-model.trim="generalSettings.sms_vehicle_released_template" rows="7" />
+                    <textarea
+                      v-model.trim="generalSettings.sms_vehicle_released_template"
+                      rows="7"
+                      @focus="activeSmsTemplateField = 'released'"
+                    />
                   </label>
                   <div class="sms-preview-panel">
                     <div class="sms-preview-head">
@@ -456,15 +464,18 @@
               <div class="sms-token-panel">
                 <strong>متغیرهای قابل استفاده</strong>
                 <p class="sms-token-help">
-                  هر متغیر را داخل متن پیامک بنویسید؛ هنگام ارسال با مقدار واقعی همان سفارش جایگزین می‌شود.
+                  هر متغیر را داخل متن پیامک بنویسید یا روی آن کلیک کنید تا در قالب فعال درج شود؛ هنگام ارسال با مقدار واقعی همان سفارش جایگزین می‌شود.
                   متغیرها در پیام تخصیص و ترخیص یکسان کار می‌کنند؛ فقط متغیرهای مربوط به همان مرحله مقدار دارند.
                 </p>
                 <div class="sms-token-list">
-                  <code
+                  <button
                     v-for="token in smsTemplateTokens"
                     :key="token.key"
+                    type="button"
+                    class="sms-token-chip"
                     :title="token.hint"
-                  >{{ token.key }}</code>
+                    @click="insertSmsToken(token.key)"
+                  >{{ token.key }}</button>
                 </div>
               </div>
             </section>
@@ -1141,7 +1152,7 @@ const ensureReleasedSmsTemplateDetails = (template) => {
   if (!text.includes('[تعداد مراجعات]')) insertions.push('تعداد دفعات مراجعه: [تعداد مراجعات]')
   if (!text.includes('[انعام]')) insertions.push('انعام: [انعام]')
   if (!text.includes('[مالیات]')) insertions.push('مالیات: [مالیات]')
-  if (!insertions.length) return orderAssignedFinancialLines(lines.join('\n'))
+  if (!insertions.length) return text
   const anchorIndex = lines.findIndex((line) => line.includes('[درصد تخفیف مراجعه بعد]') || line.includes('[درصد تخفیف سفارش بعد]'))
   const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : Math.max(1, lines.length - 3)
   lines.splice(insertAt, 0, ...insertions)
@@ -1168,7 +1179,7 @@ const orderAssignedFinancialLines = (template) => {
 }
 const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true } = {}) => {
   const text = String(template || '')
-    .replaceAll('[خطاب مشتری]', '[نام مشتری] عزیز')
+    .replaceAll('[خطاب مشتری]', '[نام مشتری]')
     .replaceAll('شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]،', 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]،')
     .replaceAll('شماره پذیرش: [شماره پذیرش]\nخودروی شما با پلاک [پلاک]', 'خودروی شما با\nشماره پذیرش: [شماره پذیرش] با پلاک [پلاک]')
     .replaceAll('با پلاک [پلاک] در ساعت', 'با پلاک [پلاک]، در ساعت')
@@ -1202,10 +1213,11 @@ const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true }
   if (includeFinancials && !text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی: [مبلغ نهایی]')
   if (!text.includes('آماده ترخیص')) insertions.push('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
   if (!text.includes('از اعتماد شما سپاسگزاریم')) insertions.push('از اعتماد شما سپاسگزاریم')
-  if (!insertions.length) return text
-  const anchorIndex = lines.findIndex((line) => line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]'))
-  const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : lines.length
-  lines.splice(insertAt, 0, ...insertions)
+  if (insertions.length) {
+    const anchorIndex = lines.findIndex((line) => line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]'))
+    const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : lines.length
+    lines.splice(insertAt, 0, ...insertions)
+  }
   return orderAssignedFinancialLines(lines.join('\n'))
 }
 
@@ -1262,9 +1274,11 @@ const prepareReleasedDiscountPreviewTemplate = (template) => {
 }
 const renderSmsPreview = (template) => {
   let message = String(template || '').trim()
-  Object.entries(smsPreviewContext.value).forEach(([token, value]) => {
-    message = message.replaceAll(token, value)
-  })
+  Object.entries(smsPreviewContext.value)
+    .sort((left, right) => right[0].length - left[0].length || left[0].localeCompare(right[0]))
+    .forEach(([token, value]) => {
+      message = message.replaceAll(token, value)
+    })
   return message
 }
 const smsAssignedPreview = computed(() => renderSmsPreview(ensureAssignedSmsTemplateDetails(generalSettings.sms_vehicle_assigned_template)))
@@ -1273,6 +1287,16 @@ const smsReleasedPreview = computed(() => renderSmsPreview(
 ))
 const smsAssignedEstimatedCostLabel = computed(() => smsEstimatedCostLabel(smsAssignedPreview.value))
 const smsReleasedEstimatedCostLabel = computed(() => smsEstimatedCostLabel(smsReleasedPreview.value))
+
+const activeSmsTemplateField = ref('assigned')
+const insertSmsToken = (token) => {
+  const key = activeSmsTemplateField.value === 'released'
+    ? 'sms_vehicle_released_template'
+    : 'sms_vehicle_assigned_template'
+  const current = String(generalSettings[key] || '')
+  const spacer = current && !/\s$/.test(current) ? ' ' : ''
+  generalSettings[key] = `${current}${spacer}${token}`
+}
 
 watch(() => forms.purchase.product_id, (newProductId) => {
   const selected = products.value.find((item) => Number(item.id) === Number(newProductId))
@@ -1451,7 +1475,8 @@ const saveGeneralSettings = async () => {
     generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(response.data?.sms_vehicle_released_template || '')
     t('تنظیمات عمومی ذخیره شد')
   } catch (e) {
-    t(apiErrorText(e), 'error')
+    const detail = apiErrorText(e)
+    t(detail || 'ذخیره تنظیمات پیامک/عمومی ناموفق بود.', 'error')
   } finally {
     generalSettingsSaving.value = false
   }
@@ -1908,7 +1933,8 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
 }
 .sms-token-panel strong { color: #0f172a; font-size: 12px; }
 .sms-token-list { display: flex; flex-wrap: wrap; gap: 4px; }
-.sms-token-list code {
+.sms-token-list code,
+.sms-token-chip {
   padding: 3px 7px;
   border-radius: 999px;
   background: #e0f2fe;
@@ -1918,8 +1944,13 @@ th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; whi
   font-size: 10px;
   font-weight: 700;
   line-height: 1.4;
-  cursor: help;
+  cursor: pointer;
 }
+.sms-token-chip:hover {
+  background: #bae6fd;
+  color: #0c4a6e;
+}
+.sms-token-list code { cursor: help; }
 .row-check { display: flex !important; align-items: center; gap: 8px; }
 .full { grid-column: 1 / -1; }
 .entrusted-card {

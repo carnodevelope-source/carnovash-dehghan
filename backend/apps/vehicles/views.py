@@ -1278,19 +1278,21 @@ class VehicleReleaseCheckoutView(APIView):
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
         if getattr(vehicle.job, 'apply_loyalty_discount', True):
             customer_discount_percent, loyalty_discount_total = self._compute_configured_discount(
-                base_amount=service_list_subtotal,
+                base_amount=services_total,
                 loyalty_profile=loyalty_profile,
                 settings_obj=settings_obj,
                 visit_count=order_loyalty.get('visit_count', 0),
                 score=customer_score,
             )
+            loyalty_discount_total = min(loyalty_discount_total, services_total)
         else:
             customer_discount_percent, loyalty_discount_total = Decimal('0'), Decimal('0')
         if order_loyalty.get('from_snapshot') and getattr(vehicle, 'loyalty_discount_percent_snapshot', None) is not None:
             customer_discount_percent = Decimal(str(vehicle.loyalty_discount_percent_snapshot or 0))
             if getattr(vehicle.job, 'apply_loyalty_discount', True):
-                loyalty_discount_total = self._money(
-                    (service_list_subtotal * customer_discount_percent) / Decimal('100')
+                loyalty_discount_total = min(
+                    services_total,
+                    self._money((services_total * customer_discount_percent) / Decimal('100')),
                 )
             else:
                 loyalty_discount_total = Decimal('0')
@@ -1671,19 +1673,21 @@ class VehicleReleaseCheckoutView(APIView):
         discount_percent_per_half_star = self._discount_percent_per_half_star(tenant)
         if getattr(vehicle.job, 'apply_loyalty_discount', True):
             customer_discount_percent, loyalty_discount_total = self._compute_configured_discount(
-                base_amount=completed_service_list_subtotal,
+                base_amount=completed_service_totals,
                 loyalty_profile=loyalty_profile,
                 settings_obj=settings_obj,
                 visit_count=order_loyalty.get('visit_count', 0),
                 score=customer_score,
             )
+            loyalty_discount_total = min(loyalty_discount_total, completed_service_totals)
         else:
             customer_discount_percent, loyalty_discount_total = Decimal('0'), Decimal('0')
         if order_loyalty.get('from_snapshot') and getattr(vehicle, 'loyalty_discount_percent_snapshot', None) is not None:
             customer_discount_percent = Decimal(str(vehicle.loyalty_discount_percent_snapshot or 0))
             if getattr(vehicle.job, 'apply_loyalty_discount', True):
-                loyalty_discount_total = self._money(
-                    (completed_service_list_subtotal * customer_discount_percent) / Decimal('100')
+                loyalty_discount_total = min(
+                    completed_service_totals,
+                    self._money((completed_service_totals * customer_discount_percent) / Decimal('100')),
                 )
             else:
                 loyalty_discount_total = Decimal('0')

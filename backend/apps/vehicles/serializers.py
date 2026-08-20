@@ -553,13 +553,15 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 if loyalty_visit_count is not None
                 else (getattr(loyalty_profile, 'visit_count', 0) if loyalty_profile is not None else 0)
             )
+            # Loyalty percent applies to charged services amount, not rate-card list total.
             loyalty_discount_percent, loyalty_discount_total = compute_configured_loyalty_discount(
-                base_amount=service_list_subtotal,
+                base_amount=services_total,
                 profile=loyalty_profile,
                 settings_obj=settings_obj,
                 visit_count=resolved_visit_count,
                 score=loyalty_score,
             )
+            loyalty_discount_total = min(loyalty_discount_total, services_total)
         else:
             loyalty_discount_percent, loyalty_discount_total = Decimal('0'), Decimal('0')
         total_discount = min(
@@ -702,8 +704,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 or ('price' in item and incoming_discount_amount == Decimal('0') and incoming_price != unit_price)
             )
             if manual_price_override:
+                # Keep rate-card list price; manual reduction becomes facility discount (list - sale).
                 unit_price = incoming_price
-                list_unit_price = unit_price
             discount_amount = Decimal('0') if manual_price_override else incoming_discount_amount
             line_total = max(Decimal('0'), unit_price - discount_amount)
             normalized_services.append((item, service_obj, list_unit_price, unit_price, discount_amount, line_total))
@@ -1032,8 +1034,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                     or ('price' in item and incoming_discount_amount == Decimal('0') and incoming_price != unit_price)
                 )
                 if manual_price_override:
+                    # Keep rate-card list price; manual reduction becomes facility discount (list - sale).
                     unit_price = incoming_price
-                    list_unit_price = unit_price
                 discount_amount = Decimal('0') if manual_price_override else incoming_discount_amount
                 line_total = max(Decimal('0'), unit_price - discount_amount)
                 if not service_obj:

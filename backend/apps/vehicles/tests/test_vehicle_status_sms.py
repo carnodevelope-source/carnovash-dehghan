@@ -498,24 +498,25 @@ class VehicleStatusSmsTests(APITestCase):
         self.assertEqual(self.job.service_list_subtotal, Decimal('450000.00'))
         self.assertEqual(self.job.services_total, Decimal('400000.00'))
         self.assertEqual(self.job.facility_discount_total, Decimal('50000.00'))
-        self.assertEqual(self.job.loyalty_discount_total, Decimal('18000.00'))
+        # Loyalty percent applies to charged services total (400000), not rate-card list.
+        self.assertEqual(self.job.loyalty_discount_total, Decimal('16000.00'))
         self.assertEqual(self.job.manual_discount_total, Decimal('20000.00'))
-        self.assertEqual(self.job.discount_total, Decimal('88000.00'))
-        self.assertEqual(self.job.final_total, Decimal('362000.00'))
+        self.assertEqual(self.job.discount_total, Decimal('86000.00'))
+        self.assertEqual(self.job.final_total, Decimal('364000.00'))
         log = NotificationLog.objects.get(
             tenant=self.tenant,
             vehicle_entry=self.vehicle,
             template_code='vehicle_released',
             status=NotificationLog.Status.SENT,
         )
-        self.assertEqual(log.payload['final_total'], 362000.0)
-        self.assertEqual(log.payload['discount_total'], 88000.0)
+        self.assertEqual(log.payload['final_total'], 364000.0)
+        self.assertEqual(log.payload['discount_total'], 86000.0)
         self.assertEqual(log.payload['facility_discount_total'], 50000.0)
-        self.assertEqual(log.payload['loyalty_discount_total'], 18000.0)
+        self.assertEqual(log.payload['loyalty_discount_total'], 16000.0)
         self.assertEqual(log.payload['manual_discount_total'], 20000.0)
 
     @patch('apps.notifications.services.send_provider_sms')
-    def test_manual_service_price_override_is_not_saved_as_discount(self, mock_send_provider_sms):
+    def test_manual_service_price_override_keeps_list_price_as_facility_discount(self, mock_send_provider_sms):
         mock_send_provider_sms.return_value = {
             'ok': True,
             'message': 'sent',
@@ -542,9 +543,9 @@ class VehicleStatusSmsTests(APITestCase):
         response = self.client.post(
             reverse('vehicle-list-create'),
             {
-                'plate_number': '44 Ø¯ 555 66',
+                'plate_number': '44 د 555 66',
                 'plate_left': '44',
-                'plate_letter': 'Ø¯',
+                'plate_letter': 'د',
                 'plate_mid': '555',
                 'plate_right': '66',
                 'plate_type': VehicleEntry.PlateType.CAR,
@@ -560,23 +561,23 @@ class VehicleStatusSmsTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 201, response.data)
         vehicle = VehicleEntry.objects.get(id=response.data['id'])
         job = vehicle.job
         line = job.service_lines.get()
         self.assertEqual(line.unit_price, Decimal('350000.00'))
         self.assertEqual(line.line_total, Decimal('350000.00'))
         self.assertEqual(line.discount_amount, Decimal('0.00'))
-        self.assertEqual(line.list_unit_price, Decimal('350000.00'))
-        self.assertEqual(job.service_list_subtotal, Decimal('350000.00'))
+        self.assertEqual(line.list_unit_price, Decimal('500000.00'))
+        self.assertEqual(job.service_list_subtotal, Decimal('500000.00'))
         self.assertEqual(job.services_total, Decimal('350000.00'))
-        self.assertEqual(job.facility_discount_total, Decimal('0.00'))
-        self.assertEqual(job.discount_total, Decimal('0.00'))
+        self.assertEqual(job.facility_discount_total, Decimal('150000.00'))
+        self.assertEqual(job.discount_total, Decimal('150000.00'))
         self.assertEqual(job.final_total, Decimal('350000.00'))
         self.assertEqual(job.worker_share_amount, Decimal('175000.00'))
 
     @patch('apps.notifications.services.send_provider_sms')
-    def test_manual_service_price_override_on_update_becomes_base_price(self, mock_send_provider_sms):
+    def test_manual_service_price_override_on_update_keeps_list_price(self, mock_send_provider_sms):
         mock_send_provider_sms.return_value = {
             'ok': True,
             'message': 'sent',
@@ -620,14 +621,14 @@ class VehicleStatusSmsTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.job.refresh_from_db()
         line = self.job.service_lines.get()
-        self.assertEqual(line.list_unit_price, Decimal('360000.00'))
+        self.assertEqual(line.list_unit_price, Decimal('500000.00'))
         self.assertEqual(line.unit_price, Decimal('360000.00'))
         self.assertEqual(line.line_total, Decimal('360000.00'))
         self.assertEqual(line.discount_amount, Decimal('0.00'))
-        self.assertEqual(self.job.service_list_subtotal, Decimal('360000.00'))
-        self.assertEqual(self.job.facility_discount_total, Decimal('0.00'))
+        self.assertEqual(self.job.service_list_subtotal, Decimal('500000.00'))
+        self.assertEqual(self.job.facility_discount_total, Decimal('140000.00'))
         self.assertEqual(self.job.manual_discount_total, Decimal('20000.00'))
-        self.assertEqual(self.job.discount_total, Decimal('20000.00'))
+        self.assertEqual(self.job.discount_total, Decimal('160000.00'))
         self.assertEqual(self.job.final_total, Decimal('340000.00'))
         self.assertEqual(self.job.worker_share_amount, Decimal('180000.00'))
 

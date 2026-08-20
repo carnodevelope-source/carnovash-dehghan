@@ -671,11 +671,9 @@ const primarySelectedWorker = computed(() => selectedWorkers.value[0] || null)
 const selectedWorkerPercentIds = computed(() => selectedWorkers.value.map((worker) => Number(worker.id)))
 
 const serviceListSubtotal = computed(() => selectedServices.value.reduce((sum, item) => {
-  if (Number(item.manual_adjustment || 0) !== 0) {
-    return sum + Number((item.adjusted_price ?? item.base_price) || 0)
-  }
-  const facilityDiscount = Math.max(0, Number(item.list_price || 0) - Number(item.base_price || 0))
-  return sum + Number((item.adjusted_price ?? item.base_price) || 0) + facilityDiscount
+  const listPrice = Number(item.list_price || 0)
+  if (listPrice > 0) return sum + listPrice
+  return sum + Number((item.adjusted_price ?? item.base_price) || 0)
 }, 0))
 const servicesTotal = computed(() => selectedServices.value.reduce((sum, item) => sum + Number((item.adjusted_price ?? item.base_price) || 0), 0))
 const productsTotal = computed(() => selectedProducts.value.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0))

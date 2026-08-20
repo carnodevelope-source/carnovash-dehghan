@@ -350,3 +350,111 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('تعداد دفعات مراجعه: ۵', message)
         self.assertIn('انعام: ۵۰،۰۰۰ تومان', message)
         self.assertIn('مبلغ نهایی: ۲۶۵،۰۰۰ تومان', message)
+
+    def test_shared_tokens_render_in_assignment_and_release_templates(self):
+        tenant = SimpleNamespace(name='کارواش یک')
+        job = SimpleNamespace(
+            final_total=291500,
+            services_total=200000,
+            service_list_subtotal=350000,
+            products_total=0,
+            tip_amount=50000,
+            facility_discount_total=80000,
+            loyalty_discount_total=35000,
+            manual_discount_total=20000,
+            total_discount=135000,
+            tax_total=26500,
+            service_lines=[
+                SimpleNamespace(
+                    custom_service_name='روشویی',
+                    quantity=1,
+                    list_unit_price=200000,
+                    line_total=150000,
+                    discount_amount=50000,
+                ),
+            ],
+        )
+        vehicle = SimpleNamespace(
+            admission_number=1000,
+            tenant=tenant,
+            job=job,
+            driver_name='علی رضایی',
+            driver_gender='male',
+            car_model='پژو ۲۰۷',
+            plate_number='22 ب 345 67',
+            plate_left='22',
+            plate_letter='ب',
+            plate_mid='345',
+            plate_right='67',
+            ready_at=timezone.now(),
+            released_at=timezone.now(),
+            updated_at=timezone.now(),
+            loyalty_discount_percent_snapshot=Decimal('10'),
+            loyalty_score_snapshot=Decimal('2.5'),
+        )
+        assigned_settings = SimpleNamespace(
+            sms_vehicle_assigned_template=(
+                '[نام مشتری]\n'
+                'خدمات: [خلاصه خدمات]\n'
+                'جمع کل: [جمع کل]\n'
+                'تخفیف مجموعه: [تخفیف مجموعه]\n'
+                'تخفیف امتیاز: [تخفیف امتیاز مشتری]\n'
+                'انعام: [انعام]\n'
+                'مراجعه: [تعداد مراجعه] / [تعداد مراجعات]\n'
+                'مدل: [مدل خودرو]'
+            ),
+            sms_vehicle_assigned_invoice_template='',
+        )
+        assigned_message, _ = build_vehicle_assignment_sms(assigned_settings, vehicle, visit_count=5)
+        self.assertIn('روشویی : ۲۰۰،۰۰۰ تومان', assigned_message)
+        self.assertIn('جمع کل: ۳۵۰،۰۰۰ تومان', assigned_message)
+        self.assertIn('تخفیف مجموعه: ۸۰،۰۰۰ تومان', assigned_message)
+        self.assertIn('تخفیف امتیاز: ۳۵،۰۰۰ تومان', assigned_message)
+        self.assertIn('انعام: ۵۰،۰۰۰ تومان', assigned_message)
+        self.assertIn('مراجعه: ۵ / ۵', assigned_message)
+        self.assertNotIn('[تعداد مراجعه]', assigned_message)
+        self.assertNotIn('[تعداد مراجعات]', assigned_message)
+
+        released_settings = SimpleNamespace(
+            sms_vehicle_released_template=(
+                '[نام مشتری]\n'
+                'خلاصه: [خلاصه خدمات]\n'
+                'جمع نرخ نامه: [جمع نرخ نامه]\n'
+                'جمع تخفیف: [جمع تخفیف]\n'
+                'مبلغ نهایی: [مبلغ نهایی]'
+            )
+        )
+        released_message, _ = build_vehicle_released_sms(
+            released_settings,
+            vehicle,
+            customer_score=2.5,
+            next_discount_percent=10,
+            final_total=291500,
+            discount_total=135000,
+            visit_count=5,
+            tip_amount=50000,
+            facility_discount_total=80000,
+            loyalty_discount_total=35000,
+            manual_discount_total=20000,
+            tax_total=26500,
+        )
+        self.assertIn('روشویی : ۲۰۰،۰۰۰ تومان', released_message)
+        self.assertIn('جمع نرخ نامه: ۳۵۰،۰۰۰ تومان', released_message)
+        self.assertIn('جمع تخفیف: ۱۳۵،۰۰۰ تومان', released_message)
+        self.assertIn('مبلغ نهایی: ۲۹۱،۵۰۰ تومان', released_message)
+        self.assertNotIn('[خلاصه خدمات]', released_message)
+        self.assertNotIn('[جمع نرخ نامه]', released_message)
+
+    def test_render_tokens_prefers_longer_visit_count_token(self):
+        from apps.notifications.services import render_template_tokens
+
+        message = render_template_tokens(
+            'مراجعه: [تعداد مراجعه] و کل: [تعداد مراجعات]',
+            {
+                '[تعداد مراجعه]': '۳',
+                '[تعداد مراجعات]': '۵',
+            },
+        )
+        self.assertEqual(message, 'مراجعه: ۳ و کل: ۵')
+        self.assertNotIn('[تعداد مراجعه]', message)
+        self.assertNotIn('[تعداد مراجعات]', message)

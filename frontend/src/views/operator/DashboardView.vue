@@ -2853,7 +2853,7 @@ const releaseSummary = computed(() => {
     (
       releaseForm.value.applyLoyaltyDiscount === false
         ? 0
-        : (releaseForm.value.loyaltyDiscountTotal || ((serviceListSubtotal * customerDiscountPercent) / 100))
+        : ((servicesTotal * customerDiscountPercent) / 100)
     ).toFixed(2)
   )
   const manualDiscountAmount = Math.max(0, Number(releaseForm.value.manualDiscountTotal || 0))
