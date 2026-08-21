@@ -16,7 +16,9 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-HEARTBEAT_SECONDS = 25
+# Keep this short: a tab refresh does not always close the previous stream, and
+# the generator only notices the drop on the next write.
+HEARTBEAT_SECONDS = 8
 MAX_QUEUE_SIZE = 100
 RELAY_RETRY_SECONDS = 5
 # Every open stream occupies one gunicorn thread until the browser tab closes.
@@ -215,6 +217,8 @@ def _event_stream(subscriber: _Subscriber) -> Iterator[str]:
                 yield f": heartbeat {timezone.now().isoformat()}\n\n"
                 continue
             yield f"id: {event['id']}\ndata: {_encode(event)}\n\n"
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        return
     finally:
         _unsubscribe(subscriber)
 

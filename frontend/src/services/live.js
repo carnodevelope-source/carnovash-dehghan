@@ -14,7 +14,7 @@ let sharedSource = null
 let retryTimer = null
 let retryAttempt = 0
 let hiddenTimer = null
-let visibilityBound = false
+let lifecycleBound = false
 
 const isSupported = () => typeof window !== 'undefined' && typeof EventSource !== 'undefined'
 
@@ -111,10 +111,28 @@ const onVisibilityChange = () => {
   openSharedSource()
 }
 
-const bindVisibility = () => {
-  if (visibilityBound) return
-  visibilityBound = true
+const onPageHide = () => {
+  if (hiddenTimer) {
+    window.clearTimeout(hiddenTimer)
+    hiddenTimer = null
+  }
+  // A full reload never runs Vue unmount hooks, so without this the previous
+  // EventSource stays open on gunicorn until the next heartbeat. Three quick
+  // reloads is enough to occupy every sync-sized worker and freeze /auth/me/.
+  closeSharedSource()
+}
+
+const onPageShow = () => {
+  retryAttempt = 0
+  if (subscribers.size) openSharedSource()
+}
+
+const bindLifecycle = () => {
+  if (lifecycleBound) return
+  lifecycleBound = true
   document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('pagehide', onPageHide)
+  window.addEventListener('pageshow', onPageShow)
 }
 
 export function createLiveEventSource() {
@@ -125,7 +143,7 @@ export function createLiveEventSource() {
     handlers: { open: new Set(), message: new Set(), error: new Set() }
   }
   subscribers.add(subscriber)
-  bindVisibility()
+  bindLifecycle()
   openSharedSource()
 
   return {
