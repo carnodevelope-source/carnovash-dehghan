@@ -200,17 +200,22 @@ def _parse_wallet_withdraw_amount_from_ticket(ticket):
 
 
 def _auth_payload(user):
-    feature_keys = set(user.tenant.active_feature_keys()) if getattr(user, 'tenant_id', None) else set()
-    tenant = getattr(user, 'tenant', None)
-    attendance_worker_count = tenant_worker_count(tenant) if getattr(user, 'tenant_id', None) else 0
+    has_tenant = getattr(user, 'tenant_id', None) is not None
+    tenant = user.tenant if has_tenant else None
+    feature_keys = set(tenant.active_feature_keys()) if has_tenant else set()
+    attendance_worker_count = tenant_worker_count(tenant) if has_tenant else 0
     attendance_feature_purchased = 'attendance' in feature_keys
-    trial_active = bool(tenant and tenant.is_trial_active()) if getattr(user, 'tenant_id', None) else False
+    trial_active = bool(tenant and tenant.is_trial_active())
     license_status = {}
-    locked_feature_statuses = {}
-    if getattr(user, 'tenant_id', None) and not _is_hq_user(user):
+    # One lookup feeds both the payload field and the menu access map below,
+    # which each used to run it separately.
+    tenant_locked_features = {}
+    if has_tenant:
         from apps.payments.views import license_status_for_tenant, locked_feature_statuses_for_tenant
-        license_status = license_status_for_tenant(user.tenant)
-        locked_feature_statuses = locked_feature_statuses_for_tenant(user.tenant)
+        tenant_locked_features = locked_feature_statuses_for_tenant(tenant)
+        if not _is_hq_user(user):
+            license_status = license_status_for_tenant(tenant)
+    locked_feature_statuses = {} if _is_hq_user(user) else tenant_locked_features
     return {
         'id': user.id,
         'username': user.username,
@@ -221,10 +226,18 @@ def _auth_payload(user):
         'platform_role': _platform_role(user),
         'phone': user.phone,
         'tenant_id': user.tenant_id,
-        'tenant_name': user.tenant.name if user.tenant_id else '',
-        'tenant_address': user.tenant.address if user.tenant_id else '',
+        'tenant_name': tenant.name if has_tenant else '',
+        'tenant_address': tenant.address if has_tenant else '',
         'purchased_menu_access': sorted(feature_keys),
-        'menu_access': feature_access_map_for_tenant(tenant) if getattr(user, 'tenant_id', None) else feature_access_map(feature_keys),
+        'menu_access': (
+            feature_access_map_for_tenant(
+                tenant,
+                feature_keys=feature_keys,
+                locked_features=set(tenant_locked_features.keys()),
+            )
+            if has_tenant
+            else feature_access_map(feature_keys)
+        ),
         'locked_feature_statuses': locked_feature_statuses,
         'locked_feature_keys': sorted(locked_feature_statuses.keys()),
         'attendance_free_workers_limit': ATTENDANCE_FREE_WORKERS_LIMIT,

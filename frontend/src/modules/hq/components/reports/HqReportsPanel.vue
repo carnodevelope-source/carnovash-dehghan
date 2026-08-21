@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../../../../services/api'
 import BaseDatePicker from '../../../../components/base/BaseDatePicker.vue'
@@ -294,14 +294,17 @@ const walletTrends = computed(() => (snap.trends || []).slice(-12))
 const walletTrendMax = computed(() => Math.max(...walletTrends.value.map((t) => Math.max(Number(t.wallet_deposit_total || 0), Number(t.wallet_withdraw_total || 0))), 1))
 
 const ledgerRows = computed(() => {
-  let rows = [...(snap.wallet_transactions || [])]
   const q = ledger.search.trim().toLowerCase()
-  if (q) rows = rows.filter((r) => `${r.tenant_name} ${r.description} ${r.reference_type}`.toLowerCase().includes(q))
-  if (ledger.walletType === 'sms') rows = rows.filter((r) => r.wallet_type === 'sms')
-  else if (ledger.walletType === 'regular') rows = rows.filter((r) => r.wallet_type !== 'sms')
-  if (ledger.direction) rows = rows.filter((r) => r.direction === ledger.direction)
-  if (ledger.shareGroup) rows = rows.filter((r) => r.share_group === ledger.shareGroup)
-  return rows.sort((a, b) => new Date(b.transacted_at || 0) - new Date(a.transacted_at || 0))
+  const rows = (snap.wallet_transactions || []).filter((r) => {
+    if (q && !`${r.tenant_name} ${r.description} ${r.reference_type}`.toLowerCase().includes(q)) return false
+    if (ledger.walletType === 'sms' && r.wallet_type !== 'sms') return false
+    if (ledger.walletType === 'regular' && r.wallet_type === 'sms') return false
+    if (ledger.direction && r.direction !== ledger.direction) return false
+    if (ledger.shareGroup && r.share_group !== ledger.shareGroup) return false
+    return true
+  })
+  const sortKey = new Map(rows.map((r) => [r, Date.parse(r.transacted_at || '') || 0]))
+  return rows.sort((a, b) => sortKey.get(b) - sortKey.get(a))
 })
 
 const drawerRow = computed(() => (snap.rows || []).find((r) => Number(r.tenant_id) === Number(walletDrawer.tenantId)))
@@ -352,6 +355,10 @@ watch(() => ui.networkTab, () => pushUiState())
 watch(() => ui.compare, () => pushUiState())
 
 onMounted(() => { applyQueryFromRoute(); loadReports(); if (ui.tenant) loadTenantReport() })
+
+onBeforeUnmount(() => {
+  if (rangeTimer) clearTimeout(rangeTimer)
+})
 </script>
 
 <template>

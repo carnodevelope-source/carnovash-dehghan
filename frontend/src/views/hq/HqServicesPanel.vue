@@ -585,8 +585,8 @@ async function refreshAll() {
   refreshing.value = true
   tableError.value = ''
   try {
-    await loadCatalog()
-    await Promise.all([loadSummary(), loadRows(), loadAlerts(), loadClient()])
+    // Nothing below reads the catalog, so gating them on it only added a round trip.
+    await Promise.all([loadCatalog(), loadSummary(), loadRows(), loadAlerts(), loadClient()])
     lastUpdated.value = new Date()
   } catch {
     tableError.value = 'خطا در بارگذاری گزارش سرویس‌ها.'
@@ -923,14 +923,15 @@ onMounted(async () => {
   applyRouteQuery()
   document.addEventListener('mousedown', onDocPointerDown)
   window.addEventListener('resize', onViewportChange)
-  window.addEventListener('scroll', onViewportChange, true)
+  window.addEventListener('scroll', onViewportChange, { capture: true, passive: true })
   await refreshAll()
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
   document.removeEventListener('mousedown', onDocPointerDown)
   window.removeEventListener('resize', onViewportChange)
-  window.removeEventListener('scroll', onViewportChange, true)
+  window.removeEventListener('scroll', onViewportChange, { capture: true })
 })
 </script>
 

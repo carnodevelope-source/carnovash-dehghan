@@ -699,20 +699,35 @@ def _compute_worker_attendance_minutes(worker, *, start=None, end=None):
     events = WorkerAttendance.objects.filter(worker=worker)
     if end:
         events = events.filter(event_at__lte=end)
-    events = list(events.order_by('event_at', 'id'))
-    if not events:
+
+    open_started_at = None
+    if start:
+        # Reading the whole attendance history to answer "hours this month" is
+        # what made reports slower every month. One lookup for the shift that
+        # may already be open at `start` keeps the result identical.
+        previous = (
+            WorkerAttendance.objects.filter(worker=worker, event_at__lt=start)
+            .order_by('-event_at', '-id')
+            .values_list('event_type', flat=True)
+            .first()
+        )
+        if previous == WorkerAttendance.EventType.IN:
+            open_started_at = start
+        events = events.filter(event_at__gte=start)
+
+    events = list(events.order_by('event_at', 'id').values_list('event_type', 'event_at'))
+    if not events and open_started_at is None:
         return 0
 
     worked_seconds = 0
-    open_started_at = None
-    for event in events:
-        if event.event_type == WorkerAttendance.EventType.IN:
-            open_started_at = event.event_at
+    for event_type, event_at in events:
+        if event_type == WorkerAttendance.EventType.IN:
+            open_started_at = event_at
             continue
-        if event.event_type != WorkerAttendance.EventType.OUT or not open_started_at:
+        if event_type != WorkerAttendance.EventType.OUT or not open_started_at:
             continue
         interval_start = open_started_at
-        interval_end = event.event_at
+        interval_end = event_at
         open_started_at = None
         if start and interval_end < start:
             continue

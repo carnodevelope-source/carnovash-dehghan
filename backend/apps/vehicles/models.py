@@ -188,6 +188,12 @@ class VehicleEntry(TimestampedModel):
             models.Index(fields=['status', 'check_in_at']),
             models.Index(fields=['payment_status', 'check_in_at']),
             models.Index(fields=['payment_method', 'check_in_at'], name='vehicles_ve_payment_5cc23d_idx'),
+            # Every list, report and dashboard query is tenant-scoped first; the
+            # existing indexes all lead with a low-cardinality column instead.
+            models.Index(fields=['tenant', 'check_in_at'], name='vehicles_ve_tenant_ci_idx'),
+            models.Index(fields=['tenant', 'status', 'check_in_at'], name='vehicles_ve_tenant_st_ci_idx'),
+            # Loyalty lookups run on every vehicle save.
+            models.Index(fields=['tenant', 'plate_number'], name='vehicles_ve_tenant_plate_idx'),
         ]
 
     def __str__(self) -> str:
@@ -278,6 +284,9 @@ class VehicleStatusLog(TimestampedModel):
 
     class Meta:
         ordering = ['-changed_at']
+        indexes = [
+            models.Index(fields=['vehicle', 'changed_at'], name='vehicles_vsl_vehicle_ca_idx'),
+        ]
 
 
 class VehicleJob(TimestampedModel):

@@ -48,8 +48,10 @@ class VehicleEntryListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         queryset = VehicleEntry.objects.select_related(
+            'tenant',
             'customer',
             'job',
+            'job__tenant',
             'job__assigned_worker',
             'job__assigned_worker__user',
         ).prefetch_related(
@@ -248,8 +250,10 @@ class VehicleEntryDetailView(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         return VehicleEntry.objects.select_related(
+            'tenant',
             'customer',
             'job',
+            'job__tenant',
             'job__assigned_worker',
             'job__assigned_worker__user',
         ).prefetch_related('job__service_lines__service', 'job__product_lines__product', 'status_logs').filter(tenant=self.request.user.tenant)

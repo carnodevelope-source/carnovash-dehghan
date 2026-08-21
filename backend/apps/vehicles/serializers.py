@@ -94,7 +94,36 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
     service_lines = VehicleJobServiceLineSerializer(many=True, read_only=True)
     product_lines = VehicleJobProductLineSerializer(many=True, read_only=True)
 
+    def _tenant_worker_profiles(self, tenant):
+        """One staff roster per response instead of a lookup per job."""
+        cache = getattr(self, '_worker_profiles_cache', None)
+        if cache is None:
+            cache = {}
+            self._worker_profiles_cache = cache
+        key = getattr(tenant, 'pk', None)
+        if key not in cache:
+            profiles = list(WorkerProfile.objects.select_related('user').filter(tenant=tenant))
+            cache[key] = (
+                {profile.id: profile for profile in profiles},
+                {profile.user_id: profile for profile in profiles if profile.user_id},
+            )
+        return cache[key]
+
     def _resolve_snapshot_worker_names(self, obj):
+        # Both name fields below ask for this, and DRF reuses one child
+        # serializer across every row, so memoise per job.
+        cache = getattr(self, '_snapshot_worker_names_cache', None)
+        if cache is None:
+            cache = {}
+            self._snapshot_worker_names_cache = cache
+        cache_key = getattr(obj, 'pk', None) or id(obj)
+        if cache_key in cache:
+            return cache[cache_key]
+        names = self._build_snapshot_worker_names(obj)
+        cache[cache_key] = names
+        return names
+
+    def _build_snapshot_worker_names(self, obj):
         snapshot = obj.assigned_workers_snapshot if isinstance(obj.assigned_workers_snapshot, list) else []
         ordered_ids = []
         names_by_ref = {}
@@ -119,14 +148,7 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
         if not ordered_ids:
             return []
 
-        profiles = list(
-            WorkerProfile.objects.select_related('user').filter(
-                Q(id__in=ordered_ids) | Q(user_id__in=ordered_ids),
-                tenant=obj.tenant,
-            )
-        )
-        profiles_by_id = {profile.id: profile for profile in profiles}
-        profiles_by_user_id = {profile.user_id: profile for profile in profiles if profile.user_id}
+        profiles_by_id, profiles_by_user_id = self._tenant_worker_profiles(obj.tenant)
 
         names = []
         seen = set()
@@ -344,14 +366,59 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         for field in self._AI_AUDIT_FIELDS:
             validated_data.pop(field, None)
 
+    def _loyalty_output(self, obj):
+        """Loyalty numbers for the read-only fields, resolved once per row.
+
+        The three fields below used to resolve this independently, and each
+        resolution ran a plate-profile get_or_create plus a possible rebuild.
+        On an unpaginated vehicle list that multiplied into a query per card.
+        """
+        cache = getattr(self, '_loyalty_output_cache', None)
+        if cache is None:
+            cache = {}
+            self._loyalty_output_cache = cache
+        key = getattr(obj, 'pk', None) or id(obj)
+        if key in cache:
+            return cache[key]
+
+        settings_obj = self._general_settings(getattr(obj, 'tenant', None))
+        # A frozen snapshot already carries every number below, so the live
+        # profile is only worth loading when the snapshot is incomplete.
+        needs_profile = (
+            getattr(obj, 'loyalty_score_snapshot', None) is None
+            or getattr(obj, 'loyalty_discount_percent_snapshot', None) is None
+        )
+        profile = self._plate_loyalty(obj) if needs_profile else None
+        loyalty = resolve_vehicle_loyalty_snapshot(
+            obj,
+            settings_obj=settings_obj,
+            fallback_profile=profile,
+        )
+
+        if loyalty.get('from_snapshot') and getattr(obj, 'loyalty_discount_percent_snapshot', None) is not None:
+            discount_percent = float(obj.loyalty_discount_percent_snapshot or 0)
+        else:
+            computed_percent, _discount_amount = compute_configured_loyalty_discount(
+                base_amount=0,
+                profile=profile,
+                settings_obj=settings_obj,
+                visit_count=loyalty.get('visit_count', 0),
+                score=loyalty.get('score', 0),
+            )
+            discount_percent = float(computed_percent or 0)
+
+        resolved = {
+            'score': loyalty.get('score', 0),
+            'visit_count': loyalty.get('visit_count', 0),
+            'discount_percent': discount_percent,
+        }
+        cache[key] = resolved
+        return resolved
+
     def get_customer_score(self, obj):
         if getattr(obj, 'is_piece_wash', False):
             return 0
-        return resolve_vehicle_loyalty_snapshot(
-            obj,
-            settings_obj=self._general_settings(getattr(obj, 'tenant', None)),
-            fallback_profile=self._plate_loyalty(obj),
-        ).get('score', 0)
+        return self._loyalty_output(obj)['score']
 
     def get_customer_score_year(self, obj):
         return timezone.localtime().year
@@ -359,32 +426,13 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     def get_customer_loyalty_visit_count(self, obj):
         if getattr(obj, 'is_piece_wash', False):
             return 0
-        visit_count = resolve_vehicle_loyalty_snapshot(
-            obj,
-            settings_obj=self._general_settings(getattr(obj, 'tenant', None)),
-            fallback_profile=self._plate_loyalty(obj),
-        ).get('visit_count', 0)
+        visit_count = self._loyalty_output(obj)['visit_count']
         return max(1, int(visit_count or 0)) if getattr(obj, 'pk', None) else max(0, int(visit_count or 0))
 
     def get_customer_loyalty_discount_percent(self, obj):
         if getattr(obj, 'is_piece_wash', False):
             return 0
-        settings_obj = self._general_settings(getattr(obj, 'tenant', None))
-        loyalty = resolve_vehicle_loyalty_snapshot(
-            obj,
-            settings_obj=settings_obj,
-            fallback_profile=self._plate_loyalty(obj),
-        )
-        if loyalty.get('from_snapshot') and getattr(obj, 'loyalty_discount_percent_snapshot', None) is not None:
-            return float(obj.loyalty_discount_percent_snapshot or 0)
-        discount_percent, _discount_amount = compute_configured_loyalty_discount(
-            base_amount=0,
-            profile=self._plate_loyalty(obj),
-            settings_obj=settings_obj,
-            visit_count=loyalty.get('visit_count', 0),
-            score=loyalty.get('score', 0),
-        )
-        return float(discount_percent or 0)
+        return self._loyalty_output(obj)['discount_percent']
 
     def get_is_plate_blocked(self, obj):
         return bool(self._cached_blocked_plate(obj))
@@ -393,6 +441,18 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         blocked = self._cached_blocked_plate(obj)
         return blocked.id if blocked else None
 
+    def _tenant_has_blocked_plates(self, tenant):
+        # Most tenants block nothing, and this one check replaces up to four
+        # lookups per row on the vehicle list.
+        cache = getattr(self, '_blocked_plate_exists_cache', None)
+        if cache is None:
+            cache = {}
+            self._blocked_plate_exists_cache = cache
+        key = getattr(tenant, 'pk', None)
+        if key not in cache:
+            cache[key] = bool(tenant) and BlockedPlate.objects.filter(tenant=tenant).exists()
+        return cache[key]
+
     def _cached_blocked_plate(self, obj):
         cache = getattr(self, '_blocked_plate_cache', None)
         if cache is None:
@@ -400,14 +460,15 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             self._blocked_plate_cache = cache
         key = getattr(obj, 'pk', None) or id(obj)
         if key not in cache:
+            tenant = getattr(obj, 'tenant', None)
             cache[key] = self._find_blocked_plate_record(
-                tenant=getattr(obj, 'tenant', None),
+                tenant=tenant,
                 plate_number=obj.plate_number,
                 plate_left=obj.plate_left,
                 plate_letter=obj.plate_letter,
                 plate_mid=obj.plate_mid,
                 plate_right=obj.plate_right,
-            )
+            ) if self._tenant_has_blocked_plates(tenant) else None
         return cache[key]
 
     def _assigned_worker_ids_from_payload(self, payload, assigned_worker=None):
@@ -486,14 +547,23 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         return normalized, normalized
 
     def _discount_percent_per_half_star(self, tenant):
-        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        settings_obj = self._general_settings(tenant)
         return Decimal(str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0))
 
     def _general_settings(self, tenant):
-        return GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        # DRF reuses one child serializer for every row of a list response, so
+        # this row-independent lookup only needs to hit the database once.
+        cache = getattr(self, '_general_settings_cache', None)
+        if cache is None:
+            cache = {}
+            self._general_settings_cache = cache
+        key = getattr(tenant, 'pk', None)
+        if key not in cache:
+            cache[key] = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        return cache[key]
 
     def _tax_percent(self, tenant):
-        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        settings_obj = self._general_settings(tenant)
         if not getattr(settings_obj, 'tax_enabled', False):
             return Decimal('0')
         return min(Decimal('100'), max(Decimal('0'), Decimal(str(getattr(settings_obj, 'tax_percent', 0) or 0))))

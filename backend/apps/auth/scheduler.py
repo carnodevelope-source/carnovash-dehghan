@@ -2,10 +2,19 @@ import os
 import sys
 import threading
 import time
+import uuid
 
 
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
+
+CYCLE_SECONDS = 300
+# Shorter than the cycle so the next tick can always re-acquire, but long enough
+# that a slow cycle never lets a second worker start the same jobs.
+LOCK_TTL_SECONDS = 280
+LOCK_KEY = 'carvash:scheduler:background-jobs'
+
+_instance_token = uuid.uuid4().hex
 
 
 def _should_start_scheduler():
@@ -20,6 +29,24 @@ def _should_start_scheduler():
     return True
 
 
+def _acquire_cycle_lease():
+    """Elect a single runner per cycle so multi-worker deployments don't duplicate jobs."""
+    from django.conf import settings
+
+    redis_url = getattr(settings, 'REDIS_URL', '')
+    if not redis_url:
+        # Single process (runserver); there is nobody to race with.
+        return True
+    try:
+        import redis
+
+        client = redis.Redis.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2)
+        return bool(client.set(LOCK_KEY, _instance_token, nx=True, ex=LOCK_TTL_SECONDS))
+    except Exception:
+        # Never let a Redis hiccup silently stop nightly SMS and expiry jobs.
+        return True
+
+
 def _background_jobs_loop():
     from django.db import close_old_connections
 
@@ -29,14 +56,17 @@ def _background_jobs_loop():
     while True:
         try:
             close_old_connections()
-            dispatch_due_nightly_manager_summaries()
-            close_stale_support_tickets()
-            from apps.subscriptions.services import run_expiry_and_reminder_jobs
+            if _acquire_cycle_lease():
+                dispatch_due_nightly_manager_summaries()
+                close_stale_support_tickets()
+                from apps.subscriptions.services import run_expiry_and_reminder_jobs
 
-            run_expiry_and_reminder_jobs()
+                run_expiry_and_reminder_jobs()
         except Exception:
             pass
-        time.sleep(300)
+        finally:
+            close_old_connections()
+        time.sleep(CYCLE_SECONDS)
 
 
 def start_internal_scheduler():

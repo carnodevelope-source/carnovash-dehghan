@@ -3,7 +3,7 @@
   <GlobalNoticeStack />
   <PermissionPromptModal />
   <BaseSpinner
-    v-if="isLoading"
+    v-if="showLoadingOverlay"
     overlay
     size="86px"
     color="#1d4ed8"
@@ -13,7 +13,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import BaseSpinner from './components/base/BaseSpinner.vue'
 import GlobalNoticeStack from './components/base/GlobalNoticeStack.vue'
@@ -21,8 +21,29 @@ import PermissionPromptModal from './components/base/PermissionPromptModal.vue'
 import { useLoadingStore } from './store/loading.store'
 import { notifyError } from './utils/notify'
 
+// Requests that finish quickly should not blink a full-screen overlay over the
+// panel; only a wait the user would actually notice is worth covering the UI.
+const OVERLAY_DELAY_MS = 300
+
 const loadingStore = useLoadingStore()
 const { isLoading } = storeToRefs(loadingStore)
+const showLoadingOverlay = ref(false)
+let overlayTimer = null
+
+watch(isLoading, (loading) => {
+  if (overlayTimer) {
+    window.clearTimeout(overlayTimer)
+    overlayTimer = null
+  }
+  if (!loading) {
+    showLoadingOverlay.value = false
+    return
+  }
+  overlayTimer = window.setTimeout(() => {
+    overlayTimer = null
+    showLoadingOverlay.value = true
+  }, OVERLAY_DELAY_MS)
+}, { immediate: true })
 
 const handleUnexpectedError = () => {
   notifyError('در اجرای صفحه خطای غیرمنتظره رخ داد. لطفا صفحه را یک بار نوسازی کنید.', {
@@ -44,5 +65,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('error', handleUnexpectedError)
   window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+  if (overlayTimer) window.clearTimeout(overlayTimer)
 })
 </script>

@@ -1322,22 +1322,25 @@ watch(() => forms.worker.role, (role) => {
   }
 })
 
-const loadAll = async () => {
+const SILENT_REQUEST_META = { trackLoading: false, showErrorToast: false }
+
+const loadAll = async ({ silent = false } = {}) => {
+  const options = silent ? { meta: SILENT_REQUEST_META } : {}
   try {
-    const [w, p, e, s, inv] = await Promise.all([
-      api.get('/workers/', { params: { include_inactive: 1 } }),
-      api.get('/products/'),
-      api.get('/inventory/expenses/'),
-      api.get('/services/'),
-      api.get('/inventory/')
+    const [w, p, e, s, inv, gs] = await Promise.all([
+      api.get('/workers/', { params: { include_inactive: 1 }, ...options }),
+      api.get('/products/', options),
+      api.get('/inventory/expenses/', options),
+      api.get('/services/', options),
+      api.get('/inventory/', options),
+      api.get('/services/general-settings/', options).catch(() => null)
     ])
     workers.value = Array.isArray(w.data) ? w.data : []
     products.value = Array.isArray(p.data) ? p.data : []
     expenses.value = Array.isArray(e.data) ? e.data : []
     services.value = Array.isArray(s.data) ? s.data : []
     inventoryItems.value = Array.isArray(inv.data) ? inv.data : []
-    try {
-      const gs = await api.get('/services/general-settings/')
+    if (gs) {
       generalSettings.discount_calculation_mode = gs.data?.discount_calculation_mode === 'fixed' ? 'fixed' : 'step'
       generalSettings.discount_percent_per_half_star = Number(gs.data?.discount_percent_per_half_star || 0)
       generalSettings.fixed_visit_discounts = normalizeFixedVisitDiscounts(gs.data?.fixed_visit_discounts)
@@ -1372,7 +1375,7 @@ const loadAll = async () => {
       )
       generalSettings.sms_vehicle_assigned_invoice_template = ''
       generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(gs.data?.sms_vehicle_released_template || '')
-    } catch {
+    } else {
       generalSettings.discount_calculation_mode = 'step'
       generalSettings.discount_percent_per_half_star = 0
       generalSettings.fixed_visit_discounts = normalizeFixedVisitDiscounts()
@@ -1808,19 +1811,22 @@ const onLiveEvent = (event) => {
   ) {
     if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
     liveReloadTimer = window.setTimeout(() => {
-      void loadAll()
+      void loadAll({ silent: true })
     }, 500)
   }
 }
 
-onMounted(async () => {
-  await authStore.fetchMe()
-  await loadAll()
+onMounted(() => {
+  // Registered before any await: an unmount during the initial load would
+  // otherwise run the cleanup first and leave this listener attached forever.
   window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+  // The router guard already resolved the current user before this route rendered.
+  void loadAll()
 })
 
 onBeforeUnmount(() => {
   if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+  if (timer) window.clearTimeout(timer)
   window.removeEventListener(LIVE_EVENT_NAME, onLiveEvent)
 })
 </script>

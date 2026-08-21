@@ -857,6 +857,9 @@ watch(() => ticketModal.category, (value) => {
 })
 
 onMounted(async () => {
+  // Started before any await: an unmount during the initial load would otherwise
+  // run the cleanup first and leak both the SSE subscriber and the 60s poller.
+  startSupportLive()
   await loadTickets()
   if (route.query.prefill === 'wallet-card-payment') {
     openWalletPaymentTicketModal()
@@ -868,7 +871,6 @@ onMounted(async () => {
       router.replace({ path: route.path, query: {} })
     }
   }
-  startSupportLive()
 })
 
 onBeforeUnmount(() => {

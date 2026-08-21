@@ -6,17 +6,24 @@ from .models import CarWashFeaturePurchase
 ATTENDANCE_FREE_WORKERS_LIMIT = 5
 
 
-def feature_access_map_for_tenant(tenant):
+def feature_access_map_for_tenant(tenant, *, feature_keys=None, locked_features=None):
+    """Callers that already looked these up can pass them in to avoid re-querying."""
     if tenant and tenant.is_trial_active():
         return {
             key: True
             for key in CarWashFeaturePurchase.FeatureKey.values
         }
-    feature_keys = set(tenant.active_feature_keys()) if tenant else set()
-    locked_features = set()
-    if tenant:
-        from apps.payments.views import locked_feature_statuses_for_tenant
-        locked_features = set(locked_feature_statuses_for_tenant(tenant).keys())
+    if feature_keys is None:
+        feature_keys = set(tenant.active_feature_keys()) if tenant else set()
+    else:
+        feature_keys = set(feature_keys)
+    if locked_features is None:
+        locked_features = set()
+        if tenant:
+            from apps.payments.views import locked_feature_statuses_for_tenant
+            locked_features = set(locked_feature_statuses_for_tenant(tenant).keys())
+    else:
+        locked_features = set(locked_features)
     access_map = {
         key: key in feature_keys and key not in locked_features
         for key in CarWashFeaturePurchase.FeatureKey.values

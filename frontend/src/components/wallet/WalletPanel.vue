@@ -1145,8 +1145,10 @@ const applyGatewayResultMessage = () => {
   window.history.replaceState({}, '', nextUrl)
 }
 
-const loadWalletDashboard = async () => {
-  state.loading = true
+const SILENT_REQUEST_META = { trackLoading: false, showErrorToast: false }
+
+const loadWalletDashboard = async ({ silent = false } = {}) => {
+  if (!silent) state.loading = true
   state.error = ''
   try {
     const periodQuery = buildPeriodQuery()
@@ -1156,7 +1158,8 @@ const loadWalletDashboard = async () => {
         q: (props.searchQuery || '').trim() || undefined,
         start: periodQuery.start,
         end: periodQuery.end
-      }
+      },
+      ...(silent ? { meta: SILENT_REQUEST_META } : {})
     })
     state.summary = {
       total_balance: Number(data?.summary?.total_balance || 0),
@@ -1184,14 +1187,14 @@ const loadWalletDashboard = async () => {
   } catch (error) {
     state.error = resolveApiErrorMessage(error, 'بارگذاری کیف پول ناموفق بود.')
   } finally {
-    state.loading = false
+    if (!silent) state.loading = false
   }
 }
 
-const loadWalletOptions = async () => {
-  state.optionsLoading = true
+const loadWalletOptions = async ({ silent = false } = {}) => {
+  if (!silent) state.optionsLoading = true
   try {
-    const { data } = await api.get('/payments/wallet/options/')
+    const { data } = await api.get('/payments/wallet/options/', silent ? { meta: SILENT_REQUEST_META } : {})
     state.options = Array.isArray(data?.options) ? data.options : []
     state.optionsTenant = data?.tenant || null
     state.licenseStatus = data?.license_status || state.licenseStatus || {}
@@ -1201,7 +1204,7 @@ const loadWalletOptions = async () => {
   } catch (error) {
     state.error = resolveApiErrorMessage(error, 'بارگذاری آپشن‌ها ناموفق بود.')
   } finally {
-    state.optionsLoading = false
+    if (!silent) state.optionsLoading = false
   }
 }
 
@@ -1516,10 +1519,12 @@ watch(() => [actionModal.walletId, actionModal.type, actionModal.destinationType
   }
 })
 
-onMounted(async () => {
-  applyGatewayResultMessage()
-  await Promise.all([loadWalletDashboard(), loadWalletOptions()])
+onMounted(() => {
+  // Registered before any await: an unmount during the initial load would
+  // otherwise run the cleanup first and leave this listener attached forever.
   window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+  applyGatewayResultMessage()
+  void Promise.all([loadWalletDashboard(), loadWalletOptions()])
 })
 
 const onLiveEvent = (event) => {
@@ -1527,7 +1532,10 @@ const onLiveEvent = (event) => {
   if (type.startsWith('payment.') || type.startsWith('subscription.') || type.startsWith('wallet.')) {
     if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
     liveReloadTimer = window.setTimeout(() => {
-      void Promise.all([loadWalletDashboard(), loadWalletOptions()])
+      void Promise.all([
+        loadWalletDashboard({ silent: true }),
+        loadWalletOptions({ silent: true })
+      ])
     }, 500)
   }
 }

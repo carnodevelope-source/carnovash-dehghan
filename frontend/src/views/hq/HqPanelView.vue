@@ -1227,7 +1227,18 @@ const isWalletBankWithdrawalTicket = (ticket) => {
   if (text.includes('درخواست برداشت از کیف پول')) return true
   return text.includes('برداشت') && text.includes('کیف پول') && (text.includes('شبا') || text.includes('بانک') || text.includes('iban'))
 }
-const isWalletOperationTicket = (ticket) => isWalletCardPaymentTicket(ticket) || isWalletBankWithdrawalTicket(ticket)
+// Detection joins and lowercases the whole message history, which is far too
+// expensive to redo twice per comparison inside a sort. Tickets are replaced
+// wholesale on every refresh, so caching by object identity stays correct.
+const walletOperationCache = new WeakMap()
+const isWalletOperationTicket = (ticket) => {
+  if (!ticket || typeof ticket !== 'object') return false
+  const cached = walletOperationCache.get(ticket)
+  if (cached !== undefined) return cached
+  const result = isWalletCardPaymentTicket(ticket) || isWalletBankWithdrawalTicket(ticket)
+  walletOperationCache.set(ticket, result)
+  return result
+}
 const ticketScopeOptions = computed(() => [
   { key: 'all', label: 'فعال' },
   { key: 'closed', label: 'بسته‌شده' },
@@ -1279,18 +1290,16 @@ const visibleTickets = computed(() => {
     // Default "all" = active tickets only (open/pending/answered)
     return item.status !== 'closed'
   })
-  return filtered.sort((a, b) => {
-    const aOpen = a.status !== 'closed' ? 1 : 0
-    const bOpen = b.status !== 'closed' ? 1 : 0
-    if (bOpen !== aOpen) return bOpen - aOpen
-    const aWallet = isWalletOperationTicket(a) && a.status !== 'closed' ? 1 : 0
-    const bWallet = isWalletOperationTicket(b) && b.status !== 'closed' ? 1 : 0
-    if (bWallet !== aWallet) return bWallet - aWallet
-    const aUrgent = ['urgent', 'high'].includes(a.priority) ? 1 : 0
-    const bUrgent = ['urgent', 'high'].includes(b.priority) ? 1 : 0
-    if (bUrgent !== aUrgent) return bUrgent - aUrgent
-    return new Date(b.last_message_at || b.created_at || 0) - new Date(a.last_message_at || a.created_at || 0)
-  })
+  return filtered
+    .map((item) => ({
+      item,
+      open: item.status !== 'closed' ? 1 : 0,
+      wallet: isWalletOperationTicket(item) && item.status !== 'closed' ? 1 : 0,
+      urgent: ['urgent', 'high'].includes(item.priority) ? 1 : 0,
+      at: Date.parse(item.last_message_at || item.created_at || '') || 0
+    }))
+    .sort((a, b) => (b.open - a.open) || (b.wallet - a.wallet) || (b.urgent - a.urgent) || (b.at - a.at))
+    .map((entry) => entry.item)
 })
 const selectedTicketLastResponder = computed(() => {
   if (!selectedTicket.value?.messages?.length) return 'بدون پاسخ'
@@ -1866,8 +1875,10 @@ const loadOverview = async (options = {}) => {
   overview.recent_tickets = data?.recent_tickets || []
 }
 
-const loadCarwashes = async () => {
-  const { data } = await api.get('/auth/hq/carwashes/')
+const loadCarwashes = async (options = {}) => {
+  const { data } = await api.get('/auth/hq/carwashes/', {
+    meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
+  })
   carwashes.value = Array.isArray(data) ? data : []
 }
 
@@ -2104,8 +2115,8 @@ const onGlobalLiveEvent = (event) => {
   ) {
     if (hqTicketLiveRefreshTimer) window.clearTimeout(hqTicketLiveRefreshTimer)
     hqTicketLiveRefreshTimer = window.setTimeout(() => {
-      if (activeTab.value === 'overview') void loadOverview()
-      if (activeTab.value === 'carwashes') void loadCarwashes()
+      if (activeTab.value === 'overview') void loadOverview({ silent: true })
+      if (activeTab.value === 'carwashes') void loadCarwashes({ silent: true })
       if (activeTab.value === 'tickets') void refreshTicketsQuietly()
     }, 500)
   }
@@ -2394,6 +2405,9 @@ onMounted(async () => {
   window.addEventListener('keydown', unlockTicketAlerts, { once: true })
   window.addEventListener(LIVE_EVENT_NAME, onGlobalLiveEvent)
   document.addEventListener('visibilitychange', handleVisibilityRefresh)
+  // Started before any await: an unmount during the initial load would otherwise
+  // run the cleanup first and leak both the SSE subscriber and the 60s poller.
+  startHqTicketLive()
 
   const queryTab = String(route.query.tab || '').trim()
   if (queryTab && visibleTabs.value.some((item) => item.key === queryTab)) {
@@ -2402,20 +2416,18 @@ onMounted(async () => {
     activeTab.value = visibleTabs.value[0]?.key || 'tickets'
   }
 
+  // None of these read each other's results, so the overlay used to stay up for
+  // the sum of four round trips instead of the slowest one.
+  const initialLoads = [loadTeam()]
   if (authStore.isHqAdmin) {
-    await loadOverview()
-    await loadCarwashes()
-    await loadTeam()
-  } else {
-    await loadTeam()
-    if (authStore.isHqFinance || authStore.isHqProjectManager) {
-      await loadCarwashes()
-    }
+    initialLoads.push(loadOverview(), loadCarwashes())
+  } else if (authStore.isHqFinance || authStore.isHqProjectManager) {
+    initialLoads.push(loadCarwashes())
   }
-  if (activeTab.value === 'tickets') await loadTickets()
+  if (activeTab.value === 'tickets') initialLoads.push(loadTickets())
+  await Promise.all(initialLoads)
   // Seed alert baseline so the first poll does not treat existing tickets as new.
   await pollTicketAlerts()
-  startHqTicketLive()
 })
 
 onBeforeUnmount(() => {

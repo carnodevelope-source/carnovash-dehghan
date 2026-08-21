@@ -1074,9 +1074,14 @@ const resolveInsuranceYear = () => {
   return getCurrentJalaliYear()
 }
 
-const fetchWorkers = async () => {
+const SILENT_REQUEST_META = { trackLoading: false, showErrorToast: false }
+
+const fetchWorkers = async ({ silent = false } = {}) => {
   try {
-    const { data } = await api.get('/workers/', { params: { include_inactive: 1 } })
+    const { data } = await api.get('/workers/', {
+      params: { include_inactive: 1 },
+      ...(silent ? { meta: SILENT_REQUEST_META } : {})
+    })
     workers.value = Array.isArray(data) ? data : []
   } catch (_error) {
     workers.value = []
@@ -1084,7 +1089,7 @@ const fetchWorkers = async () => {
 }
 
 let fetchToken = 0
-const fetchReports = async ({ withSync = false, syncLimit = null, skipWorkerAutoSync = false } = {}) => {
+const fetchReports = async ({ withSync = false, syncLimit = null, skipWorkerAutoSync = false, silent = false } = {}) => {
   const token = ++fetchToken
   errorMessage.value = ''
   try {
@@ -1093,7 +1098,10 @@ const fetchReports = async ({ withSync = false, syncLimit = null, skipWorkerAuto
       ...(withSync ? { sync: 1 } : {}),
       ...(withSync && syncLimit != null ? { sync_limit: syncLimit } : {})
     }
-    const { data: payload } = await api.get('/reports/dashboard/', { params })
+    const { data: payload } = await api.get('/reports/dashboard/', {
+      params,
+      ...(silent ? { meta: SILENT_REQUEST_META } : {})
+    })
     if (token !== fetchToken) return
     Object.assign(summary, payload.summary || {})
     Object.assign(sectionTotals.overall, payload.section_totals?.overall || {})
@@ -1652,10 +1660,11 @@ watch(() => [payoutModal.target, payoutModal.mode, payoutModal.insuranceMonth], 
   payoutModal.amount = Math.max(0, Math.round(selectedInsuranceMonthBalance.value || 0))
 })
 
-onMounted(async () => {
-  await fetchWorkers()
-  await fetchReports()
+onMounted(() => {
+  // Registered before any await: an unmount during the initial load would
+  // otherwise run the cleanup first and leave this listener attached forever.
   window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+  void Promise.all([fetchWorkers(), fetchReports()])
 })
 
 const onLiveEvent = (event) => {
@@ -1671,14 +1680,16 @@ const onLiveEvent = (event) => {
   ) {
     if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
     liveReloadTimer = window.setTimeout(() => {
-      void fetchReports()
-      if (type.startsWith('worker.')) void fetchWorkers()
+      void fetchReports({ silent: true })
+      if (type.startsWith('worker.')) void fetchWorkers({ silent: true })
     }, 700)
   }
 }
 
 onBeforeUnmount(() => {
   if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+  if (filterTimer) clearTimeout(filterTimer)
+  if (workerSyncTimer) clearTimeout(workerSyncTimer)
   window.removeEventListener(LIVE_EVENT_NAME, onLiveEvent)
 })
 </script>

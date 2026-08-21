@@ -55,9 +55,9 @@ class TenantLicenseLockMiddleware:
             'hq_finance',
         }:
             return None
-        tenant = getattr(user, 'tenant', None)
-        if tenant is None:
+        if getattr(user, 'tenant_id', None) is None:
             return None
+        tenant = user.tenant
         from apps.payments.views import license_status_for_tenant, locked_feature_statuses_for_tenant
         license_status = license_status_for_tenant(tenant)
         if license_status.get('is_locked'):
@@ -66,11 +66,20 @@ class TenantLicenseLockMiddleware:
                 'code': 'tenant_license_locked',
                 'feature_key': 'core_software',
             }
+
+        # Only the handful of paths below can be feature-locked, so skip the
+        # installment lookup entirely for every other API request.
+        candidate_features = [
+            feature_key
+            for feature_key, prefixes in FEATURE_LOCK_PREFIXES.items()
+            if any(path.startswith(prefix) for prefix in prefixes)
+        ]
+        if not candidate_features:
+            return None
+
         locked_features = locked_feature_statuses_for_tenant(tenant)
-        for feature_key, prefixes in FEATURE_LOCK_PREFIXES.items():
-            if feature_key not in locked_features:
-                continue
-            if any(path.startswith(prefix) for prefix in prefixes):
+        for feature_key in candidate_features:
+            if feature_key in locked_features:
                 return {
                     'detail': 'دسترسی این بخش به دلیل پرداخت نشدن قسط قفل است. برای ادامه، قسط را از کیف پول پرداخت کنید.',
                     'code': 'tenant_feature_locked',

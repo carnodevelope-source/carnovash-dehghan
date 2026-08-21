@@ -1,6 +1,15 @@
+# Docker's default json-file driver keeps every line forever; on a long-lived
+# host that quietly fills the disk and drags the whole machine down.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+    max-file: ${DOCKER_LOG_MAX_FILE:-3}
+
 services:
   db:
     image: ${MYSQL_IMAGE:-docker.arvancloud.ir/mysql:8.4}
+    logging: *default-logging
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -23,11 +32,35 @@ services:
       start_period: 90s
     restart: unless-stopped
 
+  redis:
+    image: ${REDIS_IMAGE:-docker.arvancloud.ir/redis:7-alpine}
+    logging: *default-logging
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-64mb}
+      - --maxmemory-policy
+      - allkeys-lru
+    environment:
+      TZ: ${TZ:-Asia/Tehran}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
       args:
         PYTHON_IMAGE: ${BACKEND_PYTHON_IMAGE:-docker.arvancloud.ir/python:3.12-slim}
+    logging: *default-logging
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-replace-me}
       DJANGO_DEBUG: "False"
@@ -43,6 +76,12 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-change-me}
       DB_HOST: db
       DB_PORT: "3306"
+      DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-24}
+      LIVE_MAX_SUBSCRIBERS: ${LIVE_MAX_SUBSCRIBERS:-40}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CARWASH_INTERNAL_SCHEDULER: ${CARWASH_INTERNAL_SCHEDULER:-1}
       PLATE_AI_SERVICE_URL: http://plate-ai:8765
       PLATE_AI_TIMEOUT_SECONDS: ${PLATE_AI_TIMEOUT_SECONDS:-5}
       IRANPAYAMAK_BASE_URL: ${IRANPAYAMAK_BASE_URL:-https://api.iranpayamak.com}
@@ -55,6 +94,8 @@ services:
       TZ: ${TZ:-Asia/Tehran}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     expose:
       - "8000"
@@ -75,6 +116,7 @@ services:
       dockerfile: ai/Dockerfile
       args:
         PYTHON_IMAGE: ${PLATE_AI_PYTHON_IMAGE:-docker.arvancloud.ir/python:3.12-slim}
+    logging: *default-logging
     environment:
       PYTHONUNBUFFERED: "1"
       TZ: ${TZ:-Asia/Tehran}
@@ -133,6 +175,7 @@ services:
         NODE_IMAGE: ${FRONTEND_NODE_IMAGE:-docker.arvancloud.ir/node:20-alpine}
         NGINX_IMAGE: ${FRONTEND_NGINX_IMAGE:-docker.arvancloud.ir/nginx:1.27-alpine}
         VITE_API_BASE_URL: /api
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_healthy

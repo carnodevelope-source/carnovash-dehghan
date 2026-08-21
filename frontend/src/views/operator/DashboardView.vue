@@ -1334,12 +1334,14 @@ const normalizeAiConfidence = (value) => {
   if (!Number.isFinite(numericValue)) return null
   return Math.round(Math.min(999.99, Math.max(0, numericValue)) * 100) / 100
 }
+// Built once: this runs for every vehicle on every list recompute.
+const dateTimeFormatter = new Intl.DateTimeFormat('fa-IR', {
+  dateStyle: 'medium',
+  timeStyle: 'short'
+})
 const formatDateTime = (value) => {
   if (!value) return '-'
-  return new Intl.DateTimeFormat('fa-IR', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(new Date(value))
+  return dateTimeFormatter.format(new Date(value))
 }
 const apiErrorText = (error, fallback = 'عملیات ناموفق بود.') => resolveApiErrorMessage(error, fallback)
 const parseJalaliToIso = (input) => {

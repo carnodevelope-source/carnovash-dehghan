@@ -120,8 +120,36 @@ else:
             'OPTIONS': {
                 'charset': 'utf8mb4',
             },
+            # Reusing connections removes a MySQL handshake from every request.
+            'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=60, cast=int),
+            'CONN_HEALTH_CHECKS': True,
         }
     }
+
+REDIS_URL = config('REDIS_URL', default='')
+
+# Upper bound on concurrent /api/live/events/ streams per worker process; each
+# one holds a server thread until its browser tab goes away.
+LIVE_MAX_SUBSCRIBERS = config('LIVE_MAX_SUBSCRIBERS', default=40, cast=int)
+# Shared channel that lets an event raised in one worker process reach streams
+# attached to the others. Empty means single-process delivery only.
+LIVE_REDIS_URL = config('LIVE_REDIS_URL', default=REDIS_URL)
+LIVE_REDIS_CHANNEL = config('LIVE_REDIS_CHANNEL', default='carvash:live')
+
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'KEY_PREFIX': 'carvash',
+        }
+    }
+    # cached_db keeps the database as the source of truth, so an eviction or a
+    # Redis restart costs a lookup rather than logging everyone out.
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
+
+SESSION_COOKIE_AGE = config('DJANGO_SESSION_COOKIE_AGE', default=60 * 60 * 24 * 14, cast=int)
+SESSION_SAVE_EVERY_REQUEST = False
 
 AUTH_USER_MODEL = 'cw_auth.User'
 

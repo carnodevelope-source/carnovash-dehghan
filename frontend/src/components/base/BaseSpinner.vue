@@ -51,8 +51,9 @@ const innerStyles = computed(() => {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(238, 246, 255, 0.8);
-  backdrop-filter: blur(2px);
+  /* No backdrop-filter: it forces a full-viewport GPU composite every time the
+     overlay appears, which is painful on the tablets used on the shop floor. */
+  background: rgba(238, 246, 255, 0.88);
 }
 
 .spinner {

@@ -6,6 +6,11 @@ services:
 
   edge-nginx:
     image: ${EDGE_NGINX_IMAGE:-docker.arvancloud.ir/nginx:1.27-alpine}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: ${DOCKER_LOG_MAX_FILE:-3}
     depends_on:
       frontend:
         condition: service_healthy

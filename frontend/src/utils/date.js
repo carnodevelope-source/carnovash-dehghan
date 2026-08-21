@@ -1,20 +1,24 @@
+// Constructing an Intl.DateTimeFormat is expensive, and these run once per row
+// of every list, so the formatters are built once and reused.
+const jalaliDateFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+})
+
+const jalaliTimeFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+  hour: '2-digit',
+  minute: '2-digit'
+})
+
 export const formatJalaliDate = (value) => {
   if (!value) return '-'
-  return new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(new Date(value))
+  return jalaliDateFormatter.format(new Date(value))
 }
 
 export const formatJalaliDateTime = (value) => {
   if (!value) return '-'
-  const date = formatJalaliDate(value)
-  const time = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(value))
-  return `${date} ${time}`
+  return `${jalaliDateFormatter.format(new Date(value))} ${jalaliTimeFormatter.format(new Date(value))}`
 }
 
 /** Convert Jalali date string YYYY/MM/DD to Gregorian ISO YYYY-MM-DD for API filters. */

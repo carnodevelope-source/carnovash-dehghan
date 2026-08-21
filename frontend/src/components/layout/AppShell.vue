@@ -314,12 +314,14 @@ const trialEndsAtMs = computed(() => {
   return Number.isFinite(parsed) ? parsed : 0
 })
 const trialBannerVisible = computed(() => isTrialActive.value && trialRemainingMs.value > 0)
+// Rebuilt every second while a trial runs, so avoid toLocaleString per digit.
+const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹']
 const trialCountdownText = computed(() => {
   const totalSeconds = Math.max(0, Math.ceil(trialRemainingMs.value / 1000))
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
-  const twoDigits = (value) => String(value).padStart(2, '0').replace(/\d/g, (digit) => Number(digit).toLocaleString('fa-IR'))
+  const twoDigits = (value) => String(value).padStart(2, '0').replace(/\d/g, (digit) => PERSIAN_DIGITS[digit])
   return `${twoDigits(hours)}:${twoDigits(minutes)}:${twoDigits(seconds)}`
 })
 const currentPageIconName = computed(() => {

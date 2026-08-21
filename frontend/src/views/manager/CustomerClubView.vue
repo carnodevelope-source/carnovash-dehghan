@@ -1334,7 +1334,9 @@ const loadCustomerClubData = async ({ showLoading = true } = {}) => {
   if (showLoading) loading.value = true
   try {
     const { data } = await api.get('/notifications/customer-club/', {
-      meta: { trackLoading: !showLoading }
+      // This view renders its own inline spinner, so the blocking overlay is
+      // never wanted here - least of all for background refreshes.
+      meta: { trackLoading: false, showErrorToast: showLoading }
     })
     customers.value = Array.isArray(data?.customers) ? data.customers : []
     customGroups.value = Array.isArray(data?.groups) ? data.groups : []
@@ -1728,9 +1730,11 @@ const exportCustomers = () => {
   URL.revokeObjectURL(url)
 }
 
-onMounted(async () => {
-  await loadCustomerClubData()
+onMounted(() => {
+  // Registered before any await: an unmount during the initial load would
+  // otherwise run the cleanup first and leave this listener attached forever.
   window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+  void loadCustomerClubData()
 })
 
 const onLiveEvent = (event) => {

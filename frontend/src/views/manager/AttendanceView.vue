@@ -431,9 +431,11 @@ const parseJalaliToIso = (input) => {
   return `${gy}-${String(gm + 1).padStart(2, '0')}-${String(gDayNo + 1).padStart(2, '0')}`
 }
 
-const loadDashboard = async () => {
+const SILENT_REQUEST_META = { trackLoading: false, showErrorToast: false }
+
+const loadDashboard = async ({ silent = false } = {}) => {
   try {
-    const { data } = await api.get('/workers/attendance/dashboard/')
+    const { data } = await api.get('/workers/attendance/dashboard/', silent ? { meta: SILENT_REQUEST_META } : {})
     summary.value = data?.summary || {}
     workers.value = data?.workers || []
     trend.value = data?.trend || []
@@ -445,7 +447,7 @@ const loadDashboard = async () => {
 }
 
 let reportFetchToken = 0
-const loadAttendanceReports = async () => {
+const loadAttendanceReports = async ({ silent = false } = {}) => {
   const token = ++reportFetchToken
   try {
     const manualStart = parseJalaliToIso(reportFilters.startJalali)
@@ -458,7 +460,8 @@ const loadAttendanceReports = async () => {
         end: manualEnd || quickRange.end || undefined,
         q: reportFilters.q || undefined,
         worker_id: Number.isInteger(workerId) && workerId > 0 ? workerId : undefined,
-      }
+      },
+      ...(silent ? { meta: SILENT_REQUEST_META } : {})
     })
     if (token !== reportFetchToken) return
     reportRows.value = Array.isArray(data?.attendance_report) ? data.attendance_report : []
@@ -534,24 +537,27 @@ const onLiveEvent = (event) => {
   if (type.startsWith('worker.')) {
     if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
     liveReloadTimer = window.setTimeout(() => {
-      void loadDashboard()
-      if (activeTab.value === 'reports') void loadAttendanceReports()
+      void loadDashboard({ silent: true })
+      if (activeTab.value === 'reports') void loadAttendanceReports({ silent: true })
     }, 500)
   }
 }
 
 onMounted(() => {
-  void loadDashboard()
   window.addEventListener(LIVE_EVENT_NAME, onLiveEvent)
+  void loadDashboard()
 })
 
 onBeforeUnmount(() => {
   if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
+  if (reportFilterTimer) clearTimeout(reportFilterTimer)
   window.removeEventListener(LIVE_EVENT_NAME, onLiveEvent)
 })
 
 let reportFilterTimer = null
-watch(() => [activeTab.value, reportFilters.rangeKey, reportFilters.startJalali, reportFilters.endJalali, reportFilters.q, reportFilters.workerId], () => {
+// activeTab is deliberately not watched here; the watcher below handles tab
+// switches, and having both fire meant two requests per switch.
+watch(() => [reportFilters.rangeKey, reportFilters.startJalali, reportFilters.endJalali, reportFilters.q, reportFilters.workerId], () => {
   if (activeTab.value !== 'reports') return
   if (reportFilterTimer) clearTimeout(reportFilterTimer)
   reportFilterTimer = setTimeout(loadAttendanceReports, 260)

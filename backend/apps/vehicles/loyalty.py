@@ -322,7 +322,10 @@ def rebuild_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None
         elif profile.plate_mid and letter and not profile.plate_left and not profile.plate_right:
             plate_numbers.add(f'{profile.plate_mid} {letter}')
     plate_numbers = [item for item in plate_numbers if item]
-    vehicles = list(
+    # Replaying every historical visit as its own UPDATE made saving a regular
+    # customer's order slower the more often they had visited. The end state is
+    # a pure function of the visit count, so derive it and write once.
+    check_in_times = list(
         VehicleEntry.objects.filter(
             tenant=profile.tenant,
             plate_number__in=plate_numbers,
@@ -330,14 +333,38 @@ def rebuild_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None
         )
         .exclude(status=VehicleEntry.Status.CANCELLED)
         .order_by('check_in_at', 'id')
+        .values_list('check_in_at', flat=True)
     )
 
-    profile.visit_count = 0
-    profile.cycle_visit_count = 0
-    profile.score = Decimal('0')
-    profile.next_discount_percent = Decimal('0')
-    profile.first_order_at = vehicles[0].check_in_at if vehicles else now
-    profile.last_cycle_started_at = vehicles[0].check_in_at if vehicles else now
+    visit_count = len(check_in_times)
+    cycle_position = visit_count % CYCLE_VISIT_LIMIT
+    cycle_completed = visit_count > 0 and cycle_position == 0
+    earned_score = min(MAX_STARS, HALF_STAR * Decimal(str(cycle_position or CYCLE_VISIT_LIMIT)))
+
+    if not visit_count:
+        first_order_at = now
+        last_cycle_started_at = now
+        earned_score = Decimal('0')
+    else:
+        first_order_at = check_in_times[0]
+        completed_cycles = visit_count // CYCLE_VISIT_LIMIT
+        last_cycle_started_at = (
+            check_in_times[completed_cycles * CYCLE_VISIT_LIMIT - 1]
+            if completed_cycles
+            else check_in_times[0]
+        )
+
+    profile.visit_count = visit_count
+    profile.cycle_visit_count = cycle_position
+    profile.score = Decimal('0') if cycle_completed else earned_score
+    profile.next_discount_percent = (
+        Decimal('0')
+        if cycle_completed
+        else Decimal(str(discount_percent_per_half_star or 0)) * (earned_score * Decimal('2'))
+    )
+    profile._loyalty_visit_score = earned_score
+    profile.first_order_at = first_order_at
+    profile.last_cycle_started_at = last_cycle_started_at
     profile.save(
         update_fields=[
             'visit_count',
@@ -349,12 +376,6 @@ def rebuild_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None
             'updated_at',
         ]
     )
-    for vehicle in vehicles:
-        profile = apply_loyalty_visit(
-            profile,
-            discount_percent_per_half_star=discount_percent_per_half_star,
-            now=vehicle.check_in_at,
-        )
     return profile
 
 

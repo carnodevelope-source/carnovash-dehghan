@@ -26,6 +26,8 @@ PY
 
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
+# django_session only ever grows otherwise; expired rows are never reclaimed.
+python manage.py clearsessions || true
 
 if [ "${DJANGO_BOOTSTRAP_PRODUCTION_DATA:-True}" = "True" ]; then
     python manage.py seed_production_data
