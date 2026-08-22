@@ -337,11 +337,17 @@ const toggleAiPanel = () => {
 }
 
 const isMotorcyclePlate = () => form.plateType === 'motorcycle'
-const hasCompleteManualPlate = () => (
-  isMotorcyclePlate()
-    ? form.plateMid.length === 3 && form.plateLetter.length === 5
-    : form.plateLeft.length === 2 && form.plateMid.length === 3 && form.plateRight.length === 2 && form.plateLetter.length === 1
-)
+const hasCompleteManualPlate = () => {
+  if (isMotorcyclePlate()) {
+    return form.plateMid.length === 3 && form.plateLetter.length === 5
+  }
+  return (
+    form.plateLeft.length === 2
+    && form.plateMid.length === 3
+    && form.plateRight.length === 2
+    && Boolean(normalizePlateLetter(form.plateLetter))
+  )
+}
 
 const hydrateForm = (data = {}) => {
   const plateType = String(data.plateType || data.plate_type || 'car').trim() || 'car'
@@ -606,12 +612,20 @@ const captureFromVideo = async () => {
 
 const applyRecognizedPlate = (data) => {
   const plateType = String(data?.plate_type || form.plateType || 'car').trim() || 'car'
-  const left = normalizeDigits(data?.plate_left || '')
-  const mid = normalizeDigits(data?.plate_mid || '')
-  const right = normalizeDigits(data?.plate_right || '')
+  const resolved = resolvePlateParts({
+    raw: data?.plate_number || '',
+    plate_left: data?.plate_left,
+    plate_letter: data?.plate_letter,
+    plate_mid: data?.plate_mid,
+    plate_right: data?.plate_right,
+    plate_type: plateType,
+  })
+  const left = normalizeDigits(resolved.left).replace(/\D/g, '').slice(0, 2)
+  const mid = normalizeDigits(resolved.mid).replace(/\D/g, '').slice(0, 3)
+  const right = normalizeDigits(resolved.right).replace(/\D/g, '').slice(0, 2)
   const letter = plateType === 'motorcycle'
-    ? normalizeDigits(data?.plate_letter || '').replace(/\D/g, '').slice(0, 5)
-    : normalizePlateLetter(data?.plate_letter || '')
+    ? normalizeDigits(resolved.letter).replace(/\D/g, '').slice(0, 5)
+    : normalizePlateLetter(resolved.letter)
   const suggestions = plateType === 'motorcycle'
     ? []
     : buildLetterSuggestions(letter, data?.text || data?.raw_text || '')
@@ -705,7 +719,11 @@ const recognizePlateImage = async (imageDataUrl) => {
       setCameraMessage(data?.detail || 'مدل واقعی تشخیص پلاک هنوز روی سرویس AI نصب نشده است.', true)
       return
     }
-    if (!data?.accepted) {
+    const hasRecognizedParts = Boolean(
+      data?.recognized
+      || (data?.plate_left && data?.plate_letter && data?.plate_mid && data?.plate_right)
+    )
+    if (!data?.accepted && !hasRecognizedParts) {
       setCameraMessage(data?.detail || 'درخواست تشخیص پلاک پذیرفته نشد.', true)
       return
     }
@@ -721,6 +739,7 @@ const recognizePlateImage = async (imageDataUrl) => {
       return
     }
     const correctedFromHistory = await tryResolveLetterFromHistory()
+    await fetchPlateLookup()
     const confidenceText = cameraState.lastConfidence ? ` | اطمینان ${(cameraState.lastConfidence * 100).toFixed(0)}٪` : ''
     setCameraMessage(
       correctedFromHistory
@@ -922,41 +941,44 @@ const applyPlateLookupData = (data = {}) => {
   }
 }
 
+const fetchPlateLookup = async () => {
+  if (form.isAnonymous || form.isPieceWash || !hasCompleteManualPlate()) return null
+  const token = ++lookupToken
+  const lookupPlateNumber = plate.value
+  try {
+    const { data } = await api.get('/vehicles/plate-lookup/', {
+      params: {
+        plate_number: lookupPlateNumber,
+        plate_left: form.plateLeft.trim(),
+        plate_letter: form.plateLetter.trim(),
+        plate_mid: form.plateMid.trim(),
+        plate_right: form.plateRight.trim(),
+        plate_type: form.plateType
+      },
+      meta: { trackLoading: false, showErrorToast: false }
+    })
+    if (token !== lookupToken) return null
+    if (data?.found) {
+      applyPlateLookupData(data)
+      return data
+    }
+    form.customerScore = Math.max(0, Number(data?.customer_score ?? 0.5))
+    form.customerLoyaltyVisitCount = Math.max(1, Number(data?.customer_loyalty_visit_count ?? 1))
+    form.customerLoyaltyDiscountPercent = Math.max(0, Number(data?.customer_loyalty_discount_percent ?? 0))
+    return data
+  } catch (_error) {
+    return null
+  }
+}
+
 watch(
   () => [form.plateLeft, form.plateLetter, form.plateMid, form.plateRight, form.plateType, form.isAnonymous, form.isPieceWash],
-  async () => {
+  () => {
     if (lookupTimer) clearTimeout(lookupTimer)
     if (isHydratingForm || form.isAnonymous || form.isPieceWash) return
-    const hasFullPlate = hasCompleteManualPlate()
-    if (!hasFullPlate) return
-    lookupTimer = setTimeout(async () => {
-      const token = ++lookupToken
-      const lookupPlateNumber = plate.value
-      try {
-        const { data } = await api.get('/vehicles/plate-lookup/', {
-          params: {
-            plate_number: lookupPlateNumber,
-            plate_left: form.plateLeft.trim(),
-            plate_letter: form.plateLetter.trim(),
-            plate_mid: form.plateMid.trim(),
-            plate_right: form.plateRight.trim(),
-            plate_type: form.plateType
-          }
-        })
-        if (token !== lookupToken) return
-        if (data?.found) {
-          applyPlateLookupData(data)
-          return
-        }
-        // First-time plate: show visit=1 and score=0.5 from API preview
-        form.customerScore = Math.max(0, Number(data?.customer_score ?? 0.5))
-        form.customerLoyaltyVisitCount = Math.max(1, Number(data?.customer_loyalty_visit_count ?? 1))
-        form.customerLoyaltyDiscountPercent = Math.max(
-          0,
-          Number(data?.customer_loyalty_discount_percent ?? 0)
-        )
-      } catch (_error) {
-      }
+    if (!hasCompleteManualPlate()) return
+    lookupTimer = setTimeout(() => {
+      fetchPlateLookup()
     }, 220)
   }
 )

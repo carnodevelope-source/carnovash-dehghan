@@ -162,7 +162,7 @@ def _ai_plate_parts(visual_right='', letter='', mid='', visual_left=''):
 
 
 def _plate_parts_from_ai(raw_text='', persian_text=''):
-    from .plate_normalize import normalize_digits
+    from .plate_normalize import normalize_digits, normalize_plate_parts
 
     raw = str(raw_text or '').strip().lower()
     compact_raw = ''.join(ch for ch in raw if ch.isalnum())
@@ -675,9 +675,13 @@ class VehiclePlateRecognitionView(APIView):
             for key, value in upstream_data.items()
             if key not in {'color', 'color_confidence', 'color_reliable', 'color_stable'}
         }
+        accepted = bool(ai_payload.get('accepted', True))
+        if parts:
+            accepted = True
         return Response(
             {
                 **ai_payload,
+                'accepted': accepted,
                 'recognized': bool(parts),
                 'plate_number': parts.get('plate_number', ''),
                 'plate_left': parts.get('plate_left', ''),
