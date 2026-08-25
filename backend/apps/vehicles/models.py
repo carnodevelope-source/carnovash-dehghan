@@ -4,6 +4,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -72,7 +74,7 @@ class PlateLoyaltyProfile(TimestampedModel):
         return self.plate_number
 
 
-class VehicleEntry(TimestampedModel):
+class VehicleEntry(TransactionalLiveModelMixin, TimestampedModel):
     class DriverGender(models.TextChoices):
         MALE = 'male', 'Male'
         FEMALE = 'female', 'Female'
@@ -224,7 +226,7 @@ class VehicleEntry(TimestampedModel):
         super().save(*args, **kwargs)
 
 
-class BlockedPlate(TimestampedModel):
+class BlockedPlate(TransactionalLiveModelMixin, TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,
@@ -260,7 +262,7 @@ class BlockedPlate(TimestampedModel):
         return self.plate_number
 
 
-class VehicleStatusLog(TimestampedModel):
+class VehicleStatusLog(TransactionalLiveModelMixin, TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,

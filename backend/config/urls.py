@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
 
-from apps.live import live_events_view
+from apps.live import live_events_view, live_revision_view, live_sync_view
 
 
 def health(_request):
@@ -15,6 +15,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/health/', health, name='health'),
     path('api/live/events/', live_events_view, name='live-events'),
+    path('api/live/revision/', live_revision_view, name='live-revision'),
+    path('api/live/sync/', live_sync_view, name='live-sync'),
     path('api/auth/', include('apps.auth.urls')),
     path('api/vehicles/', include('apps.vehicles.urls')),
     path('api/workers/', include('apps.workers.urls')),

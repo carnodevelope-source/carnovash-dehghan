@@ -758,7 +758,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../../services/api'
+import api, { mutationMeta } from '../../services/api'
 import { LIVE_EVENT_NAME } from '../../services/live'
 import BaseDatePicker from '../base/BaseDatePicker.vue'
 import BaseSpinner from '../base/BaseSpinner.vue'
@@ -1403,7 +1403,7 @@ const submitSmsTopUpFromMain = async () => {
       destination_wallet_id: destinationWallet.id,
       amount,
       description: 'شارژ موجودی پیامک از کیف پول اصلی'
-    })
+    }, { meta: mutationMeta('wallet:sms-top-up', { timeoutMs: 30000 }) })
     state.successMessage = data?.detail || 'موجودی پیامک با موفقیت شارژ شد.'
     smsTopUpAmountText.value = ''
     await loadWalletDashboard()
@@ -1463,7 +1463,9 @@ const submitAction = async () => {
       description: (actionModal.description || '').trim() || undefined
     }
     if (actionModal.type === 'deposit') payload.return_url = `${window.location.origin}/manager/wallet`
-    const { data } = await api.post(endpoint, payload)
+    const { data } = await api.post(endpoint, payload, {
+      meta: mutationMeta(`wallet:${actionModal.type}`, { timeoutMs: 30000 })
+    })
     if (actionModal.type === 'deposit' && data?.payment_url) {
       window.location.href = data.payment_url
       return
@@ -1499,7 +1501,7 @@ const submitOptionPurchase = async () => {
       wallet_id: optionModal.walletId,
       payment_plan: optionModal.paymentPlan,
       upfront_amount: optionModal.paymentPlan === 'installment' ? selectedOptionDebitAmount.value : undefined
-    })
+    }, { meta: mutationMeta(`wallet:option:${optionModal.featureKey}`, { timeoutMs: 30000 }) })
     state.successMessage = data?.detail || 'آپشن با موفقیت فعال شد.'
     if (data?.wallet) {
       const index = state.wallets.findIndex((wallet) => Number(wallet.id) === Number(data.wallet.id))
@@ -1524,7 +1526,7 @@ const submitNextInstallmentPayment = async (option) => {
     const { data } = await api.post('/payments/wallet/options/', {
       action: 'pay_installment',
       feature_key: option.feature_key
-    })
+    }, { meta: mutationMeta(`wallet:installment:${option.feature_key}`, { timeoutMs: 30000 }) })
     state.successMessage = data?.detail || 'قسط بعدی با موفقیت پرداخت شد.'
     if (data?.wallet) {
       const index = state.wallets.findIndex((wallet) => Number(wallet.id) === Number(data.wallet.id))

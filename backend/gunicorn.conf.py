@@ -21,6 +21,11 @@ timeout = _int_env('GUNICORN_TIMEOUT', 120)
 graceful_timeout = _int_env('GUNICORN_GRACEFUL_TIMEOUT', 30)
 keepalive = _int_env('GUNICORN_KEEPALIVE', 5)
 
+# Recycling is only a measured safety net. Defaults retain current behaviour;
+# operators may set non-zero values after the staging graceful-SSE test.
+max_requests = _int_env('GUNICORN_MAX_REQUESTS', 0, minimum=0)
+max_requests_jitter = _int_env('GUNICORN_MAX_REQUESTS_JITTER', 0, minimum=0)
+
 accesslog = os.environ.get('GUNICORN_ACCESS_LOG', '-')
 errorlog = os.environ.get('GUNICORN_ERROR_LOG', '-')
 loglevel = os.environ.get('GUNICORN_LOG_LEVEL', 'info')

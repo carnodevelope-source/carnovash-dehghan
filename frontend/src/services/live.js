@@ -6,6 +6,9 @@ const SEEN_EVENT_TTL_MS = 5 * 60 * 1000
 const RETRY_BASE_MS = 5000
 const RETRY_MAX_MS = 60000
 const HIDDEN_DISCONNECT_MS = 2 * 60 * 1000
+const RECONCILE_INTERVAL_MS = 90 * 1000
+const LIVE_CURSOR_STORAGE_KEY = 'carvash.live.lastEventId'
+const LIVE_REPLAY_ENABLED = String(import.meta.env.VITE_LIVE_REPLAY_ENABLED || '').toLowerCase() === 'true'
 
 const seenEventIds = new Map()
 const subscribers = new Set()
@@ -15,12 +18,26 @@ let retryTimer = null
 let retryAttempt = 0
 let hiddenTimer = null
 let lifecycleBound = false
+let reconcileTimer = null
+let reconcileInFlight = false
+let lastEventId = typeof sessionStorage === 'undefined' ? '' : sessionStorage.getItem(LIVE_CURSOR_STORAGE_KEY) || ''
 
 const isSupported = () => typeof window !== 'undefined' && typeof EventSource !== 'undefined'
 
 const liveUrl = () => {
   const baseURL = String(api.defaults.baseURL || '/api').replace(/\/$/, '')
-  return new URL(`${baseURL}/live/events/`, window.location.origin).toString()
+  const url = new URL(`${baseURL}/live/events/`, window.location.origin)
+  // A new EventSource instance (for example after a hidden-tab disconnect)
+  // does not retain Last-Event-ID itself, so carry the durable cursor forward.
+  if (LIVE_REPLAY_ENABLED && lastEventId) url.searchParams.set('after', lastEventId)
+  return url.toString()
+}
+
+const rememberEventId = (event, payload) => {
+  const id = String(payload?.event_id || payload?.id || event?.lastEventId || '')
+  if (!/^\d+$/.test(id)) return
+  lastEventId = id
+  try { sessionStorage.setItem(LIVE_CURSOR_STORAGE_KEY, id) } catch (_error) {}
 }
 
 const isFirstSighting = (id) => {
@@ -67,6 +84,50 @@ const closeSharedSource = () => {
   sharedSource = null
 }
 
+const emitPayloadAsMessage = (payload) => {
+  const event = { data: JSON.stringify(payload), lastEventId: String(payload?.event_id || payload?.id || '') }
+  if (payload?.id && !isFirstSighting(String(payload.id))) return
+  rememberEventId(event, payload)
+  emit('message', event)
+}
+
+const reconcile = async () => {
+  if (!LIVE_REPLAY_ENABLED || reconcileInFlight || document.visibilityState !== 'visible' || !lastEventId) return
+  reconcileInFlight = true
+  try {
+    const { data: revision } = await api.get('/live/revision/', {
+      meta: { mode: 'background-sync', showErrorToast: false, timeoutMs: 15000 }
+    })
+    const latest = String(revision?.latest_event_id || '')
+    if (!latest || latest === lastEventId) return
+    const { data } = await api.get('/live/sync/', {
+      params: { after: lastEventId },
+      meta: { mode: 'background-sync', showErrorToast: false, timeoutMs: 15000 }
+    })
+    if (data?.full_resync_required) {
+      emitPayloadAsMessage({ type: 'system.full_resync_required', data: {} })
+      return
+    }
+    for (const payload of data?.events || []) emitPayloadAsMessage(payload)
+  } catch (_error) {
+    // Reconcile is a self-healing safety net. A live connection remains usable
+    // and a transient 404 means V2 has not been enabled server-side yet.
+  } finally {
+    reconcileInFlight = false
+  }
+}
+
+const startReconcile = () => {
+  if (!LIVE_REPLAY_ENABLED || reconcileTimer || !subscribers.size) return
+  reconcileTimer = window.setInterval(() => { void reconcile() }, RECONCILE_INTERVAL_MS)
+}
+
+const stopReconcile = () => {
+  if (!reconcileTimer) return
+  window.clearInterval(reconcileTimer)
+  reconcileTimer = null
+}
+
 function openSharedSource() {
   if (sharedSource || !subscribers.size || !isSupported()) return
   if (document.visibilityState === 'hidden') return
@@ -81,7 +142,8 @@ function openSharedSource() {
 
   sharedSource.onmessage = (event) => {
     const payload = parseLiveEvent(event.data)
-    if (payload?.id && !isFirstSighting(payload.id)) return
+    if (payload?.id && !isFirstSighting(String(payload.id))) return
+    rememberEventId(event, payload)
     emit('message', event)
   }
 
@@ -98,6 +160,9 @@ function openSharedSource() {
 
 const onVisibilityChange = () => {
   if (document.visibilityState === 'hidden') {
+    // Without durable replay, closing a hidden stream creates an unrecoverable
+    // Pub/Sub gap. Keep the established stream alive on the legacy path.
+    if (!LIVE_REPLAY_ENABLED) return
     if (hiddenTimer) window.clearTimeout(hiddenTimer)
     // Background tabs would otherwise pin a server thread indefinitely.
     hiddenTimer = window.setTimeout(closeSharedSource, HIDDEN_DISCONNECT_MS)
@@ -109,6 +174,7 @@ const onVisibilityChange = () => {
   }
   retryAttempt = 0
   openSharedSource()
+  void reconcile()
 }
 
 const onPageHide = () => {
@@ -144,6 +210,7 @@ export function createLiveEventSource() {
   }
   subscribers.add(subscriber)
   bindLifecycle()
+  startReconcile()
   openSharedSource()
 
   return {
@@ -164,10 +231,21 @@ export function createLiveEventSource() {
       if (subscriber.closed) return
       subscriber.closed = true
       subscribers.delete(subscriber)
-      if (!subscribers.size) closeSharedSource()
+      if (!subscribers.size) {
+        closeSharedSource()
+        stopReconcile()
+      }
     }
   }
 }
+
+export const getLiveDiagnostics = () => ({
+  connectionCount: sharedSource ? 1 : 0,
+  subscriberCount: subscribers.size,
+  lastEventId,
+  reconnectAttempt: retryAttempt,
+  pendingReconcile: reconcileInFlight
+})
 
 export function parseLiveEvent(raw) {
   try {

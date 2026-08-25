@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -10,7 +12,7 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
-class ProductCategory(TimestampedModel):
+class ProductCategory(TransactionalLiveModelMixin, TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,
@@ -31,7 +33,7 @@ class ProductCategory(TimestampedModel):
         return self.name
 
 
-class Product(TimestampedModel):
+class Product(TransactionalLiveModelMixin, TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,

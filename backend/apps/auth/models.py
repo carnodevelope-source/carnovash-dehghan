@@ -2,6 +2,8 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class CarWash(models.Model):
     name = models.CharField(max_length=150)
@@ -101,7 +103,7 @@ class User(AbstractUser):
         return self.username
 
 
-class CarWashFeaturePurchase(models.Model):
+class CarWashFeaturePurchase(TransactionalLiveModelMixin, models.Model):
     class FeatureKey(models.TextChoices):
         CORE_SOFTWARE = 'core_software', 'Core Software'
         EXCEL_IMPORT = 'excel_import', 'Excel Import'
@@ -143,7 +145,7 @@ class CarWashFeaturePurchase(models.Model):
         return f'{self.tenant.name} | {self.feature_key}'
 
 
-class SupportTicket(models.Model):
+class SupportTicket(TransactionalLiveModelMixin, models.Model):
     class Status(models.TextChoices):
         OPEN = 'open', 'Open'
         PENDING = 'pending', 'Pending'
@@ -221,7 +223,7 @@ class SupportTicket(models.Model):
         return f'{self.tenant.name} | {self.subject}'
 
 
-class SupportTicketMessage(models.Model):
+class SupportTicketMessage(TransactionalLiveModelMixin, models.Model):
     ticket = models.ForeignKey(
         SupportTicket,
         on_delete=models.CASCADE,

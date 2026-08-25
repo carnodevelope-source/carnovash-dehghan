@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -10,7 +12,7 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
-class NotificationLog(TimestampedModel):
+class NotificationLog(TransactionalLiveModelMixin, TimestampedModel):
     class Channel(models.TextChoices):
         SMS = 'sms', 'SMS'
         PUSH = 'push', 'Push'
@@ -56,7 +58,7 @@ class NotificationLog(TimestampedModel):
         indexes = [models.Index(fields=['channel', 'status', 'created_at'])]
 
 
-class SmsTemplate(TimestampedModel):
+class SmsTemplate(TransactionalLiveModelMixin, TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,
@@ -87,7 +89,7 @@ class SmsTemplate(TimestampedModel):
         ]
 
 
-class CustomerGroup(TimestampedModel):
+class CustomerGroup(TransactionalLiveModelMixin, TimestampedModel):
     class Mode(models.TextChoices):
         MANUAL = 'manual', 'Manual'
         SMART = 'smart', 'Smart'
@@ -125,7 +127,7 @@ class CustomerGroup(TimestampedModel):
         ]
 
 
-class ImportedCustomer(TimestampedModel):
+class ImportedCustomer(TransactionalLiveModelMixin, TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,

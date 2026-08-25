@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -11,7 +13,7 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
-class InventoryItem(TimestampedModel):
+class InventoryItem(TransactionalLiveModelMixin, TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,
@@ -35,7 +37,7 @@ class InventoryItem(TimestampedModel):
         return self.quantity_on_hand - self.reserved_quantity
 
 
-class StockMovement(TimestampedModel):
+class StockMovement(TransactionalLiveModelMixin, TimestampedModel):
     class MovementType(models.TextChoices):
         IN = 'in', 'In'
         OUT = 'out', 'Out'
@@ -75,7 +77,7 @@ class StockMovement(TimestampedModel):
         ]
 
 
-class ExpenseEntry(TimestampedModel):
+class ExpenseEntry(TransactionalLiveModelMixin, TimestampedModel):
     class SourceType(models.TextChoices):
         MANUAL = 'manual', 'Manual'
 

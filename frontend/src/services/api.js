@@ -21,9 +21,9 @@ const resolveBaseURL = () => {
   return configured
 }
 
-// Without this axios waits forever, so one stalled request could hold the
-// full-screen overlay until gunicorn's own 120s timeout fired.
-const REQUEST_TIMEOUT_MS = 45000
+// Requests must always have a finite deadline. Heavier reports/uploads opt in
+// to a documented endpoint-specific timeout through meta.timeoutMs.
+const REQUEST_TIMEOUT_MS = 20000
 
 const api = axios.create({
   baseURL: resolveBaseURL(),
@@ -43,7 +43,7 @@ export const getCookie = (name) => {
 }
 
 export const ensureCsrfToken = async () => {
-  await api.get('/auth/csrf/')
+  await api.get('/auth/csrf/', { meta: { mode: 'prefetch', showErrorToast: false } })
   return getCookie('csrftoken')
 }
 
@@ -57,7 +57,7 @@ const startGlobalLoading = (config) => {
   if (!getActivePinia()) return
   const id = ++loaderSeq
   config.meta = { ...(config.meta || {}), _loaderId: id }
-  useLoadingStore().start()
+  useLoadingStore().start(config.meta?.loadingKey)
   // Aborted requests and redirects can skip the response interceptors, and a
   // single unmatched start would otherwise block the UI for the whole session.
   loaderWatchdogs.set(id, window.setTimeout(() => stopGlobalLoading(config), LOADER_WATCHDOG_MS))
@@ -69,7 +69,7 @@ const stopGlobalLoading = (config) => {
   window.clearTimeout(loaderWatchdogs.get(id))
   loaderWatchdogs.delete(id)
   if (!getActivePinia()) return
-  useLoadingStore().stop()
+  useLoadingStore().stop(config.meta?.loadingKey)
 }
 
 const shouldSkipErrorToast = (config = {}) => config?.meta?.showErrorToast === false
@@ -93,12 +93,23 @@ const shouldAutoNotifyError = (error) => {
 }
 
 api.interceptors.request.use((config) => {
+  const meta = { ...(config.meta || {}) }
+  // Legacy callers with trackLoading:true retain the old route-level overlay;
+  // all other calls are silent by default. Components own mutation feedback.
+  meta.mode = meta.mode || (meta.trackLoading === true ? 'navigation' : 'background-sync')
+  config.meta = meta
+  if (Number.isFinite(Number(meta.timeoutMs)) && Number(meta.timeoutMs) > 0) {
+    config.timeout = Number(meta.timeoutMs)
+  }
   const csrfToken = getCookie('csrftoken')
   if (csrfToken) {
     config.headers['X-CSRFToken'] = csrfToken
   }
+  if (meta.idempotencyKey && ['post', 'put', 'patch', 'delete'].includes(String(config.method || '').toLowerCase())) {
+    config.headers['Idempotency-Key'] = meta.idempotencyKey
+  }
 
-  if (config?.meta?.trackLoading !== false) {
+  if (meta.mode === 'navigation' || meta.blocking === true) {
     startGlobalLoading(config)
   }
 
@@ -106,6 +117,22 @@ api.interceptors.request.use((config) => {
 }, (error) => {
   stopGlobalLoading(error?.config)
   return Promise.reject(error)
+})
+
+export const createIdempotencyKey = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`
+}
+
+// Use this for a user mutation that may be retried after an ambiguous timeout.
+// The key is intentionally returned to the caller, which must reuse it only
+// for the exact same method/path/body retry.
+export const mutationMeta = (loadingKey, options = {}) => ({
+  mode: 'mutation-user',
+  loadingKey,
+  timeoutMs: options.timeoutMs || 30000,
+  idempotencyKey: options.idempotencyKey || createIdempotencyKey(),
+  ...options
 })
 
 api.interceptors.response.use((response) => {

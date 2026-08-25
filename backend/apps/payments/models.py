@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -36,7 +38,7 @@ class Wallet(TimestampedModel):
         return self.name
 
 
-class Payment(TimestampedModel):
+class Payment(TransactionalLiveModelMixin, TimestampedModel):
     class Method(models.TextChoices):
         POS = 'pos', 'POS'
         CASH = 'cash', 'Cash'
@@ -99,7 +101,7 @@ class Payment(TimestampedModel):
         indexes = [models.Index(fields=['status', 'method', 'created_at'])]
 
 
-class CashflowTransaction(TimestampedModel):
+class CashflowTransaction(TransactionalLiveModelMixin, TimestampedModel):
     class Direction(models.TextChoices):
         IN = 'in', 'In'
         OUT = 'out', 'Out'
@@ -133,7 +135,7 @@ class CashflowTransaction(TimestampedModel):
         indexes = [models.Index(fields=['wallet', 'transacted_at'])]
 
 
-class WalletGatewayRequest(TimestampedModel):
+class WalletGatewayRequest(TransactionalLiveModelMixin, TimestampedModel):
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pending'
         PAID = 'paid', 'Paid'

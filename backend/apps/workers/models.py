@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -10,7 +12,7 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
-class WorkerProfile(TimestampedModel):
+class WorkerProfile(TransactionalLiveModelMixin, TimestampedModel):
     class PaymentType(models.TextChoices):
         PERCENT = 'percent', 'Percent'
         FIXED = 'fixed', 'Fixed'
@@ -73,7 +75,7 @@ class WorkerProfile(TimestampedModel):
         return self.user.full_name or self.user.username
 
 
-class WorkerAttendance(TimestampedModel):
+class WorkerAttendance(TransactionalLiveModelMixin, TimestampedModel):
     class EventType(models.TextChoices):
         IN = 'in', 'In'
         OUT = 'out', 'Out'

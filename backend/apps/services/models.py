@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -183,7 +185,7 @@ def default_service_tiers(keys, *, sale_price=0, duration_minutes=30):
     }
 
 
-class ServiceCategory(TimestampedModel):
+class ServiceCategory(TransactionalLiveModelMixin, TimestampedModel):
     tenant = models.ForeignKey(
         'cw_auth.CarWash',
         on_delete=models.CASCADE,
@@ -211,7 +213,7 @@ class ServiceCategory(TimestampedModel):
         return self.name
 
 
-class Service(TimestampedModel):
+class Service(TransactionalLiveModelMixin, TimestampedModel):
     class PricingMode(models.TextChoices):
         FIXED = 'fixed', 'Fixed'
         VARIABLE = 'variable', 'Variable'
@@ -363,7 +365,7 @@ class ServiceChangeLog(TimestampedModel):
         ordering = ['-created_at', '-id']
 
 
-class GeneralSettings(TimestampedModel):
+class GeneralSettings(TransactionalLiveModelMixin, TimestampedModel):
     class DiscountCalculationMode(models.TextChoices):
         STEP = 'step', 'Step'
         FIXED = 'fixed', 'Fixed'

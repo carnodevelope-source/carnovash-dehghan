@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     'apps.notifications.apps.NotificationsConfig',
     'apps.inventory.apps.InventoryConfig',
     'apps.subscriptions.apps.SubscriptionsConfig',
+    'apps.realtime.apps.RealtimeConfig',
 ]
 
 MIDDLEWARE = [
@@ -74,6 +75,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Must run after authentication: replay entries are scoped to user/tenant.
+    'apps.realtime.idempotency.IdempotencyMiddleware',
     'apps.auth.middleware.TenantLicenseLockMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -135,6 +138,15 @@ LIVE_MAX_SUBSCRIBERS = config('LIVE_MAX_SUBSCRIBERS', default=40, cast=int)
 # attached to the others. Empty means single-process delivery only.
 LIVE_REDIS_URL = config('LIVE_REDIS_URL', default=REDIS_URL)
 LIVE_REDIS_CHANNEL = config('LIVE_REDIS_CHANNEL', default='carvash:live')
+# V2 is shipped dark. Enable each stage only after staging/soak evidence has
+# been recorded; Redis/SSE remains a signal and MySQL remains authoritative.
+LIVE_V2_ENABLED = config('LIVE_V2_ENABLED', default=False, cast=bool)
+LIVE_REPLAY_ENABLED = config('LIVE_REPLAY_ENABLED', default=False, cast=bool)
+LIVE_OUTBOX_ENABLED = config('LIVE_OUTBOX_ENABLED', default=False, cast=bool)
+LIVE_REVISION_SAFETY_CHECK = config('LIVE_REVISION_SAFETY_CHECK', default=True, cast=bool)
+LIVE_OUTBOX_RETENTION_HOURS = config('LIVE_OUTBOX_RETENTION_HOURS', default=72, cast=int)
+IDEMPOTENCY_ENABLED = config('IDEMPOTENCY_ENABLED', default=True, cast=bool)
+IDEMPOTENCY_RETENTION_HOURS = config('IDEMPOTENCY_RETENTION_HOURS', default=168, cast=int)
 
 if REDIS_URL:
     CACHES = {

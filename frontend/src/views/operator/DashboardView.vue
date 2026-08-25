@@ -983,7 +983,7 @@ import PlateEditor from '../../components/vehicles/PlateEditor.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
 import { useAuthStore } from '../../store/auth.store'
 import { useVehicleStore } from '../../store/vehicle.store'
-import api from '../../services/api'
+import api, { mutationMeta } from '../../services/api'
 import { LIVE_EVENT_NAME, createLiveEventSource, parseLiveEvent } from '../../services/live'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
@@ -1295,7 +1295,7 @@ const submitPlateEdit = async () => {
       plate_mid: parts.mid,
       plate_right: plateType === 'motorcycle' ? '' : parts.right,
       plate_type: plateType
-    }, { meta: { trackLoading: false } })
+    }, { meta: mutationMeta(`vehicle:plate:${plateEditForm.value.id}`) })
     syncVehicleSnapshot(data)
     closePlateEditModal({ force: true })
     notifySuccess('پلاک خودرو به‌روزرسانی شد.', { title: 'ویرایش پلاک' })
@@ -3180,7 +3180,7 @@ const confirmReleaseVehicle = async () => {
         .filter((item) => item.worker_id > 0 && (item.bonus > 0 || item.penalty > 0)),
       bonus_penalty_note: String(releaseForm.value.bonusPenaltyNote || '').trim() || undefined,
       sms_notifications_enabled: Boolean(releaseForm.value.smsNotificationsEnabled)
-    })
+    }, { meta: mutationMeta(`vehicle:release:${releaseCandidate.value.id}`, { timeoutMs: 30000 }) })
     const idx = vehicleStore.vehicles.findIndex((item) => item.id === releaseCandidate.value.id)
     if (idx >= 0) vehicleStore.vehicles[idx] = data
     closeReleaseModal({ force: true })
@@ -3213,7 +3213,9 @@ const persistJobAdjust = async () => {
   }
   try {
     releaseSubmitting.value = true
-    const { data } = await api.patch(`/vehicles/${releaseCandidate.value.id}/job-adjust/`, buildJobAdjustPayload())
+    const { data } = await api.patch(`/vehicles/${releaseCandidate.value.id}/job-adjust/`, buildJobAdjustPayload(), {
+      meta: mutationMeta(`vehicle:job-adjust:${releaseCandidate.value.id}`)
+    })
     const idx = vehicleStore.vehicles.findIndex((item) => Number(item.id) === Number(data?.id))
     if (idx >= 0) vehicleStore.vehicles[idx] = data
     vehicleStore.selectedVehicle = data
@@ -3251,7 +3253,9 @@ const editSelectedVehicleTip = async () => {
   if (rawValue === null) return
   const nextTip = Math.max(0, parseMoneyInput(rawValue))
   try {
-    const { data } = await api.patch(`/vehicles/${vehicle.id}/job-adjust/`, { tip_amount: nextTip })
+    const { data } = await api.patch(`/vehicles/${vehicle.id}/job-adjust/`, { tip_amount: nextTip }, {
+      meta: mutationMeta(`vehicle:tip:${vehicle.id}`)
+    })
     const idx = vehicleStore.vehicles.findIndex((item) => Number(item.id) === Number(data?.id))
     if (idx >= 0) vehicleStore.vehicles[idx] = data
     vehicleStore.selectedVehicle = data

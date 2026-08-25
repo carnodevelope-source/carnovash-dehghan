@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import api from '../services/api'
+import api, { mutationMeta } from '../services/api'
 
 export const useVehicleStore = defineStore('vehicle', {
   state: () => ({
@@ -66,7 +66,9 @@ export const useVehicleStore = defineStore('vehicle', {
     },
     async createVehicle(payload) {
       await this.ensureCsrf()
-      const { data } = await api.post('/vehicles/', payload)
+      const { data } = await api.post('/vehicles/', payload, {
+        meta: mutationMeta('vehicle:create')
+      })
       this.vehicles.unshift(data)
       return data
     },

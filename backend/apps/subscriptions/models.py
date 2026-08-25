@@ -4,6 +4,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.realtime.transactions import TransactionalLiveModelMixin
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -137,7 +139,7 @@ class ServicePlan(TimestampedModel):
         }
 
 
-class ServiceSubscription(TimestampedModel):
+class ServiceSubscription(TransactionalLiveModelMixin, TimestampedModel):
     class Status(models.TextChoices):
         ACTIVE = 'active', 'فعال'
         INACTIVE = 'inactive', 'غیرفعال'
@@ -287,7 +289,7 @@ class ServicePeriod(TimestampedModel):
         indexes = [models.Index(fields=['subscription', 'starts_at'])]
 
 
-class ServiceOrder(TimestampedModel):
+class ServiceOrder(TransactionalLiveModelMixin, TimestampedModel):
     class Status(models.TextChoices):
         DRAFT = 'draft', 'پیش‌نویس'
         PENDING_PAYMENT = 'pending_payment', 'در انتظار پرداخت'
@@ -354,7 +356,7 @@ class ServiceOrder(TimestampedModel):
         ]
 
 
-class ServicePaymentRecord(TimestampedModel):
+class ServicePaymentRecord(TransactionalLiveModelMixin, TimestampedModel):
     class Kind(models.TextChoices):
         PURCHASE = 'purchase', 'خرید'
         RENEWAL = 'renewal', 'تمدید'

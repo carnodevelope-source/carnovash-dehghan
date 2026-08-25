@@ -10,8 +10,11 @@ from collections.abc import Iterator
 
 from django.conf import settings
 from django.db import connections, transaction
+from django.db.models import Q
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
+
+from apps.realtime.models import LiveOutbox
 
 
 logger = logging.getLogger(__name__)
@@ -160,15 +163,61 @@ def _deliver(event: dict) -> None:
 
 
 def publish_live_event(event_type: str, data: dict | None = None) -> None:
-    event = {
-        "id": uuid.uuid4().hex,
-        "type": event_type,
-        "data": data or {},
-        "created_at": timezone.now().isoformat(),
-    }
+    data = data or {}
+    if getattr(settings, 'LIVE_OUTBOX_ENABLED', False):
+        if not transaction.get_connection().in_atomic_block:
+            raise RuntimeError(
+                'LiveOutbox producers must call publish_live_event inside transaction.atomic().'
+            )
+        # Producer models open the transaction before Django emits their
+        # signals. The outbox row rolls back with the business write, while
+        # low-latency Redis publishing stays strictly after commit.
+        outbox = LiveOutbox.objects.create(
+            tenant_id=data.get('tenant_id'),
+            actor_user_id=data.get('actor_user_id') or data.get('user_id'),
+            event_type=event_type,
+            entity_type=event_type.split('.', 1)[0],
+            entity_id=str(data.get('entity_id') or data.get('vehicle_id') or data.get('id') or ''),
+            payload=data,
+        )
+        event = _outbox_event(outbox)
+    else:
+        # Compatibility path used until the V2 flags have passed staging.
+        event = {
+            "id": uuid.uuid4().hex,
+            "event_id": None,
+            "type": event_type,
+            "event_type": event_type,
+            "data": data,
+            "payload": data,
+            "created_at": timezone.now().isoformat(),
+        }
     # Signals fire mid-transaction; delivering only after commit stops clients
     # from refetching state that a rollback is about to discard.
     transaction.on_commit(lambda: _deliver(event))
+
+
+def _outbox_event(outbox: LiveOutbox) -> dict:
+    """Return a backwards-compatible event envelope with a durable cursor."""
+    action = outbox.event_type.rsplit('.', 1)[-1]
+    return {
+        'id': str(outbox.id),
+        'event_id': str(outbox.id),
+        'type': outbox.event_type,
+        'event_type': outbox.event_type,
+        'entity': outbox.entity_type,
+        'entity_id': outbox.entity_id,
+        'action': action,
+        'tenant_id': str(outbox.tenant_id) if outbox.tenant_id is not None else None,
+        'actor_user_id': str(outbox.actor_user_id) if outbox.actor_user_id is not None else None,
+        'version': outbox.created_at.isoformat(),
+        'occurred_at': outbox.created_at.isoformat(),
+        # Existing Vue consumers use type/data; these aliases keep the wire
+        # contract stable while V2 consumers use the standard fields above.
+        'data': outbox.payload,
+        'payload': outbox.payload,
+        'created_at': outbox.created_at.isoformat(),
+    }
 
 
 def _at_capacity() -> bool:
@@ -197,7 +246,35 @@ def _is_hq_user(user) -> bool:
     )
 
 
-def _event_stream(subscriber: _Subscriber) -> Iterator[str]:
+def _scoped_outbox(subscriber: _Subscriber):
+    queryset = LiveOutbox.objects.order_by('id')
+    if subscriber.is_hq:
+        return queryset
+    if not subscriber.tenant_id.isdigit():
+        return queryset.filter(tenant_id__isnull=True)
+    return queryset.filter(Q(tenant_id=subscriber.tenant_id) | Q(tenant_id__isnull=True))
+
+
+def _parse_cursor(value: str | None) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _full_resync_event() -> dict:
+    return {
+        'id': '',
+        'event_id': '',
+        'type': 'system.full_resync_required',
+        'event_type': 'system.full_resync_required',
+        'data': {},
+        'payload': {},
+        'created_at': timezone.now().isoformat(),
+    }
+
+
+def _event_stream(subscriber: _Subscriber, after_id: int = 0) -> Iterator[str]:
     # The stream outlives the request by hours, so give the database connection
     # back instead of parking it for the whole session.
     connections.close_all()
@@ -210,13 +287,39 @@ def _event_stream(subscriber: _Subscriber) -> Iterator[str]:
     try:
         yield "retry: 5000\n\n"
         yield f"data: {_encode({'type': 'live.connected', 'data': {}})}\n\n"
+        replayed_ids: set[str] = set()
+        high_watermark = 0
+        if (
+            getattr(settings, 'LIVE_V2_ENABLED', False)
+            and getattr(settings, 'LIVE_REPLAY_ENABLED', False)
+            and getattr(settings, 'LIVE_OUTBOX_ENABLED', False)
+        ):
+            # The subscriber is registered before the backlog snapshot. Events
+            # arriving during replay land in its bounded queue; ids in the
+            # snapshot are removed below so the client sees each event once.
+            oldest = LiveOutbox.objects.order_by('id').values_list('id', flat=True).first()
+            if after_id and oldest and after_id < oldest - 1:
+                yield f"data: {_encode(_full_resync_event())}\n\n"
+            else:
+                backlog = list(_scoped_outbox(subscriber).filter(id__gt=after_id))
+                if backlog:
+                    high_watermark = backlog[-1].id
+                    for row in backlog:
+                        event = _outbox_event(row)
+                        replayed_ids.add(event['id'])
+                        yield f"id: {event['id']}\ndata: {_encode(event)}\n\n"
+            connections.close_all()
         while True:
             try:
                 event = subscriber.events.get(timeout=HEARTBEAT_SECONDS)
             except queue.Empty:
                 yield f": heartbeat {timezone.now().isoformat()}\n\n"
                 continue
-            yield f"id: {event['id']}\ndata: {_encode(event)}\n\n"
+            event_id = str(event.get('id') or '')
+            if event_id in replayed_ids or (high_watermark and event_id.isdigit() and int(event_id) <= high_watermark):
+                continue
+            prefix = f"id: {event_id}\n" if event_id else ''
+            yield f"{prefix}data: {_encode(event)}\n\n"
     except (BrokenPipeError, ConnectionResetError, OSError):
         return
     finally:
@@ -238,7 +341,59 @@ def live_events_view(request):
         tenant_id=str(getattr(user, 'tenant_id', '') or ''),
         user_id=str(getattr(user, 'id', '') or ''),
     )
-    response = StreamingHttpResponse(_event_stream(subscriber), content_type='text/event-stream')
+    after_id = _parse_cursor(request.headers.get('Last-Event-ID') or request.GET.get('after'))
+    response = StreamingHttpResponse(_event_stream(subscriber, after_id), content_type='text/event-stream')
     response['Cache-Control'] = 'no-cache'
     response['X-Accel-Buffering'] = 'no'
     return response
+
+
+def _live_replay_enabled() -> bool:
+    return bool(
+        getattr(settings, 'LIVE_V2_ENABLED', False)
+        and getattr(settings, 'LIVE_REPLAY_ENABLED', False)
+        and getattr(settings, 'LIVE_OUTBOX_ENABLED', False)
+    )
+
+
+def _authenticated_subscriber(request):
+    user = getattr(request, 'user', None)
+    if not user or not user.is_authenticated:
+        return None
+    return _Subscriber(
+        is_hq=_is_hq_user(user),
+        tenant_id=str(getattr(user, 'tenant_id', '') or ''),
+        user_id=str(getattr(user, 'id', '') or ''),
+    )
+
+
+def live_revision_view(request):
+    subscriber = _authenticated_subscriber(request)
+    if request.method != 'GET':
+        return JsonResponse({'detail': 'Method not allowed.'}, status=405)
+    if subscriber is None:
+        return JsonResponse({'detail': 'Unauthorized.'}, status=401)
+    if not _live_replay_enabled() or not getattr(settings, 'LIVE_REVISION_SAFETY_CHECK', True):
+        return JsonResponse({'detail': 'Live replay is disabled.'}, status=404)
+    latest_id = _scoped_outbox(subscriber).order_by('-id').values_list('id', flat=True).first() or 0
+    return JsonResponse({'latest_event_id': str(latest_id)})
+
+
+def live_sync_view(request):
+    subscriber = _authenticated_subscriber(request)
+    if request.method != 'GET':
+        return JsonResponse({'detail': 'Method not allowed.'}, status=405)
+    if subscriber is None:
+        return JsonResponse({'detail': 'Unauthorized.'}, status=401)
+    if not _live_replay_enabled():
+        return JsonResponse({'detail': 'Live replay is disabled.'}, status=404)
+    after_id = _parse_cursor(request.GET.get('after'))
+    oldest = LiveOutbox.objects.order_by('id').values_list('id', flat=True).first()
+    if after_id and oldest and after_id < oldest - 1:
+        return JsonResponse({'full_resync_required': True, 'events': []})
+    rows = list(_scoped_outbox(subscriber).filter(id__gt=after_id)[:MAX_QUEUE_SIZE])
+    return JsonResponse({
+        'full_resync_required': False,
+        'events': [_outbox_event(row) for row in rows],
+        'latest_event_id': str(rows[-1].id) if rows else str(after_id),
+    })
