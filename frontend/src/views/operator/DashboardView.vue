@@ -1514,6 +1514,7 @@ const onGlobalLiveEvent = (event) => {
     || type.startsWith('inventory.')
     || type.startsWith('payment.')
     || type === 'settings.updated'
+    || type === 'system.full_resync_required'
   ) {
     if (vehicleLiveRefreshTimer.value) window.clearTimeout(vehicleLiveRefreshTimer.value)
     vehicleLiveRefreshTimer.value = window.setTimeout(refreshVehicleCardsFromDatabase, 400)

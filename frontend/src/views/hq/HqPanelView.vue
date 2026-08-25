@@ -2112,6 +2112,7 @@ const onGlobalLiveEvent = (event) => {
     || type.startsWith('service.')
     || type.startsWith('inventory.')
     || type === 'settings.updated'
+    || type === 'system.full_resync_required'
   ) {
     if (hqTicketLiveRefreshTimer) window.clearTimeout(hqTicketLiveRefreshTimer)
     hqTicketLiveRefreshTimer = window.setTimeout(() => {

@@ -1581,7 +1581,7 @@ onMounted(() => {
 
 const onLiveEvent = (event) => {
   const type = String(event?.detail?.type || '')
-  if (type.startsWith('payment.') || type.startsWith('subscription.') || type.startsWith('wallet.')) {
+  if (type.startsWith('payment.') || type.startsWith('subscription.') || type.startsWith('wallet.') || type === 'system.full_resync_required') {
     if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
     liveReloadTimer = window.setTimeout(() => {
       void Promise.all([

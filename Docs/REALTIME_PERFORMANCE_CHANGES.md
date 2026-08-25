@@ -26,10 +26,23 @@ normal container migration path before enabling `LIVE_OUTBOX_ENABLED`.
 ## Verification completed locally
 
 - `npm run build` — passed.
-- `python manage.py test apps.realtime.tests --keepdb --verbosity 2` — 5 passed.
-- `python manage.py test apps.vehicles.tests.test_vehicle_list_query_budget --keepdb --verbosity 2` — 2 passed.
+- `python manage.py test apps.realtime.tests apps.vehicles.tests.test_vehicle_list_query_budget --keepdb --verbosity 1` — 13 passed.
 - `python manage.py check` — passed.
 - `git diff --check` — passed.
 
-The Django test runner reports an existing MariaDB strict-mode warning and the
-unrelated `services` migration drift noted in the audit. Neither was changed.
+The earlier strict-mode warning and `services` migration drift have since been
+resolved by the hardened implementation update below.
+
+## Hardened implementation update — 2026-08-25
+
+- Bounded replay uses `LIVE_REPLAY_BATCH_SIZE`, `LIVE_REPLAY_MAX_EVENTS`, and
+  `LIVE_REPLAY_MAX_AGE_HOURS`; unsafe cursors receive full-resync rather than a
+  large replay.
+- Cleanup is bounded for both `LiveOutbox` and `IdempotencyRecord`.
+- Axios now sends an idempotency key for unsafe browser requests by default;
+  ambiguous network/5xx retries retain the same key.
+- WSGI remains default. An explicit optional ASGI canary path uses
+  `uvicorn_worker.GunicornWorker` only when `LIVE_ASGI_ENABLED=true`.
+- `scripts/production_verify.ps1` passed locally: 22 backend tests, 3 frontend
+  protocol tests, build, checks, migration verification, capacity report,
+  Compose validation, and diff check.

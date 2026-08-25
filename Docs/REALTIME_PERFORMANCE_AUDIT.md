@@ -4,6 +4,40 @@ Scope: `PRODUCTION_REALTIME_STABILITY_PLAYBOOK.md`, Sections 0–30. This is a
 repository audit; no production host, metrics system, database backup, or
 staging environment was accessed.
 
+## Current-state verification — 2026-08-25
+
+**Decision: NO-GO for enabling V2 or deploying to production.** The safe code
+path is present and dark by default, but staging/production evidence has not
+been collected.
+
+| Check | Evidence | Status |
+| --- | --- | --- |
+| V2/ASGI feature flags | `.env.production.example` sets `LIVE_V2_ENABLED`, `LIVE_REPLAY_ENABLED`, `LIVE_OUTBOX_ENABLED`, `LIVE_ASGI_ENABLED`, and `VITE_LIVE_REPLAY_ENABLED` to `false`; Compose defaults are also false. | PASS (dark) |
+| Atomic outbox boundary | All 26 present signal producer models inherit `TransactionalLiveModelMixin`; `publish_live_event` refuses an outbox write outside `transaction.atomic()` and delivers only through `on_commit`. | PASS (local) |
+| Local P1/P0 regression suite | `python manage.py test apps.realtime.tests apps.vehicles.tests.test_vehicle_list_query_budget --keepdb --verbosity 1`: 13 passed. | PASS (local) |
+| Build/config validation | `npm run build`, `python manage.py check`, `makemigrations realtime --check --dry-run`, `docker compose --env-file .env.production.example config --quiet`, and `git diff --check` all passed. | PASS (local) |
+| Staging fault/reconnect/soak/load evidence | No staging environment or measured telemetry was supplied or accessed. | BLOCKED |
+
+### Verified release blockers
+
+1. `_event_stream()` loads an unbounded replay list, while the HTTP sync
+   endpoint is bounded. A large retained backlog could consume too much memory
+   or hold an SSE worker for too long. Do not enable replay until a bounded
+   paging/resync policy is implemented and tested.
+2. `prune_realtime_records` performs one unbounded ORM delete per table. It
+   needs a measured, bounded-batch cleanup strategy before retention runs at
+   production volume.
+3. Browser code deduplicates event IDs, but no browser integration test proves
+   ordered application of out-of-order events or recovery of a detected gap.
+4. Idempotency is opt-in at the HTTP client. It is used by the currently
+   selected vehicle/wallet flows, but a complete inventory of payment,
+   financial, and request-creating mutations has not been performed.
+5. Current Gunicorn/SSE limits are static configuration, not a calculation
+   against the actual MySQL connection budget and non-web consumers.
+6. `makemigrations --check --dry-run` reports an unrelated pending `services`
+   migration; MariaDB also reports strict SQL mode disabled. Both must be
+   explicitly resolved or quarantined before a production migration gate.
+
 ## Baseline recorded before changes
 
 | Area | Evidence | Result |
@@ -55,3 +89,24 @@ The following cannot be honestly marked complete without a real staging stack:
 
 Those gates are executable checkboxes in `Docs/PRODUCTION_ROLLOUT_CHECKLIST.md`;
 ASGI and V2 flags remain disabled by default.
+
+## Hardened implementation update — 2026-08-25
+
+- Replay is tenant-scoped, high-watermark bounded, batch streamed, and
+  configured with maximum count/age limits. Invalid, future, expired, and
+  over-limit cursors require an authoritative full resync.
+- `prune_realtime_records` deletes only deterministic, row-locked batches for
+  both short-retention tables.
+- Browser protocol tests cover bounded dedupe and per-entity out-of-order
+  suppression. A real navigation/heap soak remains external.
+- `services.0022` clears migration drift as no-op SQL and strict SQL mode is
+  applied per Django connection. `manage.py check` is clean locally.
+- Local capacity tooling observed 151 max DB connections and calculated a
+  conservative WSGI ceiling of 72 with reserve; it is not production evidence.
+
+### Remaining external gates
+
+Staging/production access is absent. Actual Redis restart, browser navigation
+soak, 20/50/100 SSE fanout, large-data `EXPLAIN`, backup verification, and
+production capacity measurements are `BLOCKED_EXTERNAL_ENV`, not passed by
+inference.

@@ -1,8 +1,8 @@
 import api from './api'
+import { compareNumericIds, createLiveProtocolState } from './liveProtocol'
 
 export const LIVE_EVENT_NAME = 'carvash-live-event'
 
-const SEEN_EVENT_TTL_MS = 5 * 60 * 1000
 const RETRY_BASE_MS = 5000
 const RETRY_MAX_MS = 60000
 const HIDDEN_DISCONNECT_MS = 2 * 60 * 1000
@@ -10,7 +10,9 @@ const RECONCILE_INTERVAL_MS = 90 * 1000
 const LIVE_CURSOR_STORAGE_KEY = 'carvash.live.lastEventId'
 const LIVE_REPLAY_ENABLED = String(import.meta.env.VITE_LIVE_REPLAY_ENABLED || '').toLowerCase() === 'true'
 
-const seenEventIds = new Map()
+const protocol = createLiveProtocolState({
+  maxRecentIds: Number(import.meta.env.VITE_LIVE_RECENT_EVENT_LIMIT || 1000)
+})
 const subscribers = new Set()
 
 let sharedSource = null
@@ -36,18 +38,14 @@ const liveUrl = () => {
 const rememberEventId = (event, payload) => {
   const id = String(payload?.event_id || payload?.id || event?.lastEventId || '')
   if (!/^\d+$/.test(id)) return
+  if (lastEventId && compareNumericIds(id, lastEventId) <= 0) return
   lastEventId = id
   try { sessionStorage.setItem(LIVE_CURSOR_STORAGE_KEY, id) } catch (_error) {}
 }
 
-const isFirstSighting = (id) => {
-  const now = Date.now()
-  for (const [key, seenAt] of seenEventIds) {
-    if (now - seenAt > SEEN_EVENT_TTL_MS) seenEventIds.delete(key)
-  }
-  if (seenEventIds.has(id)) return false
-  seenEventIds.set(id, now)
-  return true
+const resetReplayCursor = () => {
+  lastEventId = ''
+  try { sessionStorage.removeItem(LIVE_CURSOR_STORAGE_KEY) } catch (_error) {}
 }
 
 const emit = (type, event) => {
@@ -86,7 +84,8 @@ const closeSharedSource = () => {
 
 const emitPayloadAsMessage = (payload) => {
   const event = { data: JSON.stringify(payload), lastEventId: String(payload?.event_id || payload?.id || '') }
-  if (payload?.id && !isFirstSighting(String(payload.id))) return
+  if (!protocol.accept(payload, event.lastEventId).accepted) return
+  if (payload?.type === 'system.full_resync_required') resetReplayCursor()
   rememberEventId(event, payload)
   emit('message', event)
 }
@@ -142,7 +141,8 @@ function openSharedSource() {
 
   sharedSource.onmessage = (event) => {
     const payload = parseLiveEvent(event.data)
-    if (payload?.id && !isFirstSighting(String(payload.id))) return
+    if (!protocol.accept(payload, event.lastEventId).accepted) return
+    if (payload?.type === 'system.full_resync_required') resetReplayCursor()
     rememberEventId(event, payload)
     emit('message', event)
   }
@@ -244,7 +244,8 @@ export const getLiveDiagnostics = () => ({
   subscriberCount: subscribers.size,
   lastEventId,
   reconnectAttempt: retryAttempt,
-  pendingReconcile: reconcileInFlight
+  pendingReconcile: reconcileInFlight,
+  ...protocol.diagnostics()
 })
 
 export function parseLiveEvent(raw) {

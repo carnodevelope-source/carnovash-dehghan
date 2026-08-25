@@ -73,6 +73,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'apps.realtime.request_id.RequestIdMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     # Must run after authentication: replay entries are scoped to user/tenant.
@@ -103,6 +104,10 @@ WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
 
 DB_ENGINE = config('DB_ENGINE', default='mysql')
+DB_SQL_MODE = config(
+    'DB_SQL_MODE',
+    default='STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION',
+)
 if DB_ENGINE == 'sqlite':
     DATABASES = {
         'default': {
@@ -122,6 +127,10 @@ else:
             'PORT': config('DB_PORT', default='3306'),
             'OPTIONS': {
                 'charset': 'utf8mb4',
+                # Strict mode is set per application connection as well as by
+                # Docker's server option, so every Django worker has the same
+                # data-integrity behavior.
+                'init_command': f"SET SESSION sql_mode = '{DB_SQL_MODE}'",
             },
             # Reusing connections removes a MySQL handshake from every request.
             'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=60, cast=int),
@@ -143,10 +152,20 @@ LIVE_REDIS_CHANNEL = config('LIVE_REDIS_CHANNEL', default='carvash:live')
 LIVE_V2_ENABLED = config('LIVE_V2_ENABLED', default=False, cast=bool)
 LIVE_REPLAY_ENABLED = config('LIVE_REPLAY_ENABLED', default=False, cast=bool)
 LIVE_OUTBOX_ENABLED = config('LIVE_OUTBOX_ENABLED', default=False, cast=bool)
+LIVE_ASGI_ENABLED = config('LIVE_ASGI_ENABLED', default=False, cast=bool)
 LIVE_REVISION_SAFETY_CHECK = config('LIVE_REVISION_SAFETY_CHECK', default=True, cast=bool)
 LIVE_OUTBOX_RETENTION_HOURS = config('LIVE_OUTBOX_RETENTION_HOURS', default=72, cast=int)
+LIVE_REPLAY_BATCH_SIZE = config('LIVE_REPLAY_BATCH_SIZE', default=100, cast=int)
+LIVE_REPLAY_MAX_EVENTS = config('LIVE_REPLAY_MAX_EVENTS', default=1000, cast=int)
+LIVE_REPLAY_MAX_AGE_HOURS = config('LIVE_REPLAY_MAX_AGE_HOURS', default=72, cast=int)
+LIVE_OUTBOX_CLEANUP_BATCH_SIZE = config('LIVE_OUTBOX_CLEANUP_BATCH_SIZE', default=500, cast=int)
+LIVE_OUTBOX_CLEANUP_MAX_BATCHES = config('LIVE_OUTBOX_CLEANUP_MAX_BATCHES', default=20, cast=int)
+LIVE_REDIS_CONNECT_TIMEOUT_SECONDS = config('LIVE_REDIS_CONNECT_TIMEOUT_SECONDS', default=2.0, cast=float)
+LIVE_REDIS_SOCKET_TIMEOUT_SECONDS = config('LIVE_REDIS_SOCKET_TIMEOUT_SECONDS', default=2.0, cast=float)
 IDEMPOTENCY_ENABLED = config('IDEMPOTENCY_ENABLED', default=True, cast=bool)
 IDEMPOTENCY_RETENTION_HOURS = config('IDEMPOTENCY_RETENTION_HOURS', default=168, cast=int)
+IDEMPOTENCY_CLEANUP_BATCH_SIZE = config('IDEMPOTENCY_CLEANUP_BATCH_SIZE', default=500, cast=int)
+IDEMPOTENCY_CLEANUP_MAX_BATCHES = config('IDEMPOTENCY_CLEANUP_MAX_BATCHES', default=20, cast=int)
 
 if REDIS_URL:
     CACHES = {

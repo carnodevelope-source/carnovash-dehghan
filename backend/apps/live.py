@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import connections, transaction
@@ -102,6 +103,8 @@ class _RedisRelay:
             decode_responses=True,
             socket_keepalive=True,
             health_check_interval=30,
+            socket_connect_timeout=getattr(settings, 'LIVE_REDIS_CONNECT_TIMEOUT_SECONDS', 2.0),
+            socket_timeout=getattr(settings, 'LIVE_REDIS_SOCKET_TIMEOUT_SECONDS', 2.0),
         )
 
     def publish(self, event: dict) -> bool:
@@ -134,6 +137,7 @@ class _RedisRelay:
             self._listener.start()
 
     def _listen(self) -> None:
+        retry_seconds = RELAY_RETRY_SECONDS
         while True:
             try:
                 pubsub = self._connect().pubsub(ignore_subscribe_messages=True)
@@ -146,9 +150,11 @@ class _RedisRelay:
                     except (TypeError, ValueError):
                         continue
                     _fan_out(event)
+                retry_seconds = RELAY_RETRY_SECONDS
             except Exception:
                 logger.warning('live: redis relay dropped, reconnecting', exc_info=True)
-                time.sleep(RELAY_RETRY_SECONDS)
+                time.sleep(retry_seconds)
+                retry_seconds = min(retry_seconds * 2, 60)
 
 
 _relay = _RedisRelay(REDIS_URL, REDIS_CHANNEL) if REDIS_URL else None
@@ -255,26 +261,84 @@ def _scoped_outbox(subscriber: _Subscriber):
     return queryset.filter(Q(tenant_id=subscriber.tenant_id) | Q(tenant_id__isnull=True))
 
 
-def _parse_cursor(value: str | None) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
+def _parse_cursor(value: str | None) -> int | None:
+    if value in (None, ''):
         return 0
+    try:
+        parsed = int(value)
+        return parsed if parsed >= 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
-def _full_resync_event() -> dict:
+def _full_resync_event(reason: str = 'retention_or_replay_limit') -> dict:
     return {
         'id': '',
         'event_id': '',
         'type': 'system.full_resync_required',
         'event_type': 'system.full_resync_required',
-        'data': {},
-        'payload': {},
+        'data': {'reason': reason},
+        'payload': {'reason': reason},
         'created_at': timezone.now().isoformat(),
     }
 
 
-def _event_stream(subscriber: _Subscriber, after_id: int = 0) -> Iterator[str]:
+def _replay_limits() -> tuple[int, int, timedelta]:
+    """Return bounded replay limits even if an environment value is malformed."""
+    batch_size = max(1, min(int(getattr(settings, 'LIVE_REPLAY_BATCH_SIZE', 100)), 1000))
+    max_events = max(batch_size, min(int(getattr(settings, 'LIVE_REPLAY_MAX_EVENTS', 1000)), 10000))
+    max_age_hours = max(1, int(getattr(settings, 'LIVE_REPLAY_MAX_AGE_HOURS', 72)))
+    return batch_size, max_events, timedelta(hours=max_age_hours)
+
+
+def _replay_snapshot(subscriber: _Subscriber, after_id: int | None):
+    """Validate a cursor and capture a finite, tenant-scoped replay snapshot.
+
+    The subscriber is already registered before this function is called. Its
+    queue therefore captures events committed while this snapshot is emitted;
+    the returned high-watermark removes duplicate queued events afterwards.
+    """
+    if after_id is None:
+        return None, 0, 'invalid_cursor'
+
+    queryset = _scoped_outbox(subscriber)
+    high_watermark = queryset.order_by('-id').values_list('id', flat=True).first() or 0
+    if after_id > high_watermark:
+        return None, high_watermark, 'future_cursor'
+
+    _batch_size, max_events, max_age = _replay_limits()
+    cutoff = timezone.now() - max_age
+    if after_id:
+        cursor_row = queryset.filter(id=after_id).only('created_at').first()
+        if cursor_row is not None and cursor_row.created_at < cutoff:
+            return None, high_watermark, 'cursor_too_old'
+        oldest = queryset.filter(created_at__gte=cutoff).order_by('id').values_list('id', flat=True).first()
+        # A cursor preceding the retained scope may refer to pruned events. A
+        # conservative full sync is safer than pretending the gap is harmless.
+        if oldest is not None and after_id < oldest - 1:
+            return None, high_watermark, 'cursor_outside_retention'
+
+    # Probe at most max+1 IDs. This distinguishes a safe finite replay from a
+    # backlog that must be reconciled from authoritative API state.
+    probe = list(queryset.filter(id__gt=after_id, id__lte=high_watermark).values_list('id', flat=True)[:max_events + 1])
+    if len(probe) > max_events:
+        return None, high_watermark, 'replay_limit_exceeded'
+    return queryset, high_watermark, None
+
+
+def _iter_replay_rows(queryset, after_id: int, high_watermark: int) -> Iterator[LiveOutbox]:
+    batch_size, _max_events, _max_age = _replay_limits()
+    cursor = after_id
+    while cursor < high_watermark:
+        rows = list(queryset.filter(id__gt=cursor, id__lte=high_watermark)[:batch_size])
+        if not rows:
+            return
+        for row in rows:
+            yield row
+        cursor = rows[-1].id
+
+
+def _event_stream(subscriber: _Subscriber, after_id: int | None = 0) -> Iterator[str]:
     # The stream outlives the request by hours, so give the database connection
     # back instead of parking it for the whole session.
     connections.close_all()
@@ -294,20 +358,17 @@ def _event_stream(subscriber: _Subscriber, after_id: int = 0) -> Iterator[str]:
             and getattr(settings, 'LIVE_REPLAY_ENABLED', False)
             and getattr(settings, 'LIVE_OUTBOX_ENABLED', False)
         ):
-            # The subscriber is registered before the backlog snapshot. Events
+            # The subscriber is registered before the snapshot. Events
             # arriving during replay land in its bounded queue; ids in the
             # snapshot are removed below so the client sees each event once.
-            oldest = LiveOutbox.objects.order_by('id').values_list('id', flat=True).first()
-            if after_id and oldest and after_id < oldest - 1:
-                yield f"data: {_encode(_full_resync_event())}\n\n"
-            else:
-                backlog = list(_scoped_outbox(subscriber).filter(id__gt=after_id))
-                if backlog:
-                    high_watermark = backlog[-1].id
-                    for row in backlog:
-                        event = _outbox_event(row)
-                        replayed_ids.add(event['id'])
-                        yield f"id: {event['id']}\ndata: {_encode(event)}\n\n"
+            queryset, high_watermark, reason = _replay_snapshot(subscriber, after_id)
+            if reason:
+                yield f"data: {_encode(_full_resync_event(reason))}\n\n"
+            elif queryset is not None:
+                for row in _iter_replay_rows(queryset, after_id or 0, high_watermark):
+                    event = _outbox_event(row)
+                    replayed_ids.add(event['id'])
+                    yield f"id: {event['id']}\ndata: {_encode(event)}\n\n"
             connections.close_all()
         while True:
             try:
@@ -388,12 +449,12 @@ def live_sync_view(request):
     if not _live_replay_enabled():
         return JsonResponse({'detail': 'Live replay is disabled.'}, status=404)
     after_id = _parse_cursor(request.GET.get('after'))
-    oldest = LiveOutbox.objects.order_by('id').values_list('id', flat=True).first()
-    if after_id and oldest and after_id < oldest - 1:
-        return JsonResponse({'full_resync_required': True, 'events': []})
-    rows = list(_scoped_outbox(subscriber).filter(id__gt=after_id)[:MAX_QUEUE_SIZE])
+    queryset, high_watermark, reason = _replay_snapshot(subscriber, after_id)
+    if reason:
+        return JsonResponse({'full_resync_required': True, 'reason': reason, 'events': []})
+    rows = list(_iter_replay_rows(queryset, after_id or 0, high_watermark)) if queryset is not None else []
     return JsonResponse({
         'full_resync_required': False,
         'events': [_outbox_event(row) for row in rows],
-        'latest_event_id': str(rows[-1].id) if rows else str(after_id),
+        'latest_event_id': str(high_watermark),
     })

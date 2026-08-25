@@ -1677,6 +1677,7 @@ const onLiveEvent = (event) => {
     || type.startsWith('expense.')
     || type.startsWith('service.')
     || type === 'settings.updated'
+    || type === 'system.full_resync_required'
   ) {
     if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
     liveReloadTimer = window.setTimeout(() => {

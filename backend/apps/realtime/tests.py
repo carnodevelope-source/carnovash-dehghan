@@ -1,4 +1,7 @@
 from datetime import timedelta
+import json
+import threading
+import time
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -10,6 +13,7 @@ from django.utils import timezone
 from apps.auth.models import CarWash
 from apps.live import _Subscriber, _event_stream, _deliver, publish_live_event
 from apps.realtime.idempotency import IdempotencyMiddleware, _request_hash
+from apps.realtime.management.commands.prune_realtime_records import prune_in_bounded_batches
 from apps.realtime.models import IdempotencyRecord, LiveOutbox
 from apps.realtime.transactions import TransactionalLiveModelMixin
 from apps.vehicles.models import VehicleEntry
@@ -135,6 +139,75 @@ class LiveReplayStreamTests(TransactionTestCase):
             _deliver({'id': '1', 'type': 'vehicle.updated', 'data': {'tenant_id': 7}})
         fan_out.assert_called_once()
 
+    @override_settings(LIVE_REPLAY_BATCH_SIZE=2, LIVE_REPLAY_MAX_EVENTS=5, LIVE_REPLAY_MAX_AGE_HOURS=72)
+    def test_sse_replay_uses_ordered_bounded_batches(self):
+        rows = [
+            LiveOutbox.objects.create(
+                tenant_id=7, event_type='vehicle.updated', entity_type='vehicle', entity_id=str(index),
+                payload={'tenant_id': 7, 'id': index},
+            )
+            for index in range(1, 6)
+        ]
+        stream = _event_stream(_Subscriber(is_hq=False, tenant_id='7', user_id='1'), after_id=0)
+        next(stream)
+        next(stream)
+        frames = [next(stream) for _ in rows]
+        stream.close()
+        self.assertEqual(
+            [int(frame.split('\n', 1)[0].split(': ', 1)[1]) for frame in frames],
+            [row.id for row in rows],
+        )
+
+    @override_settings(LIVE_REPLAY_BATCH_SIZE=2, LIVE_REPLAY_MAX_EVENTS=2, LIVE_REPLAY_MAX_AGE_HOURS=72)
+    def test_replay_limit_returns_full_resync_without_partial_replay(self):
+        for index in range(3):
+            LiveOutbox.objects.create(
+                tenant_id=7, event_type='vehicle.updated', entity_type='vehicle', entity_id=str(index),
+                payload={'tenant_id': 7, 'id': index},
+            )
+        stream = _event_stream(_Subscriber(is_hq=False, tenant_id='7', user_id='1'), after_id=0)
+        next(stream)
+        next(stream)
+        resync = next(stream)
+        stream.close()
+        self.assertIn('replay_limit_exceeded', resync)
+        self.assertNotIn('vehicle.updated', resync)
+
+    @override_settings(LIVE_REPLAY_BATCH_SIZE=2, LIVE_REPLAY_MAX_EVENTS=5, LIVE_REPLAY_MAX_AGE_HOURS=1)
+    def test_future_invalid_and_expired_cursors_require_full_resync(self):
+        row = LiveOutbox.objects.create(
+            tenant_id=7, event_type='vehicle.updated', entity_type='vehicle', entity_id='1', payload={'tenant_id': 7, 'id': 1},
+        )
+        LiveOutbox.objects.filter(pk=row.pk).update(created_at=timezone.now() - timedelta(hours=2))
+        for cursor, reason in ((None, 'invalid_cursor'), (row.id, 'cursor_too_old'), (999999, 'future_cursor')):
+            stream = _event_stream(_Subscriber(is_hq=False, tenant_id='7', user_id='1'), after_id=cursor)
+            next(stream)
+            next(stream)
+            self.assertIn(reason, next(stream))
+            stream.close()
+
+    def test_replay_live_race_emits_snapshot_then_new_queued_event_once(self):
+        row = LiveOutbox.objects.create(
+            tenant_id=7, event_type='vehicle.updated', entity_type='vehicle', entity_id='1', payload={'tenant_id': 7, 'id': 1},
+        )
+        subscriber = _Subscriber(is_hq=False, tenant_id='7', user_id='1')
+        original_snapshot = __import__('apps.live', fromlist=['_replay_snapshot'])._replay_snapshot
+
+        def snapshot_then_queue(*args, **kwargs):
+            result = original_snapshot(*args, **kwargs)
+            subscriber.events.put_nowait({'id': str(row.id + 1), 'type': 'vehicle.updated', 'data': {'tenant_id': 7, 'id': 2}})
+            return result
+
+        with patch('apps.live._replay_snapshot', side_effect=snapshot_then_queue):
+            stream = _event_stream(subscriber, after_id=0)
+            next(stream)
+            next(stream)
+            replay = next(stream)
+            live = next(stream)
+            stream.close()
+        self.assertIn(f'id: {row.id}', replay)
+        self.assertIn(f'id: {row.id + 1}', live)
+
 
 class IdempotencyMiddlewareTests(TestCase):
     def setUp(self):
@@ -195,3 +268,87 @@ class IdempotencyMiddlewareTests(TestCase):
         response = IdempotencyMiddleware(view)(request)
         self.assertEqual(response.status_code, 409)
         self.assertFalse(called)
+
+    @override_settings(IDEMPOTENCY_RETENTION_HOURS=1)
+    def test_expired_key_is_reclaimed_for_a_new_logical_request(self):
+        request = self._request('{"amount":1}')
+        record = IdempotencyRecord.objects.create(
+            tenant_id=self.tenant.id, user=self.user, key='key-1', method='POST', path='/api/example/',
+            request_hash=_request_hash(request), status_code=201, response_json={'old': True},
+        )
+        IdempotencyRecord.objects.filter(pk=record.pk).update(created_at=timezone.now() - timedelta(hours=2))
+        response = IdempotencyMiddleware(lambda _request: JsonResponse({'new': True}, status=201))(request)
+        self.assertEqual(json.loads(response.content), {'new': True})
+        self.assertEqual(IdempotencyRecord.objects.count(), 1)
+
+
+class RealtimeCleanupTests(TestCase):
+    def test_cleanup_is_bounded_and_resumable(self):
+        old = timezone.now() - timedelta(days=10)
+        for index in range(5):
+            row = LiveOutbox.objects.create(
+                event_type='vehicle.updated', entity_type='vehicle', entity_id=str(index), payload={},
+            )
+            LiveOutbox.objects.filter(pk=row.pk).update(created_at=old)
+        deleted, batches, has_more = prune_in_bounded_batches(
+            LiveOutbox, cutoff=timezone.now() - timedelta(days=1), batch_size=2, max_batches=2,
+        )
+        self.assertEqual((deleted, batches, has_more), (4, 2, True))
+        self.assertEqual(LiveOutbox.objects.count(), 1)
+        deleted, batches, has_more = prune_in_bounded_batches(
+            LiveOutbox, cutoff=timezone.now() - timedelta(days=1), batch_size=2, max_batches=2,
+        )
+        self.assertEqual((deleted, batches, has_more), (1, 1, False))
+
+
+class IdempotencyConcurrencyTests(TransactionTestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.tenant = CarWash.objects.create(name='Concurrent Idempotency Wash', slug='concurrent-idempotency-wash')
+        self.user = user_model.objects.create_user(
+            username='concurrent-idem-user', password='pass12345', phone='09121110123', tenant=self.tenant,
+        )
+
+    def test_two_concurrent_identical_requests_execute_one_logical_mutation(self):
+        entered_view = threading.Event()
+        release_view = threading.Event()
+        results = []
+        errors = []
+        calls = []
+
+        def view(_request):
+            calls.append(1)
+            entered_view.set()
+            release_view.wait(timeout=5)
+            return JsonResponse({'ok': True}, status=201)
+
+        def invoke():
+            from django.db import close_old_connections
+
+            close_old_connections()
+            try:
+                request = RequestFactory().post(
+                    '/api/concurrent-example/', data='{"amount":1}', content_type='application/json',
+                    HTTP_IDEMPOTENCY_KEY='shared-concurrent-key',
+                )
+                request.user = get_user_model().objects.get(pk=self.user.pk)
+                response = IdempotencyMiddleware(view)(request)
+                results.append(response.status_code)
+            except Exception as exc:  # surfaced below with full test context
+                errors.append(exc)
+            finally:
+                close_old_connections()
+
+        first = threading.Thread(target=invoke)
+        second = threading.Thread(target=invoke)
+        first.start()
+        self.assertTrue(entered_view.wait(timeout=5))
+        second.start()
+        time.sleep(0.2)
+        release_view.set()
+        first.join(timeout=5)
+        second.join(timeout=5)
+
+        self.assertFalse(errors)
+        self.assertCountEqual(results, [201, 409])
+        self.assertEqual(len(calls), 1)

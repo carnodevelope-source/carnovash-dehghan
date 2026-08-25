@@ -804,7 +804,7 @@ const startSupportLive = () => {
   })
   supportLiveStream?.addEventListener('message', (event) => {
     const payload = parseLiveEvent(event.data)
-    if (!payload?.type || !String(payload.type).startsWith('support.')) return
+    if (!payload?.type || (!String(payload.type).startsWith('support.') && payload.type !== 'system.full_resync_required')) return
     if (supportLiveRefreshTimer) window.clearTimeout(supportLiveRefreshTimer)
     supportLiveRefreshTimer = window.setTimeout(refreshTicketsQuietly, 350)
   })

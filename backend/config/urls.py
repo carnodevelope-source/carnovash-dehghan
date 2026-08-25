@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.db import connections
+from django.db.utils import DatabaseError
 from django.http import JsonResponse
 from django.urls import include, path
 
@@ -11,9 +13,21 @@ def health(_request):
     return JsonResponse({'status': 'ok'})
 
 
+def readiness(_request):
+    """A cheap dependency check for orchestration, separate from liveness."""
+    try:
+        with connections['default'].cursor() as cursor:
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+    except DatabaseError:
+        return JsonResponse({'status': 'not_ready', 'database': 'unavailable'}, status=503)
+    return JsonResponse({'status': 'ready', 'database': 'ok'})
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/health/', health, name='health'),
+    path('api/health/ready/', readiness, name='readiness'),
     path('api/live/events/', live_events_view, name='live-events'),
     path('api/live/revision/', live_revision_view, name='live-revision'),
     path('api/live/sync/', live_sync_view, name='live-sync'),

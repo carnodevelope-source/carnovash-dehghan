@@ -153,9 +153,7 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     queryset = GeneralSettings.objects.all()
 
     def get_object(self):
-        settings_obj, _ = GeneralSettings.objects.get_or_create(
-            tenant=self.request.user.tenant,
-            defaults={
+        defaults = {
                 'discount_percent_per_half_star': 0,
                 'discount_calculation_mode': GeneralSettings.DiscountCalculationMode.STEP,
                 'fixed_visit_discounts': {'2': 0, '5': 0, '10': 0},
@@ -187,8 +185,16 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
                 'sms_vehicle_assigned_template': DEFAULT_SMS_VEHICLE_ASSIGNED_TEMPLATE,
                 'sms_vehicle_assigned_invoice_template': DEFAULT_SMS_VEHICLE_ASSIGNED_INVOICE_TEMPLATE,
                 'sms_vehicle_released_template': DEFAULT_SMS_VEHICLE_RELEASED_TEMPLATE,
-            },
-        )
+        }
+        settings_obj = GeneralSettings.objects.filter(tenant=self.request.user.tenant).first()
+        if settings_obj is None:
+            # GET must remain read-only. Returning the same default shape
+            # without persisting it preserves the API while keeping bootstrap
+            # creation on an explicit mutation path.
+            if self.request.method in {'GET', 'HEAD', 'OPTIONS'}:
+                settings_obj = GeneralSettings(tenant=self.request.user.tenant, **defaults)
+            else:
+                settings_obj = GeneralSettings.objects.create(tenant=self.request.user.tenant, **defaults)
         changed_fields = []
         if not str(settings_obj.sms_provider_base_url or '').strip():
             settings_obj.sms_provider_base_url = 'https://api.iranpayamak.com'
@@ -216,7 +222,7 @@ class GeneralSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
         if settings_obj.sms_vehicle_released_template != normalized_released_template:
             settings_obj.sms_vehicle_released_template = normalized_released_template
             changed_fields.append('sms_vehicle_released_template')
-        if changed_fields:
+        if changed_fields and self.request.method not in {'GET', 'HEAD', 'OPTIONS'}:
             changed_fields.append('updated_at')
             settings_obj.save(update_fields=changed_fields)
         return settings_obj

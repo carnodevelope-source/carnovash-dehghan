@@ -33,4 +33,10 @@ if [ "${DJANGO_BOOTSTRAP_PRODUCTION_DATA:-True}" = "True" ]; then
     python manage.py seed_production_data
 fi
 
+if [ "${LIVE_ASGI_ENABLED:-false}" = "true" ]; then
+    # WSGI stays the default and rollback path. The ASGI worker is only used
+    # by an explicit, separately validated canary configuration.
+    exec gunicorn -c /app/asgi_gunicorn.conf.py config.asgi:application
+fi
+
 exec "$@"

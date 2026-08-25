@@ -534,7 +534,7 @@ const refreshToken = async (worker) => {
 
 const onLiveEvent = (event) => {
   const type = String(event?.detail?.type || '')
-  if (type.startsWith('worker.')) {
+  if (type.startsWith('worker.') || type === 'system.full_resync_required') {
     if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
     liveReloadTimer = window.setTimeout(() => {
       void loadDashboard({ silent: true })

@@ -80,3 +80,21 @@ rows for retention pruning; never delete business data to roll back realtime.
 
 Rollback: route traffic back to the WSGI image/config and set every V2/ASGI
 flag false. Do not perform a destructive database rollback.
+
+## Updated executable gates — 2026-08-25
+
+- [ ] Run `scripts/production_verify.ps1` from the repository root.
+- [ ] Apply additive `realtime.0001` and `services.0022`; record the image and
+      confirm backup/restore evidence before production migration.
+- [ ] Keep every V2 and ASGI flag false through the first staging deploy.
+- [ ] Run `scripts/staging_verify.ps1 -BaseUrl <staging-url>`.
+- [ ] Seed only an isolated staging tenant with
+      `seed_realtime_staging_data --allow-staging`; never point it at
+      production.
+- [ ] Record `report_db_capacity --json` on the actual staging database.
+- [ ] Run `scripts/realtime_load.py` at 20, 50, and 100 authenticated SSE
+      clients and capture platform metrics; then run `realtime_soak.py`.
+- [ ] Execute `redis_outage_verify.ps1 -AllowStagingRedisRestart` only against
+      the staging Compose project and validate replay/reconcile.
+- [ ] Enable flags independently only after the prior evidence passes:
+      outbox → replay → V2. ASGI is a separate canary after its own audit.

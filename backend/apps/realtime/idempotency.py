@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -94,10 +95,23 @@ class IdempotencyMiddleware:
 
     @staticmethod
     def _claim_or_find(**kwargs):
-        try:
-            with transaction.atomic():
-                return IdempotencyRecord.objects.create(**kwargs), True
-        except IntegrityError:
-            return IdempotencyRecord.objects.get(
-                tenant_id=kwargs['tenant_id'], user=kwargs['user'], key=kwargs['key']
-            ), False
+        # The uniqueness constraint is the arbiter for concurrent workers.
+        # The savepoint keeps an expected duplicate-key IntegrityError from
+        # poisoning the transaction used to lock/read the winning record.
+        retention_hours = max(1, int(getattr(settings, 'IDEMPOTENCY_RETENTION_HOURS', 168)))
+        cutoff = timezone.now() - timedelta(hours=retention_hours)
+        with transaction.atomic():
+            try:
+                with transaction.atomic():
+                    return IdempotencyRecord.objects.create(**kwargs), True
+            except IntegrityError:
+                record = IdempotencyRecord.objects.select_for_update().get(
+                    tenant_id=kwargs['tenant_id'], user=kwargs['user'], key=kwargs['key']
+                )
+                # A key beyond its retention is a new logical request. Delete
+                # and recreate while holding the unique row lock so a racing
+                # retry cannot turn into two business mutations.
+                if record.created_at < cutoff:
+                    record.delete()
+                    return IdempotencyRecord.objects.create(**kwargs), True
+                return record, False
