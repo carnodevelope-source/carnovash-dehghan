@@ -33,6 +33,8 @@ staging/production p95, p99, RPS, event lag, RSS, or DB peak was available.
 
 ## Production flags
 
+Dark P0 deploy (first ~10 hours):
+
 ```env
 LIVE_OUTBOX_ENABLED=false
 LIVE_REPLAY_ENABLED=false
@@ -40,12 +42,24 @@ LIVE_V2_ENABLED=false
 LIVE_ASGI_ENABLED=false
 ```
 
+P1 after soak (2026-08-26). ASGI remains off:
+
+```env
+LIVE_OUTBOX_ENABLED=true
+LIVE_REPLAY_ENABLED=true
+LIVE_V2_ENABLED=true
+VITE_LIVE_REPLAY_ENABLED=true
+LIVE_ASGI_ENABLED=false
+```
+
 ## Remaining blockers
 
-Only external-environment evidence is outstanding. No staging host/credentials
-or production deployment authority was available in this workspace.
+P3 ASGI canary is still deferred. Activate Live V2 with
+`scripts/enable_live_v2.ps1 -Apply` or `scripts/enable_live_v2.sh --apply`
+against the production env file, then rebuild the frontend because
+`VITE_LIVE_REPLAY_ENABLED` is a build-time flag.
 
 ## Final status
 
-**BLOCKED-EXTERNAL** — development is complete and locally verified; activation
-was not executed and must follow the staged runbook.
+**P1 READY** — 10-hour dark soak elapsed; Live V2 flags may be turned on.
+ASGI must stay false.

@@ -140,17 +140,23 @@ class _RedisRelay:
         retry_seconds = RELAY_RETRY_SECONDS
         while True:
             try:
-                pubsub = self._connect().pubsub(ignore_subscribe_messages=True)
-                pubsub.subscribe(self._channel)
-                for message in pubsub.listen():
-                    if message.get('type') != 'message':
-                        continue
-                    try:
-                        event = json.loads(message['data'])
-                    except (TypeError, ValueError):
-                        continue
-                    _fan_out(event)
-                retry_seconds = RELAY_RETRY_SECONDS
+                # ``listen()`` blocks in a socket read forever.  With the
+                # deliberately finite Redis socket timeout, a quiet channel
+                # then looks like a failed connection every few seconds and
+                # creates noisy reconnect loops.  Polling below keeps idle
+                # channels idle while real disconnects still enter recovery.
+                with self._connect().pubsub(ignore_subscribe_messages=True) as pubsub:
+                    pubsub.subscribe(self._channel)
+                    retry_seconds = RELAY_RETRY_SECONDS
+                    while True:
+                        message = pubsub.get_message(timeout=1.0)
+                        if not message or message.get('type') != 'message':
+                            continue
+                        try:
+                            event = json.loads(message['data'])
+                        except (TypeError, ValueError):
+                            continue
+                        _fan_out(event)
             except Exception:
                 logger.warning('live: redis relay dropped, reconnecting', exc_info=True)
                 time.sleep(retry_seconds)
@@ -338,7 +344,7 @@ def _iter_replay_rows(queryset, after_id: int, high_watermark: int) -> Iterator[
         cursor = rows[-1].id
 
 
-def _event_stream(subscriber: _Subscriber, after_id: int | None = 0) -> Iterator[str]:
+def _event_stream(subscriber: _Subscriber, after_id: int | None = 0, *, skip_replay: bool = False) -> Iterator[str]:
     # The stream outlives the request by hours, so give the database connection
     # back instead of parking it for the whole session.
     connections.close_all()
@@ -354,7 +360,8 @@ def _event_stream(subscriber: _Subscriber, after_id: int | None = 0) -> Iterator
         replayed_ids: set[str] = set()
         high_watermark = 0
         if (
-            getattr(settings, 'LIVE_V2_ENABLED', False)
+            not skip_replay
+            and getattr(settings, 'LIVE_V2_ENABLED', False)
             and getattr(settings, 'LIVE_REPLAY_ENABLED', False)
             and getattr(settings, 'LIVE_OUTBOX_ENABLED', False)
         ):
@@ -402,8 +409,14 @@ def live_events_view(request):
         tenant_id=str(getattr(user, 'tenant_id', '') or ''),
         user_id=str(getattr(user, 'id', '') or ''),
     )
-    after_id = _parse_cursor(request.headers.get('Last-Event-ID') or request.GET.get('after'))
-    response = StreamingHttpResponse(_event_stream(subscriber, after_id), content_type='text/event-stream')
+    raw_cursor = request.headers.get('Last-Event-ID') or request.GET.get('after')
+    # A first connection has no cursor. Replaying the whole retained outbox
+    # would stampede the UI; catch-up is only for reconnect/reconcile.
+    if raw_cursor in (None, ''):
+        stream = _event_stream(subscriber, skip_replay=True)
+    else:
+        stream = _event_stream(subscriber, _parse_cursor(raw_cursor))
+    response = StreamingHttpResponse(stream, content_type='text/event-stream')
     response['Cache-Control'] = 'no-cache'
     response['X-Accel-Buffering'] = 'no'
     return response

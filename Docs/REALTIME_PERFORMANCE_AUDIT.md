@@ -110,3 +110,16 @@ Staging/production access is absent. Actual Redis restart, browser navigation
 soak, 20/50/100 SSE fanout, large-data `EXPLAIN`, backup verification, and
 production capacity measurements are `BLOCKED_EXTERNAL_ENV`, not passed by
 inference.
+
+## P1 enablement after soak — 2026-08-26
+
+The dark P0 window (~10 hours) has elapsed. Live V2 may be turned on:
+
+- `LIVE_OUTBOX_ENABLED=true`
+- `LIVE_V2_ENABLED=true`
+- `LIVE_REPLAY_ENABLED=true`
+- `VITE_LIVE_REPLAY_ENABLED=true` (frontend rebuild required)
+
+`LIVE_ASGI_ENABLED` stays `false`. Use `scripts/enable_live_v2.*`; rollback is
+still flag-off, never a business-data rollback. A first SSE connection without
+a cursor no longer replays retained outbox history.

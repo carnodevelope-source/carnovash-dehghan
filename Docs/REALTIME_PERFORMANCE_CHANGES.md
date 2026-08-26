@@ -11,7 +11,7 @@ All new database behavior is gated and additive.
 | Loading contract | `api.js`, `loading.store.js` | `navigation`/`blocking` may show the existing overlay; `background-sync` is silent; `mutation-user` exposes a local loading key. All requests have finite timeouts. |
 | Idempotency | `apps/realtime/idempotency.py` | The same key + exact request replays JSON; same key + different body returns 409; competing in-progress request returns 409. |
 | Critical mutation callers | vehicle store/dashboard, wallet panel | Local submit guards are retained and these operations add an `Idempotency-Key` plus a local loading key. |
-| Configuration | env, compose, Gunicorn | Flags default to safe/off; optional worker recycle values default to zero; no ASGI command was enabled. |
+| Configuration | env, compose, Gunicorn | Compose still defaults dark. Production example and `enable_live_v2` turn on outbox/V2/replay after soak; `LIVE_ASGI_ENABLED` stays false. |
 
 ## Database migration
 
@@ -46,3 +46,12 @@ resolved by the hardened implementation update below.
 - `scripts/production_verify.ps1` passed locally: 22 backend tests, 3 frontend
   protocol tests, build, checks, migration verification, capacity report,
   Compose validation, and diff check.
+
+## P1 enablement after soak — 2026-08-26
+
+- First SSE connections without `Last-Event-ID`/`after` skip outbox replay so
+  enabling V2 cannot dump retained history onto every open tab.
+- `prune_realtime_records` runs on the existing internal scheduler cycle.
+- `scripts/enable_live_v2.ps1` / `scripts/enable_live_v2.sh` turn on outbox,
+  V2, and replay, rebuild the frontend for `VITE_LIVE_REPLAY_ENABLED`, and
+  leave `LIVE_ASGI_ENABLED=false`.

@@ -47,21 +47,28 @@ def _acquire_cycle_lease():
         return True
 
 
-def _background_jobs_loop():
-    from django.db import close_old_connections
+def _run_background_jobs_once():
+    from django.core.management import call_command
 
     from .nightly_sms import dispatch_due_nightly_manager_summaries
     from .support_tickets import close_stale_support_tickets
+    from apps.subscriptions.services import run_expiry_and_reminder_jobs
+
+    dispatch_due_nightly_manager_summaries()
+    close_stale_support_tickets()
+    run_expiry_and_reminder_jobs()
+    # Technical replay/idempotency rows only. Business tables are untouched.
+    call_command('prune_realtime_records')
+
+
+def _background_jobs_loop():
+    from django.db import close_old_connections
 
     while True:
         try:
             close_old_connections()
             if _acquire_cycle_lease():
-                dispatch_due_nightly_manager_summaries()
-                close_stale_support_tickets()
-                from apps.subscriptions.services import run_expiry_and_reminder_jobs
-
-                run_expiry_and_reminder_jobs()
+                _run_background_jobs_once()
         except Exception:
             pass
         finally:

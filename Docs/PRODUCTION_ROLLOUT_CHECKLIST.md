@@ -98,3 +98,18 @@ flag false. Do not perform a destructive database rollback.
       the staging Compose project and validate replay/reconcile.
 - [ ] Enable flags independently only after the prior evidence passes:
       outbox → replay → V2. ASGI is a separate canary after its own audit.
+
+## P1 enablement after soak — 2026-08-26
+
+- [x] Dark P0 flags stayed off for the first production soak (~10 hours).
+- [ ] Run `scripts/enable_live_v2.sh --env-file=.env.production` (dry run), then
+      `--apply` on the production host. Windows equivalent:
+      `scripts/enable_live_v2.ps1 -EnvFile .env.production -Apply`.
+- [ ] Confirm `LIVE_ASGI_ENABLED=false` after the script.
+- [ ] Recreated backend picks up outbox/V2/replay; frontend image is rebuilt
+      with `VITE_LIVE_REPLAY_ENABLED=true`.
+- [ ] `GET /api/live/revision/` after login returns `latest_event_id` (not 404).
+- [ ] Client A mutation → Client B update without reload.
+- [ ] Disconnect Client B → mutate A → reconnect B → missed events replay.
+- [ ] Rollback remains flag-off (`LIVE_REPLAY_ENABLED`/`LIVE_V2_ENABLED` first,
+      then `LIVE_OUTBOX_ENABLED`); never a business-data rollback.

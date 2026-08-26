@@ -208,6 +208,20 @@ class LiveReplayStreamTests(TransactionTestCase):
         self.assertIn(f'id: {row.id}', replay)
         self.assertIn(f'id: {row.id + 1}', live)
 
+    def test_first_sse_connection_without_cursor_does_not_replay_history(self):
+        LiveOutbox.objects.create(
+            tenant_id=7, event_type='vehicle.updated', entity_type='vehicle', entity_id='1', payload={'tenant_id': 7, 'id': 1},
+        )
+        subscriber = _Subscriber(is_hq=False, tenant_id='7', user_id='1')
+        subscriber.events.put_nowait({'id': 'live-1', 'type': 'vehicle.created', 'data': {'tenant_id': 7}})
+        stream = _event_stream(subscriber, skip_replay=True)
+        self.assertEqual(next(stream), 'retry: 5000\n\n')
+        self.assertIn('live.connected', next(stream))
+        frame = next(stream)
+        stream.close()
+        self.assertIn('live-1', frame)
+        self.assertNotIn('vehicle.updated', frame)
+
 
 class IdempotencyMiddlewareTests(TestCase):
     def setUp(self):
