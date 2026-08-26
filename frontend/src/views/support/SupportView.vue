@@ -769,13 +769,13 @@ const loadTickets = async (options = {}) => {
   syncTicketSelection()
 }
 
-const refreshTicketsQuietly = async () => {
+const refreshTicketsQuietly = async ({ refreshSelected = false } = {}) => {
   if (supportPollingInFlight || ticketModal.open || detailState.sendingReply || document.visibilityState === 'hidden') return
   supportPollingInFlight = true
   try {
     await loadTickets({
       preserveSelection: true,
-      refreshSelected: false,
+      refreshSelected,
       silent: true
     })
   } finally {
@@ -806,7 +806,12 @@ const startSupportLive = () => {
     const payload = parseLiveEvent(event.data)
     if (!payload?.type || (!String(payload.type).startsWith('support.') && payload.type !== 'system.full_resync_required')) return
     if (supportLiveRefreshTimer) window.clearTimeout(supportLiveRefreshTimer)
-    supportLiveRefreshTimer = window.setTimeout(refreshTicketsQuietly, 350)
+    // The list alone is not enough when a user is reading an open ticket:
+    // fetch the selected thread as well, silently and without replacing a
+    // draft reply.
+    supportLiveRefreshTimer = window.setTimeout(() => {
+      void refreshTicketsQuietly({ refreshSelected: true })
+    }, 350)
   })
   supportPollingTimer = window.setInterval(refreshTicketsQuietly, 60000)
 }

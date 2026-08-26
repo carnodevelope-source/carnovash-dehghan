@@ -15,6 +15,7 @@ def publish_support_ticket_event(sender, instance: SupportTicket, created: bool,
             'id': instance.pk,
             'created': created,
             'tenant_id': instance.tenant_id,
+            'actor_user_id': instance.created_by_id,
             'status': instance.status,
             'priority': instance.priority,
         },
@@ -30,6 +31,7 @@ def publish_support_message_event(sender, instance: SupportTicketMessage, create
             'created': created,
             'ticket_id': instance.ticket_id,
             'tenant_id': instance.ticket.tenant_id,
+            'actor_user_id': instance.sender_id,
         },
     )
 

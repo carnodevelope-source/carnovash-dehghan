@@ -230,7 +230,7 @@ import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
 import { createLiveEventSource, dispatchLiveEvent, parseLiveEvent } from '../../services/live'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, getFeatureLockNotice, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
-import { notifyWarning } from '../../utils/notify'
+import { notifyInfo, notifyWarning } from '../../utils/notify'
 import IconlyIcon from '../base/IconlyIcon.vue'
 
 const props = defineProps({
@@ -272,6 +272,9 @@ let supportCountPollingInFlight = false
 let trialCountdownInterval = null
 let trialExpiryHandled = false
 let compactSearchMedia = null
+let supportNotificationAudio = null
+let lastSupportNotificationSoundAt = 0
+const SUPPORT_NOTIFICATION_SOUND = `${import.meta.env.BASE_URL}ElevenLabs_Soft_chime_new_message_notification%2C_single_bright_tone.mp3`
 
 const syncCompactSearchMode = () => {
   const nextValue = Boolean(compactSearchMedia?.matches)
@@ -542,6 +545,30 @@ const loadSupportOpenCount = async () => {
   }
 }
 
+const playSupportNotificationSound = (payload) => {
+  // The sender already sees their own message immediately; alert only the
+  // recipient(s) in the other ticket view.
+  const actorId = String(payload?.data?.actor_user_id || '')
+  if (actorId && actorId === String(authStore.user?.id || '')) return
+
+  // Do not play a sound storm after reconnect/replay; only fresh events get
+  // an audible cue and repeated event types are coalesced.
+  const occurredAt = Date.parse(payload?.occurred_at || payload?.created_at || '')
+  if (Number.isFinite(occurredAt) && Date.now() - occurredAt > 30_000) return
+  if (Date.now() - lastSupportNotificationSoundAt < 1_500) return
+
+  lastSupportNotificationSoundAt = Date.now()
+  if (!supportNotificationAudio) {
+    supportNotificationAudio = new Audio(SUPPORT_NOTIFICATION_SOUND)
+    supportNotificationAudio.preload = 'auto'
+    supportNotificationAudio.volume = 0.45
+  }
+  supportNotificationAudio.currentTime = 0
+  void supportNotificationAudio.play().catch(() => {
+    // Browsers may require a prior user interaction, especially on mobile.
+  })
+}
+
 const stopSupportCountLive = () => {
   if (supportCountInterval) {
     window.clearInterval(supportCountInterval)
@@ -570,6 +597,20 @@ const startSupportCountLive = () => {
     if (type.startsWith('support.')) {
       if (supportCountLiveRefreshTimer) window.clearTimeout(supportCountLiveRefreshTimer)
       supportCountLiveRefreshTimer = window.setTimeout(loadSupportOpenCount, 400)
+      if (type === 'support.message.created') {
+        if (route.path !== '/support') {
+          notifyInfo('پیام جدیدی در تیکت پشتیبانی ثبت شد.', { title: 'پشتیبانی' })
+        }
+        playSupportNotificationSound(payload)
+      } else if (type === 'support.ticket.created') {
+        if (route.path !== '/support') {
+          notifyInfo('یک تیکت پشتیبانی جدید ثبت شد.', { title: 'پشتیبانی' })
+        }
+        playSupportNotificationSound(payload)
+      }
+    }
+    if (type === 'notification.created') {
+      notifyInfo('یک اعلان جدید ثبت شد.', { title: 'اعلان' })
     }
     if (
       type.startsWith('payment.')
@@ -635,6 +676,10 @@ onBeforeUnmount(() => {
     compactSearchMedia.removeListener(syncCompactSearchMode)
   }
   stopSupportCountLive()
+  if (supportNotificationAudio) {
+    supportNotificationAudio.pause()
+    supportNotificationAudio = null
+  }
   if (trialCountdownInterval) window.clearInterval(trialCountdownInterval)
   document.body.classList.remove('mobile-menu-open')
 })
