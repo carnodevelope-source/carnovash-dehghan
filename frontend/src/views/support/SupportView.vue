@@ -205,12 +205,12 @@
     </div>
 
     <div v-if="ticketModal.open" class="modal-overlay" @click.self="closeCreateTicketModal">
-      <section class="modal-panel">
+      <section class="modal-panel" :class="{ 'payment-ticket-modal': isWalletCardPaymentDraft }">
         <header class="modal-head">
           <div>
-            <span class="panel-kicker">New Ticket</span>
-            <h3>ثبت تیکت جدید</h3>
-            <p>درخواست را دقیق ثبت کنید تا سریع‌تر به واحد درست ارجاع شود.</p>
+            <span class="panel-kicker">{{ isWalletCardPaymentDraft ? 'پرداخت کیف پول' : 'تیکت جدید' }}</span>
+            <h3>{{ isWalletCardPaymentDraft ? 'ثبت رسید واریز' : 'ثبت تیکت جدید' }}</h3>
+            <p>{{ isWalletCardPaymentDraft ? 'فقط اطلاعات رسید را وارد کنید؛ بقیه موارد آماده است.' : 'درخواست را دقیق ثبت کنید تا سریع‌تر به واحد درست ارجاع شود.' }}</p>
           </div>
           <button type="button" class="close-btn" @click="closeCreateTicketModal">×</button>
         </header>
@@ -218,11 +218,11 @@
         <div class="modal-layout">
           <form class="modal-form" @submit.prevent="submitTicket">
             <div v-if="isWalletCardPaymentDraft" class="wallet-ticket-notice full">
-              <strong>ثبت آماده برای مدیر کارواش</strong>
+              <strong>سه قدم ساده</strong>
               <p>{{ walletCardPaymentNotice }}</p>
             </div>
 
-            <label>
+            <label v-if="!isWalletCardPaymentDraft">
               <span>دسته‌بندی</span>
               <select v-model="ticketModal.category" :disabled="isWalletCardPaymentDraft">
                 <option value="technical">مشکل فنی</option>
@@ -233,7 +233,7 @@
               </select>
             </label>
 
-            <label>
+            <label v-if="!isWalletCardPaymentDraft">
               <span>اولویت</span>
               <select v-model="ticketModal.priority" :disabled="isWalletCardPaymentDraft">
                 <option value="low">کم</option>
@@ -243,12 +243,12 @@
               </select>
             </label>
 
-            <label class="full">
+            <label v-if="!isWalletCardPaymentDraft" class="full">
               <span>عنوان تیکت</span>
               <input v-model.trim="ticketModal.subject" :readonly="isWalletCardPaymentDraft" required placeholder="مثلا: پرداخت انجام شد ولی سفارش ثبت نشد" />
             </label>
 
-            <label class="full">
+            <label v-if="!isWalletCardPaymentDraft" class="full">
               <span>{{ isWalletCardPaymentDraft ? 'شرح آماده مدیر + تکمیل اطلاعات تراکنش' : 'شرح کامل' }}</span>
               <textarea
                 v-model.trim="ticketModal.description"
@@ -313,20 +313,20 @@
               </label>
             </template>
 
-            <div class="form-note full">
+            <div v-if="!isWalletCardPaymentDraft" class="form-note full">
               <strong>{{ isWalletCardPaymentDraft ? 'راهنمای ثبت پرداخت' : 'نکته امنیتی' }}</strong>
               <p>{{ isWalletCardPaymentDraft ? 'اگر امکان ارسال رسید در همین تیکت را دارید، تصویر رسید را هم اضافه کنید. در غیر این صورت شماره تراکنش، مبلغ و زمان پرداخت را کامل بنویسید و ساختار آماده را تغییر ندهید.' : 'رمز عبور، اطلاعات کامل کارت بانکی یا کدهای امنیتی را داخل تیکت ارسال نکنید.' }}</p>
             </div>
 
-            <label v-if="ticketModal.category === 'financial'" class="full receipt-upload-field">
-              <span>آپلود رسید</span>
+            <label v-if="ticketModal.category === 'financial'" class="full receipt-upload-field" :class="{ 'payment-receipt-upload': isWalletCardPaymentDraft }">
+              <span>{{ isWalletCardPaymentDraft ? 'رسید واریز را انتخاب کنید' : 'آپلود رسید' }}</span>
               <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" @change="handleReceiptFileChange" />
               <small v-if="selectedReceiptName" class="receipt-file-name">{{ selectedReceiptName }}</small>
             </label>
 
             <div class="modal-actions full">
               <button type="button" class="secondary-btn" @click="closeCreateTicketModal">انصراف</button>
-              <button type="submit" class="primary-btn">ثبت تیکت</button>
+              <button type="submit" class="primary-btn">{{ isWalletCardPaymentDraft ? 'ارسال رسید برای بررسی' : 'ثبت تیکت' }}</button>
             </div>
           </form>
         </div>
@@ -465,7 +465,7 @@ const filteredTickets = computed(() => {
 const isWalletCardPaymentDraft = computed(() => ticketModal.mode === 'wallet-card-payment')
 const walletCardPaymentNotice = computed(() => {
   if (!isWalletCardPaymentDraft.value) return ''
-  return 'این متن از طرف مدیر کارواش برای ثبت پرداخت کارت به کارت آماده شده است. فقط شماره یا کد تراکنش را تکمیل کنید. اگر امکان بارگذاری رسید را دارید، رسید واریز را هم به تیکت اضافه کنید و بدون تغییر ساختار آماده، ثبت را بزنید.'
+  return '۱. کد تراکنش و مبلغ را وارد کنید. ۲. تاریخ و رسید را اضافه کنید. ۳. دکمه ارسال را بزنید.'
 })
 const selectedReceiptName = computed(() => ticketModal.receiptFile?.name || '')
 
@@ -2269,6 +2269,43 @@ onBeforeUnmount(() => {
   line-height: 1.9;
 }
 
+.payment-ticket-modal {
+  width: min(620px, 100%);
+}
+
+.payment-ticket-modal .modal-layout {
+  padding-top: 14px;
+}
+
+.payment-ticket-modal .modal-form {
+  gap: 14px;
+}
+
+.payment-ticket-modal .wallet-ticket-notice {
+  background: linear-gradient(135deg, #eff6ff, #ffffff);
+  border-color: #bfdbfe;
+}
+
+.payment-ticket-modal .wallet-ticket-notice strong {
+  color: #1d4ed8;
+}
+
+.payment-ticket-modal .wallet-ticket-notice p {
+  color: #475569;
+  line-height: 1.85;
+}
+
+.payment-ticket-modal .receipt-upload-field {
+  padding: 13px;
+  border: 1px dashed #93c5fd;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.payment-ticket-modal .modal-actions {
+  margin-top: 2px;
+}
+
 .modal-side { display: none; }
 
 .mono {
@@ -2934,6 +2971,37 @@ onBeforeUnmount(() => {
   .modal-form textarea,
   .modal-form select {
     font-size: 16px;
+  }
+
+  .payment-ticket-modal .modal-head {
+    padding: 16px 18px 12px;
+  }
+
+  .payment-ticket-modal .modal-head p {
+    margin-bottom: 0;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  .payment-ticket-modal .modal-layout {
+    padding: 12px 14px 16px;
+  }
+
+  .payment-ticket-modal .wallet-ticket-notice,
+  .payment-ticket-modal .receipt-upload-field {
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .payment-ticket-modal .modal-actions {
+    position: sticky;
+    bottom: -16px;
+    padding: 10px 0 2px;
+    background: linear-gradient(180deg, rgba(248, 251, 255, 0.78), #f8fbff 35%);
+  }
+
+  .payment-ticket-modal .modal-actions .primary-btn {
+    flex: 1 1 0;
   }
 }
 </style>

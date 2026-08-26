@@ -401,23 +401,16 @@
 
           <div v-if="actionModal.type === 'deposit'" class="wallet-modal-section deposit-method-section">
             <div class="wallet-modal-section-head">
-              <strong>روش واریز</strong>
-              <span>فعلا فقط کارت به کارت فعال است</span>
+              <strong>روش شارژ</strong>
+              <span>فقط سه قدم ساده تا ثبت شارژ کیف پول</span>
             </div>
-
-            <div class="deposit-method-grid">
-              <button
-                v-for="method in depositMethods"
-                :key="method.key"
-                type="button"
-                class="deposit-method-card"
-                :class="{ active: actionModal.paymentMethod === method.key, disabled: method.disabled }"
-                :disabled="method.disabled"
-                @click="actionModal.paymentMethod = method.key"
-              >
-                <strong>{{ method.title }}</strong>
-                <span>{{ method.caption }}</span>
-              </button>
+            <div class="deposit-method-summary">
+              <span class="deposit-method-icon">۱</span>
+              <div>
+                <strong>کارت به کارت</strong>
+                <small>مبلغ را انتخاب کنید، به حساب زیر واریز کنید و رسید را ثبت کنید.</small>
+              </div>
+              <em>فعال</em>
             </div>
           </div>
 
@@ -470,20 +463,27 @@
 
           <div v-if="actionModal.type === 'deposit' && actionModal.paymentMethod === 'card'" class="wallet-modal-section card-payment-section">
             <div class="wallet-modal-section-head">
-              <strong>اطلاعات کارت به کارت</strong>
-              <span>پس از واریز، رسید را از مسیر پشتیبانی ثبت کنید</span>
+              <strong>اطلاعات واریز</strong>
+              <span>روی «کپی» بزنید و بعد از پرداخت، رسید را ثبت کنید.</span>
             </div>
-            <div class="company-card-box">
-              <small>شماره کارت شرکت</small>
-              <strong>{{ companyCardNumber }}</strong>
-              <span>{{ companyCardHolder }}</span>
+            <div class="company-bank-box">
+              <div class="company-bank-title">
+                <span>{{ companyBankName }}</span>
+                <strong>{{ companyCardHolder }}</strong>
+              </div>
+              <div v-for="detail in companyBankDetails" :key="detail.key" class="company-bank-detail">
+                <div>
+                  <small>{{ detail.label }}</small>
+                  <strong :class="{ iban: detail.key === 'iban' }">{{ detail.value }}</strong>
+                </div>
+                <button type="button" @click="copyBankDetail(detail.raw, detail.label)">کپی</button>
+              </div>
             </div>
             <p class="card-payment-instruction">
-              مبلغ خام را کارت به کارت کنید. بعد از تایید پشتیبانی، ۱۰٪ مالیات کسر و باقی‌مانده به کیف پول اضافه می‌شود.
-              برای مثال اگر ۲٬۰۰۰٬۰۰۰ تومان واریز کنید، ۲۰۰٬۰۰۰ تومان مالیات و ۱٬۸۰۰٬۰۰۰ تومان به کیف پول می‌نشیند.
+              پس از واریز، رسید را ثبت کنید. شارژ کیف پول بعد از بررسی پشتیبانی انجام می‌شود.
             </p>
             <button class="support-ticket-btn" type="button" @click="openPaymentSupportTicket">
-              ثبت تیکت رسید واریز
+              ثبت رسید واریز
             </button>
           </div>
 
@@ -767,6 +767,7 @@ import { formatJalaliDate, parseJalaliToIso } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { useAuthStore } from '../../store/auth.store'
+import { notifySuccess, notifyWarning } from '../../utils/notify'
 
 const props = defineProps({
   searchQuery: { type: String, default: '' }
@@ -907,13 +908,22 @@ const selectedWalletId = ref(0)
 const smsTopUpAmountText = ref('')
 const smsTopUpSubmitting = ref(false)
 const payingInstallmentFeatureKey = ref('')
-const companyCardNumber = '6274121774209571'
 const companyCardHolder = 'امید کریمی'
-const depositMethods = [
-  { key: 'gateway', title: 'درگاه پرداخت', caption: 'به‌زودی فعال می‌شود', disabled: true },
-  { key: 'up', title: 'اپلیکیشن آپ', caption: 'به‌زودی فعال می‌شود', disabled: true },
-  { key: 'card', title: 'کارت به کارت', caption: 'فعال', disabled: false }
+const companyBankName = 'بانک ملت'
+const companyBankDetails = [
+  { key: 'card', label: 'شماره کارت', value: '۶۱۰۴ - ۳۳۱۲ - ۰۰۰۶ - ۵۴۴۰', raw: '6104331200065440' },
+  { key: 'iban', label: 'شماره شبا', value: 'IR780120010000002177260145', raw: 'IR780120010000002177260145' },
+  { key: 'account', label: 'شماره حساب', value: '۲۱۷۷۲۶۰۱۴۵', raw: '2177260145' }
 ]
+
+const copyBankDetail = async (value, label) => {
+  try {
+    await navigator.clipboard.writeText(value)
+    notifySuccess(`${label} کپی شد.`)
+  } catch (_error) {
+    notifyWarning('مرورگر اجازه کپی نداد؛ لطفاً شماره را دستی کپی کنید.')
+  }
+}
 
 const money = (value) => formatThousandsTomanValue(value)
 const moneyWithUnit = (value) => formatThousandsToman(value)
@@ -1841,10 +1851,24 @@ onBeforeUnmount(() => {
 .deposit-method-card.active{background:var(--wallet-primary-soft);border-color:rgba(25,118,210,.3)}
 .deposit-method-card.disabled{opacity:.5;cursor:not-allowed}
 .deposit-method-card span{font-size:11px;color:var(--wallet-muted)}
-.company-card-box{display:grid;gap:6px;padding:14px;border-radius:12px;background:#f5f3ff;border:1px solid #ddd6fe}
-.company-card-box small{color:var(--wallet-muted);font-size:11px}
-.company-card-box strong{font-size:20px;letter-spacing:.06em;color:#6d28d9;direction:ltr;text-align:left;font-weight:850}
-.company-card-box span{color:#334155;font-weight:800;font-size:13px}
+.deposit-method-summary{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid #bfdbfe;border-radius:14px;background:linear-gradient(135deg,#eff6ff,#fff)}
+.deposit-method-summary > div{display:grid;gap:3px;min-width:0;flex:1}
+.deposit-method-summary strong{color:#0f3f76;font-size:13px}
+.deposit-method-summary small{color:#64748b;font-size:11px;line-height:1.7}
+.deposit-method-summary em{padding:4px 8px;border-radius:999px;background:#dcfce7;color:#166534;font-size:11px;font-style:normal;font-weight:850}
+.deposit-method-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:#1976d2;color:#fff;font-size:13px;font-weight:850;flex:0 0 auto}
+.company-bank-box{display:grid;gap:9px;padding:14px;border-radius:16px;background:linear-gradient(135deg,#f5f3ff,#fafaff);border:1px solid #ddd6fe}
+.company-bank-title{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:8px;border-bottom:1px solid rgba(196,181,253,.55)}
+.company-bank-title span{color:#6d28d9;font-size:12px;font-weight:850}
+.company-bank-title strong{color:#334155;font-size:13px}
+.company-bank-detail{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0}
+.company-bank-detail + .company-bank-detail{border-top:1px dashed rgba(167,139,250,.38)}
+.company-bank-detail > div{display:grid;gap:3px;min-width:0}
+.company-bank-detail small{color:var(--wallet-muted);font-size:11px}
+.company-bank-detail strong{color:#312e81;font-size:15px;letter-spacing:.04em;direction:ltr;text-align:left;font-weight:850;word-break:break-all}
+.company-bank-detail strong.iban{font-size:12px}
+.company-bank-detail button{min-width:48px;height:32px;border:1px solid #c4b5fd;border-radius:9px;background:#fff;color:#6d28d9;font:inherit;font-size:11px;font-weight:850;cursor:pointer;flex:0 0 auto}
+.company-bank-detail button:hover{background:#ede9fe}
 .card-payment-instruction{margin:0;color:#475569;line-height:1.8;font-size:12px}
 .deposit-tax-rows{display:grid;gap:6px}
 .deposit-tax-rows > div{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:10px;background:#f8fafc;border:1px solid var(--wallet-border)}
@@ -1901,5 +1925,8 @@ onBeforeUnmount(() => {
   .deposit-method-grid,.wallet-choice-grid,.destination-toggle,.quick-amounts{grid-template-columns:1fr}
   .wallet-modal-overlay{padding:10px}
   .wallet-modal{max-height:calc(100dvh - 20px)}
+  .company-bank-box{padding:12px}
+  .company-bank-detail strong{font-size:13px}
+  .company-bank-detail strong.iban{font-size:11px}
 }
 </style>
