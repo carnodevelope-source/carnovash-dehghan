@@ -107,14 +107,18 @@
       </section>
 
       <Teleport to="body">
-        <div
-          v-if="trainingVideoOpen"
-          class="training-video-overlay"
-          @click.self="closeTrainingVideo"
-        >
-          <div class="training-video-modal" role="dialog" aria-modal="true" aria-label="ویدیو آموزشی کارنوواش">
+        <Transition name="training-video">
+          <div
+            v-if="trainingVideoOpen"
+            class="training-video-overlay"
+            @click.self="closeTrainingVideo"
+          >
+          <div class="training-video-modal" role="dialog" aria-modal="true" aria-label="ویدیو آموزشی کارنوواش" tabindex="-1">
             <div class="training-video-head">
-              <strong>ویدیو آموزشی کارنوواش</strong>
+              <div>
+                <span class="training-video-kicker">شروع سریع کار با کارنوواش</span>
+                <strong>ویدیو آموزشی کارنوواش</strong>
+              </div>
               <button type="button" class="training-video-close" aria-label="بستن" @click="closeTrainingVideo">×</button>
             </div>
             <div class="training-video-frame">
@@ -136,7 +140,8 @@
               مشاهده در آپارات
             </a>
           </div>
-        </div>
+          </div>
+        </Transition>
       </Teleport>
 
       <section class="features-section" id="features">
@@ -575,6 +580,8 @@ const toFaDigit = (value) => String(value).replace(/\d/g, (digit) => '۰۱۲۳۴
 
 let observer = null
 let faqSchemaEl = null
+let trainingVideoAutoOpenTimer = null
+const TRAINING_VIDEO_SESSION_KEY = 'carvash.landing.training-video-seen.v1'
 
 const openTrainingVideo = () => {
   trainingVideoOpen.value = true
@@ -583,6 +590,11 @@ const openTrainingVideo = () => {
 
 const closeTrainingVideo = () => {
   trainingVideoOpen.value = false
+  try {
+    window.sessionStorage.setItem(TRAINING_VIDEO_SESSION_KEY, '1')
+  } catch {
+    // Storage can be unavailable in private or restricted browser sessions.
+  }
 }
 
 const scrollTo = (id) => {
@@ -636,6 +648,14 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   mountFaqSchema()
 
+  try {
+    if (!window.sessionStorage.getItem(TRAINING_VIDEO_SESSION_KEY)) {
+      trainingVideoAutoOpenTimer = window.setTimeout(openTrainingVideo, 450)
+    }
+  } catch {
+    trainingVideoAutoOpenTimer = window.setTimeout(openTrainingVideo, 450)
+  }
+
   observer = new IntersectionObserver(
     (entries) => {
       const visible = entries
@@ -656,6 +676,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  if (trainingVideoAutoOpenTimer) window.clearTimeout(trainingVideoAutoOpenTimer)
   observer?.disconnect()
   faqSchemaEl?.remove()
 })
@@ -872,19 +893,20 @@ a.btn-primary:visited {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(15, 23, 42, 0.72);
-  backdrop-filter: blur(6px);
+  background: rgba(6, 18, 42, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .training-video-modal {
   width: min(920px, 100%);
   display: grid;
   gap: 12px;
-  padding: 16px;
-  border-radius: 24px;
-  background: #0b1220;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.35);
+  padding: 18px;
+  border-radius: 26px;
+  background: linear-gradient(145deg, #10244d, #091426 70%);
+  border: 1px solid rgba(147, 197, 253, 0.28);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.45);
 }
 
 .training-video-head {
@@ -896,7 +918,16 @@ a.btn-primary:visited {
 }
 
 .training-video-head strong {
+  display: block;
   font-size: 15px;
+}
+
+.training-video-kicker {
+  display: block;
+  margin-bottom: 3px;
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .training-video-close {
@@ -909,6 +940,12 @@ a.btn-primary:visited {
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.training-video-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.06);
 }
 
 .training-video-frame {
@@ -936,6 +973,27 @@ a.btn-primary:visited {
 
 .training-video-link:hover {
   text-decoration: underline;
+}
+
+.training-video-enter-active,
+.training-video-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.training-video-enter-active .training-video-modal,
+.training-video-leave-active .training-video-modal {
+  transition: transform 0.24s ease, opacity 0.2s ease;
+}
+
+.training-video-enter-from,
+.training-video-leave-to {
+  opacity: 0;
+}
+
+.training-video-enter-from .training-video-modal,
+.training-video-leave-to .training-video-modal {
+  opacity: 0;
+  transform: translateY(16px) scale(0.98);
 }
 
 .hero-copy {
@@ -1797,6 +1855,32 @@ a.btn-primary:visited {
 }
 
 @media (max-width: 820px) {
+  .training-video-overlay {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .training-video-modal {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  .training-video-head {
+    min-height: 38px;
+  }
+
+  .training-video-frame {
+    border-radius: 14px;
+  }
+
+  .training-video-link {
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+  }
+
   .page-shell {
     width: 100%;
   }
