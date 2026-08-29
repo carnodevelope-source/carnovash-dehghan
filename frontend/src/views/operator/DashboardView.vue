@@ -1031,6 +1031,8 @@ const releaseSubmitting = ref(false)
 const plateEditSubmitting = ref(false)
 const stepSubmitting = ref(false)
 const stepTransitionLoading = ref(false)
+/** Resolves when the optimistic step-1 server persist finishes (create/update). */
+let stepOnePersistPromise = null
 const invoiceGenerating = ref(false)
 const invoicePdfUrl = ref('')
 const invoiceErrorMessage = ref('')
@@ -1496,12 +1498,13 @@ const startVehicleCardsAutoRefresh = () => {
     const payload = parseLiveEvent(event.data)
     if (!payload?.type || !String(payload.type).startsWith('vehicle.')) return
     if (vehicleLiveRefreshTimer.value) window.clearTimeout(vehicleLiveRefreshTimer.value)
-    vehicleLiveRefreshTimer.value = window.setTimeout(refreshVehicleCardsFromDatabase, 300)
+    // Coalesce bursts (assign + status log + payment) into one board fetch.
+    vehicleLiveRefreshTimer.value = window.setTimeout(refreshVehicleCardsFromDatabase, 1200)
   })
   vehicleCardsRefreshTimer.value = window.setInterval(() => {
     if (document.visibilityState !== 'visible') return
     void refreshVehicleCardsFromDatabase()
-  }, 60000)
+  }, 90_000)
 }
 
 const onGlobalLiveEvent = (event) => {
@@ -1743,20 +1746,58 @@ const hasCompletedStepOneData = (source = {}) => {
 const handleCardAction = async (car) => {
   if (car.statusKey === 'released' || car.statusKey === 'cancelled') return
   if (car.statusKey === 'ready_to_settle') {
-    await openReleaseModal(car)
+    void openReleaseModal(car)
     return
   }
-  try {
-    const { data } = await api.get(`/vehicles/${car.id}/`)
-    vehicleStore.selectedVehicle = data
-    vehicleDraft.value = mapVehicleToDraft(data)
-    vehicleEditFlow.value = data.status === 'released' ? 'released' : 'active'
-    modalStep.value = (data.status === 'entered' && !hasCompletedStepOneData(data)) ? 1 : 2
-    showVehicleModal.value = true
-  } catch (error) {
-    console.error('handleCardAction error:', error?.response?.data || error)
-    notifyError(apiErrorText(error, 'بارگذاری اطلاعات مراجعه ناموفق بود.'), { title: 'ویرایش مراجعه' })
+  const listVehicle = vehicleStore.vehicles.find((item) => Number(item.id) === Number(car.id)) || null
+  const seed = listVehicle || {
+    id: car.id,
+    status: car.statusKey,
+    plate_number: car.plateDisplay,
+    plate_left: car.plateLeftKey,
+    plate_letter: car.plateLetterKey,
+    plate_mid: car.plateMidKey,
+    plate_right: car.plateRightKey,
+    plate_type: car.plateType,
+    tariff_type: car.tariffType,
+    car_model: car.model,
+    car_color: car.colorName,
+    driver_name: car.driverName,
+    driver_gender: car.driverGender,
+    driver_phone: car.driverPhone,
+    is_plate_blocked: car.isPlateBlocked,
+    customer_score: car.customerScore,
+    customer_loyalty_discount_percent: car.customerLoyaltyDiscountPercent
   }
+  vehicleStore.selectedVehicle = seed
+  vehicleDraft.value = mapVehicleToDraft(seed)
+  vehicleEditFlow.value = seed.status === 'released' ? 'released' : 'active'
+  modalStep.value = (seed.status === 'entered' && !hasCompletedStepOneData(seed)) ? 1 : 2
+  showVehicleModal.value = true
+
+  // Hydrate full detail in the background — never block the click.
+  void api.get(`/vehicles/${car.id}/`, { meta: { trackLoading: false, showErrorToast: false } })
+    .then(({ data }) => {
+      if (!showVehicleModal.value) return
+      if (Number(vehicleDraft.value?.id) !== Number(data?.id)) return
+      vehicleStore.selectedVehicle = data
+      vehicleStore.upsertVehicle(data)
+      vehicleDraft.value = {
+        ...mapVehicleToDraft(data),
+        aiSessionId: vehicleDraft.value.aiSessionId,
+        aiRawText: vehicleDraft.value.aiRawText,
+        aiPersianText: vehicleDraft.value.aiPersianText,
+        aiConvertedPlate: vehicleDraft.value.aiConvertedPlate,
+        aiImageBase64: vehicleDraft.value.aiImageBase64,
+        aiConfidence: vehicleDraft.value.aiConfidence,
+        aiLatencyMs: vehicleDraft.value.aiLatencyMs
+      }
+      vehicleEditFlow.value = data.status === 'released' ? 'released' : 'active'
+      modalStep.value = (data.status === 'entered' && !hasCompletedStepOneData(data)) ? 1 : 2
+    })
+    .catch((error) => {
+      console.error('handleCardAction hydrate error:', error?.response?.data || error)
+    })
 }
 const closeReleaseModal = (options = {}) => {
   const force = options?.force === true
@@ -2315,22 +2356,57 @@ const confirmReleaseWorkerEditor = () => {
   syncBonusPenaltyAdjustments()
   closeReleaseWorkerEditor()
 }
+const RELEASE_SUPPORT_CACHE_TTL_MS = 60_000
+let releaseSupportCache = {
+  at: 0,
+  settings: null,
+  workers: null
+}
+
+const fetchReleaseSupportData = async () => {
+  const fresh = Date.now() - releaseSupportCache.at < RELEASE_SUPPORT_CACHE_TTL_MS
+    && releaseSupportCache.settings
+    && releaseSupportCache.workers
+  if (fresh) {
+    return {
+      settings: releaseSupportCache.settings,
+      workers: releaseSupportCache.workers
+    }
+  }
+  const [settingsResponse, workersResponse] = await Promise.all([
+    api.get('/services/general-settings/', { meta: { trackLoading: false, showErrorToast: false } })
+      .catch(() => ({ data: { discount_percent_per_half_star: 0 } })),
+    api.get('/workers/', { meta: { trackLoading: false, showErrorToast: false } })
+      .catch(() => ({ data: [] }))
+  ])
+  releaseSupportCache = {
+    at: Date.now(),
+    settings: settingsResponse?.data || { discount_percent_per_half_star: 0 },
+    workers: workersResponse?.data || []
+  }
+  return {
+    settings: releaseSupportCache.settings,
+    workers: releaseSupportCache.workers
+  }
+}
+
 const openReleaseModal = async (car) => {
   const sourceVehicle = vehicleStore.vehicles.find((item) => Number(item.id) === Number(car?.id || 0)) || null
   releaseCandidate.value = car
   showReleaseModal.value = true
   releaseCheckoutLoading.value = true
   try {
-    const [releaseResponse, settingsResponse, workersResponse] = await Promise.all([
-      api.get(`/vehicles/${car.id}/release/`),
-      api.get('/services/general-settings/').catch(() => ({ data: { discount_percent_per_half_star: 0 } })),
-      api.get('/workers/').catch(() => ({ data: [] }))
+    const [releaseResponse, support] = await Promise.all([
+      api.get(`/vehicles/${car.id}/release/`, { meta: { trackLoading: false } }),
+      fetchReleaseSupportData()
     ])
     const data = releaseResponse.data
+    const settingsData = support.settings
+    const workersData = support.workers
     const discountPercentPerHalfStar = Math.max(
       0,
       Number(
-        settingsResponse?.data?.discount_percent_per_half_star
+        settingsData?.discount_percent_per_half_star
         ?? data?.job?.discount_percent_per_half_star
         ?? 0
       )
@@ -2393,7 +2469,7 @@ const openReleaseModal = async (car) => {
       productSearch: '',
       tipAmount: Math.max(0, Number(data?.job?.tip_amount || 0)),
       assignedWorkers: normalizeReleaseAssignedWorkers(preferredAssignedWorkers),
-      availableWorkers: normalizeAvailableReleaseWorkers(workersResponse?.data),
+      availableWorkers: normalizeAvailableReleaseWorkers(workersData),
       workerShareAmount: Number(data?.job?.worker_share_amount || 0),
       customerScore: Math.max(0, Number(data?.vehicle?.customer_score || releaseCandidate.value?.customerScore || 0)),
       customerLoyaltyVisitCount: Math.max(0, Number(data?.vehicle?.customer_loyalty_visit_count || 0)),
@@ -2414,19 +2490,19 @@ const openReleaseModal = async (car) => {
       chequeShaba: '',
       chequeAmount: 0,
       creditDueDate: '',
-      receiptHeaderNote: settingsResponse?.data?.receipt_header_note || '',
-      receiptFooterNote: settingsResponse?.data?.receipt_footer_note || '',
+      receiptHeaderNote: settingsData?.receipt_header_note || '',
+      receiptFooterNote: settingsData?.receipt_footer_note || '',
       carwashAddress: data?.vehicle?.tenant_address || authStore.user?.tenant?.address || '',
       managerPhone: data?.vehicle?.manager_phone || authStore.user?.phone || '',
-      receiptPrinterPaperWidth: settingsResponse?.data?.receipt_printer_paper_width || '80mm',
-      receiptPrinterName: settingsResponse?.data?.receipt_printer_name || '',
-      receiptPrinterEnabled: Boolean(settingsResponse?.data?.receipt_printer_enabled),
-      taxEnabled: Boolean(settingsResponse?.data?.tax_enabled),
-      taxPercent: Number(settingsResponse?.data?.tax_percent || 0),
+      receiptPrinterPaperWidth: settingsData?.receipt_printer_paper_width || '80mm',
+      receiptPrinterName: settingsData?.receipt_printer_name || '',
+      receiptPrinterEnabled: Boolean(settingsData?.receipt_printer_enabled),
+      taxEnabled: Boolean(settingsData?.tax_enabled),
+      taxPercent: Number(settingsData?.tax_percent || 0),
       bonusPenaltyAdjustments: [],
       bonusPenaltyNote: '',
-      smsNotificationsEnabled: settingsResponse?.data?.sms_vehicle_auto_send_enabled !== false && data?.vehicle?.sms_notifications_enabled !== false,
-      smsAutoSendEnabled: settingsResponse?.data?.sms_vehicle_auto_send_enabled !== false,
+      smsNotificationsEnabled: settingsData?.sms_vehicle_auto_send_enabled !== false && data?.vehicle?.sms_notifications_enabled !== false,
+      smsAutoSendEnabled: settingsData?.sms_vehicle_auto_send_enabled !== false,
       newServiceLines: [],
       availableServicesToAdd: Array.isArray(data?.job?.available_services) ? data.job.available_services.map((item) => ({
         id: Number(item.id),
@@ -3265,80 +3341,86 @@ const editSelectedVehicleTip = async () => {
     notifyError(apiErrorText(error, 'ویرایش انعام ناموفق بود.'), { title: 'خطا در ویرایش انعام' })
   }
 }
+const mergeAiDraftFields = (base, payload) => ({
+  ...base,
+  detectedPlate: payload.detectedPlate,
+  detectedPlateLeft: payload.detectedPlateLeft,
+  detectedPlateLetter: payload.detectedPlateLetter,
+  detectedPlateMid: payload.detectedPlateMid,
+  detectedPlateRight: payload.detectedPlateRight,
+  detectedPlateType: payload.detectedPlateType,
+  aiSessionId: payload.aiSessionId,
+  aiRawText: payload.aiRawText,
+  aiPersianText: payload.aiPersianText,
+  aiConvertedPlate: payload.aiConvertedPlate,
+  aiConvertedPlateLeft: payload.aiConvertedPlateLeft,
+  aiConvertedPlateLetter: payload.aiConvertedPlateLetter,
+  aiConvertedPlateMid: payload.aiConvertedPlateMid,
+  aiConvertedPlateRight: payload.aiConvertedPlateRight,
+  aiConvertedPlateType: payload.aiConvertedPlateType,
+  aiImageBase64: payload.aiImageBase64,
+  aiConfidence: payload.aiConfidence,
+  aiLatencyMs: payload.aiLatencyMs,
+  tariffType: payload.tariffType
+})
+
 const handleStepOneContinue = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
   stepTransitionLoading.value = true
-  try {
-    const payloadWithSmsDefault = {
-      ...payload,
-      smsNotificationsEnabled: payload?.smsNotificationsEnabled ?? payload?.sms_notifications_enabled ?? vehicleAutoSmsEnabled.value,
-      smsAutoSendEnabled: vehicleAutoSmsEnabled.value
-    }
-    if (vehicleEditFlow.value) {
-      const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || 'ready_to_settle'
-      const savedVehicle = await saveVehicle({ vehicle: { ...payloadWithSmsDefault, id: vehicleDraft.value?.id } }, currentStatus)
-      vehicleDraft.value = {
-        ...mapVehicleToDraft(savedVehicle),
-        aiSessionId: payload.aiSessionId,
-        aiRawText: payload.aiRawText,
-        aiPersianText: payload.aiPersianText,
-        aiConvertedPlate: payload.aiConvertedPlate,
-        aiConvertedPlateLeft: payload.aiConvertedPlateLeft,
-        aiConvertedPlateLetter: payload.aiConvertedPlateLetter,
-        aiConvertedPlateMid: payload.aiConvertedPlateMid,
-        aiConvertedPlateRight: payload.aiConvertedPlateRight,
-        aiConvertedPlateType: payload.aiConvertedPlateType,
-        aiImageBase64: payload.aiImageBase64,
-        aiConfidence: payload.aiConfidence,
-        aiLatencyMs: payload.aiLatencyMs,
-        tariffType: payload.tariffType
-      }
-      modalStep.value = 2
-      return
-    }
-    const plateStatus = await fetchPlateBlockedStatus(payload)
-    if (plateStatus.is_blocked) {
-      vehicleDraft.value = { ...payloadWithSmsDefault, is_plate_blocked: true }
-      modalStep.value = 2
-      return
-    }
-    const savedVehicle = await saveVehicle({ vehicle: payload }, 'entered')
-    vehicleDraft.value = {
-      ...mapVehicleToDraft(savedVehicle),
-      smsNotificationsEnabled: savedVehicle?.sms_notifications_enabled ?? payloadWithSmsDefault.smsNotificationsEnabled,
-      smsAutoSendEnabled: vehicleAutoSmsEnabled.value,
-      detectedPlate: payload.detectedPlate,
-      detectedPlateLeft: payload.detectedPlateLeft,
-      detectedPlateLetter: payload.detectedPlateLetter,
-      detectedPlateMid: payload.detectedPlateMid,
-      detectedPlateRight: payload.detectedPlateRight,
-      detectedPlateType: payload.detectedPlateType,
-      aiSessionId: payload.aiSessionId,
-      aiRawText: payload.aiRawText,
-      aiPersianText: payload.aiPersianText,
-      aiConvertedPlate: payload.aiConvertedPlate,
-      aiConvertedPlateLeft: payload.aiConvertedPlateLeft,
-      aiConvertedPlateLetter: payload.aiConvertedPlateLetter,
-      aiConvertedPlateMid: payload.aiConvertedPlateMid,
-      aiConvertedPlateRight: payload.aiConvertedPlateRight,
-      aiConvertedPlateType: payload.aiConvertedPlateType,
-      aiImageBase64: payload.aiImageBase64,
-      aiConfidence: payload.aiConfidence,
-      aiLatencyMs: payload.aiLatencyMs,
-      tariffType: payload.tariffType,
-      customerScore: Number(savedVehicle?.customer_score ?? payload.customerScore ?? 0),
-      customerLoyaltyVisitCount: Number(savedVehicle?.customer_loyalty_visit_count ?? payload.customerLoyaltyVisitCount ?? 0),
-      customerLoyaltyDiscountPercent: Number(savedVehicle?.customer_loyalty_discount_percent ?? payload.customerLoyaltyDiscountPercent ?? 0)
-    }
-    modalStep.value = 2
-  } catch (error) {
-    console.error('continue step one error:', error?.response?.data || error)
-    notifyError(apiErrorText(error, 'ذخیره اطلاعات مرحله اول ناموفق بود.'), { title: 'خطا در ثبت خودرو' })
-  } finally {
-    stepSubmitting.value = false
-    window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
+  const payloadWithSmsDefault = {
+    ...payload,
+    smsNotificationsEnabled: payload?.smsNotificationsEnabled ?? payload?.sms_notifications_enabled ?? vehicleAutoSmsEnabled.value,
+    smsAutoSendEnabled: vehicleAutoSmsEnabled.value
   }
+
+  // Advance the UI immediately — server work continues in the background so
+  // the operator never waits on plate-status / create before seeing step 2.
+  vehicleDraft.value = mergeAiDraftFields({ ...payloadWithSmsDefault, id: vehicleDraft.value?.id }, payload)
+  modalStep.value = 2
+  await nextTick()
+  stepSubmitting.value = false
+  stepTransitionLoading.value = false
+
+  stepOnePersistPromise = (async () => {
+    try {
+      if (vehicleEditFlow.value) {
+        const currentStatus = vehicleDraft.value?.status || selectedVehicle.value?.status || 'ready_to_settle'
+        const savedVehicle = await saveVehicle({ vehicle: { ...payloadWithSmsDefault, id: vehicleDraft.value?.id } }, currentStatus)
+        if (modalStep.value === 2) {
+          vehicleDraft.value = mergeAiDraftFields(mapVehicleToDraft(savedVehicle), payload)
+        }
+        return savedVehicle
+      }
+
+      const plateStatus = await fetchPlateBlockedStatus(payload)
+      if (plateStatus.is_blocked) {
+        if (modalStep.value === 2) {
+          vehicleDraft.value = mergeAiDraftFields({ ...payloadWithSmsDefault, is_plate_blocked: true }, payload)
+        }
+        return null
+      }
+
+      const savedVehicle = await saveVehicle({ vehicle: payload }, 'entered')
+      if (modalStep.value === 2 || Number(vehicleDraft.value?.id) === Number(savedVehicle?.id)) {
+        vehicleDraft.value = mergeAiDraftFields({
+          ...mapVehicleToDraft(savedVehicle),
+          smsNotificationsEnabled: savedVehicle?.sms_notifications_enabled ?? payloadWithSmsDefault.smsNotificationsEnabled,
+          smsAutoSendEnabled: vehicleAutoSmsEnabled.value,
+          customerScore: Number(savedVehicle?.customer_score ?? payload.customerScore ?? 0),
+          customerLoyaltyVisitCount: Number(savedVehicle?.customer_loyalty_visit_count ?? payload.customerLoyaltyVisitCount ?? 0),
+          customerLoyaltyDiscountPercent: Number(savedVehicle?.customer_loyalty_discount_percent ?? payload.customerLoyaltyDiscountPercent ?? 0)
+        }, payload)
+      }
+      return savedVehicle
+    } catch (error) {
+      console.error('continue step one error:', error?.response?.data || error)
+      notifyError(apiErrorText(error, 'ذخیره اطلاعات مرحله اول ناموفق بود.'), { title: 'خطا در ثبت خودرو' })
+      throw error
+    } finally {
+      stepOnePersistPromise = null
+    }
+  })()
 }
 const buildCreateOrUpdatePayload = (payload, status) => {
   const plateRaw = (payload?.vehicle?.plate || '').trim()
@@ -3469,9 +3551,11 @@ const fetchPlateBlockedStatus = async (payload) => {
 const saveVehicle = async (payload, status) => {
   const body = compactVehiclePayload(buildCreateOrUpdatePayload(payload, status))
   const editingId = payload?.vehicle?.id || vehicleDraft.value?.id || null
+  // Never ship camera base64 on the critical path — it stalls create/assign for
+  // seconds and the audit log still receives plate/OCR metadata without it.
+  delete body.ai_image_base64
   if (editingId) {
     // Image/OCR audit already ran on create; re-uploading slows assign/refer a lot.
-    delete body.ai_image_base64
     delete body.ai_raw_text
     delete body.ai_persian_text
     delete body.ai_converted_plate
@@ -3484,11 +3568,15 @@ const saveVehicle = async (payload, status) => {
     delete body.ai_confidence
     delete body.ai_latency_ms
     delete body.intake_source
-    const { data } = await api.patch(`/vehicles/${editingId}/`, body, { meta: { trackLoading: false } })
+    const { data } = await api.patch(`/vehicles/${editingId}/`, body, {
+      meta: { trackLoading: false, timeoutMs: 20000 }
+    })
     vehicleStore.upsertVehicle(data)
     return data
   }
-  const { data } = await api.post('/vehicles/', body, { meta: { trackLoading: false } })
+  const { data } = await api.post('/vehicles/', body, {
+    meta: { trackLoading: false, timeoutMs: 20000 }
+  })
   vehicleStore.upsertVehicle(data)
   return data
 }
@@ -3504,23 +3592,28 @@ const handleStepOneRefer = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
   stepTransitionLoading.value = true
-  try {
-    const plateStatus = await fetchPlateBlockedStatus(payload)
-    if (plateStatus.is_blocked) {
-      vehicleDraft.value = { ...payload, is_plate_blocked: true }
-      modalStep.value = 2
-      return
+  closeVehicleModal({ force: true })
+  stepSubmitting.value = false
+  stepTransitionLoading.value = false
+
+  void (async () => {
+    try {
+      const plateStatus = await fetchPlateBlockedStatus(payload)
+      if (plateStatus.is_blocked) {
+        vehicleDraft.value = { ...payload, is_plate_blocked: true }
+        vehicleEditFlow.value = ''
+        modalStep.value = 2
+        showVehicleModal.value = true
+        notifyWarning('این پلاک مسدود است. ابتدا وضعیت را در مرحله دوم بررسی کنید.', { title: 'پلاک مسدود' })
+        return
+      }
+      await saveVehicle({ vehicle: payload }, 'entered')
+      void refreshVehicleCardsFromDatabase()
+    } catch (error) {
+      console.error('refer step one error:', error?.response?.data || error)
+      notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
     }
-    await saveVehicle({ vehicle: payload }, 'entered')
-    closeVehicleModal({ force: true })
-    void refreshVehicleCardsFromDatabase()
-  } catch (error) {
-    console.error('refer step one error:', error?.response?.data || error)
-    notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
-  } finally {
-    stepSubmitting.value = false
-    window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
-  }
+  })()
 }
 
 const handleStepTwoBack = async () => {
@@ -3545,38 +3638,57 @@ const handleStepTwoAssign = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
   stepTransitionLoading.value = true
-  try {
-    if (vehicleEditFlow.value) {
-      const nextStatus = resolveAssignStatus()
-      const savedVehicle = await saveVehicle(payload, nextStatus)
-      if (vehicleEditFlow.value === 'released') {
-        closeVehicleModal({ force: true })
-        await openReleaseModal({
-          ...savedVehicle,
-          statusKey: savedVehicle.status,
-          plateDisplay: savedVehicle.plate_number,
-          plateLeft: savedVehicle.plate_left,
-          plateLetter: savedVehicle.plate_letter,
-          plateMid: savedVehicle.plate_mid,
-          plateRight: savedVehicle.plate_right,
-          plateType: savedVehicle.plate_type
-        })
-      } else {
-        closeVehicleModal({ force: true })
-        void refreshVehicleCardsFromDatabase()
+
+  const editFlow = vehicleEditFlow.value
+  const reopenReleaseAfterSave = editFlow === 'released'
+  const pendingStepOne = stepOnePersistPromise
+  let ensuredId = payload?.vehicle?.id || vehicleDraft.value?.id || null
+  const nextStatus = editFlow ? resolveAssignStatus() : 'ready_to_settle'
+  closeVehicleModal({ force: true })
+  stepSubmitting.value = false
+  stepTransitionLoading.value = false
+
+  void (async () => {
+    try {
+      // Wait for the optimistic step-1 create so we PATCH the same vehicle
+      // instead of accidentally POSTing a duplicate admission.
+      if (pendingStepOne) {
+        try {
+          const persisted = await pendingStepOne
+          if (persisted?.id) ensuredId = persisted.id
+        } catch (_error) {
+          return
+        }
       }
-      return
+      if (ensuredId && payload?.vehicle && !payload.vehicle.id) {
+        payload = { ...payload, vehicle: { ...payload.vehicle, id: ensuredId } }
+      }
+
+      if (editFlow) {
+        const savedVehicle = await saveVehicle(payload, nextStatus)
+        if (reopenReleaseAfterSave) {
+          await openReleaseModal({
+            ...savedVehicle,
+            statusKey: savedVehicle.status,
+            plateDisplay: savedVehicle.plate_number,
+            plateLeft: savedVehicle.plate_left,
+            plateLetter: savedVehicle.plate_letter,
+            plateMid: savedVehicle.plate_mid,
+            plateRight: savedVehicle.plate_right,
+            plateType: savedVehicle.plate_type
+          })
+        } else {
+          void refreshVehicleCardsFromDatabase()
+        }
+        return
+      }
+      await saveVehicle(payload, 'ready_to_settle')
+      void refreshVehicleCardsFromDatabase()
+    } catch (error) {
+      console.error('assign step two error:', error?.response?.data || error)
+      notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
     }
-    await saveVehicle(payload, 'ready_to_settle')
-    closeVehicleModal({ force: true })
-    void refreshVehicleCardsFromDatabase()
-  } catch (error) {
-    console.error('assign step two error:', error?.response?.data || error)
-    notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
-  } finally {
-    stepSubmitting.value = false
-    window.setTimeout(() => { stepTransitionLoading.value = false }, 120)
-  }
+  })()
 }
 const cars = computed(() => vehicles.value.map((item) => {
   const plateLeftKey = String(item.plate_left || '').trim()

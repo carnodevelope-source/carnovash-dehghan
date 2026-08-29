@@ -438,6 +438,15 @@ import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInpu
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { resolvePlateParts } from '../../utils/plate'
 
+const CATALOG_TTL_MS = 90_000
+const catalogCache = {
+  key: '',
+  at: 0,
+  services: null,
+  workers: null,
+  products: null
+}
+
 const props = defineProps({
   vehicleInfo: { type: Object, default: () => ({}) },
   submitting: { type: Boolean, default: false },
@@ -1202,9 +1211,135 @@ const ensureDefaultWorkerSelection = () => {
   }
 }
 
+const applyCatalogPayload = ({ serviceData, workerData, productData }) => {
+  services.value = (Array.isArray(serviceData) ? serviceData : [])
+    .filter((item) => item.is_active !== false)
+    .map((item) => ({
+      ...item,
+      base_price: Number((item.resolved_sale_price ?? item.base_price) || 0),
+      list_price: Number((item.resolved_list_price ?? item.base_price) || 0),
+      estimated_duration_minutes: Number((item.resolved_duration_minutes ?? item.estimated_duration_minutes) || 0),
+    }))
+    .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
+
+  products.value = (Array.isArray(productData) ? productData : [])
+    .filter((item) => item.is_active !== false)
+    .map((item) => ({
+      ...item,
+      sale_price: Number(item.sale_price || 0),
+      available_quantity: Number(
+        item.available_quantity
+        ?? item.quantity_on_hand
+        ?? item.inventory?.available_quantity
+        ?? item.inventory?.quantity_on_hand
+        ?? 0
+      )
+    }))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'fa'))
+
+  workers.value = (Array.isArray(workerData) ? workerData : [])
+    .filter(isWashAssignableWorker)
+
+  const existingStaff = Array.isArray(normalizedVehicle.value.staffMembers)
+    ? normalizedVehicle.value.staffMembers
+    : []
+  if (existingStaff.length) {
+    const byId = new Map(workers.value.map((item) => [Number(item.id), item]))
+    existingStaff.forEach((member) => {
+      if (byId.has(Number(member.id))) return
+      byId.set(Number(member.id), {
+        id: Number(member.id),
+        full_name: member.name || `نیرو #${member.id}`,
+        role: 'worker',
+        is_available: true,
+        tip_share_percent: 0,
+        payment_type: 'percent',
+        payment_value: 0
+      })
+    })
+    workers.value = Array.from(byId.values())
+  }
+
+  mergeCatalogWithExistingSelections()
+
+  const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
+  selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
+  tempSelectedServiceIds.value = tempSelectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
+  const validProductIds = new Set(products.value.map((item) => Number(item.id)))
+  productLinesByProductId.value = Object.fromEntries(
+    Object.entries(productLinesByProductId.value)
+      .filter(([id, qty]) => validProductIds.has(Number(id)) && Number(qty) > 0)
+      .map(([id, qty]) => {
+        const product = products.value.find((item) => Number(item.id) === Number(id))
+        const capped = Math.min(Number(qty), Number(product?.available_quantity || 0))
+        return [id, capped]
+      })
+      .filter(([, qty]) => Number(qty) > 0)
+  )
+  tempProductLinesByProductId.value = { ...productLinesByProductId.value }
+  if (isPieceWash.value && pieceWashPrice.value <= 0) {
+    const pieceWashService = services.value.find((item) => String(item.name || '').trim() === 'قطعه‌شویی')
+    pieceWashPrice.value = Number(pieceWashService?.base_price || 0)
+  }
+
+  const validWorkerIds = new Set(workers.value.map((item) => Number(item.id)))
+  selectedWorkerIds.value = selectedWorkerIds.value.filter((id) => validWorkerIds.has(Number(id)))
+  ensureDefaultWorkerSelection()
+  openInitialServicePicker()
+}
+
 const loadInitialData = async () => {
   loading.value = true
   errorMessage.value = ''
+  const cacheKey = `${normalizedVehicle.value.plateType || 'car'}:${normalizedVehicle.value.tariffType || 'type_1'}`
+  const cacheFresh = catalogCache.key === cacheKey
+    && (Date.now() - catalogCache.at) < CATALOG_TTL_MS
+    && catalogCache.services
+    && catalogCache.workers
+    && catalogCache.products
+
+  try {
+    if (cacheFresh) {
+      applyCatalogPayload({
+        serviceData: catalogCache.services,
+        workerData: catalogCache.workers,
+        productData: catalogCache.products
+      })
+      loading.value = false
+      // Soft refresh in background so the operator never waits twice for the same catalogs.
+      void refreshCatalogInBackground(cacheKey)
+      return
+    }
+
+    const [serviceResp, workerResp, productResp] = await Promise.all([
+      api.get('/services/', {
+        params: {
+          plate_type: normalizedVehicle.value.plateType,
+          tariff_type: normalizedVehicle.value.tariffType,
+        },
+        meta: { trackLoading: false }
+      }),
+      api.get('/workers/', { meta: { trackLoading: false } }),
+      api.get('/products/', { meta: { trackLoading: false } })
+    ])
+    catalogCache.key = cacheKey
+    catalogCache.at = Date.now()
+    catalogCache.services = serviceResp.data
+    catalogCache.workers = workerResp.data
+    catalogCache.products = productResp.data
+    applyCatalogPayload({
+      serviceData: serviceResp.data,
+      workerData: workerResp.data,
+      productData: productResp.data
+    })
+  } catch (error) {
+    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری اطلاعات خدمات و پرسنل ناموفق بود.')
+  } finally {
+    loading.value = false
+  }
+}
+
+const refreshCatalogInBackground = async (cacheKey) => {
   try {
     const [serviceResp, workerResp, productResp] = await Promise.all([
       api.get('/services/', {
@@ -1212,88 +1347,24 @@ const loadInitialData = async () => {
           plate_type: normalizedVehicle.value.plateType,
           tariff_type: normalizedVehicle.value.tariffType,
         },
+        meta: { trackLoading: false, showErrorToast: false }
       }),
-      api.get('/workers/'),
-      api.get('/products/')
+      api.get('/workers/', { meta: { trackLoading: false, showErrorToast: false } }),
+      api.get('/products/', { meta: { trackLoading: false, showErrorToast: false } })
     ])
-    services.value = (Array.isArray(serviceResp.data) ? serviceResp.data : [])
-      .filter((item) => item.is_active !== false)
-      .map((item) => ({
-        ...item,
-        base_price: Number((item.resolved_sale_price ?? item.base_price) || 0),
-        list_price: Number((item.resolved_list_price ?? item.base_price) || 0),
-        estimated_duration_minutes: Number((item.resolved_duration_minutes ?? item.estimated_duration_minutes) || 0),
-      }))
-      .sort((a, b) => Number(a.display_order || 0) - Number(b.display_order || 0))
-
-    products.value = (Array.isArray(productResp.data) ? productResp.data : [])
-      .filter((item) => item.is_active !== false)
-      .map((item) => ({
-        ...item,
-        sale_price: Number(item.sale_price || 0),
-        available_quantity: Number(
-          item.available_quantity
-          ?? item.quantity_on_hand
-          ?? item.inventory?.available_quantity
-          ?? item.inventory?.quantity_on_hand
-          ?? 0
-        )
-      }))
-      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'fa'))
-
-    workers.value = (Array.isArray(workerResp.data) ? workerResp.data : [])
-      .filter(isWashAssignableWorker)
-
-    const existingStaff = Array.isArray(normalizedVehicle.value.staffMembers)
-      ? normalizedVehicle.value.staffMembers
-      : []
-    if (existingStaff.length) {
-      const byId = new Map(workers.value.map((item) => [Number(item.id), item]))
-      existingStaff.forEach((member) => {
-        if (byId.has(Number(member.id))) return
-        byId.set(Number(member.id), {
-          id: Number(member.id),
-          full_name: member.name || `نیرو #${member.id}`,
-          role: 'worker',
-          is_available: true,
-          tip_share_percent: 0,
-          payment_type: 'percent',
-          payment_value: 0
-        })
-      })
-      workers.value = Array.from(byId.values())
-    }
-
-    mergeCatalogWithExistingSelections()
-
-    const validServiceIds = new Set(services.value.map((item) => Number(item.id)))
-    selectedServiceIds.value = selectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
-    tempSelectedServiceIds.value = tempSelectedServiceIds.value.filter((id) => validServiceIds.has(Number(id)))
-    const validProductIds = new Set(products.value.map((item) => Number(item.id)))
-    productLinesByProductId.value = Object.fromEntries(
-      Object.entries(productLinesByProductId.value)
-        .filter(([id, qty]) => validProductIds.has(Number(id)) && Number(qty) > 0)
-        .map(([id, qty]) => {
-          const product = products.value.find((item) => Number(item.id) === Number(id))
-          const capped = Math.min(Number(qty), Number(product?.available_quantity || 0))
-          return [id, capped]
-        })
-        .filter(([, qty]) => Number(qty) > 0)
-    )
-    tempProductLinesByProductId.value = { ...productLinesByProductId.value }
-    if (isPieceWash.value && pieceWashPrice.value <= 0) {
-      const pieceWashService = services.value.find((item) => String(item.name || '').trim() === 'قطعه‌شویی')
-      pieceWashPrice.value = Number(pieceWashService?.base_price || 0)
-    }
-
-    const validWorkerIds = new Set(workers.value.map((item) => Number(item.id)))
-    selectedWorkerIds.value = selectedWorkerIds.value.filter((id) => validWorkerIds.has(Number(id)))
-    ensureDefaultWorkerSelection()
-    openInitialServicePicker()
-  } catch (error) {
-    errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری اطلاعات خدمات و پرسنل ناموفق بود.')
-  } finally {
-    loading.value = false
+    if (cacheKey !== `${normalizedVehicle.value.plateType || 'car'}:${normalizedVehicle.value.tariffType || 'type_1'}`) return
+    catalogCache.key = cacheKey
+    catalogCache.at = Date.now()
+    catalogCache.services = serviceResp.data
+    catalogCache.workers = workerResp.data
+    catalogCache.products = productResp.data
+    applyCatalogPayload({
+      serviceData: serviceResp.data,
+      workerData: workerResp.data,
+      productData: productResp.data
+    })
+  } catch (_error) {
+    // Cache remains usable; next open will retry.
   }
 }
 

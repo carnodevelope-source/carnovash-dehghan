@@ -84,9 +84,13 @@ router.beforeEach(async (to) => {
     to.path === '/' ||
     to.path === '/landing'
 
+  // Cached session (sessionStorage → Pinia) lets route changes stay instant.
+  // Only the first cold load without a cache awaits /auth/me/.
   if (to.path === '/login' || to.name === 'login') {
     if (!authStore.user) {
       await authStore.fetchMe()
+    } else {
+      void authStore.refreshMeInBackground(90_000)
     }
     if (authStore.user) {
       if (authStore.isHq) return '/hq'
@@ -101,6 +105,8 @@ router.beforeEach(async (to) => {
 
   if (!authStore.user) {
     await authStore.fetchMe()
+  } else {
+    void authStore.refreshMeInBackground(90_000)
   }
 
   if (to.meta?.hqOnly) {

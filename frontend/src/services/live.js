@@ -160,12 +160,12 @@ function openSharedSource() {
 
 const onVisibilityChange = () => {
   if (document.visibilityState === 'hidden') {
-    // Without durable replay, closing a hidden stream creates an unrecoverable
-    // Pub/Sub gap. Keep the established stream alive on the legacy path.
-    if (!LIVE_REPLAY_ENABLED) return
     if (hiddenTimer) window.clearTimeout(hiddenTimer)
-    // Background tabs would otherwise pin a server thread indefinitely.
-    hiddenTimer = window.setTimeout(closeSharedSource, HIDDEN_DISCONNECT_MS)
+    // Background tabs pin a gunicorn thread for the whole SSE lifetime.
+    // Always release them; on return we reopen and the open handler refreshes.
+    // With replay enabled, reconcile() fills any gap after reconnect.
+    const delay = LIVE_REPLAY_ENABLED ? HIDDEN_DISCONNECT_MS : 30_000
+    hiddenTimer = window.setTimeout(closeSharedSource, delay)
     return
   }
   if (hiddenTimer) {

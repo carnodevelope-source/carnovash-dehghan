@@ -53,7 +53,9 @@ const innerStyles = computed(() => {
   z-index: 9999;
   /* No backdrop-filter: it forces a full-viewport GPU composite every time the
      overlay appears, which is painful on the tablets used on the shop floor. */
-  background: rgba(238, 246, 255, 0.88);
+  background: rgba(238, 246, 255, 0.72);
+  /* Never trap taps — background sync must not freeze the shop-floor UI. */
+  pointer-events: none;
 }
 
 .spinner {

@@ -5,6 +5,7 @@ from decimal import ROUND_HALF_UP
 from secrets import token_urlsafe
 from urllib.parse import quote_plus, unquote_plus
 
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, Q, Sum, Value
 from django.db.models.functions import Coalesce
@@ -24,6 +25,16 @@ from .serializers import (
     WalletWithdrawSerializer,
 )
 from apps.auth.models import CarWashFeaturePurchase, SupportTicket, SupportTicketMessage
+
+
+LICENSE_STATUS_CACHE_TTL_SECONDS = 30
+LICENSE_STATUS_CACHE_PREFIX = 'carvash:license_status:'
+
+
+def invalidate_license_status_cache(tenant_id):
+    if not tenant_id:
+        return
+    cache.delete(f'{LICENSE_STATUS_CACHE_PREFIX}{tenant_id}')
 
 
 def _parse_wallet_day(value, *, end_of_day=False):
@@ -180,10 +191,23 @@ def _feature_installment_terms(feature_key):
 def license_status_for_tenant(tenant, now=None):
     if tenant is None:
         return {'is_locked': False, 'reason': '', 'notice': '', 'core_purchase_required': False}
+    cache_key = f'{LICENSE_STATUS_CACHE_PREFIX}{tenant.pk}'
+    use_cache = now is None
+    # Skip cache when caller passes an explicit clock (tests / grace math).
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
     now = now or timezone.now()
+
+    def _remember(result):
+        if use_cache:
+            cache.set(cache_key, result, LICENSE_STATUS_CACHE_TTL_SECONDS)
+        return result
+
     if tenant.is_trial_active(now):
         remaining_seconds = max(0, int((tenant.trial_ends_at - now).total_seconds()))
-        return {
+        return _remember({
             'is_locked': False,
             'reason': 'trial_active',
             'notice': 'دسترسی رایگان ۲۴ ساعته به همه امکانات سامانه فعال است.',
@@ -193,24 +217,24 @@ def license_status_for_tenant(tenant, now=None):
             'trial_ends_at': tenant.trial_ends_at,
             'trial_remaining_seconds': remaining_seconds,
             'grace_days': LICENSE_GRACE_DAYS,
-        }
+        })
     purchase = CarWashFeaturePurchase.objects.filter(
         tenant=tenant,
         feature_key=CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
         is_active=True,
     ).order_by('-id').first()
     if not purchase:
-        return {
+        return _remember({
             'is_locked': True,
             'reason': 'core_purchase_required',
             'notice': 'برای استفاده از نرم‌افزار باید ابتدا خود نرم‌افزار کارنوواش خریداری شود.',
             'core_purchase_required': True,
             'grace_days': LICENSE_GRACE_DAYS,
-        }
+        })
     next_due_at = purchase.next_installment_due_at
     if next_due_at and next_due_at <= now:
         overdue_days = max(0, (now.date() - timezone.localtime(next_due_at).date()).days)
-        return {
+        return _remember({
             'is_locked': overdue_days > LICENSE_GRACE_DAYS,
             'reason': 'installment_overdue',
             'notice': f'سررسید پرداخت نرم‌افزار گذشته است. پس از {LICENSE_GRACE_DAYS} روز عدم پرداخت، دسترسی قفل می‌شود.',
@@ -219,8 +243,8 @@ def license_status_for_tenant(tenant, now=None):
             'grace_days': LICENSE_GRACE_DAYS,
             'next_due_at': next_due_at,
             'amount_due': purchase.monthly_installment_amount,
-        }
-    return {
+        })
+    return _remember({
         'is_locked': False,
         'reason': '',
         'notice': '',
@@ -228,7 +252,7 @@ def license_status_for_tenant(tenant, now=None):
         'next_due_at': next_due_at,
         'amount_due': purchase.monthly_installment_amount if next_due_at else Decimal('0'),
         'grace_days': LICENSE_GRACE_DAYS,
-    }
+    })
 
 
 def feature_installment_status(purchase, now=None):
@@ -532,6 +556,7 @@ class WalletBaseMixin:
                     'updated_at',
                 ]
             )
+            invalidate_license_status_cache(getattr(purchase, 'tenant_id', None) or getattr(tenant, 'id', None))
 
         if _money(wallet.balance) != wallet_balance:
             wallet.balance = wallet_balance
@@ -578,6 +603,7 @@ class WalletBaseMixin:
                 'updated_at',
             ]
         )
+        invalidate_license_status_cache(getattr(purchase, 'tenant_id', None) or getattr(tenant, 'id', None))
 
         transaction_record = CashflowTransaction.objects.create(
             tenant=tenant,
@@ -847,6 +873,7 @@ class WalletOptionsView(WalletBaseMixin, APIView):
                 'updated_at',
             ]
         )
+        invalidate_license_status_cache(getattr(tenant, 'id', None))
 
         wallet.balance = current_balance - debit_amount
         wallet.save(update_fields=['balance', 'updated_at'])

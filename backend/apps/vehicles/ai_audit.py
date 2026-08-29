@@ -2,10 +2,12 @@ import base64
 import json
 import logging
 import re
+import threading
 from pathlib import Path
 from uuid import uuid4
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 
@@ -125,6 +127,16 @@ def _final_plate_from_vehicle(vehicle):
 
 def log_ai_plate_audit_event(*, vehicle, request, operation):
     request_data = getattr(request, 'data', {}) or {}
+    # Snapshot mutable request payload before any deferred write so the worker
+    # thread never touches a closed request cycle.
+    if hasattr(request_data, 'copy'):
+        try:
+            request_data = request_data.copy()
+        except Exception:
+            request_data = dict(request_data) if hasattr(request_data, 'items') else {}
+    elif hasattr(request_data, 'items'):
+        request_data = dict(request_data)
+
     raw_text = _clean_text(_value(request_data, 'ai_raw_text'))
     persian_text = _clean_text(_value(request_data, 'ai_persian_text'))
     converted_plate = _converted_plate_from_request(request_data)
@@ -137,36 +149,66 @@ def log_ai_plate_audit_event(*, vehicle, request, operation):
     if operation != 'create' and not any([raw_text, persian_text, converted_plate, has_image, car_model, car_color]):
         return
 
-    try:
-        user = getattr(request, 'user', None)
-        tenant = getattr(user, 'tenant', None)
-        now = timezone.localtime()
-        record = {
-            'created_at': now.isoformat(),
-            'operation': operation,
-            'tenant_id': getattr(tenant, 'id', None),
-            'vehicle_id': getattr(vehicle, 'id', None),
-            'operator_id': getattr(user, 'id', None) if getattr(user, 'is_authenticated', False) else None,
-            'ai_session_id': _clean_text(_value(request_data, 'ai_session_id')),
-            'ai_raw_text': raw_text,
-            'ai_persian_text': persian_text,
-            'ai_converted_plate': converted_plate,
-            'final_plate': _final_plate_from_vehicle(vehicle),
-            'plate_type': _clean_text(getattr(vehicle, 'plate_type', '')),
-            'car_model': car_model,
-            'car_color': car_color,
-            'ai_confidence': _value(request_data, 'ai_confidence', None),
-            'ai_latency_ms': _value(request_data, 'ai_latency_ms', None),
-            'image_path': '',
-        }
+    user = getattr(request, 'user', None)
+    tenant = getattr(user, 'tenant', None)
+    vehicle_id = getattr(vehicle, 'id', None)
+    plate_number = getattr(vehicle, 'plate_number', '')
+    plate_type = _clean_text(getattr(vehicle, 'plate_type', ''))
+    plate_mid = _clean_text(getattr(vehicle, 'plate_mid', ''))
+    plate_letter = _clean_text(getattr(vehicle, 'plate_letter', ''))
+    plate_left = _clean_text(getattr(vehicle, 'plate_left', ''))
+    plate_right = _clean_text(getattr(vehicle, 'plate_right', ''))
+    operator_id = getattr(user, 'id', None) if getattr(user, 'is_authenticated', False) else None
+    tenant_id = getattr(tenant, 'id', None)
 
-        image_path = _save_ai_image(vehicle=vehicle, request_data=request_data, record=record)
-        record['image_path'] = image_path
+    def _write_audit():
+        try:
+            now = timezone.localtime()
+            # Rebuild a lightweight vehicle-like namespace for helpers that need fields.
+            class _VehicleSnap:
+                id = vehicle_id
+                plate_number = plate_number
+                plate_type = plate_type
+                plate_mid = plate_mid
+                plate_letter = plate_letter
+                plate_left = plate_left
+                plate_right = plate_right
+                car_model = car_model
+                car_color = car_color
 
-        log_dir = Path(settings.MEDIA_ROOT) / 'ai_plate_audit'
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / 'plate_recognition_audit.jsonl'
-        with log_path.open('a', encoding='utf-8') as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + '\n')
-    except Exception:
-        logger.exception('Failed to write AI plate audit log for vehicle %s', getattr(vehicle, 'id', None))
+            snap = _VehicleSnap()
+            record = {
+                'created_at': now.isoformat(),
+                'operation': operation,
+                'tenant_id': tenant_id,
+                'vehicle_id': vehicle_id,
+                'operator_id': operator_id,
+                'ai_session_id': _clean_text(_value(request_data, 'ai_session_id')),
+                'ai_raw_text': raw_text,
+                'ai_persian_text': persian_text,
+                'ai_converted_plate': converted_plate,
+                'final_plate': _final_plate_from_vehicle(snap),
+                'plate_type': plate_type,
+                'car_model': car_model,
+                'car_color': car_color,
+                'ai_confidence': _value(request_data, 'ai_confidence', None),
+                'ai_latency_ms': _value(request_data, 'ai_latency_ms', None),
+                'image_path': '',
+            }
+
+            image_path = _save_ai_image(vehicle=snap, request_data=request_data, record=record)
+            record['image_path'] = image_path
+
+            log_dir = Path(settings.MEDIA_ROOT) / 'ai_plate_audit'
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / 'plate_recognition_audit.jsonl'
+            with log_path.open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(record, ensure_ascii=False) + '\n')
+        except Exception:
+            logger.exception('Failed to write AI plate audit log for vehicle %s', vehicle_id)
+
+    # Image decode + disk write must never stall the admission HTTP response.
+    if has_image:
+        transaction.on_commit(lambda: threading.Thread(target=_write_audit, daemon=True).start())
+    else:
+        _write_audit()

@@ -15,28 +15,9 @@ export const useVehicleStore = defineStore('vehicle', {
       })
     },
     applyVehicleList(nextVehicles = []) {
-      const nextItems = Array.isArray(nextVehicles) ? nextVehicles : []
-      const currentById = new Map(this.vehicles.map((item) => [Number(item.id), item]))
-      const nextIds = new Set(nextItems.map((item) => Number(item.id)))
-
-      for (let index = this.vehicles.length - 1; index >= 0; index -= 1) {
-        if (!nextIds.has(Number(this.vehicles[index]?.id))) {
-          this.vehicles.splice(index, 1)
-        }
-      }
-
-      nextItems.forEach((nextItem, index) => {
-        const existing = currentById.get(Number(nextItem.id))
-        if (existing) {
-          Object.assign(existing, nextItem)
-          const currentIndex = this.vehicles.findIndex((item) => Number(item.id) === Number(nextItem.id))
-          if (currentIndex !== index && currentIndex >= 0) {
-            this.vehicles.splice(index, 0, this.vehicles.splice(currentIndex, 1)[0])
-          }
-          return
-        }
-        this.vehicles.splice(index, 0, nextItem)
-      })
+      // Full board replace is cheaper than per-row splice/findIndex thrashing
+      // once the day gets busy — Vue 3 handles the array swap fine.
+      this.vehicles = Array.isArray(nextVehicles) ? nextVehicles : []
     },
     upsertVehicle(vehicle) {
       if (!vehicle?.id) return vehicle

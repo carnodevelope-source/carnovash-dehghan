@@ -609,9 +609,6 @@ const startSupportCountLive = () => {
         playSupportNotificationSound(payload)
       }
     }
-    if (type === 'notification.created') {
-      notifyInfo('یک اعلان جدید ثبت شد.', { title: 'اعلان' })
-    }
     if (
       type.startsWith('payment.')
       || type.startsWith('subscription.')
