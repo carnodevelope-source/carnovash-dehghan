@@ -218,8 +218,31 @@ def _plate_parts_from_ai(raw_text='', persian_text=''):
     return latin_parts or persian_parts or {}
 
 
+def _digit_storage_variants(value=''):
+    """Latin + Persian digit forms — older rows / some clients stored Persian digits."""
+    from .plate_normalize import normalize_digits
+
+    latin = ''.join(ch for ch in normalize_digits(value) if ch.isdigit())
+    if not latin:
+        return set()
+    persian = latin.translate(str.maketrans('0123456789', '۰۱۲۳۴۵۶۷۸۹'))
+    return {latin, persian}
+
+
+def _q_digit_field(field, value):
+    from django.db.models import Q
+
+    variants = _digit_storage_variants(value)
+    if not variants:
+        return Q(**{field: ''})
+    query = Q()
+    for item in variants:
+        query |= Q(**{field: item})
+    return query
+
+
 def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right='', plate_type='car'):
-    from .plate_normalize import normalize_plate_parts, plate_letter_lookup_variants
+    from .plate_normalize import normalize_plate_letter, normalize_plate_parts, plate_letter_lookup_variants
 
     parts = normalize_plate_parts(
         plate_number=plate_number,
@@ -238,16 +261,16 @@ def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', pla
         if parts['plate_left'] and parts['plate_right']:
             candidates.append(
                 queryset.filter(
-                    plate_left=parts['plate_left'],
-                    plate_mid=parts['plate_mid'],
-                    plate_right=parts['plate_right'],
+                    _q_digit_field('plate_left', parts['plate_left']),
+                    _q_digit_field('plate_mid', parts['plate_mid']),
+                    _q_digit_field('plate_right', parts['plate_right']),
                     plate_letter__in=letter_variants,
                 ).order_by('-check_in_at').first()
             )
         elif not parts['plate_left'] and not parts['plate_right']:
             candidates.append(
                 queryset.filter(
-                    plate_mid=parts['plate_mid'],
+                    _q_digit_field('plate_mid', parts['plate_mid']),
                     plate_letter__in=letter_variants,
                     plate_left='',
                     plate_right='',
@@ -263,10 +286,33 @@ def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', pla
         if legacy_number and legacy_number != parts['plate_number']:
             candidates.append(queryset.filter(plate_number=legacy_number).order_by('-check_in_at').first())
     found = [item for item in candidates if item]
-    if not found:
-        return None, parts
-    found.sort(key=lambda item: item.check_in_at or timezone.now(), reverse=True)
-    return found[0], parts
+    if found:
+        found.sort(key=lambda item: item.check_in_at or timezone.now(), reverse=True)
+        return found[0], parts
+
+    # Letter OCR is often wrong while digits are right. If exactly one distinct
+    # plate-letter exists for these digits in history, use that vehicle.
+    if parts['plate_left'] and parts['plate_mid'] and parts['plate_right'] and parts.get('plate_type') != 'motorcycle':
+        digit_matches = list(
+            queryset.filter(
+                _q_digit_field('plate_left', parts['plate_left']),
+                _q_digit_field('plate_mid', parts['plate_mid']),
+                _q_digit_field('plate_right', parts['plate_right']),
+            )
+            .exclude(plate_letter='')
+            .order_by('-check_in_at')[:30]
+        )
+        unique_letters = {
+            normalize_plate_letter(item.plate_letter) or str(item.plate_letter or '').strip()
+            for item in digit_matches
+        }
+        unique_letters.discard('')
+        if len(unique_letters) == 1 and digit_matches:
+            return digit_matches[0], parts
+        if len(digit_matches) == 1:
+            return digit_matches[0], parts
+
+    return None, parts
 
 
 class VehicleEntryDetailView(generics.RetrieveUpdateAPIView):
@@ -563,8 +609,24 @@ class VehiclePlateLookupView(APIView):
             if latest_vehicle:
                 break
         plate_number = parts.get('plate_number') or ''
-        if not plate_number:
+        has_car_digits = bool(parts.get('plate_left') and parts.get('plate_mid') and parts.get('plate_right'))
+        has_moto_parts = bool(
+            parts.get('plate_type') == 'motorcycle'
+            and parts.get('plate_mid')
+            and parts.get('plate_letter')
+        )
+        # Digits alone are enough for history; letter may fail to normalize on some clients.
+        if not plate_number and not latest_vehicle and not has_car_digits and not has_moto_parts:
             return Response({'found': False}, status=status.HTTP_200_OK)
+        if not plate_number and has_car_digits:
+            letter_bit = parts.get('plate_letter') or ''
+            plate_number = (
+                f"{parts['plate_left']} {letter_bit} {parts['plate_mid']} {parts['plate_right']}".strip()
+                if letter_bit
+                else f"{parts['plate_left']} {parts['plate_mid']} {parts['plate_right']}"
+            )
+        if latest_vehicle and not plate_number:
+            plate_number = latest_vehicle.plate_number or ''
 
         settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
         discount_percent_per_half_star = Decimal(

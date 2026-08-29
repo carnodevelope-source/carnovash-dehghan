@@ -48,9 +48,11 @@ const OCR_AMBIGUOUS_BY_LATIN = {
   g: ['گ', 'ک'],
   f: ['ف', 'ق'],
   q: ['ق', 'ف'],
-  h: ['ح', 'ج'],
+  h: ['ح', 'ج', 'خ'],
   j: ['ج', 'ح'],
-  u: ['ع', 'غ']
+  u: ['ع', 'غ'],
+  d: ['د', 'ذ'],
+  e: ['ه', 'ح']
 }
 
 const OCR_AMBIGUOUS_BY_PERSIAN = (() => {
@@ -60,21 +62,32 @@ const OCR_AMBIGUOUS_BY_PERSIAN = (() => {
       if (!map[letter]) map[letter] = [...options]
     }
   }
+  // Extra Persian-only look-alikes not covered by a single latin token.
+  const extras = {
+    ذ: ['ذ', 'د'],
+    غ: ['غ', 'ع'],
+    خ: ['خ', 'ح'],
+    ث: ['ث', 'س', 'ص'],
+    ت: ['ت', 'ط']
+  }
+  for (const [letter, options] of Object.entries(extras)) {
+    map[letter] = options
+  }
   return map
 })()
 
 /** OCR often swaps look-alike digits. Hamming-1 variants only — never a full grid. */
 const OCR_DIGIT_CONFUSIONS = {
-  0: ['6', '8'],
-  1: ['7'],
-  2: ['7'],
-  3: ['8'],
-  4: ['9'],
-  5: ['6', '3'],
+  0: ['6', '8', '9'],
+  1: ['7', '4'],
+  2: ['7', '3'],
+  3: ['8', '5', '2'],
+  4: ['9', '1'],
+  5: ['6', '3', '8'],
   6: ['0', '8', '5'],
   7: ['1', '2'],
-  8: ['0', '6', '3'],
-  9: ['4', '0']
+  8: ['0', '6', '3', '5'],
+  9: ['4', '0', '8']
 }
 
 export const getOcrDigitConfusionVariants = (left, mid, right) => {
@@ -215,10 +228,10 @@ export const resolvePlateParts = (source = {}) => {
     }
   }
   return {
-    left: String(source.plate_left || source.plateLeft || parts[0] || '').trim(),
+    left: normalizeDigits(source.plate_left || source.plateLeft || parts[0] || '').replace(/\D/g, '').slice(0, 2),
     letter: normalizePlateLetter(String(source.plate_letter || source.plateLetter || parts[1] || '').trim()),
-    mid: String(source.plate_mid || source.plateMid || parts[2] || '').trim(),
-    right: String(source.plate_right || source.plateRight || parts[3] || '').trim()
+    mid: normalizeDigits(source.plate_mid || source.plateMid || parts[2] || '').replace(/\D/g, '').slice(0, 3),
+    right: normalizeDigits(source.plate_right || source.plateRight || parts[3] || '').replace(/\D/g, '').slice(0, 2)
   }
 }
 

@@ -360,12 +360,16 @@ const hydrateForm = (data = {}) => {
     plate_type: plateType
   })
   form.id = data.id ?? null
-  form.plateLeft = plateType === 'motorcycle' ? '' : String(resolvedParts.left || '').slice(0, 2)
+  form.plateLeft = plateType === 'motorcycle'
+    ? ''
+    : normalizeDigits(resolvedParts.left || '').replace(/\D/g, '').slice(0, 2)
   form.plateLetter = plateType === 'motorcycle'
-    ? String(resolvedParts.letter || '').slice(0, 5)
-    : normalizePlateLetter(String(resolvedParts.letter || '').slice(0, 1))
-  form.plateMid = String(resolvedParts.mid || '').slice(0, 3)
-  form.plateRight = plateType === 'motorcycle' ? '' : String(resolvedParts.right || '').slice(0, 2)
+    ? normalizeDigits(resolvedParts.letter || '').replace(/\D/g, '').slice(0, 5)
+    : normalizePlateLetter(String(resolvedParts.letter || ''))
+  form.plateMid = normalizeDigits(resolvedParts.mid || '').replace(/\D/g, '').slice(0, 3)
+  form.plateRight = plateType === 'motorcycle'
+    ? ''
+    : normalizeDigits(resolvedParts.right || '').replace(/\D/g, '').slice(0, 2)
   form.model = String(data.model || data.car_model || '')
   form.color = String(data.color || data.car_color || '')
   form.driver = String(data.driver || data.driver_name || '')
@@ -678,10 +682,10 @@ const applyHistoryPlateMatch = (data, parts = {}) => {
 
 const lookupPlateCandidate = (letter, left, mid, right) => api.get('/vehicles/plate-lookup/', {
   params: {
-    plate_left: left,
-    plate_letter: letter,
-    plate_mid: mid,
-    plate_right: right
+    plate_left: normalizeDigits(left).replace(/\D/g, '').slice(0, 2),
+    plate_letter: normalizePlateLetter(letter),
+    plate_mid: normalizeDigits(mid).replace(/\D/g, '').slice(0, 3),
+    plate_right: normalizeDigits(right).replace(/\D/g, '').slice(0, 2)
   },
   meta: { trackLoading: false, showErrorToast: false }
 })
@@ -697,27 +701,30 @@ const uniqueHistoryMatch = (responses, items) => {
 const tryResolveLetterFromHistory = async () => {
   if (isMotorcyclePlate()) return false
   if (form.isAnonymous || form.isPieceWash) return false
-  if (form.plateLeft.length !== 2 || form.plateMid.length !== 3 || form.plateRight.length !== 2) return false
-  const candidates = buildLetterSuggestions(form.plateLetter)
+  const left = normalizeDigits(form.plateLeft).replace(/\D/g, '').slice(0, 2)
+  const mid = normalizeDigits(form.plateMid).replace(/\D/g, '').slice(0, 3)
+  const right = normalizeDigits(form.plateRight).replace(/\D/g, '').slice(0, 2)
+  if (left.length !== 2 || mid.length !== 3 || right.length !== 2) return false
+  const candidates = buildLetterSuggestions(form.plateLetter, aiRecognitionSnapshot.value?.rawText || '')
   if (candidates.length <= 1) return false
   // OCR often confuses similar Persian letters. Check every candidate against
   // history in parallel, then accept only if exactly one plate exists.
   const responses = await Promise.allSettled(
-    candidates.map((letter) => lookupPlateCandidate(letter, form.plateLeft.trim(), form.plateMid.trim(), form.plateRight.trim()))
+    candidates.map((letter) => lookupPlateCandidate(letter, left, mid, right))
   )
   const match = uniqueHistoryMatch(responses, candidates)
   if (!match) return false
-  applyHistoryPlateMatch(match.result.value.data, { letter: match.item })
+  applyHistoryPlateMatch(match.result.value.data, { letter: match.item, left, mid, right })
   return true
 }
 
 const tryResolveDigitsFromHistory = async () => {
   if (isMotorcyclePlate()) return false
   if (form.isAnonymous || form.isPieceWash) return false
-  const left = form.plateLeft.trim()
-  const mid = form.plateMid.trim()
-  const right = form.plateRight.trim()
-  const letter = form.plateLetter.trim()
+  const left = normalizeDigits(form.plateLeft).replace(/\D/g, '').slice(0, 2)
+  const mid = normalizeDigits(form.plateMid).replace(/\D/g, '').slice(0, 3)
+  const right = normalizeDigits(form.plateRight).replace(/\D/g, '').slice(0, 2)
+  const letter = normalizePlateLetter(form.plateLetter)
   if (left.length !== 2 || mid.length !== 3 || right.length !== 2 || !letter) return false
   const variants = getOcrDigitConfusionVariants(left, mid, right)
   if (!variants.length) return false
@@ -780,7 +787,9 @@ const recognizePlateImage = async (imageDataUrl) => {
       setCameraMessage(data?.detail || 'درخواست تشخیص پلاک پذیرفته نشد.', true)
       return
     }
+    suppressPlateLookupWatch = true
     if (!applyRecognizedPlate(data)) {
+      suppressPlateLookupWatch = false
       const extractedText = String(data?.persian_text || data?.text || '').trim()
       const aiReason = String(data?.reason || '').trim()
       setCameraMessage(
@@ -807,6 +816,7 @@ const recognizePlateImage = async (imageDataUrl) => {
     const detail = error?.response?.data?.detail || 'ارتباط با سرویس تشخیص پلاک برقرار نشد.'
     setCameraMessage(detail, true)
   } finally {
+    suppressPlateLookupWatch = false
     cameraState.loading = false
   }
 }
@@ -976,8 +986,71 @@ watch(() => form.plateLetter, (value) => {
 })
 
 let lookupTimer = null
-let lookupToken = 0
+let suppressPlateLookupWatch = false
+
+const currentLookupParts = () => {
+  if (isMotorcyclePlate()) {
+    return {
+      left: '',
+      letter: normalizeDigits(form.plateLetter).replace(/\D/g, '').slice(0, 5),
+      mid: normalizeDigits(form.plateMid).replace(/\D/g, '').slice(0, 3),
+      right: '',
+      plateType: 'motorcycle'
+    }
+  }
+  return {
+    left: normalizeDigits(form.plateLeft).replace(/\D/g, '').slice(0, 2),
+    letter: normalizePlateLetter(form.plateLetter),
+    mid: normalizeDigits(form.plateMid).replace(/\D/g, '').slice(0, 3),
+    right: normalizeDigits(form.plateRight).replace(/\D/g, '').slice(0, 2),
+    plateType: form.plateType || 'car'
+  }
+}
+
+const syncNormalizedPlatePartsToForm = (parts) => {
+  if (parts.plateType === 'motorcycle') {
+    if (form.plateMid !== parts.mid) form.plateMid = parts.mid
+    if (form.plateLetter !== parts.letter) form.plateLetter = parts.letter
+    return
+  }
+  if (form.plateLeft !== parts.left) form.plateLeft = parts.left
+  if (form.plateMid !== parts.mid) form.plateMid = parts.mid
+  if (form.plateRight !== parts.right) form.plateRight = parts.right
+  if (parts.letter && form.plateLetter !== parts.letter) form.plateLetter = parts.letter
+}
+
+const lookupPartsStillMatch = (parts) => {
+  const current = currentLookupParts()
+  return (
+    current.left === parts.left
+    && current.letter === parts.letter
+    && current.mid === parts.mid
+    && current.right === parts.right
+    && current.plateType === parts.plateType
+  )
+}
+
 const applyPlateLookupData = (data = {}) => {
+  if (data?.found) {
+    const nextType = String(data.plate_type || form.plateType || 'car').trim() || 'car'
+    form.plateType = nextType
+    if (nextType === 'motorcycle') {
+      const mid = normalizeDigits(data.plate_mid || '').replace(/\D/g, '').slice(0, 3)
+      const letter = normalizeDigits(data.plate_letter || '').replace(/\D/g, '').slice(0, 5)
+      if (mid.length === 3) form.plateMid = mid
+      if (letter.length === 5) form.plateLetter = letter
+    } else {
+      const left = normalizeDigits(data.plate_left || '').replace(/\D/g, '').slice(0, 2)
+      const mid = normalizeDigits(data.plate_mid || '').replace(/\D/g, '').slice(0, 3)
+      const right = normalizeDigits(data.plate_right || '').replace(/\D/g, '').slice(0, 2)
+      const letter = normalizePlateLetter(data.plate_letter || '')
+      if (left.length === 2) form.plateLeft = left
+      if (mid.length === 3) form.plateMid = mid
+      if (right.length === 2) form.plateRight = right
+      if (letter) form.plateLetter = letter
+      syncLetterSuggestions(form.plateLetter)
+    }
+  }
   const nextModel = String(data.car_model || data.model || '').trim()
   const nextColor = String(data.car_color || data.color || '').trim()
   if (nextModel) form.model = nextModel
@@ -991,7 +1064,6 @@ const applyPlateLookupData = (data = {}) => {
   form.customerLoyaltyVisitCount = Math.max(1, Number(data.customer_loyalty_visit_count ?? data.customerLoyaltyVisitCount ?? 1))
 
   form.customerLoyaltyDiscountPercent = Math.max(0, Number(data.customer_loyalty_discount_percent ?? data.customerLoyaltyDiscountPercent ?? 0))
-  form.plateType = String(data.plate_type || form.plateType || 'car').trim() || 'car'
   if (data.tariff_type || data.tariffType) {
     form.tariffType = normalizeTariffType(data.tariff_type || data.tariffType, form.plateType)
   }
@@ -999,21 +1071,29 @@ const applyPlateLookupData = (data = {}) => {
 
 const fetchPlateLookup = async () => {
   if (form.isAnonymous || form.isPieceWash || !hasCompleteManualPlate()) return null
-  const token = ++lookupToken
-  const lookupPlateNumber = plate.value
+  const requestParts = currentLookupParts()
+  syncNormalizedPlatePartsToForm(requestParts)
+  const lookupPlateNumber = buildPlateNumber({
+    left: requestParts.left,
+    letter: requestParts.letter,
+    mid: requestParts.mid,
+    right: requestParts.right,
+    plateType: requestParts.plateType
+  })
   try {
     const { data } = await api.get('/vehicles/plate-lookup/', {
       params: {
         plate_number: lookupPlateNumber,
-        plate_left: form.plateLeft.trim(),
-        plate_letter: form.plateLetter.trim(),
-        plate_mid: form.plateMid.trim(),
-        plate_right: form.plateRight.trim(),
-        plate_type: form.plateType
+        plate_left: requestParts.left,
+        plate_letter: requestParts.letter,
+        plate_mid: requestParts.mid,
+        plate_right: requestParts.right,
+        plate_type: requestParts.plateType
       },
       meta: { trackLoading: false, showErrorToast: false }
     })
-    if (token !== lookupToken) return null
+    // Only discard when the operator already changed the plate.
+    if (!lookupPartsStillMatch(requestParts)) return null
     if (data?.found) {
       applyPlateLookupData(data)
       return data
@@ -1030,6 +1110,7 @@ const fetchPlateLookup = async () => {
 watch(
   () => [form.plateLeft, form.plateLetter, form.plateMid, form.plateRight, form.plateType, form.isAnonymous, form.isPieceWash],
   () => {
+    if (suppressPlateLookupWatch) return
     if (lookupTimer) clearTimeout(lookupTimer)
     if (isHydratingForm || form.isAnonymous || form.isPieceWash) return
     if (!hasCompleteManualPlate()) return

@@ -230,7 +230,7 @@ import { navigationByRole, navigationRouteMeta } from '../../config/navigation'
 import api from '../../services/api'
 import { createLiveEventSource, dispatchLiveEvent, parseLiveEvent } from '../../services/live'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, getFeatureLockNotice, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
-import { notifyInfo, notifyWarning } from '../../utils/notify'
+import { notifyWarning } from '../../utils/notify'
 import IconlyIcon from '../base/IconlyIcon.vue'
 
 const props = defineProps({
@@ -595,15 +595,8 @@ const startSupportCountLive = () => {
     if (type.startsWith('support.')) {
       if (supportCountLiveRefreshTimer) window.clearTimeout(supportCountLiveRefreshTimer)
       supportCountLiveRefreshTimer = window.setTimeout(loadSupportOpenCount, 400)
-      if (type === 'support.message.created') {
-        if (route.path !== '/support') {
-          notifyInfo('پیام جدیدی در تیکت پشتیبانی ثبت شد.', { title: 'پشتیبانی' })
-        }
-        playSupportNotificationSound(payload)
-      } else if (type === 'support.ticket.created') {
-        if (route.path !== '/support') {
-          notifyInfo('یک تیکت پشتیبانی جدید ثبت شد.', { title: 'پشتیبانی' })
-        }
+      // No toast on the operator panel — count badge + optional sound only.
+      if (type === 'support.message.created' || type === 'support.ticket.created') {
         playSupportNotificationSound(payload)
       }
     }

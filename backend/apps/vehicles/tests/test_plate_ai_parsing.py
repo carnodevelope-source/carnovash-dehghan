@@ -169,3 +169,47 @@ class VehiclePlateLookupAutofillTests(APITestCase):
         self.assertTrue(response.data['found'])
         self.assertEqual(response.data['plate_letter'], 'د')
         self.assertEqual(response.data['car_model'], 'پیکانتو')
+
+    def test_lookup_digit_only_unique_letter_when_ocr_letter_wrong(self):
+        response = self.client.get(
+            reverse('vehicle-plate-lookup'),
+            {
+                'plate_left': '21',
+                'plate_letter': 'م',
+                'plate_mid': '157',
+                'plate_right': '64',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['found'])
+        self.assertEqual(response.data['plate_letter'], 'د')
+        self.assertEqual(response.data['car_model'], 'پیکانتو')
+
+    def test_lookup_finds_persian_digit_legacy_rows(self):
+        VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='۳۳ ب ۴۴۴ ۵۵',
+            plate_left='۳۳',
+            plate_letter='ب',
+            plate_mid='۴۴۴',
+            plate_right='۵۵',
+            plate_type=VehicleEntry.PlateType.CAR,
+            car_model='سمند',
+            car_color='مشکی',
+            driver_name='Legacy Digits',
+            driver_phone='09123334455',
+            status=VehicleEntry.Status.RELEASED,
+        )
+        response = self.client.get(
+            reverse('vehicle-plate-lookup'),
+            {
+                'plate_left': '33',
+                'plate_letter': 'ب',
+                'plate_mid': '444',
+                'plate_right': '55',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['found'])
+        self.assertEqual(response.data['car_model'], 'سمند')
+        self.assertEqual(response.data['driver_name'], 'Legacy Digits')
