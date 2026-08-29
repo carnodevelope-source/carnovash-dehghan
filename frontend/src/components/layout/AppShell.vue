@@ -532,11 +532,10 @@ const loadSupportOpenCount = async () => {
   if (supportCountPollingInFlight) return
   supportCountPollingInFlight = true
   try {
-    const { data } = await api.get('/auth/support/tickets/', {
-      meta: { trackLoading: false, showErrorToast: false }
+    const { data } = await api.get('/auth/support/tickets/summary/', {
+      meta: { trackLoading: false, showErrorToast: false, timeoutMs: 8000 }
     })
-    const items = Array.isArray(data) ? data : []
-    const nextCount = items.filter((item) => item.status !== 'closed').length
+    const nextCount = Math.max(0, Number(data?.open_count || 0))
     if (supportOpenCount.value !== nextCount) supportOpenCount.value = nextCount
   } catch (_error) {
     if (supportOpenCount.value !== 0) supportOpenCount.value = 0
@@ -587,7 +586,6 @@ const startSupportCountLive = () => {
   supportCountLiveStream = createLiveEventSource()
   supportCountLiveStream?.addEventListener('open', () => {
     void loadSupportOpenCount()
-    void loadWalletWarning()
   })
   supportCountLiveStream?.addEventListener('message', (event) => {
     const payload = parseLiveEvent(event.data)
@@ -621,7 +619,7 @@ const startSupportCountLive = () => {
   supportCountInterval = window.setInterval(() => {
     if (document.visibilityState !== 'visible') return
     void loadSupportOpenCount()
-  }, 60000)
+  }, 90_000)
 }
 
 onMounted(() => {

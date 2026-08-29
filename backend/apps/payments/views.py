@@ -31,10 +31,15 @@ LICENSE_STATUS_CACHE_TTL_SECONDS = 30
 LICENSE_STATUS_CACHE_PREFIX = 'carvash:license_status:'
 
 
+LOCKED_FEATURES_CACHE_TTL_SECONDS = 30
+LOCKED_FEATURES_CACHE_PREFIX = 'carvash:locked_features:'
+
+
 def invalidate_license_status_cache(tenant_id):
     if not tenant_id:
         return
     cache.delete(f'{LICENSE_STATUS_CACHE_PREFIX}{tenant_id}')
+    cache.delete(f'{LOCKED_FEATURES_CACHE_PREFIX}{tenant_id}')
 
 
 def _parse_wallet_day(value, *, end_of_day=False):
@@ -297,9 +302,18 @@ def feature_installment_status(purchase, now=None):
 def locked_feature_statuses_for_tenant(tenant, now=None):
     if tenant is None:
         return {}
+    cache_key = f'{LOCKED_FEATURES_CACHE_PREFIX}{tenant.pk}'
+    use_cache = now is None
+    if use_cache:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
     now = now or timezone.now()
     if tenant.is_trial_active(now):
-        return {}
+        result = {}
+        if use_cache:
+            cache.set(cache_key, result, LOCKED_FEATURES_CACHE_TTL_SECONDS)
+        return result
     statuses = {}
     purchases = CarWashFeaturePurchase.objects.filter(
         tenant=tenant,
@@ -312,6 +326,8 @@ def locked_feature_statuses_for_tenant(tenant, now=None):
         status_info = feature_installment_status(purchase, now)
         if status_info.get('is_locked'):
             statuses[purchase.feature_key] = status_info
+    if use_cache:
+        cache.set(cache_key, statuses, LOCKED_FEATURES_CACHE_TTL_SECONDS)
     return statuses
 
 

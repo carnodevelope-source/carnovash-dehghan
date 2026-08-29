@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import threading
 import time
@@ -28,7 +29,19 @@ RELAY_RETRY_SECONDS = 5
 # Every open stream occupies one gunicorn thread until the browser tab closes.
 # Refusing extra streams keeps the pool available for ordinary API requests;
 # the frontend falls back to its periodic refresh when it is turned away.
-MAX_SUBSCRIBERS = getattr(settings, 'LIVE_MAX_SUBSCRIBERS', 40)
+# Never allow the configured cap to eat the whole gthread pool — keep a reserve
+# so /auth/me/ and vehicle mutations still have a worker when the shop is busy.
+def _max_subscribers() -> int:
+    configured = int(getattr(settings, 'LIVE_MAX_SUBSCRIBERS', 12) or 12)
+    try:
+        threads = max(1, int(os.environ.get('GUNICORN_THREADS') or 24))
+    except (TypeError, ValueError):
+        threads = 24
+    reserved = min(8, max(2, threads // 3))
+    return max(4, min(configured, threads - reserved))
+
+
+MAX_SUBSCRIBERS = _max_subscribers()
 REDIS_URL = getattr(settings, 'LIVE_REDIS_URL', '')
 REDIS_CHANNEL = getattr(settings, 'LIVE_REDIS_CHANNEL', 'carvash:live')
 

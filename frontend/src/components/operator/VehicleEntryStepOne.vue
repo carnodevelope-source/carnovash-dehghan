@@ -205,7 +205,7 @@ import api from '../../services/api'
 import PlateBadge from '../vehicles/PlateBadge.vue'
 import PlateEditor from '../vehicles/PlateEditor.vue'
 import BasePhoneInput from '../base/BasePhoneInput.vue'
-import { buildPlateNumber, getAmbiguousLetterSuggestions, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
+import { buildPlateNumber, getAmbiguousLetterSuggestions, getOcrDigitConfusionVariants, isValidIranMobile, normalizeDigits, normalizePhone, normalizePlateLetter, resolvePlateParts } from '../../utils/plate'
 import { askCameraDeniedHelp } from '../../utils/permissionPrompt'
 import { notifyWarning } from '../../utils/notify'
 import {
@@ -653,32 +653,85 @@ const applyRecognizedPlate = (data) => {
   return true
 }
 
+const applyHistoryPlateMatch = (data, parts = {}) => {
+  if (parts.left) form.plateLeft = parts.left
+  if (parts.letter) form.plateLetter = parts.letter
+  if (parts.mid) form.plateMid = parts.mid
+  if (parts.right) form.plateRight = parts.right
+  applyPlateLookupData(data)
+  syncLetterSuggestions(form.plateLetter)
+  detectedPlateSnapshot.value = {
+    left: form.plateLeft,
+    letter: form.plateLetter,
+    mid: form.plateMid,
+    right: form.plateRight,
+    plateNumber: buildPlateNumber({
+      left: form.plateLeft,
+      letter: form.plateLetter,
+      mid: form.plateMid,
+      right: form.plateRight,
+      plateType: form.plateType
+    }),
+    plateType: form.plateType
+  }
+}
+
+const lookupPlateCandidate = (letter, left, mid, right) => api.get('/vehicles/plate-lookup/', {
+  params: {
+    plate_left: left,
+    plate_letter: letter,
+    plate_mid: mid,
+    plate_right: right
+  },
+  meta: { trackLoading: false, showErrorToast: false }
+})
+
+const uniqueHistoryMatch = (responses, items) => {
+  const matches = responses
+    .map((result, index) => ({ result, item: items[index] }))
+    .filter(({ result }) => result.status === 'fulfilled' && result.value?.data?.found)
+  if (matches.length !== 1) return null
+  return matches[0]
+}
+
 const tryResolveLetterFromHistory = async () => {
   if (isMotorcyclePlate()) return false
   if (form.isAnonymous || form.isPieceWash) return false
   if (form.plateLeft.length !== 2 || form.plateMid.length !== 3 || form.plateRight.length !== 2) return false
   const candidates = buildLetterSuggestions(form.plateLetter)
   if (candidates.length <= 1) return false
+  // OCR often confuses similar Persian letters. Check every candidate against
+  // history in parallel, then accept only if exactly one plate exists.
   const responses = await Promise.allSettled(
-    candidates.map((letter) => api.get('/vehicles/plate-lookup/', {
-      params: {
-        plate_left: form.plateLeft.trim(),
-        plate_letter: letter,
-        plate_mid: form.plateMid.trim(),
-        plate_right: form.plateRight.trim()
-      },
-      meta: { trackLoading: false }
-    }))
+    candidates.map((letter) => lookupPlateCandidate(letter, form.plateLeft.trim(), form.plateMid.trim(), form.plateRight.trim()))
   )
-  const matches = responses
-    .map((result, index) => ({ result, letter: candidates[index] }))
-    .filter(({ result }) => result.status === 'fulfilled' && result.value?.data?.found)
+  const match = uniqueHistoryMatch(responses, candidates)
+  if (!match) return false
+  applyHistoryPlateMatch(match.result.value.data, { letter: match.item })
+  return true
+}
 
-  if (matches.length !== 1) return false
-  const match = matches[0]
-  form.plateLetter = match.letter
-  applyPlateLookupData(match.result.value.data)
-  syncLetterSuggestions(match.letter)
+const tryResolveDigitsFromHistory = async () => {
+  if (isMotorcyclePlate()) return false
+  if (form.isAnonymous || form.isPieceWash) return false
+  const left = form.plateLeft.trim()
+  const mid = form.plateMid.trim()
+  const right = form.plateRight.trim()
+  const letter = form.plateLetter.trim()
+  if (left.length !== 2 || mid.length !== 3 || right.length !== 2 || !letter) return false
+  const variants = getOcrDigitConfusionVariants(left, mid, right)
+  if (!variants.length) return false
+  const responses = await Promise.allSettled(
+    variants.map((item) => lookupPlateCandidate(letter, item.left, item.mid, item.right))
+  )
+  const match = uniqueHistoryMatch(responses, variants)
+  if (!match) return false
+  applyHistoryPlateMatch(match.result.value.data, {
+    letter,
+    left: match.item.left,
+    mid: match.item.mid,
+    right: match.item.right
+  })
   return true
 }
 
@@ -738,8 +791,11 @@ const recognizePlateImage = async (imageDataUrl) => {
       )
       return
     }
-    const correctedFromHistory = await tryResolveLetterFromHistory()
-    await fetchPlateLookup()
+    const letterCorrected = await tryResolveLetterFromHistory()
+    let lookup = await fetchPlateLookup()
+    const digitsCorrected = lookup?.found ? false : await tryResolveDigitsFromHistory()
+    if (digitsCorrected) lookup = { found: true }
+    const correctedFromHistory = letterCorrected || digitsCorrected
     const confidenceText = cameraState.lastConfidence ? ` | اطمینان ${(cameraState.lastConfidence * 100).toFixed(0)}٪` : ''
     setCameraMessage(
       correctedFromHistory

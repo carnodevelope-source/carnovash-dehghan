@@ -1,5 +1,6 @@
 from datetime import timedelta
 import re
+import time
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q
@@ -30,8 +31,18 @@ def calculate_wallet_card_deposit_amounts(gross_amount):
     return gross, tax, net
 
 
+_STALE_CLOSE_INTERVAL_SECONDS = 60
+_last_stale_close_at = 0.0
+
+
 def close_stale_support_tickets(*, now=None):
+    global _last_stale_close_at
     current = now or timezone.now()
+    if now is None:
+        monotonic_now = time.monotonic()
+        if monotonic_now - _last_stale_close_at < _STALE_CLOSE_INTERVAL_SECONDS:
+            return 0
+        _last_stale_close_at = monotonic_now
     cutoff = current - timedelta(days=SUPPORT_TICKET_AUTO_CLOSE_AFTER_DAYS)
     queryset = SupportTicket.objects.exclude(status=SupportTicket.Status.CLOSED).filter(
         Q(last_message_at__lte=cutoff)

@@ -2091,15 +2091,16 @@ const startHqTicketLive = () => {
   stopHqTicketLive()
   hqTicketLiveStream = createLiveEventSource()
   hqTicketLiveStream?.addEventListener('open', () => {
+    if (tickets.value.length) return
     void refreshTicketsQuietly()
   })
   hqTicketLiveStream?.addEventListener('message', (event) => {
     const payload = parseLiveEvent(event.data)
     if (!payload?.type || !String(payload.type).startsWith('support.')) return
     if (hqTicketLiveRefreshTimer) window.clearTimeout(hqTicketLiveRefreshTimer)
-    hqTicketLiveRefreshTimer = window.setTimeout(refreshTicketsQuietly, 350)
+    hqTicketLiveRefreshTimer = window.setTimeout(refreshTicketsQuietly, 1200)
   })
-  hqTicketPollingTimer = window.setInterval(refreshTicketsQuietly, 60000)
+  hqTicketPollingTimer = window.setInterval(refreshTicketsQuietly, 90_000)
 }
 
 const onGlobalLiveEvent = (event) => {
@@ -2427,8 +2428,11 @@ onMounted(async () => {
   }
   if (activeTab.value === 'tickets') initialLoads.push(loadTickets())
   await Promise.all(initialLoads)
-  // Seed alert baseline so the first poll does not treat existing tickets as new.
-  await pollTicketAlerts()
+  if (tickets.value.length) {
+    alertKnownTicketIds = new Set(tickets.value.map((item) => Number(item.id)))
+  } else {
+    await pollTicketAlerts()
+  }
 })
 
 onBeforeUnmount(() => {

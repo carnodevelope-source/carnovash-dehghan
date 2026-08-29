@@ -29,6 +29,19 @@ class PlatePartsFromAiTests(APITestCase):
         parts = _plate_parts_from_ai(raw_text='67b34512', persian_text='۶۷ ب ۳۴۵ ۱۲')
         self.assertEqual(parts['plate_number'], '12 ب 345 67')
 
+    def test_prefers_persian_letter_and_latin_digits(self):
+        parts = _plate_parts_from_ai(raw_text='67b34512', persian_text='۶۷ پ ۳۴۵ ۱۲')
+        self.assertEqual(parts['plate_left'], '12')
+        self.assertEqual(parts['plate_letter'], 'پ')
+        self.assertEqual(parts['plate_mid'], '345')
+        self.assertEqual(parts['plate_right'], '67')
+        self.assertEqual(parts['plate_number'], '12 پ 345 67')
+
+    def test_keeps_latin_when_persian_has_no_letter(self):
+        parts = _plate_parts_from_ai(raw_text='67d34512', persian_text='')
+        self.assertEqual(parts['plate_letter'], 'د')
+        self.assertEqual(parts['plate_number'], '12 د 345 67')
+
 
 class VehiclePlateRecognitionResponseTests(APITestCase):
     def setUp(self):
@@ -141,3 +154,18 @@ class VehiclePlateLookupAutofillTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['found'])
         self.assertEqual(response.data['car_model'], 'پراید')
+
+    def test_lookup_resolves_letter_candidates_in_one_request(self):
+        response = self.client.get(
+            reverse('vehicle-plate-lookup'),
+            {
+                'plate_left': '21',
+                'plate_mid': '157',
+                'plate_right': '64',
+                'plate_letters': 'ب,پ,د',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['found'])
+        self.assertEqual(response.data['plate_letter'], 'د')
+        self.assertEqual(response.data['car_model'], 'پیکانتو')

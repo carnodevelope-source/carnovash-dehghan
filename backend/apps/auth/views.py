@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model, login, logout
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Count, OuterRef, Prefetch, Q, Subquery
 from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.decorators import method_decorator
@@ -696,7 +696,19 @@ class SupportTicketListCreateView(APIView):
         if not tenant:
             return Response([], status=status.HTTP_200_OK)
         close_stale_support_tickets()
-        tickets = _tenant_ticket_queryset().filter(tenant=tenant).order_by('-last_message_at', '-created_at')
+        last_body = (
+            SupportTicketMessage.objects.filter(ticket_id=OuterRef('pk'), is_internal=False)
+            .order_by('-created_at', '-id')
+            .values('body')[:1]
+        )
+        tickets = (
+            SupportTicket.objects.select_related(
+                'tenant', 'created_by', 'assigned_to', 'responded_by', 'registration_request__manager'
+            )
+            .filter(tenant=tenant)
+            .annotate(messages_count=Count('messages', distinct=True), last_message_body=Subquery(last_body))
+            .order_by('-last_message_at', '-created_at')
+        )
         return Response(SupportTicketListSerializer(tickets, many=True).data, status=status.HTTP_200_OK)
 
     @transaction.atomic
@@ -731,6 +743,22 @@ class SupportTicketListCreateView(APIView):
             send_payment_ticket_sms_to_simple_supporters(ticket)
         ticket = _tenant_ticket_queryset().filter(pk=ticket.pk).first()
         return Response(SupportTicketDetailSerializer(ticket, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+class SupportTicketSummaryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        tenant = getattr(request.user, 'tenant', None)
+        if not tenant:
+            return Response({'open_count': 0}, status=status.HTTP_200_OK)
+        close_stale_support_tickets()
+        open_count = (
+            SupportTicket.objects.filter(tenant=tenant)
+            .exclude(status=SupportTicket.Status.CLOSED)
+            .count()
+        )
+        return Response({'open_count': open_count}, status=status.HTTP_200_OK)
 
 
 class SupportTicketDetailView(APIView):

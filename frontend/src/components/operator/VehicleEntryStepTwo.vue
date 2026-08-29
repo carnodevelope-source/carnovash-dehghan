@@ -432,20 +432,11 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import api from '../../services/api'
+import { getCachedCatalog, loadOperatorCatalog } from '../../services/catalogCache'
 import BaseSpinner from '../base/BaseSpinner.vue'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { resolvePlateParts } from '../../utils/plate'
-
-const CATALOG_TTL_MS = 90_000
-const catalogCache = {
-  key: '',
-  at: 0,
-  services: null,
-  workers: null,
-  products: null
-}
 
 const props = defineProps({
   vehicleInfo: { type: Object, default: () => ({}) },
@@ -1291,80 +1282,40 @@ const applyCatalogPayload = ({ serviceData, workerData, productData }) => {
 const loadInitialData = async () => {
   loading.value = true
   errorMessage.value = ''
-  const cacheKey = `${normalizedVehicle.value.plateType || 'car'}:${normalizedVehicle.value.tariffType || 'type_1'}`
-  const cacheFresh = catalogCache.key === cacheKey
-    && (Date.now() - catalogCache.at) < CATALOG_TTL_MS
-    && catalogCache.services
-    && catalogCache.workers
-    && catalogCache.products
+  const plateType = normalizedVehicle.value.plateType || 'car'
+  const tariffType = normalizedVehicle.value.tariffType || 'type_1'
+  const cached = getCachedCatalog(plateType, tariffType)
 
   try {
-    if (cacheFresh) {
+    if (cached) {
       applyCatalogPayload({
-        serviceData: catalogCache.services,
-        workerData: catalogCache.workers,
-        productData: catalogCache.products
+        serviceData: cached.services,
+        workerData: cached.workers,
+        productData: cached.products
       })
       loading.value = false
-      // Soft refresh in background so the operator never waits twice for the same catalogs.
-      void refreshCatalogInBackground(cacheKey)
+      if ((Date.now() - cached.at) > 20_000) {
+        void loadOperatorCatalog({ plateType, tariffType, silent: true, force: true }).then((fresh) => {
+          applyCatalogPayload({
+            serviceData: fresh.services,
+            workerData: fresh.workers,
+            productData: fresh.products
+          })
+        }).catch(() => {})
+      }
       return
     }
 
-    const [serviceResp, workerResp, productResp] = await Promise.all([
-      api.get('/services/', {
-        params: {
-          plate_type: normalizedVehicle.value.plateType,
-          tariff_type: normalizedVehicle.value.tariffType,
-        },
-        meta: { trackLoading: false }
-      }),
-      api.get('/workers/', { meta: { trackLoading: false } }),
-      api.get('/products/', { meta: { trackLoading: false } })
-    ])
-    catalogCache.key = cacheKey
-    catalogCache.at = Date.now()
-    catalogCache.services = serviceResp.data
-    catalogCache.workers = workerResp.data
-    catalogCache.products = productResp.data
+    const fresh = await loadOperatorCatalog({ plateType, tariffType })
     applyCatalogPayload({
-      serviceData: serviceResp.data,
-      workerData: workerResp.data,
-      productData: productResp.data
+      serviceData: fresh.services,
+      workerData: fresh.workers,
+      productData: fresh.products
     })
   } catch (error) {
     errorMessage.value = resolveApiErrorMessage(error, 'بارگذاری اطلاعات خدمات و پرسنل ناموفق بود.')
   } finally {
     loading.value = false
-  }
-}
-
-const refreshCatalogInBackground = async (cacheKey) => {
-  try {
-    const [serviceResp, workerResp, productResp] = await Promise.all([
-      api.get('/services/', {
-        params: {
-          plate_type: normalizedVehicle.value.plateType,
-          tariff_type: normalizedVehicle.value.tariffType,
-        },
-        meta: { trackLoading: false, showErrorToast: false }
-      }),
-      api.get('/workers/', { meta: { trackLoading: false, showErrorToast: false } }),
-      api.get('/products/', { meta: { trackLoading: false, showErrorToast: false } })
-    ])
-    if (cacheKey !== `${normalizedVehicle.value.plateType || 'car'}:${normalizedVehicle.value.tariffType || 'type_1'}`) return
-    catalogCache.key = cacheKey
-    catalogCache.at = Date.now()
-    catalogCache.services = serviceResp.data
-    catalogCache.workers = workerResp.data
-    catalogCache.products = productResp.data
-    applyCatalogPayload({
-      serviceData: serviceResp.data,
-      workerData: workerResp.data,
-      productData: productResp.data
-    })
-  } catch (_error) {
-    // Cache remains usable; next open will retry.
   }
 }
 

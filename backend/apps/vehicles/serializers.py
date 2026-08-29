@@ -1799,3 +1799,10 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if getattr(user, 'role', None) == 'worker':
             data.pop('driver_gender', None)
         return data
+
+
+class VehicleEntryBoardSerializer(VehicleEntrySerializer):
+    """Dashboard list payload: same card fields, without per-row status history."""
+
+    class Meta(VehicleEntrySerializer.Meta):
+        fields = [name for name in VehicleEntrySerializer.Meta.fields if name != 'status_logs']

@@ -1759,7 +1759,7 @@ const submitModal = async () => {
     }
 
     closeModal()
-    await loadAll()
+    void loadAll({ silent: true })
   } catch (e) {
     t(apiErrorText(e), 'error')
   }
@@ -1787,16 +1787,16 @@ const toggleWorkerAvailability = async (item) => {
     entrusted_item_price: Number(item.entrusted_item_price || 0)
   })
   t(nextAvailability ? 'پرسنل فعال شد' : 'پرسنل غیرفعال شد')
-  await loadAll()
+  void loadAll({ silent: true })
 }
 const deleteProduct = async (item) => {
   if (!confirm('محصول از لیست و کارتابل حذف می‌شود، اما در گزارشات و سوابق باقی می‌ماند. ادامه می‌دهید؟')) return
   await api.delete(`/products/${item.id}/`)
   t('محصول حذف شد')
-  await loadAll()
+  void loadAll({ silent: true })
 }
-const deleteExpense = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/inventory/expenses/${item.id}/`); t('حذف شد'); await loadAll() }
-const deleteService = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/services/${item.id}/`); t('حذف شد'); await loadAll() }
+const deleteExpense = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/inventory/expenses/${item.id}/`); t('حذف شد'); void loadAll({ silent: true }) }
+const deleteService = async (item) => { if (!confirm('حذف شود؟')) return; await api.delete(`/services/${item.id}/`); t('حذف شد'); void loadAll({ silent: true }) }
 
 const onLiveEvent = (event) => {
   const type = String(event?.detail?.type || '')
@@ -1813,7 +1813,7 @@ const onLiveEvent = (event) => {
     if (liveReloadTimer) window.clearTimeout(liveReloadTimer)
     liveReloadTimer = window.setTimeout(() => {
       void loadAll({ silent: true })
-    }, 500)
+    }, 1500)
   }
 }
 

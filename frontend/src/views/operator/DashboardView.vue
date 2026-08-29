@@ -985,6 +985,7 @@ import { useAuthStore } from '../../store/auth.store'
 import { useVehicleStore } from '../../store/vehicle.store'
 import api, { mutationMeta } from '../../services/api'
 import { LIVE_EVENT_NAME, createLiveEventSource, parseLiveEvent } from '../../services/live'
+import { prefetchOperatorCatalog, invalidateOperatorCatalog } from '../../services/catalogCache'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { notifyError, notifySuccess, notifyWarning } from '../../utils/notify'
@@ -1174,13 +1175,21 @@ const closeVehicleModal = (options = {}) => {
   vehicleEditFlow.value = ''
 }
 const openVehicleDetails = async (vehicleId) => {
+  const listed = vehicleStore.vehicles.find((item) => Number(item.id) === Number(vehicleId))
+  if (listed) {
+    vehicleStore.selectedVehicle = listed
+    showVehicleDetailsModal.value = true
+  }
   try {
-    const { data } = await api.get(`/vehicles/${vehicleId}/`)
+    const { data } = await api.get(`/vehicles/${vehicleId}/`, { meta: { trackLoading: false } })
     vehicleStore.selectedVehicle = data
+    vehicleStore.upsertVehicle(data)
     showVehicleDetailsModal.value = true
   } catch (error) {
     console.error('fetchVehicleDetail error:', error?.response?.data || error)
-    notifyError('بارگذاری جزئیات خودرو ناموفق بود.', { title: 'جزئیات خودرو' })
+    if (!listed) {
+      notifyError('بارگذاری جزئیات خودرو ناموفق بود.', { title: 'جزئیات خودرو' })
+    }
   }
 }
 const closeVehicleDetails = () => {
@@ -1472,9 +1481,13 @@ const activeDateRangeParams = computed(() => {
     date_end: end || undefined
   }
 })
+const lastBoardFetchAt = ref(0)
 const fetchVehiclesForActiveRange = (options = {}) => vehicleStore.fetchVehicles(activeDateRangeParams.value, {
   trackLoading: false,
   ...options
+}).then((result) => {
+  lastBoardFetchAt.value = Date.now()
+  return result
 })
 const refreshVehicleCardsFromDatabase = async () => {
   if (vehicleCardsRefreshInFlight.value) return
@@ -1492,6 +1505,8 @@ const startVehicleCardsAutoRefresh = () => {
   vehicleLiveStream.value?.close()
   vehicleLiveStream.value = createLiveEventSource()
   vehicleLiveStream.value?.addEventListener('open', () => {
+    const boardIsFresh = vehicleStore.vehicles.length > 0 && (Date.now() - lastBoardFetchAt.value) < 15_000
+    if (boardIsFresh) return
     void refreshVehicleCardsFromDatabase()
   })
   vehicleLiveStream.value?.addEventListener('message', (event) => {
@@ -1519,6 +1534,9 @@ const onGlobalLiveEvent = (event) => {
     || type === 'settings.updated'
     || type === 'system.full_resync_required'
   ) {
+    if (type.startsWith('worker.') || type.startsWith('service.') || type.startsWith('product.') || type === 'settings.updated') {
+      invalidateOperatorCatalog()
+    }
     if (vehicleLiveRefreshTimer.value) window.clearTimeout(vehicleLiveRefreshTimer.value)
     vehicleLiveRefreshTimer.value = window.setTimeout(refreshVehicleCardsFromDatabase, 400)
   }
@@ -3921,6 +3939,7 @@ const loadVehicleSmsSettings = async () => {
 onMounted(() => {
   fetchVehiclesForActiveRange()
   startVehicleCardsAutoRefresh()
+  prefetchOperatorCatalog()
   window.addEventListener(LIVE_EVENT_NAME, onGlobalLiveEvent)
   loadVehicleSmsSettings()
   syncReleaseMobileState()
@@ -4402,7 +4421,7 @@ onBeforeUnmount(() => {
   -webkit-overflow-scrolling: touch;
 }
 .step-two-modal-panel { width: min(1440px, 100%); max-width: 100%; height: calc(100vh - 40px); max-height: calc(100vh - 40px); overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; min-height: 0; }
-.step-transition-overlay{position:absolute;inset:0;z-index:25;background:rgba(255,255,255,.78);backdrop-filter:blur(1px);display:flex;align-items:center;justify-content:center}
+.step-transition-overlay{position:absolute;inset:0;z-index:25;background:rgba(255,255,255,.55);display:flex;align-items:center;justify-content:center;pointer-events:none}
 .modal-head { padding: 18px 22px; border-bottom: 1px solid #e3e6ed; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .modal-head h2 { margin: 0; font-size: 22px; }
 .modal-step { margin: 0 0 6px; color: #64748b; font-size: 12px; }

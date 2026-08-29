@@ -188,4 +188,21 @@ api.interceptors.response.use((response) => {
   return Promise.reject(error)
 })
 
+// Identical in-flight GETs (board + shell + step-2 catalogs) share one network
+// round-trip. Mutations stay unique because of idempotency keys.
+const inflightGets = new Map()
+
+const originalGet = api.get.bind(api)
+api.get = (url, config = {}) => {
+  const paramsKey = JSON.stringify(config?.params || null)
+  const key = `${url}?${paramsKey}`
+  const existing = inflightGets.get(key)
+  if (existing) return existing
+  const request = originalGet(url, config).finally(() => {
+    if (inflightGets.get(key) === request) inflightGets.delete(key)
+  })
+  inflightGets.set(key, request)
+  return request
+}
+
 export default api

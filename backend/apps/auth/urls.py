@@ -24,6 +24,7 @@ from .views import (
     SupportTicketFeedbackView,
     SupportTicketListCreateView,
     SupportTicketMessageCreateView,
+    SupportTicketSummaryView,
     TenantRegisterView,
     UserManagementView,
 )
@@ -36,6 +37,7 @@ urlpatterns = [
     path('users/', UserManagementView.as_view(), name='users'),
     path('tenants/register/', TenantRegisterView.as_view(), name='tenant-register'),
     path('support/tickets/', SupportTicketListCreateView.as_view(), name='support-tickets'),
+    path('support/tickets/summary/', SupportTicketSummaryView.as_view(), name='support-tickets-summary'),
     path('support/tickets/<int:pk>/', SupportTicketDetailView.as_view(), name='support-ticket-detail'),
     path('support/tickets/<int:pk>/messages/', SupportTicketMessageCreateView.as_view(), name='support-ticket-message'),
     path('support/tickets/<int:pk>/feedback/', SupportTicketFeedbackView.as_view(), name='support-ticket-feedback'),

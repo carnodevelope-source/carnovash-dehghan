@@ -142,7 +142,7 @@ REDIS_URL = config('REDIS_URL', default='')
 
 # Upper bound on concurrent /api/live/events/ streams per worker process; each
 # one holds a server thread until its browser tab goes away.
-LIVE_MAX_SUBSCRIBERS = config('LIVE_MAX_SUBSCRIBERS', default=40, cast=int)
+LIVE_MAX_SUBSCRIBERS = config('LIVE_MAX_SUBSCRIBERS', default=12, cast=int)
 # Shared channel that lets an event raised in one worker process reach streams
 # attached to the others. Empty means single-process delivery only.
 LIVE_REDIS_URL = config('LIVE_REDIS_URL', default=REDIS_URL)

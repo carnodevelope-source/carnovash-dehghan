@@ -34,12 +34,23 @@ const ENGLISH_LETTER_MAP = {
 
 /**
  * Ambiguous OCR families: one latin token (or its Persian default) maps to several
- * look-alike plate letters. Unique letters (ب، م، ن، ک، …) are not listed → no bubbles.
+ * look-alike plate letters. Unique letters (م، ن، ل، …) are not listed → no bubbles.
  */
 const OCR_AMBIGUOUS_BY_LATIN = {
   s: ['س', 'ص', 'ث'],
   c: ['ص', 'س', 'ث'],
-  t: ['ط', 'ت']
+  t: ['ط', 'ت'],
+  b: ['ب', 'پ'],
+  p: ['پ', 'ب'],
+  r: ['ر', 'ز'],
+  z: ['ز', 'ر'],
+  k: ['ک', 'گ'],
+  g: ['گ', 'ک'],
+  f: ['ف', 'ق'],
+  q: ['ق', 'ف'],
+  h: ['ح', 'ج'],
+  j: ['ج', 'ح'],
+  u: ['ع', 'غ']
 }
 
 const OCR_AMBIGUOUS_BY_PERSIAN = (() => {
@@ -51,6 +62,42 @@ const OCR_AMBIGUOUS_BY_PERSIAN = (() => {
   }
   return map
 })()
+
+/** OCR often swaps look-alike digits. Hamming-1 variants only — never a full grid. */
+const OCR_DIGIT_CONFUSIONS = {
+  0: ['6', '8'],
+  1: ['7'],
+  2: ['7'],
+  3: ['8'],
+  4: ['9'],
+  5: ['6', '3'],
+  6: ['0', '8', '5'],
+  7: ['1', '2'],
+  8: ['0', '6', '3'],
+  9: ['4', '0']
+}
+
+export const getOcrDigitConfusionVariants = (left, mid, right) => {
+  const digits = `${left}${mid}${right}`
+  if (!/^\d{7}$/.test(digits)) return []
+  const seen = new Set()
+  const variants = []
+  for (let index = 0; index < digits.length; index += 1) {
+    const options = OCR_DIGIT_CONFUSIONS[digits[index]] || []
+    for (const alt of options) {
+      if (alt === digits[index]) continue
+      const next = `${digits.slice(0, index)}${alt}${digits.slice(index + 1)}`
+      if (seen.has(next)) continue
+      seen.add(next)
+      variants.push({
+        left: next.slice(0, 2),
+        mid: next.slice(2, 5),
+        right: next.slice(5, 7)
+      })
+    }
+  }
+  return variants
+}
 
 const PERSIAN_LETTER_MAP = {
   ا: 'الف',
@@ -119,12 +166,17 @@ export const extractOcrLatinLetter = (rawText) => {
 
 /**
  * Bubble options for operator when OCR letter is visually ambiguous.
- * Returns [] for unique letters (م، ب، ک، …) so UI hides the chip row.
+ * Returns [] for unique letters (م، ن، ل، …) so UI hides the chip row.
  */
 export const getAmbiguousLetterSuggestions = (letterOrLatin, rawOcrText = '') => {
   const latinFromRaw = extractOcrLatinLetter(rawOcrText)
   if (latinFromRaw && OCR_AMBIGUOUS_BY_LATIN[latinFromRaw]) {
-    return [...OCR_AMBIGUOUS_BY_LATIN[latinFromRaw]]
+    const family = OCR_AMBIGUOUS_BY_LATIN[latinFromRaw]
+    const preferred = normalizePlateLetter(letterOrLatin)
+    if (preferred && family.includes(preferred)) {
+      return [preferred, ...family.filter((item) => item !== preferred)]
+    }
+    return [...family]
   }
 
   const raw = String(letterOrLatin || '').replace(/\s+/g, '')
@@ -137,7 +189,9 @@ export const getAmbiguousLetterSuggestions = (letterOrLatin, rawOcrText = '') =>
 
   const persian = normalizePlateLetter(raw)
   if (!persian) return []
-  return OCR_AMBIGUOUS_BY_PERSIAN[persian] ? [...OCR_AMBIGUOUS_BY_PERSIAN[persian]] : []
+  const family = OCR_AMBIGUOUS_BY_PERSIAN[persian]
+  if (!family) return []
+  return [persian, ...family.filter((item) => item !== persian)]
 }
 
 export const splitPlate = (rawPlate) => String(rawPlate || '').trim().split(/\s+/).filter(Boolean)

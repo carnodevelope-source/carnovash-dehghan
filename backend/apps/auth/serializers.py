@@ -499,13 +499,19 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
         return obj.assigned_to.full_name or obj.assigned_to.username
 
     def get_messages_count(self, obj):
-        return getattr(obj, 'messages_count', None) or obj.messages.count()
+        annotated = getattr(obj, 'messages_count', None)
+        if annotated is not None:
+            return annotated
+        return obj.messages.count()
 
     def get_last_message_preview(self, obj):
-        last_message = getattr(obj, 'last_message_obj', None) or obj.messages.order_by('-created_at', '-id').first()
-        if not last_message:
-            return (obj.message or '')[:120]
-        return (last_message.body or '')[:120]
+        body = getattr(obj, 'last_message_body', None)
+        if body:
+            return (body or '')[:120]
+        last_message = getattr(obj, 'last_message_obj', None)
+        if last_message:
+            return (last_message.body or '')[:120]
+        return (obj.message or '')[:120]
 
     def _registration_request(self, obj):
         return getattr(obj, 'registration_request', None)

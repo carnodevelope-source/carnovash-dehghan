@@ -29,9 +29,8 @@ from .loyalty import (
     resolve_vehicle_loyalty_snapshot,
     sync_plate_loyalty,
 )
-from .serializers import VehicleEntrySerializer
-from apps.inventory.models import InventoryItem
-from apps.inventory.models import StockMovement
+from .serializers import VehicleEntryBoardSerializer, VehicleEntrySerializer
+from apps.inventory.models import InventoryItem, StockMovement
 from apps.notifications.models import NotificationLog
 from apps.notifications.services import send_vehicle_event_sms
 from apps.payments.models import Payment
@@ -46,6 +45,11 @@ class VehicleEntryListCreateView(generics.ListCreateAPIView):
     serializer_class = VehicleEntrySerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_serializer_class(self):
+        if self.request.method == 'GET':
+            return VehicleEntryBoardSerializer
+        return VehicleEntrySerializer
+
     def get_queryset(self):
         queryset = VehicleEntry.objects.select_related(
             'tenant',
@@ -57,7 +61,6 @@ class VehicleEntryListCreateView(generics.ListCreateAPIView):
         ).prefetch_related(
             'job__service_lines__service',
             'job__product_lines__product',
-            'status_logs',
         ).filter(tenant=self.request.user.tenant).order_by('check_in_at', 'id')
         status_param = self.request.query_params.get('status')
         if status_param:
@@ -161,17 +164,21 @@ def _ai_plate_parts(visual_right='', letter='', mid='', visual_left=''):
     )
 
 
-def _plate_parts_from_ai(raw_text='', persian_text=''):
-    from .plate_normalize import normalize_digits, normalize_plate_parts
-
+def _parse_ai_plate_from_latin(raw_text=''):
     raw = str(raw_text or '').strip().lower()
     compact_raw = ''.join(ch for ch in raw if ch.isalnum())
     raw_match = re.search(r'(\d{2})([a-z])(\d{3})(\d{2})', compact_raw)
-    if raw_match:
-        visual_right, letter_token, mid, visual_left = raw_match.groups()
-        letter = _normalized_ai_letter(letter_token)
-        if letter:
-            return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
+    if not raw_match:
+        return {}
+    visual_right, letter_token, mid, visual_left = raw_match.groups()
+    letter = _normalized_ai_letter(letter_token)
+    if not letter:
+        return {}
+    return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
+
+
+def _parse_ai_plate_from_persian(persian_text=''):
+    from .plate_normalize import normalize_digits
 
     normalized = normalize_digits(persian_text or '')
     normalized = normalized.replace('ك', 'ک').replace('ي', 'ی')
@@ -185,12 +192,30 @@ def _plate_parts_from_ai(raw_text='', persian_text=''):
             return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
 
     inline_match = re.search(r'(\d{2})\s*([^0-9\s]{1,4})\s*(\d{3})\s*(\d{2})', normalized)
-    if inline_match:
-        visual_right, letter_token, mid, visual_left = inline_match.groups()
-        letter = _normalized_ai_letter(letter_token)
-        if letter:
-            return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
-    return {}
+    if not inline_match:
+        return {}
+    visual_right, letter_token, mid, visual_left = inline_match.groups()
+    letter = _normalized_ai_letter(letter_token)
+    if not letter:
+        return {}
+    return _ai_plate_parts(visual_right=visual_right, letter=letter, mid=mid, visual_left=visual_left)
+
+
+def _plate_parts_from_ai(raw_text='', persian_text=''):
+    latin_parts = _parse_ai_plate_from_latin(raw_text)
+    persian_parts = _parse_ai_plate_from_persian(persian_text)
+    if latin_parts and persian_parts:
+        persian_letter = str(persian_parts.get('plate_letter') or '').strip()
+        if persian_letter:
+            # Digit model is stronger on latin OCR; Persian overlay is stronger on letters.
+            return _ai_plate_parts(
+                visual_right=latin_parts.get('plate_right', ''),
+                letter=persian_letter,
+                mid=latin_parts.get('plate_mid', ''),
+                visual_left=latin_parts.get('plate_left', ''),
+            )
+        return latin_parts
+    return latin_parts or persian_parts or {}
 
 
 def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right='', plate_type='car'):
@@ -515,15 +540,28 @@ class VehiclePlateLookupView(APIView):
     def get(self, request):
         tenant = getattr(request.user, 'tenant', None)
         plate_type = str(request.query_params.get('plate_type', 'car') or 'car').strip().lower() or 'car'
-        latest_vehicle, parts = _find_latest_vehicle_by_plate(
-            tenant,
-            plate_number=request.query_params.get('plate_number', ''),
-            plate_left=request.query_params.get('plate_left', ''),
-            plate_letter=request.query_params.get('plate_letter', ''),
-            plate_mid=request.query_params.get('plate_mid', ''),
-            plate_right=request.query_params.get('plate_right', ''),
-            plate_type=plate_type,
-        )
+        letters_raw = str(request.query_params.get('plate_letters') or '').strip()
+        letter_candidates = [part.strip() for part in letters_raw.replace('،', ',').split(',') if part.strip()]
+        primary_letter = request.query_params.get('plate_letter', '')
+        if primary_letter and primary_letter not in letter_candidates:
+            letter_candidates.insert(0, str(primary_letter).strip())
+        if not letter_candidates:
+            letter_candidates = ['']
+
+        latest_vehicle = None
+        parts = {}
+        for letter in letter_candidates:
+            latest_vehicle, parts = _find_latest_vehicle_by_plate(
+                tenant,
+                plate_number=request.query_params.get('plate_number', ''),
+                plate_left=request.query_params.get('plate_left', ''),
+                plate_letter=letter,
+                plate_mid=request.query_params.get('plate_mid', ''),
+                plate_right=request.query_params.get('plate_right', ''),
+                plate_type=plate_type,
+            )
+            if latest_vehicle:
+                break
         plate_number = parts.get('plate_number') or ''
         if not plate_number:
             return Response({'found': False}, status=status.HTTP_200_OK)
