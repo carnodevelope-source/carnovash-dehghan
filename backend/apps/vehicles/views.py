@@ -242,7 +242,7 @@ def _q_digit_field(field, value):
 
 
 def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', plate_letter='', plate_mid='', plate_right='', plate_type='car'):
-    from .plate_normalize import normalize_plate_letter, normalize_plate_parts, plate_letter_lookup_variants
+    from .plate_normalize import normalize_plate_parts, plate_letter_lookup_variants
 
     parts = normalize_plate_parts(
         plate_number=plate_number,
@@ -289,28 +289,6 @@ def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', pla
     if found:
         found.sort(key=lambda item: item.check_in_at or timezone.now(), reverse=True)
         return found[0], parts
-
-    # Letter OCR is often wrong while digits are right. If exactly one distinct
-    # plate-letter exists for these digits in history, use that vehicle.
-    if parts['plate_left'] and parts['plate_mid'] and parts['plate_right'] and parts.get('plate_type') != 'motorcycle':
-        digit_matches = list(
-            queryset.filter(
-                _q_digit_field('plate_left', parts['plate_left']),
-                _q_digit_field('plate_mid', parts['plate_mid']),
-                _q_digit_field('plate_right', parts['plate_right']),
-            )
-            .exclude(plate_letter='')
-            .order_by('-check_in_at')[:30]
-        )
-        unique_letters = {
-            normalize_plate_letter(item.plate_letter) or str(item.plate_letter or '').strip()
-            for item in digit_matches
-        }
-        unique_letters.discard('')
-        if len(unique_letters) == 1 and digit_matches:
-            return digit_matches[0], parts
-        if len(digit_matches) == 1:
-            return digit_matches[0], parts
 
     return None, parts
 
@@ -587,16 +565,32 @@ class VehiclePlateLookupView(APIView):
         tenant = getattr(request.user, 'tenant', None)
         plate_type = str(request.query_params.get('plate_type', 'car') or 'car').strip().lower() or 'car'
         letters_raw = str(request.query_params.get('plate_letters') or '').strip()
-        letter_candidates = [part.strip() for part in letters_raw.replace('،', ',').split(',') if part.strip()]
-        primary_letter = request.query_params.get('plate_letter', '')
-        if primary_letter and primary_letter not in letter_candidates:
-            letter_candidates.insert(0, str(primary_letter).strip())
-        if not letter_candidates:
-            letter_candidates = ['']
+        batch_letters = [part.strip() for part in letters_raw.replace('،', ',').split(',') if part.strip()]
+        primary_letter = str(request.query_params.get('plate_letter', '') or '').strip()
 
         latest_vehicle = None
         parts = {}
-        for letter in letter_candidates:
+
+        if len(batch_letters) > 1:
+            # Ambiguous OCR letter probe: only accept when exactly one candidate hits history.
+            matched = []
+            for letter in batch_letters:
+                vehicle, candidate_parts = _find_latest_vehicle_by_plate(
+                    tenant,
+                    plate_number=request.query_params.get('plate_number', ''),
+                    plate_left=request.query_params.get('plate_left', ''),
+                    plate_letter=letter,
+                    plate_mid=request.query_params.get('plate_mid', ''),
+                    plate_right=request.query_params.get('plate_right', ''),
+                    plate_type=plate_type,
+                )
+                parts = candidate_parts
+                if vehicle:
+                    matched.append((vehicle, candidate_parts))
+            if len(matched) == 1:
+                latest_vehicle, parts = matched[0]
+        else:
+            letter = primary_letter or (batch_letters[0] if batch_letters else '')
             latest_vehicle, parts = _find_latest_vehicle_by_plate(
                 tenant,
                 plate_number=request.query_params.get('plate_number', ''),
@@ -606,8 +600,6 @@ class VehiclePlateLookupView(APIView):
                 plate_right=request.query_params.get('plate_right', ''),
                 plate_type=plate_type,
             )
-            if latest_vehicle:
-                break
         plate_number = parts.get('plate_number') or ''
         has_car_digits = bool(parts.get('plate_left') and parts.get('plate_mid') and parts.get('plate_right'))
         has_moto_parts = bool(

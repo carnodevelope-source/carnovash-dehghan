@@ -170,20 +170,113 @@ class VehiclePlateLookupAutofillTests(APITestCase):
         self.assertEqual(response.data['plate_letter'], 'د')
         self.assertEqual(response.data['car_model'], 'پیکانتو')
 
-    def test_lookup_digit_only_unique_letter_when_ocr_letter_wrong(self):
+    def test_lookup_wrong_letter_does_not_match_digit_collision(self):
+        VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='24 ل 789 54',
+            plate_left='24',
+            plate_letter='ل',
+            plate_mid='789',
+            plate_right='54',
+            plate_type=VehicleEntry.PlateType.CAR,
+            car_model='206',
+            car_color='سفید',
+            driver_name='Owner Lam',
+            driver_phone='09121112222',
+            status=VehicleEntry.Status.RELEASED,
+        )
+        VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='24 ش 789 54',
+            plate_left='24',
+            plate_letter='ش',
+            plate_mid='789',
+            plate_right='54',
+            plate_type=VehicleEntry.PlateType.CAR,
+            car_model='405',
+            car_color='مشکی',
+            driver_name='Owner Sheen',
+            driver_phone='09123334444',
+            status=VehicleEntry.Status.RELEASED,
+        )
+        response_l = self.client.get(
+            reverse('vehicle-plate-lookup'),
+            {
+                'plate_left': '24',
+                'plate_letter': 'ل',
+                'plate_mid': '789',
+                'plate_right': '54',
+            },
+        )
+        self.assertEqual(response_l.status_code, 200)
+        self.assertTrue(response_l.data['found'])
+        self.assertEqual(response_l.data['car_model'], '206')
+
+        response_sh = self.client.get(
+            reverse('vehicle-plate-lookup'),
+            {
+                'plate_left': '24',
+                'plate_letter': 'ش',
+                'plate_mid': '789',
+                'plate_right': '54',
+            },
+        )
+        self.assertEqual(response_sh.status_code, 200)
+        self.assertTrue(response_sh.data['found'])
+        self.assertEqual(response_sh.data['car_model'], '405')
+
+        response_wrong = self.client.get(
+            reverse('vehicle-plate-lookup'),
+            {
+                'plate_left': '24',
+                'plate_letter': 'م',
+                'plate_mid': '789',
+                'plate_right': '54',
+            },
+        )
+        self.assertEqual(response_wrong.status_code, 200)
+        self.assertFalse(response_wrong.data['found'])
+
+    def test_lookup_batch_letters_requires_unique_history_hit(self):
+        VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='24 ل 789 54',
+            plate_left='24',
+            plate_letter='ل',
+            plate_mid='789',
+            plate_right='54',
+            plate_type=VehicleEntry.PlateType.CAR,
+            car_model='206',
+            car_color='سفید',
+            driver_name='Owner Lam',
+            driver_phone='09121112222',
+            status=VehicleEntry.Status.RELEASED,
+        )
+        VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='24 ش 789 54',
+            plate_left='24',
+            plate_letter='ش',
+            plate_mid='789',
+            plate_right='54',
+            plate_type=VehicleEntry.PlateType.CAR,
+            car_model='405',
+            car_color='مشکی',
+            driver_name='Owner Sheen',
+            driver_phone='09123334444',
+            status=VehicleEntry.Status.RELEASED,
+        )
         response = self.client.get(
             reverse('vehicle-plate-lookup'),
             {
-                'plate_left': '21',
-                'plate_letter': 'م',
-                'plate_mid': '157',
-                'plate_right': '64',
+                'plate_left': '24',
+                'plate_mid': '789',
+                'plate_right': '54',
+                'plate_letters': 'ل,ش',
             },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data['found'])
-        self.assertEqual(response.data['plate_letter'], 'د')
-        self.assertEqual(response.data['car_model'], 'پیکانتو')
+        self.assertFalse(response.data['found'])
 
     def test_lookup_finds_persian_digit_legacy_rows(self):
         VehicleEntry.objects.create(

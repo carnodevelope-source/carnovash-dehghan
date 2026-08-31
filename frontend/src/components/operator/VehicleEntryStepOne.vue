@@ -659,7 +659,6 @@ const applyRecognizedPlate = (data) => {
 
 const applyHistoryPlateMatch = (data, parts = {}) => {
   if (parts.left) form.plateLeft = parts.left
-  if (parts.letter) form.plateLetter = parts.letter
   if (parts.mid) form.plateMid = parts.mid
   if (parts.right) form.plateRight = parts.right
   applyPlateLookupData(data)
@@ -696,26 +695,6 @@ const uniqueHistoryMatch = (responses, items) => {
     .filter(({ result }) => result.status === 'fulfilled' && result.value?.data?.found)
   if (matches.length !== 1) return null
   return matches[0]
-}
-
-const tryResolveLetterFromHistory = async () => {
-  if (isMotorcyclePlate()) return false
-  if (form.isAnonymous || form.isPieceWash) return false
-  const left = normalizeDigits(form.plateLeft).replace(/\D/g, '').slice(0, 2)
-  const mid = normalizeDigits(form.plateMid).replace(/\D/g, '').slice(0, 3)
-  const right = normalizeDigits(form.plateRight).replace(/\D/g, '').slice(0, 2)
-  if (left.length !== 2 || mid.length !== 3 || right.length !== 2) return false
-  const candidates = buildLetterSuggestions(form.plateLetter, aiRecognitionSnapshot.value?.rawText || '')
-  if (candidates.length <= 1) return false
-  // OCR often confuses similar Persian letters. Check every candidate against
-  // history in parallel, then accept only if exactly one plate exists.
-  const responses = await Promise.allSettled(
-    candidates.map((letter) => lookupPlateCandidate(letter, left, mid, right))
-  )
-  const match = uniqueHistoryMatch(responses, candidates)
-  if (!match) return false
-  applyHistoryPlateMatch(match.result.value.data, { letter: match.item, left, mid, right })
-  return true
 }
 
 const tryResolveDigitsFromHistory = async () => {
@@ -800,15 +779,14 @@ const recognizePlateImage = async (imageDataUrl) => {
       )
       return
     }
-    const letterCorrected = await tryResolveLetterFromHistory()
     let lookup = await fetchPlateLookup()
     const digitsCorrected = lookup?.found ? false : await tryResolveDigitsFromHistory()
     if (digitsCorrected) lookup = { found: true }
-    const correctedFromHistory = letterCorrected || digitsCorrected
+    const correctedFromHistory = digitsCorrected
     const confidenceText = cameraState.lastConfidence ? ` | اطمینان ${(cameraState.lastConfidence * 100).toFixed(0)}٪` : ''
     setCameraMessage(
       correctedFromHistory
-        ? `پلاک ${plate.value} از روی سابقه مشتری اصلاح و ثبت شد${confidenceText}.`
+        ? `پلاک ${plate.value} از روی سابقه (اصلاح رقم) ثبت شد${confidenceText}.`
         : `پلاک ${plate.value} ثبت شد${confidenceText}.`
     )
     if (isMobileViewport.value) isAiPanelCollapsed.value = true
@@ -1030,27 +1008,28 @@ const lookupPartsStillMatch = (parts) => {
   )
 }
 
-const applyPlateLookupData = (data = {}) => {
-  if (data?.found) {
-    const nextType = String(data.plate_type || form.plateType || 'car').trim() || 'car'
-    form.plateType = nextType
-    if (nextType === 'motorcycle') {
-      const mid = normalizeDigits(data.plate_mid || '').replace(/\D/g, '').slice(0, 3)
-      const letter = normalizeDigits(data.plate_letter || '').replace(/\D/g, '').slice(0, 5)
-      if (mid.length === 3) form.plateMid = mid
-      if (letter.length === 5) form.plateLetter = letter
-    } else {
-      const left = normalizeDigits(data.plate_left || '').replace(/\D/g, '').slice(0, 2)
-      const mid = normalizeDigits(data.plate_mid || '').replace(/\D/g, '').slice(0, 3)
-      const right = normalizeDigits(data.plate_right || '').replace(/\D/g, '').slice(0, 2)
-      const letter = normalizePlateLetter(data.plate_letter || '')
-      if (left.length === 2) form.plateLeft = left
-      if (mid.length === 3) form.plateMid = mid
-      if (right.length === 2) form.plateRight = right
-      if (letter) form.plateLetter = letter
-      syncLetterSuggestions(form.plateLetter)
-    }
+const lookupMatchesCurrentPlate = (data) => {
+  if (!data?.found) return false
+  if (isMotorcyclePlate()) {
+    const mid = normalizeDigits(data.plate_mid || '').replace(/\D/g, '').slice(0, 3)
+    const letter = normalizeDigits(data.plate_letter || '').replace(/\D/g, '').slice(0, 5)
+    return mid === form.plateMid && letter === form.plateLetter
   }
+  const left = normalizeDigits(data.plate_left || '').replace(/\D/g, '').slice(0, 2)
+  const mid = normalizeDigits(data.plate_mid || '').replace(/\D/g, '').slice(0, 3)
+  const right = normalizeDigits(data.plate_right || '').replace(/\D/g, '').slice(0, 2)
+  const letter = normalizePlateLetter(data.plate_letter || '')
+  return (
+    left === normalizeDigits(form.plateLeft).replace(/\D/g, '').slice(0, 2)
+    && mid === normalizeDigits(form.plateMid).replace(/\D/g, '').slice(0, 3)
+    && right === normalizeDigits(form.plateRight).replace(/\D/g, '').slice(0, 2)
+    && letter === normalizePlateLetter(form.plateLetter)
+  )
+}
+
+const applyPlateLookupData = (data = {}) => {
+  if (!data?.found || !lookupMatchesCurrentPlate(data)) return
+  // Autofill customer info only — never overwrite operator-entered plate parts.
   const nextModel = String(data.car_model || data.model || '').trim()
   const nextColor = String(data.car_color || data.color || '').trim()
   if (nextModel) form.model = nextModel
@@ -1094,7 +1073,7 @@ const fetchPlateLookup = async () => {
     })
     // Only discard when the operator already changed the plate.
     if (!lookupPartsStillMatch(requestParts)) return null
-    if (data?.found) {
+    if (data?.found && lookupMatchesCurrentPlate(data)) {
       applyPlateLookupData(data)
       return data
     }
