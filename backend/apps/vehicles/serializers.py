@@ -841,7 +841,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             vehicle_entry.loyalty_discount_percent_snapshot = financials.get('loyalty_discount_percent') or Decimal('0')
             vehicle_entry.save(update_fields=['loyalty_discount_percent_snapshot', 'updated_at'])
         services_total = financials['services_total']
-        share_base_total = services_total + products_total
+        # Product sales are not shareable — commission pool is services only.
+        share_base_total = services_total
         if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
             worker_share_amount = min(share_base_total, Decimal(str(share_value or 0)))
         else:
@@ -1227,7 +1228,8 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         if payment_type not in dict(VehicleJob.WorkerPaymentType.choices):
             payment_type = VehicleJob.WorkerPaymentType.PERCENT
 
-        share_base_total = services_total + products_total
+        # Product sales are not shareable — commission pool is services only.
+        share_base_total = services_total
         if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
             fixed_amount = max(Decimal('0'), share_value)
             worker_share_amount = min(share_base_total, fixed_amount)

@@ -691,7 +691,7 @@ const effectiveManualDiscountTotal = computed(() => Math.min(
 ))
 const totalDiscountAmount = computed(() => Number((facilityDiscountTotal.value + effectiveLoyaltyDiscountAmount.value + effectiveManualDiscountTotal.value).toFixed(2)))
 const discountedServicesTotal = computed(() => Math.max(0, servicesTotal.value - effectiveLoyaltyDiscountAmount.value - effectiveManualDiscountTotal.value))
-const shareBaseTotal = computed(() => Number((discountedServicesTotal.value + productsTotal.value).toFixed(2)))
+const shareBaseTotal = computed(() => Number(discountedServicesTotal.value.toFixed(2)))
 const manualDiscountPercent = computed(() => (
   servicesTotal.value > 0
     ? Number(((effectiveManualDiscountTotal.value / servicesTotal.value) * 100).toFixed(1))

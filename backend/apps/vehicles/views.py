@@ -1814,7 +1814,8 @@ class VehicleReleaseCheckoutView(APIView):
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount
 
-        share_base_total = completed_service_totals + product_totals
+        # Product sales are not shareable — commission pool is services only.
+        share_base_total = completed_service_totals
         worker_share_base = vehicle.job.worker_share_amount or Decimal('0')
         if worker_share_base <= 0:
             payment_type = getattr(vehicle.job, 'worker_payment_type', '') or ''

@@ -326,11 +326,10 @@ def _job_final_total_without_tip(job):
 
 
 def _job_share_base_total(job):
-    """Same commission base used at checkout: services + products after line discounts (never rate-card list prices)."""
+    """Commission base used at checkout: services only after line discounts (never products or rate-card list prices)."""
     if not job:
         return Decimal('0')
     services_total = _normalize_decimal(getattr(job, 'services_total', 0))
-    products_total = _normalize_decimal(getattr(job, 'products_total', 0))
     if services_total <= 0:
         services_total = sum(
             (
@@ -339,7 +338,7 @@ def _job_share_base_total(job):
             ),
             Decimal('0'),
         )
-    return max(Decimal('0'), services_total + products_total)
+    return max(Decimal('0'), services_total)
 
 
 def _job_worker_service_total_for(job, worker_id):
