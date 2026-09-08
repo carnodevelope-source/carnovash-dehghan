@@ -140,6 +140,15 @@ class ProductPurchaseHistoryView(APIView):
 class ExpenseEntryListCreateView(APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
+    @staticmethod
+    def _sort_key(item):
+        value = item.get('spent_at') or item.get('created_at')
+        if value is None:
+            return ''
+        if hasattr(value, 'isoformat'):
+            return value.isoformat()
+        return str(value)
+
     def get(self, request):
         tenant = getattr(request.user, 'tenant', None)
         manual_entries = [
@@ -165,16 +174,18 @@ class ExpenseEntryListCreateView(APIView):
             .order_by('-moved_at', '-id')
         )
         for item in purchase_rows:
+            product = getattr(getattr(item, 'inventory_item', None), 'product', None)
             amount = Decimal(str(item.quantity or 0)) * Decimal(str(item.unit_cost or 0))
+            moved_at = item.moved_at
             purchase_entries.append({
                 'id': item.id,
                 'row_id': f'purchase-{item.id}',
-                'title': f'خرید محصول: {item.inventory_item.product.name}',
+                'title': f'خرید محصول: {product.name if product else "نامشخص"}',
                 'amount': amount,
                 'details': item.note or '',
                 'source_type': 'purchase',
                 'source_label': 'خرید محصول',
-                'spent_at': item.moved_at,
+                'spent_at': moved_at.date().isoformat() if moved_at else None,
                 'created_at': item.created_at,
                 'updated_at': item.updated_at,
                 'created_by_name': item.created_by.full_name or item.created_by.username if item.created_by else '-',
@@ -182,14 +193,14 @@ class ExpenseEntryListCreateView(APIView):
                 'attachment_name': '',
                 'can_edit': False,
                 'can_delete': False,
-                'product_id': item.inventory_item.product_id,
+                'product_id': getattr(item.inventory_item, 'product_id', None),
                 'quantity': item.quantity,
                 'unit_cost': item.unit_cost,
             })
 
         rows = sorted(
             [*manual_entries, *purchase_entries],
-            key=lambda item: item.get('spent_at') or item.get('created_at'),
+            key=self._sort_key,
             reverse=True,
         )
         return Response(rows, status=status.HTTP_200_OK)

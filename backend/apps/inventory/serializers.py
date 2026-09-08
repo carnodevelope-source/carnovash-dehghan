@@ -88,16 +88,22 @@ class ExpenseEntrySerializer(serializers.ModelSerializer):
     def get_attachment_url(self, obj):
         if not obj.attachment:
             return ''
+        try:
+            url = obj.attachment.url
+        except Exception:
+            return ''
         request = self.context.get('request')
-        url = obj.attachment.url
         return request.build_absolute_uri(url) if request else url
 
     def get_attachment_name(self, obj):
-        if obj.attachment_original_name:
-            return obj.attachment_original_name
-        if not obj.attachment:
+        try:
+            if obj.attachment_original_name:
+                return obj.attachment_original_name
+            if not obj.attachment:
+                return ''
+            return str(obj.attachment.name).split('/')[-1]
+        except Exception:
             return ''
-        return str(obj.attachment.name).split('/')[-1]
 
     def _normalize_spent_at(self, spent_at):
         if spent_at is None:
