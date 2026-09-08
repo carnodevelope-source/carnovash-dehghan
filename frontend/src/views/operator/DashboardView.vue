@@ -2467,14 +2467,18 @@ const openReleaseModal = async (car) => {
       cardAssignedWorkers
     )
     const availableProducts = Array.isArray(data?.job?.available_products)
-      ? data.job.available_products.map((item) => ({
-        id: item.id,
-        name: item.name,
-        sku: item.sku,
-        sale_price: Number(item.sale_price || 0),
-        available_quantity: Number(item.available_quantity || 0),
-        selected_quantity: Number(item.selected_quantity || 0)
-      }))
+      ? data.job.available_products.map((item) => {
+        const selectedQty = Number(item.selected_quantity || 0)
+        const freeQty = Number(item.available_quantity || 0)
+        return {
+          id: item.id,
+          name: item.name,
+          sku: item.sku,
+          sale_price: Number(item.sale_price || 0),
+          available_quantity: Math.max(freeQty, selectedQty),
+          selected_quantity: selectedQty
+        }
+      })
       : []
     const productLinesByProductId = {}
     availableProducts.forEach((item) => {
@@ -3110,6 +3114,26 @@ watch(() => releaseForm.value.paymentMethod, (value) => {
     releaseForm.value.manualSecondaryAmount = 0
   }
 })
+watch(() => releaseSummary.value.finalTotal, (finalTotal, previousTotal) => {
+  const next = Math.round(Math.max(0, Number(finalTotal || 0)))
+  const prev = Math.round(Math.max(0, Number(previousTotal || 0)))
+  if (!Number.isFinite(next)) return
+  if (releaseForm.value.paymentMethod === 'manual') {
+    const cash = Math.max(0, Number(releaseForm.value.manualCashAmount || 0))
+    const secondary = Math.max(0, Number(releaseForm.value.manualSecondaryAmount || 0))
+    if (secondary <= 0) {
+      releaseForm.value.manualCashAmount = next
+    } else if (Math.abs((cash + secondary) - prev) <= 1) {
+      releaseForm.value.manualCashAmount = Math.max(0, next - secondary)
+    }
+  }
+  if (
+    releaseForm.value.paymentMethod === 'cheque'
+    && (Number(releaseForm.value.chequeAmount || 0) <= 0 || Math.abs(Number(releaseForm.value.chequeAmount || 0) - prev) <= 1)
+  ) {
+    releaseForm.value.chequeAmount = next
+  }
+})
 const buildInvoicePdf = async () => {
   if (!invoiceTemplateRef.value) return false
   invoiceGenerating.value = true
@@ -3208,6 +3232,10 @@ const confirmReleaseVehicle = async () => {
     }
   }
   if (releaseForm.value.paymentMethod === 'manual') {
+    const secondary = Math.max(0, Number(releaseForm.value.manualSecondaryAmount || 0))
+    if (secondary <= 0) {
+      releaseForm.value.manualCashAmount = Math.round(Math.max(0, Number(releaseSummary.value.finalTotal || 0)))
+    }
     const breakdownTotal = releasePaymentBreakdown.value.reduce((sum, item) => sum + Number(item.amount || 0), 0)
     const finalTotal = Math.max(0, Number(releaseSummary.value.finalTotal || 0))
     if (!releasePaymentBreakdown.value.length) {

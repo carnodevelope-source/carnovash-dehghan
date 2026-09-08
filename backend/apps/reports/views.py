@@ -415,6 +415,54 @@ def _parse_sync_limit(value, default=None):
     return parsed
 
 
+def _parse_page(value, default=1):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, parsed)
+
+
+def _parse_page_size(value, default=50):
+    if value is None or str(value).strip() == '':
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return min(200, parsed)
+
+
+def _should_export_all_rows(request):
+    raw = str(request.query_params.get('export_all') or request.query_params.get('all_rows') or '').strip().lower()
+    return raw in {'1', 'true', 'yes', 'on'}
+
+
+def _paginate_report_rows(rows, *, page, page_size, export_all=False):
+    list_rows = list(rows or [])
+    total = len(list_rows)
+    if export_all:
+        return list_rows, {
+            'page': 1,
+            'page_size': total or page_size,
+            'total': total,
+            'pages': 1,
+            'export_all': True,
+        }
+    pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    safe_page = min(max(1, page), pages)
+    start = (safe_page - 1) * page_size
+    return list_rows[start:start + page_size], {
+        'page': safe_page,
+        'page_size': page_size,
+        'total': total,
+        'pages': pages,
+        'export_all': False,
+    }
+
+
 def _snapshot_items(job):
     snapshot = getattr(job, 'assigned_workers_snapshot', None)
     if not isinstance(snapshot, list):
@@ -936,6 +984,9 @@ class ReportsDashboardView(APIView):
             worker_id = int(worker_id) if worker_id else None
         except (TypeError, ValueError):
             worker_id = None
+        page = _parse_page(request.query_params.get('page'), default=1)
+        page_size = _parse_page_size(request.query_params.get('page_size'), default=50)
+        export_all = _should_export_all_rows(request)
 
         vehicles = self._build_filtered_vehicles(
             start=start,
@@ -1322,6 +1373,31 @@ class ReportsDashboardView(APIView):
                     'insurance_total': worker_state['insurance_selected_month_balance'],
                 }
 
+        overall_page, overall_pagination = _paginate_report_rows(
+            rows, page=page, page_size=page_size, export_all=export_all,
+        )
+        carwash_page, _ = _paginate_report_rows(
+            carwash_report, page=page, page_size=page_size, export_all=export_all,
+        )
+        worker_page, _ = _paginate_report_rows(
+            worker_report, page=page, page_size=page_size, export_all=export_all,
+        )
+        tips_page, _ = _paginate_report_rows(
+            tips_report, page=page, page_size=page_size, export_all=export_all,
+        )
+        discount_page, discount_pagination = _paginate_report_rows(
+            discount_report, page=page, page_size=page_size, export_all=export_all,
+        )
+        attendance_page, attendance_pagination = _paginate_report_rows(
+            attendance_rows, page=page, page_size=page_size, export_all=export_all,
+        )
+        blacklist_page, blacklist_pagination = _paginate_report_rows(
+            blacklist_rows, page=page, page_size=page_size, export_all=export_all,
+        )
+        revenue_page, revenue_pagination = _paginate_report_rows(
+            revenue_report, page=page, page_size=page_size, export_all=export_all,
+        )
+
         return Response({
             'filters': {
                 'start': request.query_params.get('start'),
@@ -1337,6 +1413,9 @@ class ReportsDashboardView(APIView):
                 'insurance_month': insurance_month,
                 'sync': sync_jobs,
                 'sync_limit': _parse_sync_limit(request.query_params.get('sync_limit'), default=None),
+                'page': overall_pagination['page'],
+                'page_size': page_size,
+                'export_all': export_all,
             },
             'synced_jobs': synced_jobs,
             'summary': {
@@ -1388,20 +1467,37 @@ class ReportsDashboardView(APIView):
                     'loyalty_discount_total': float(total_loyalty_discount),
                     'manual_discount_total': float(total_manual_discount),
                     'loyalty_discount_count': int(loyalty_discount_count),
-                    'count': len(discount_report),
+                    'count': discount_pagination['total'],
                 },
-                'attendance': {'count': len(attendance_rows)},
-                'blacklist': {'count': len(blacklist_rows)},
-                'revenue': {'revenue_total': float(revenue_total), 'count': len(revenue_report)},
+                'attendance': {'count': attendance_pagination['total']},
+                'blacklist': {'count': blacklist_pagination['total']},
+                'revenue': {'revenue_total': float(revenue_total), 'count': revenue_pagination['total']},
             },
-            'overall_report': rows,
-            'carwash_report': carwash_report,
-            'worker_report': worker_report,
-            'tips_report': tips_report,
-            'discount_report': discount_report,
-            'attendance_report': attendance_rows,
-            'blacklist_report': blacklist_rows,
-            'revenue_report': revenue_report,
+            'pagination': {
+                'page': overall_pagination['page'],
+                'page_size': page_size,
+                'total': overall_pagination['total'],
+                'pages': overall_pagination['pages'],
+                'export_all': export_all,
+                'sections': {
+                    'overall': overall_pagination,
+                    'carwash': overall_pagination,
+                    'worker': overall_pagination,
+                    'tips': overall_pagination,
+                    'discount': discount_pagination,
+                    'attendance': attendance_pagination,
+                    'blacklist': blacklist_pagination,
+                    'revenue': revenue_pagination,
+                },
+            },
+            'overall_report': overall_page,
+            'carwash_report': carwash_page,
+            'worker_report': worker_page,
+            'tips_report': tips_page,
+            'discount_report': discount_page,
+            'attendance_report': attendance_page,
+            'blacklist_report': blacklist_page,
+            'revenue_report': revenue_page,
             'selected_worker_summary': selected_worker_summary,
             'selected_worker_transactions': selected_worker_transactions,
         })
@@ -1414,7 +1510,14 @@ class ReportsExportView(APIView):
         headers = list(config['headers'])
         if getattr(request.user, 'role', None) == 'worker':
             headers = [item for item in headers if item[0] != 'driver_gender']
-        dashboard_response = ReportsDashboardView().get(request)
+        original_get = request._request.GET
+        export_get = original_get.copy()
+        export_get['export_all'] = '1'
+        request._request.GET = export_get
+        try:
+            dashboard_response = ReportsDashboardView().get(request)
+        finally:
+            request._request.GET = original_get
         payload = getattr(dashboard_response, 'data', {}) or {}
         rows = payload.get(config['rows_key'], []) or []
 

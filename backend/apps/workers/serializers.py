@@ -1,4 +1,5 @@
 ﻿from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 import secrets
@@ -20,9 +21,31 @@ def _resolve_request_tenant(request):
 
 
 def ensure_attendance_token(profile):
-    if not profile.attendance_token:
-        profile.attendance_token = secrets.token_urlsafe(24)
-        profile.save(update_fields=['attendance_token', 'updated_at'])
+    """Ensure a token exists without firing live signals during list GETs.
+
+    QuerySet.update() bypasses post_save publishers so a missing token during
+    /workers/ serialization cannot turn a read into a LiveOutbox write failure.
+    """
+    existing = str(getattr(profile, 'attendance_token', '') or '').strip()
+    if existing:
+        return existing
+    token = secrets.token_urlsafe(24)
+    updated = (
+        WorkerProfile.objects
+        .filter(pk=profile.pk)
+        .filter(Q(attendance_token__isnull=True) | Q(attendance_token=''))
+        .update(attendance_token=token, updated_at=timezone.now())
+    )
+    if updated:
+        profile.attendance_token = token
+        return token
+    refreshed = (
+        WorkerProfile.objects
+        .filter(pk=profile.pk)
+        .values_list('attendance_token', flat=True)
+        .first()
+    )
+    profile.attendance_token = str(refreshed or token).strip() or token
     return profile.attendance_token
 
 

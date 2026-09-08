@@ -1326,20 +1326,28 @@ const SILENT_REQUEST_META = { trackLoading: false, showErrorToast: false }
 
 const loadAll = async ({ silent = false } = {}) => {
   const options = silent ? { meta: SILENT_REQUEST_META } : {}
+  const settled = await Promise.allSettled([
+    api.get('/workers/', { params: { include_inactive: 1 }, ...options }),
+    api.get('/products/', options),
+    api.get('/inventory/expenses/', options),
+    api.get('/services/', options),
+    api.get('/inventory/', options),
+    api.get('/services/general-settings/', { meta: { ...(options.meta || {}), showErrorToast: false } })
+  ])
+  const valueOf = (index) => (settled[index].status === 'fulfilled' ? settled[index].value : null)
+  const firstError = settled.find((item) => item.status === 'rejected')?.reason
   try {
-    const [w, p, e, s, inv, gs] = await Promise.all([
-      api.get('/workers/', { params: { include_inactive: 1 }, ...options }),
-      api.get('/products/', options),
-      api.get('/inventory/expenses/', options),
-      api.get('/services/', options),
-      api.get('/inventory/', options),
-      api.get('/services/general-settings/', options).catch(() => null)
-    ])
-    workers.value = Array.isArray(w.data) ? w.data : []
-    products.value = Array.isArray(p.data) ? p.data : []
-    expenses.value = Array.isArray(e.data) ? e.data : []
-    services.value = Array.isArray(s.data) ? s.data : []
-    inventoryItems.value = Array.isArray(inv.data) ? inv.data : []
+    const w = valueOf(0)
+    const p = valueOf(1)
+    const e = valueOf(2)
+    const s = valueOf(3)
+    const inv = valueOf(4)
+    const gs = valueOf(5)
+    if (w) workers.value = Array.isArray(w.data) ? w.data : []
+    if (p) products.value = Array.isArray(p.data) ? p.data : []
+    if (e) expenses.value = Array.isArray(e.data) ? e.data : []
+    if (s) services.value = Array.isArray(s.data) ? s.data : []
+    if (inv) inventoryItems.value = Array.isArray(inv.data) ? inv.data : []
     if (gs) {
       generalSettings.discount_calculation_mode = gs.data?.discount_calculation_mode === 'fixed' ? 'fixed' : 'step'
       generalSettings.discount_percent_per_half_star = Number(gs.data?.discount_percent_per_half_star || 0)
@@ -1375,7 +1383,7 @@ const loadAll = async ({ silent = false } = {}) => {
       )
       generalSettings.sms_vehicle_assigned_invoice_template = ''
       generalSettings.sms_vehicle_released_template = ensureReleasedSmsTemplateDetails(gs.data?.sms_vehicle_released_template || '')
-    } else {
+    } else if (!silent) {
       generalSettings.discount_calculation_mode = 'step'
       generalSettings.discount_percent_per_half_star = 0
       generalSettings.fixed_visit_discounts = normalizeFixedVisitDiscounts()
@@ -1407,6 +1415,11 @@ const loadAll = async ({ silent = false } = {}) => {
       generalSettings.sms_vehicle_assigned_template = ''
       generalSettings.sms_vehicle_assigned_invoice_template = ''
       generalSettings.sms_vehicle_released_template = ''
+    }
+    if (firstError && !silent) {
+      errorMessage.value = resolveApiErrorMessage(firstError, 'خطا در بارگذاری داده‌ها')
+    } else if (!firstError) {
+      errorMessage.value = ''
     }
   } catch (e) {
     errorMessage.value = resolveApiErrorMessage(e, 'خطا در بارگذاری داده‌ها')

@@ -609,6 +609,16 @@ const tablePage = reactive({
   attendance: 1,
   blacklist: 1
 })
+const sectionMeta = reactive({
+  overall: { total: 0, pages: 1, page: 1 },
+  carwash: { total: 0, pages: 1, page: 1 },
+  worker: { total: 0, pages: 1, page: 1 },
+  tips: { total: 0, pages: 1, page: 1 },
+  discount: { total: 0, pages: 1, page: 1 },
+  revenue: { total: 0, pages: 1, page: 1 },
+  attendance: { total: 0, pages: 1, page: 1 },
+  blacklist: { total: 0, pages: 1, page: 1 }
+})
 const vehicleModal = reactive({ open: false, loading: false, data: null })
 const blacklistModal = reactive({ open: false, submitting: false, row: null, error: '' })
 const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '' })
@@ -631,53 +641,80 @@ const tabs = [
 const moneyInputValue = (value) => formatThousandsTomanValue(value, { maximumFractionDigits: 0 })
 const parseMoneyInput = (value) => fromThousandsTomanInput(normalizeDigits(value))
 
-const paginateList = (rows, page, { numbered = false } = {}) => {
+const paginateList = (rows, key, { numbered = false } = {}) => {
   const list = Array.isArray(rows) ? rows : []
-  const total = list.length
-  const pages = Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE) || 1)
-  const safePage = Math.min(Math.max(1, Number(page) || 1), pages)
+  const meta = sectionMeta[key] || {}
+  const total = Number(meta.total ?? list.length) || 0
+  const pages = Math.max(1, Number(meta.pages) || Math.ceil(total / REPORT_PAGE_SIZE) || 1)
+  const safePage = Math.min(Math.max(1, Number(tablePage[key]) || 1), pages)
   if (exportAllRows.value) {
     const mapped = numbered
       ? list.map((row, index) => ({ ...row, _pageRow: index + 1 }))
       : list
-    return { rows: mapped, total, pages, page: 1, from: total ? 1 : 0, to: total, pageSize: REPORT_PAGE_SIZE }
+    return { rows: mapped, total, pages: 1, page: 1, from: total ? 1 : 0, to: total, pageSize: REPORT_PAGE_SIZE }
   }
+  // Server already returns the current page slice for report tabs.
   const start = (safePage - 1) * REPORT_PAGE_SIZE
-  const slice = list.slice(start, start + REPORT_PAGE_SIZE)
   const mapped = numbered
-    ? slice.map((row, index) => ({ ...row, _pageRow: start + index + 1 }))
-    : slice
+    ? list.map((row, index) => ({ ...row, _pageRow: start + index + 1 }))
+    : list
   return {
     rows: mapped,
     total,
     pages,
     page: safePage,
     from: total ? start + 1 : 0,
-    to: Math.min(start + REPORT_PAGE_SIZE, total),
+    to: Math.min(start + list.length, total),
     pageSize: REPORT_PAGE_SIZE
   }
 }
 
 const pagedTables = computed(() => ({
-  overall: paginateList(data.overall_report, tablePage.overall),
-  carwash: paginateList(data.carwash_report, tablePage.carwash),
-  worker: paginateList(data.worker_report, tablePage.worker),
-  workerTx: paginateList(selectedWorkerTransactions.value, tablePage.workerTx, { numbered: true }),
-  tips: paginateList(data.tips_report, tablePage.tips),
-  discount: paginateList(data.discount_report, tablePage.discount),
-  revenue: paginateList(data.revenue_report, tablePage.revenue),
-  attendance: paginateList(data.attendance_report, tablePage.attendance),
-  blacklist: paginateList(data.blacklist_report, tablePage.blacklist)
+  overall: paginateList(data.overall_report, 'overall'),
+  carwash: paginateList(data.carwash_report, 'carwash'),
+  worker: paginateList(data.worker_report, 'worker'),
+  workerTx: (() => {
+    const list = Array.isArray(selectedWorkerTransactions.value) ? selectedWorkerTransactions.value : []
+    const total = list.length
+    const pages = Math.max(1, Math.ceil(total / REPORT_PAGE_SIZE) || 1)
+    const safePage = Math.min(Math.max(1, Number(tablePage.workerTx) || 1), pages)
+    const start = (safePage - 1) * REPORT_PAGE_SIZE
+    const slice = exportAllRows.value ? list : list.slice(start, start + REPORT_PAGE_SIZE)
+    return {
+      rows: slice.map((row, index) => ({ ...row, _pageRow: (exportAllRows.value ? 0 : start) + index + 1 })),
+      total,
+      pages,
+      page: exportAllRows.value ? 1 : safePage,
+      from: total ? (exportAllRows.value ? 1 : start + 1) : 0,
+      to: exportAllRows.value ? total : Math.min(start + REPORT_PAGE_SIZE, total),
+      pageSize: REPORT_PAGE_SIZE
+    }
+  })(),
+  tips: paginateList(data.tips_report, 'tips'),
+  discount: paginateList(data.discount_report, 'discount'),
+  revenue: paginateList(data.revenue_report, 'revenue'),
+  attendance: paginateList(data.attendance_report, 'attendance'),
+  blacklist: paginateList(data.blacklist_report, 'blacklist')
 }))
 
 const resetTablePages = () => {
   Object.keys(tablePage).forEach((key) => { tablePage[key] = 1 })
 }
 
+const linkedVehicleTabs = ['overall', 'carwash', 'worker', 'tips']
+
 const setTablePage = (key, page) => {
   const meta = pagedTables.value[key]
   const pages = Math.max(1, Number(meta?.pages) || 1)
-  tablePage[key] = Math.min(Math.max(1, Number(page) || 1), pages)
+  const nextPage = Math.min(Math.max(1, Number(page) || 1), pages)
+  if (linkedVehicleTabs.includes(key)) {
+    linkedVehicleTabs.forEach((tabKey) => { tablePage[tabKey] = nextPage })
+  } else {
+    tablePage[key] = nextPage
+  }
+  if (key !== 'workerTx') {
+    void fetchReports({ page: nextPage, skipWorkerAutoSync: true })
+  }
   nextTick(() => {
     reportExportRef.value?.querySelector('.table-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   })
@@ -865,7 +902,7 @@ const reportPeriodLabel = computed(() => {
   return 'کل دوره'
 })
 
-const buildReportParams = () => {
+const buildReportParams = ({ page = null, exportAll = false } = {}) => {
   const manualStart = parseJalaliToIso(filters.startJalali)
   const manualEnd = parseJalaliToIso(filters.endJalali)
   const quickRange = resolveRangeDates(filters.rangeKey)
@@ -877,6 +914,7 @@ const buildReportParams = () => {
     end = temp
   }
   const workerId = Number.parseInt(filters.workerId, 10)
+  const activePageKey = linkedVehicleTabs.includes(activeTab.value) ? 'overall' : activeTab.value
   return {
     start: start || undefined,
     end: end || undefined,
@@ -887,7 +925,10 @@ const buildReportParams = () => {
     plate_left: filters.plateLeft || undefined,
     plate_letter: filters.plateLetter || undefined,
     plate_mid: filters.plateMid || undefined,
-    plate_right: filters.plateRight || undefined
+    plate_right: filters.plateRight || undefined,
+    page: exportAll ? 1 : (page || tablePage[activePageKey] || 1),
+    page_size: REPORT_PAGE_SIZE,
+    ...(exportAll ? { export_all: 1 } : {})
   }
 }
 
@@ -1089,18 +1130,50 @@ const fetchWorkers = async ({ silent = false } = {}) => {
 }
 
 let fetchToken = 0
-const fetchReports = async ({ withSync = false, syncLimit = null, skipWorkerAutoSync = false, silent = false } = {}) => {
+const applySectionMeta = (payload = {}) => {
+  const sections = payload?.pagination?.sections || {}
+  const fallbackTotal = Number(payload?.pagination?.total || payload?.summary?.vehicles_count || 0)
+  const fallbackPages = Math.max(1, Number(payload?.pagination?.pages) || Math.ceil(fallbackTotal / REPORT_PAGE_SIZE) || 1)
+  const fallbackPage = Math.max(1, Number(payload?.pagination?.page) || 1)
+  const keys = Object.keys(sectionMeta)
+  keys.forEach((key) => {
+    const section = sections[key] || {}
+    sectionMeta[key] = {
+      total: Number(section.total ?? fallbackTotal) || 0,
+      pages: Math.max(1, Number(section.pages) || fallbackPages),
+      page: Math.max(1, Number(section.page) || fallbackPage)
+    }
+    if (key !== 'workerTx') {
+      tablePage[key] = sectionMeta[key].page
+    }
+  })
+}
+
+const fetchReports = async ({
+  withSync = false,
+  syncLimit = null,
+  skipWorkerAutoSync = false,
+  silent = false,
+  page = null,
+  exportAll = false,
+  resetPages = false
+} = {}) => {
   const token = ++fetchToken
   errorMessage.value = ''
+  if (resetPages) resetTablePages()
   try {
     const params = {
-      ...buildReportParams(),
+      ...buildReportParams({ page, exportAll }),
       ...(withSync ? { sync: 1 } : {}),
       ...(withSync && syncLimit != null ? { sync_limit: syncLimit } : {})
     }
     const { data: payload } = await api.get('/reports/dashboard/', {
       params,
-      ...(silent ? { meta: SILENT_REQUEST_META } : {})
+      meta: {
+        ...(silent ? SILENT_REQUEST_META : {}),
+        timeoutMs: exportAll || filters.rangeKey === 'all' ? 60000 : 45000,
+        loadingKey: 'reports:dashboard'
+      }
     })
     if (token !== fetchToken) return
     Object.assign(summary, payload.summary || {})
@@ -1123,7 +1196,7 @@ const fetchReports = async ({ withSync = false, syncLimit = null, skipWorkerAuto
     data.revenue_report = payload.revenue_report || []
     selectedWorkerSummary.value = payload.selected_worker_summary || null
     selectedWorkerTransactions.value = payload.selected_worker_transactions || []
-    resetTablePages()
+    applySectionMeta(payload)
     if (!skipWorkerAutoSync && !withSync && activeTab.value === 'worker') {
       scheduleWorkerReportSync()
     }
@@ -1289,6 +1362,7 @@ const buildWorkerReceiptElement = () => {
 
 const exportPdfAsPaper = async (paper = 'a4') => {
   if (!reportExportRef.value) return
+  await fetchReports({ exportAll: true, skipWorkerAutoSync: true })
   exportAllRows.value = true
   await nextTick()
   try {
@@ -1310,6 +1384,7 @@ const exportPdfAsPaper = async (paper = 'a4') => {
     downloadBlob(pdf.output('blob'), `reports-${activeTab.value}-${format}.pdf`)
   } finally {
     exportAllRows.value = false
+    await fetchReports({ skipWorkerAutoSync: true })
   }
 }
 
@@ -1318,7 +1393,7 @@ const exportWorkerReceiptPdf = async () => {
     errorMessage.value = 'برای چاپ فیش، اول یک نیرو را از فیلتر انتخاب کنید.'
     return
   }
-  await fetchReports()
+  await fetchReports({ exportAll: true, skipWorkerAutoSync: true })
   await nextTick()
   const receiptElement = buildWorkerReceiptElement()
   try {
@@ -1337,6 +1412,7 @@ const exportWorkerReceiptPdf = async () => {
     })
   } finally {
     receiptElement.remove()
+    await fetchReports({ skipWorkerAutoSync: true })
   }
 }
 
@@ -1646,7 +1722,7 @@ watch(() => [filters.q, filters.rangeKey, filters.startJalali, filters.endJalali
   if (filterTimer) clearTimeout(filterTimer)
   filterTimer = setTimeout(() => {
     lastWorkerSyncSignature.value = ''
-    fetchReports({ withSync: true, skipWorkerAutoSync: true })
+    fetchReports({ withSync: true, skipWorkerAutoSync: true, resetPages: true })
   }, 280)
 })
 

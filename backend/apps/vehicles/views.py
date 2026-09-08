@@ -1955,7 +1955,7 @@ class VehicleReleaseCheckoutView(APIView):
                 return Response(
                     {
                         'inventory': [
-                            f'Insufficient stock for product "{line.product.name}".'
+                            f'موجودی محصول «{line.product.name}» کافی نیست.'
                         ]
                     },
                     status=status.HTTP_400_BAD_REQUEST,

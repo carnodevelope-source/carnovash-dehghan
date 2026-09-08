@@ -96,9 +96,13 @@ const shouldAutoNotifyError = (error) => {
 
 api.interceptors.request.use((config) => {
   const meta = { ...(config.meta || {}) }
-  // Legacy callers with trackLoading:true retain the old route-level overlay;
-  // all other calls are silent by default. Components own mutation feedback.
-  meta.mode = meta.mode || (meta.trackLoading === true ? 'navigation' : 'background-sync')
+  // User-facing requests show the global overlay by default. Opt out with
+  // trackLoading:false / mode:'background-sync'|'prefetch' for live polls.
+  if (!meta.mode) {
+    if (meta.trackLoading === false) meta.mode = 'background-sync'
+    else if (meta.trackLoading === true || meta.blocking === true) meta.mode = 'navigation'
+    else meta.mode = 'navigation'
+  }
   config.meta = meta
   if (Number.isFinite(Number(meta.timeoutMs)) && Number(meta.timeoutMs) > 0) {
     config.timeout = Number(meta.timeoutMs)
@@ -115,7 +119,7 @@ api.interceptors.request.use((config) => {
     config.headers['Idempotency-Key'] = meta.idempotencyKey
   }
 
-  if (meta.mode === 'navigation' || meta.blocking === true) {
+  if (meta.mode === 'navigation' || meta.mode === 'mutation-user' || meta.blocking === true) {
     startGlobalLoading(config)
   }
 
