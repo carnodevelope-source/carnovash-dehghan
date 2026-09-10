@@ -320,17 +320,31 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
     def get_queryset(self):
         return VehicleEntry.objects.select_related('job').filter(tenant=self.request.user.tenant)
 
-    def _restore_released_inventory(self, instance, request_user):
-        release_movements = list(
+    def _restore_vehicle_product_inventory(self, instance, request_user):
+        """
+        Restore stock taken for this vehicle (intake and/or release).
+
+        Intake deducts on reservation; release may also deduct for older flows.
+        Cancel must put back the unreverted net OUT so cancelled orders never keep stock down.
+        """
+        out_reference_types = ('vehicle_intake', 'vehicle_release')
+        in_reference_types = (
+            'vehicle_release_cancel',
+            'vehicle_intake_cancel',
+            'vehicle_cancel_restore',
+            'vehicle_intake_product_adjust',
+        )
+        out_movements = list(
             StockMovement.objects.select_related('inventory_item')
             .filter(
                 tenant=instance.tenant,
-                reference_type='vehicle_release',
+                reference_type__in=out_reference_types,
                 reference_id=instance.id,
                 movement_type=StockMovement.MovementType.OUT,
             )
+            .order_by('id')
         )
-        if not release_movements:
+        if not out_movements:
             return
 
         reversed_totals = {
@@ -338,7 +352,7 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
             for item in (
                 StockMovement.objects.filter(
                     tenant=instance.tenant,
-                    reference_type='vehicle_release_cancel',
+                    reference_type__in=in_reference_types,
                     reference_id=instance.id,
                     movement_type=StockMovement.MovementType.IN,
                 )
@@ -346,14 +360,14 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
                 .annotate(total=Sum('quantity'))
             )
         }
-        released_totals = {}
-        for movement in release_movements:
+        deducted_totals = {}
+        for movement in out_movements:
             item_id = movement.inventory_item_id
-            if item_id not in released_totals:
-                released_totals[item_id] = {'quantity': Decimal('0'), 'movement': movement}
-            released_totals[item_id]['quantity'] += Decimal(str(movement.quantity or 0))
+            if item_id not in deducted_totals:
+                deducted_totals[item_id] = {'quantity': Decimal('0'), 'movement': movement}
+            deducted_totals[item_id]['quantity'] += Decimal(str(movement.quantity or 0))
 
-        for item_id, payload in released_totals.items():
+        for item_id, payload in deducted_totals.items():
             restore_quantity = payload['quantity'] - reversed_totals.get(item_id, Decimal('0'))
             if restore_quantity <= 0:
                 continue
@@ -370,8 +384,8 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
                 quantity=restore_quantity,
                 unit_cost=sample_movement.unit_cost or Decimal('0'),
                 sale_price_snapshot=sample_movement.sale_price_snapshot or Decimal('0'),
-                note='بازگشت موجودی پس از لغو ترخیص خودرو',
-                reference_type='vehicle_release_cancel',
+                note='بازگشت موجودی پس از لغو سفارش خودرو',
+                reference_type='vehicle_cancel_restore',
                 reference_id=instance.id,
                 created_by=request_user if getattr(request_user, 'is_authenticated', False) else None,
             )
@@ -380,7 +394,7 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
         Payment.objects.filter(vehicle_entry=instance).exclude(
             status=Payment.Status.REFUNDED
         ).update(status=Payment.Status.REFUNDED, updated_at=timezone.now())
-        self._restore_released_inventory(instance, request_user)
+        self._restore_vehicle_product_inventory(instance, request_user)
 
     @transaction.atomic
     def patch(self, request, *args, **kwargs):
@@ -1941,8 +1955,16 @@ class VehicleReleaseCheckoutView(APIView):
             ]
         )
 
+        # Products are already deducted at intake (reservation). Only deduct on release
+        # when this vehicle has no prior intake OUT movements (legacy / edge paths).
+        already_deducted_at_intake = StockMovement.objects.filter(
+            tenant=tenant,
+            reference_type='vehicle_intake',
+            reference_id=vehicle.id,
+            movement_type=StockMovement.MovementType.OUT,
+        ).exists()
         for line in vehicle.job.product_lines.select_related('product').all():
-            if is_existing_release:
+            if is_existing_release or already_deducted_at_intake:
                 continue
             if line.quantity <= 0:
                 continue

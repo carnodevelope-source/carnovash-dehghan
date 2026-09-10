@@ -48,6 +48,7 @@ class WorkerPayoutTransaction(TimestampedModel):
         WAGE_PAYMENT = 'wage_payment', 'Wage Payment'
         TIP_PAYMENT = 'tip_payment', 'Tip Payment'
         INSURANCE_PAYMENT = 'insurance_payment', 'Insurance Payment'
+        ADVANCE_PAYMENT = 'advance_payment', 'Advance Payment'
         BONUS = 'bonus', 'Bonus'
         PENALTY = 'penalty', 'Penalty'
 

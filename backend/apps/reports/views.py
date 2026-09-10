@@ -209,6 +209,7 @@ def _build_export_config(tab_key):
         'carwash': {'filename': 'carwash-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('carwash_share', 'حق کارواش'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'carwash_report'},
         'worker': {'filename': 'worker-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('final_total_without_tip', 'مبلغ سفارش بدون انعام'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_share', 'حق نیرو'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'worker_report'},
         'tips': {'filename': 'tips-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('products', 'کالا'), ('created_at', 'تاریخ')], 'rows_key': 'tips_report'},
+        'products': {'filename': 'products-report', 'headers': [('row', 'ردیف'), ('product_name', 'محصول'), ('quantity', 'تعداد'), ('unit_price', 'فی فروش'), ('sale_amount', 'مبلغ فروش'), ('cost_amount', 'بهای تمام‌شده'), ('profit_amount', 'سود'), ('driver_name', 'راننده'), ('plate_number', 'پلاک'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'products_report'},
         'revenue': {'filename': 'revenue-report', 'headers': [('row', 'ردیف'), ('created_at', 'تاریخ'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل خودرو'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('payment_method', 'روش پرداخت'), ('payment_status', 'وضعیت پرداخت'), ('service_amount', 'خدمات'), ('product_amount', 'محصولات'), ('discount_amount', 'تخفیف'), ('tip_amount', 'انعام'), ('tax_amount', 'مالیات'), ('final_total', 'مبلغ نهایی'), ('received_amount', 'وصول شده'), ('outstanding_amount', 'مانده'), ('cheque_number', 'شماره چک'), ('reminder_due_at', 'سررسید')], 'rows_key': 'revenue_report'},
         'attendance': {'filename': 'attendance-report', 'headers': [('row', 'ردیف'), ('worker_name', 'نام پرسنل'), ('event_type', 'نوع رویداد'), ('source', 'منبع ثبت'), ('event_at', 'زمان')], 'rows_key': 'attendance_report'},
         'blacklist': {'filename': 'blacklist-report', 'headers': [('row', 'ردیف'), ('plate_number', 'پلاک'), ('plate_type', 'نوع وسیله'), ('note', 'توضیح'), ('blocked_by_name', 'ثبت کننده'), ('created_at', 'تاریخ ثبت')], 'rows_key': 'blacklist_report'},
@@ -794,6 +795,10 @@ def _compute_worker_attendance_minutes(worker, *, start=None, end=None):
 def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end=None):
     job_ids = [job.id for job in jobs if job]
     transactions = WorkerPayoutTransaction.objects.filter(worker=worker)
+    if start:
+        transactions = transactions.filter(created_at__gte=start)
+    if end:
+        transactions = transactions.filter(created_at__lte=end)
     if job_ids:
         transactions = transactions.filter(Q(vehicle_job_id__in=job_ids) | Q(vehicle_job__isnull=True))
     else:
@@ -816,6 +821,10 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
             Sum('amount', filter=Q(kind=WorkerPayoutTransaction.Kind.TIP_PAYMENT)),
             Value(Decimal('0')),
         ),
+        advance_paid_total=Coalesce(
+            Sum('amount', filter=Q(kind=WorkerPayoutTransaction.Kind.ADVANCE_PAYMENT)),
+            Value(Decimal('0')),
+        ),
     )
     attendance_minutes = _compute_worker_attendance_minutes(worker, start=start, end=end)
     attendance_hours = _decimal_hours_from_minutes(attendance_minutes)
@@ -833,7 +842,14 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
     insurance_total = insurance_monthly_amount * Decimal(str(insurance_cycle_count))
     insurance_paid_total = _insurance_paid_amount_until_month(worker, insurance_target_month)
     insurance_selected_month_paid_total = _insurance_paid_amount_for_month(worker, insurance_target_month)
-    payable_total = wage_total + _normalize_decimal(aggregates['bonus_total']) - _normalize_decimal(aggregates['penalty_total']) - _normalize_decimal(aggregates['wage_paid_total'])
+    advance_paid_total = _normalize_decimal(aggregates['advance_paid_total'])
+    payable_total = (
+        wage_total
+        + _normalize_decimal(aggregates['bonus_total'])
+        - _normalize_decimal(aggregates['penalty_total'])
+        - _normalize_decimal(aggregates['wage_paid_total'])
+        - advance_paid_total
+    )
     if payable_total < 0:
         payable_total = Decimal('0')
     tip_balance = tip_total - _normalize_decimal(aggregates['tip_paid_total'])
@@ -867,6 +883,7 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
         'penalty_total': _normalize_decimal(aggregates['penalty_total']),
         'wage_paid_total': _normalize_decimal(aggregates['wage_paid_total']),
         'tip_paid_total': _normalize_decimal(aggregates['tip_paid_total']),
+        'advance_paid_total': advance_paid_total,
         'insurance_paid_total': _normalize_decimal(insurance_paid_total),
         'insurance_selected_month_paid_total': _normalize_decimal(insurance_selected_month_paid_total),
         'insurance_selected_month_balance': insurance_selected_month_balance,
@@ -1188,6 +1205,55 @@ class ReportsDashboardView(APIView):
             'created_at': r['created_at'],
         } for i, r in enumerate(rows)]
 
+        products_report = []
+        products_sale_total = Decimal('0')
+        products_cost_total = Decimal('0')
+        products_profit_total = Decimal('0')
+        products_qty_total = Decimal('0')
+        for vehicle in vehicles:
+            job = getattr(vehicle, 'job', None)
+            if not job:
+                continue
+            for line in job.product_lines.all():
+                qty = _normalize_decimal(getattr(line, 'quantity', 0))
+                if qty <= 0:
+                    continue
+                unit_price = _normalize_decimal(getattr(line, 'unit_price', 0))
+                sale_amount = _normalize_decimal(getattr(line, 'line_total', 0))
+                if sale_amount <= 0:
+                    sale_amount = unit_price * qty
+                product = getattr(line, 'product', None)
+                cost_unit = _normalize_decimal(getattr(product, 'cost_price', 0) if product else 0)
+                cost_amount = (cost_unit * qty).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                profit_amount = (sale_amount - cost_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                products_sale_total += sale_amount
+                products_cost_total += cost_amount
+                products_profit_total += profit_amount
+                products_qty_total += qty
+                products_report.append({
+                    'row': len(products_report) + 1,
+                    'vehicle_id': vehicle.id,
+                    'product_id': getattr(line, 'product_id', None),
+                    'product_name': getattr(product, 'name', None) or '-',
+                    'quantity': float(qty),
+                    'unit_price': float(unit_price),
+                    'sale_amount': float(sale_amount),
+                    'cost_amount': float(cost_amount),
+                    'profit_amount': float(profit_amount),
+                    'driver_name': vehicle.driver_name,
+                    'driver_phone': vehicle.driver_phone,
+                    'car_model': vehicle.car_model,
+                    'car_color': vehicle.car_color,
+                    'plate_number': vehicle.plate_number,
+                    'plate_left': vehicle.plate_left,
+                    'plate_letter': vehicle.plate_letter,
+                    'plate_mid': vehicle.plate_mid,
+                    'plate_right': vehicle.plate_right,
+                    'plate_type': vehicle.plate_type,
+                    'worker_name': _job_worker_names(job),
+                    'created_at': vehicle.released_at or vehicle.created_at,
+                })
+
         discount_report = []
         for r in rows:
             if (
@@ -1341,6 +1407,7 @@ class ReportsDashboardView(APIView):
                     'penalty_total': float(worker_state['penalty_total']),
                     'wage_paid_total': float(worker_state['wage_paid_total']),
                     'tip_paid_total': float(worker_state['tip_paid_total']),
+                    'advance_paid_total': float(worker_state['advance_paid_total']),
                     'insurance_paid_total': float(worker_state['insurance_paid_total']),
                     'insurance_selected_month_paid_total': float(worker_state['insurance_selected_month_paid_total']),
                     'insurance_selected_month_balance': float(worker_state['insurance_selected_month_balance']),
@@ -1384,6 +1451,9 @@ class ReportsDashboardView(APIView):
         )
         tips_page, _ = _paginate_report_rows(
             tips_report, page=page, page_size=page_size, export_all=export_all,
+        )
+        products_page, products_pagination = _paginate_report_rows(
+            products_report, page=page, page_size=page_size, export_all=export_all,
         )
         discount_page, discount_pagination = _paginate_report_rows(
             discount_report, page=page, page_size=page_size, export_all=export_all,
@@ -1461,6 +1531,13 @@ class ReportsDashboardView(APIView):
                     'penalty_total': float(all_workers_totals['penalty_total']),
                 },
                 'tips': {'tips_total': float(total_tip)},
+                'products': {
+                    'count': products_pagination['total'],
+                    'quantity_total': float(products_qty_total),
+                    'sale_total': float(products_sale_total),
+                    'cost_total': float(products_cost_total),
+                    'profit_total': float(products_profit_total),
+                },
                 'discount': {
                     'discount_total': float(total_discount),
                     'facility_discount_total': float(total_facility_discount),
@@ -1484,6 +1561,7 @@ class ReportsDashboardView(APIView):
                     'carwash': overall_pagination,
                     'worker': overall_pagination,
                     'tips': overall_pagination,
+                    'products': products_pagination,
                     'discount': discount_pagination,
                     'attendance': attendance_pagination,
                     'blacklist': blacklist_pagination,
@@ -1494,6 +1572,7 @@ class ReportsDashboardView(APIView):
             'carwash_report': carwash_page,
             'worker_report': worker_page,
             'tips_report': tips_page,
+            'products_report': products_page,
             'discount_report': discount_page,
             'attendance_report': attendance_page,
             'blacklist_report': blacklist_page,
@@ -1537,13 +1616,16 @@ class ReportsWorkerPayoutView(APIView):
         mode = str(request.data.get('mode', 'full')).strip().lower()
         payout_target = str(request.data.get('payout_target', 'wage')).strip().lower()
         note = str(request.data.get('note', '')).strip()
+        include_tip = str(request.data.get('include_tip', '')).strip().lower() in {
+            '1', 'true', 'yes', 'on',
+        }
         try:
             worker_id = int(worker_id)
         except (TypeError, ValueError):
             return Response({'worker_id': ['Invalid worker.']}, status=status.HTTP_400_BAD_REQUEST)
         if mode not in {'full', 'partial'}:
             return Response({'mode': ['Invalid mode.']}, status=status.HTTP_400_BAD_REQUEST)
-        if payout_target not in {'wage', 'tip', 'insurance'}:
+        if payout_target not in {'wage', 'tip', 'insurance', 'advance'}:
             return Response({'payout_target': ['Invalid payout target.']}, status=status.HTTP_400_BAD_REQUEST)
         insurance_month = _normalize_jalali_month(request.data.get('insurance_month'))
 
@@ -1555,6 +1637,29 @@ class ReportsWorkerPayoutView(APIView):
         if payout_target == 'insurance' and not insurance_month:
             return Response({'insurance_month': ['ماه بیمه معتبر نیست.']}, status=status.HTTP_400_BAD_REQUEST)
         worker_state = _compute_worker_financials(worker, jobs, insurance_month=insurance_month)
+        created_transactions = []
+
+        if payout_target == 'advance':
+            amount = _normalize_decimal(request.data.get('amount'))
+            if amount <= 0:
+                return Response({'amount': ['مبلغ مساعده باید بیشتر از صفر باشد.']}, status=status.HTTP_400_BAD_REQUEST)
+            tx = WorkerPayoutTransaction.objects.create(
+                tenant=tenant,
+                worker=worker,
+                kind=WorkerPayoutTransaction.Kind.ADVANCE_PAYMENT,
+                amount=amount,
+                note=note or 'پرداخت مساعده',
+                created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+            )
+            return Response({
+                'detail': 'پرداخت مساعده ثبت شد.',
+                'transaction_id': tx.id,
+                'paid_amount': float(amount),
+                'remaining_payable': float(max(Decimal('0'), worker_state['payable_total'] - amount)),
+                'payout_target': payout_target,
+                'transactions': [{'id': tx.id, 'kind': tx.kind, 'amount': float(tx.amount)}],
+            })
+
         if payout_target == 'insurance':
             insurance_due_start_month = worker_state['insurance_due_start_month']
             if not insurance_due_start_month or not _jalali_month_lte(insurance_due_start_month, insurance_month):
@@ -1564,8 +1669,17 @@ class ReportsWorkerPayoutView(APIView):
                 return Response({'detail': f'این ماه قبلا تسویه شده است: {insurance_month}.'}, status=status.HTTP_400_BAD_REQUEST)
         else:
             payable_total = worker_state['tip_balance'] if payout_target == 'tip' else worker_state['payable_total']
-            if payable_total <= 0:
-                return Response({'detail': 'مانده‌ای برای پرداخت وجود ندارد.' if payout_target == 'tip' else 'مانده حقوقی برای پرداخت وجود ندارد.'}, status=status.HTTP_400_BAD_REQUEST)
+            if payable_total <= 0 and not (payout_target == 'wage' and include_tip and worker_state['tip_balance'] > 0):
+                return Response(
+                    {
+                        'detail': (
+                            'مانده‌ای برای پرداخت وجود ندارد.'
+                            if payout_target == 'tip'
+                            else 'مانده حقوقی برای پرداخت وجود ندارد.'
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         if mode == 'full':
             amount = payable_total
@@ -1573,40 +1687,72 @@ class ReportsWorkerPayoutView(APIView):
             amount = _normalize_decimal(request.data.get('amount'))
             if amount <= 0:
                 return Response({'amount': ['مبلغ باید بیشتر از صفر باشد.']}, status=status.HTTP_400_BAD_REQUEST)
-            if amount >= payable_total:
+            if amount >= payable_total and payable_total > 0:
                 return Response({'amount': ['مبلغ باید کمتر از مانده کل باشد.']}, status=status.HTTP_400_BAD_REQUEST)
+            if payable_total <= 0:
+                return Response({'amount': ['مانده حقوقی برای پرداخت جزئی وجود ندارد.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        tx = WorkerPayoutTransaction.objects.create(
-            tenant=tenant,
-            worker=worker,
-            kind=(
-                WorkerPayoutTransaction.Kind.TIP_PAYMENT if payout_target == 'tip'
-                else WorkerPayoutTransaction.Kind.INSURANCE_PAYMENT if payout_target == 'insurance'
-                else WorkerPayoutTransaction.Kind.WAGE_PAYMENT
-            ),
-            reference_month=insurance_month if payout_target == 'insurance' else '',
-            amount=amount,
-            note=note or (
-                'پرداخت کامل انعام' if payout_target == 'tip' and mode == 'full'
-                else 'پرداخت بخشی از انعام' if payout_target == 'tip'
-                else f'پرداخت کامل حق بیمه {insurance_month}' if payout_target == 'insurance' and mode == 'full'
-                else f'پرداخت بخشی از حق بیمه {insurance_month}' if payout_target == 'insurance'
-                else 'پرداخت کامل حقوق' if mode == 'full'
-                else 'پرداخت بخشی از حقوق'
-            ),
-            created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
-        )
+        if amount > 0:
+            tx = WorkerPayoutTransaction.objects.create(
+                tenant=tenant,
+                worker=worker,
+                kind=(
+                    WorkerPayoutTransaction.Kind.TIP_PAYMENT if payout_target == 'tip'
+                    else WorkerPayoutTransaction.Kind.INSURANCE_PAYMENT if payout_target == 'insurance'
+                    else WorkerPayoutTransaction.Kind.WAGE_PAYMENT
+                ),
+                reference_month=insurance_month if payout_target == 'insurance' else '',
+                amount=amount,
+                note=note or (
+                    'پرداخت کامل انعام' if payout_target == 'tip' and mode == 'full'
+                    else 'پرداخت بخشی از انعام' if payout_target == 'tip'
+                    else f'پرداخت کامل حق بیمه {insurance_month}' if payout_target == 'insurance' and mode == 'full'
+                    else f'پرداخت بخشی از حق بیمه {insurance_month}' if payout_target == 'insurance'
+                    else 'پرداخت کامل حقوق' if mode == 'full'
+                    else 'پرداخت بخشی از حقوق'
+                ),
+                created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+            )
+            created_transactions.append(tx)
+
+        tip_paid_amount = Decimal('0')
+        if payout_target == 'wage' and include_tip:
+            tip_balance = worker_state['tip_balance']
+            if tip_balance > 0:
+                tip_tx = WorkerPayoutTransaction.objects.create(
+                    tenant=tenant,
+                    worker=worker,
+                    kind=WorkerPayoutTransaction.Kind.TIP_PAYMENT,
+                    amount=tip_balance,
+                    note=(note + ' | ' if note else '') + 'پرداخت همزمان انعام با حقوق',
+                    created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                )
+                created_transactions.append(tip_tx)
+                tip_paid_amount = tip_balance
 
         remaining = payable_total - amount
         if remaining < 0:
             remaining = Decimal('0')
+        detail = (
+            'پرداخت انعام ثبت شد.' if payout_target == 'tip'
+            else 'پرداخت حق بیمه ثبت شد.' if payout_target == 'insurance'
+            else 'پرداخت حقوق و انعام ثبت شد.' if tip_paid_amount > 0
+            else 'پرداخت حقوق ثبت شد.'
+        )
         return Response({
-            'detail': 'پرداخت انعام ثبت شد.' if payout_target == 'tip' else 'پرداخت حق بیمه ثبت شد.' if payout_target == 'insurance' else 'پرداخت حقوق ثبت شد.',
-            'transaction_id': tx.id,
+            'detail': detail,
+            'transaction_id': created_transactions[0].id if created_transactions else None,
             'paid_amount': float(amount),
+            'tip_paid_amount': float(tip_paid_amount),
             'remaining_payable': float(remaining),
+            'remaining_tip': float(max(Decimal('0'), worker_state['tip_balance'] - tip_paid_amount)),
             'payout_target': payout_target,
             'insurance_month': insurance_month,
+            'include_tip': include_tip,
+            'transactions': [
+                {'id': item.id, 'kind': item.kind, 'amount': float(item.amount or 0)}
+                for item in created_transactions
+            ],
         })
 
 

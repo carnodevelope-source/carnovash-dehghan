@@ -128,6 +128,20 @@ def simple_support_users():
     )
 
 
+def hq_alert_users():
+    """HQ supporters + managers who should get ticket SMS alerts."""
+    return User.objects.filter(
+        platform_role__in=[
+            User.PlatformRoles.HQ_SUPPORT,
+            User.PlatformRoles.HQ_ADMIN,
+            User.PlatformRoles.HQ_PROJECT_MANAGER,
+            User.PlatformRoles.HQ_FINANCE,
+        ],
+        is_active=True,
+        is_deleted=False,
+    )
+
+
 def hq_ticket_visibility_q(user):
     """
     Non-HQ users only see unassigned tickets or tickets assigned to them.
@@ -178,22 +192,26 @@ def refer_ticket_to_user(ticket, assignee_id):
     return assignee
 
 
+def _collect_hq_alert_phones():
+    phones = []
+    for user in hq_alert_users().only('id', 'phone'):
+        phone = normalize_phone(getattr(user, 'phone', '') or '')
+        if phone and phone not in phones:
+            phones.append(phone)
+    return phones
+
+
 def send_payment_ticket_sms_to_simple_supporters(ticket):
     """
-    SMS only for payment deposit/withdrawal tickets, and only to simple HQ supporters.
+    SMS for payment deposit/withdrawal tickets to HQ supporters and HQ managers.
     Manual/general tickets do not trigger SMS.
     """
     if not ticket or not is_payment_support_ticket(ticket):
         return {'sent': False, 'reason': 'not_payment_ticket'}
 
-    phones = []
-    for supporter in simple_support_users().only('id', 'phone'):
-        phone = normalize_phone(getattr(supporter, 'phone', '') or '')
-        if phone and phone not in phones:
-            phones.append(phone)
-
+    phones = _collect_hq_alert_phones()
     if not phones:
-        return {'sent': False, 'reason': 'no_support_phones'}
+        return {'sent': False, 'reason': 'no_hq_phones'}
 
     if is_wallet_bank_withdrawal_ticket(ticket):
         label = 'تیکت برداشت جدید ثبت شد'
@@ -202,6 +220,23 @@ def send_payment_ticket_sms_to_simple_supporters(ticket):
 
     tenant_name = ticket.tenant.name if getattr(ticket, 'tenant_id', None) else '-'
     body = f'{label}\nشماره تیکت: {ticket.id}\nکارواش: {tenant_name}'
+    try:
+        return send_provider_sms(None, body, phones)
+    except Exception as exc:
+        return {'sent': False, 'error': str(exc)}
+
+
+def send_registration_ticket_sms_to_hq(ticket):
+    """SMS for new carwash registration tickets to HQ supporters and managers."""
+    if not ticket or not getattr(ticket, 'is_registration_request', False):
+        return {'sent': False, 'reason': 'not_registration_ticket'}
+
+    phones = _collect_hq_alert_phones()
+    if not phones:
+        return {'sent': False, 'reason': 'no_hq_phones'}
+
+    tenant_name = ticket.tenant.name if getattr(ticket, 'tenant_id', None) else '-'
+    body = f'تیکت ثبت‌نام جدید ثبت شد\nشماره تیکت: {ticket.id}\nکارواش: {tenant_name}'
     try:
         return send_provider_sms(None, body, phones)
     except Exception as exc:

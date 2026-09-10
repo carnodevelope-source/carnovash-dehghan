@@ -42,6 +42,7 @@ from .support_tickets import (
     parse_wallet_id_from_ticket as _parse_wallet_id_from_ticket,
     refer_ticket_to_user,
     send_payment_ticket_sms_to_simple_supporters,
+    send_registration_ticket_sms_to_hq,
     WALLET_CARD_DEPOSIT_TAX_PERCENT,
 )
 from .serializers import (
@@ -659,6 +660,11 @@ class TenantRegisterView(APIView):
             status=PendingTenantRegistration.Status.PENDING,
             temp_password=data['manager_password'],
         )
+
+        try:
+            send_registration_ticket_sms_to_hq(ticket)
+        except Exception as exc:
+            print(f'registration ticket sms failed: {exc}')
 
         return Response(
             {
