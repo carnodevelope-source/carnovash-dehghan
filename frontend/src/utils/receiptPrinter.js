@@ -7,7 +7,7 @@ const normalizePageOptions = (page = {}) => {
   const marginRightMm = Math.max(0, Number(page.marginRightMm ?? marginMm))
   const marginBottomMm = Math.max(0, Number(page.marginBottomMm ?? marginMm))
   const marginLeftMm = Math.max(0, Number(page.marginLeftMm ?? marginMm))
-  const minHeightMm = Math.max(40, Number(page.minHeightMm) || (page.thermal ? 80 : 100))
+  const minHeightMm = Math.max(20, Number(page.minHeightMm) || (page.thermal ? 40 : 100))
   const fixedHeightMm = Number(page.heightMm) > 0 ? Number(page.heightMm) : null
   return {
     widthMm,
@@ -22,6 +22,38 @@ const normalizePageOptions = (page = {}) => {
     formatLabel: String(page.formatLabel || '').trim()
   }
 }
+
+const THERMAL_PRINT_CSS = `
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    display: block !important;
+    position: static !important;
+    top: 0 !important;
+    inset: auto !important;
+    transform: none !important;
+    font-family: Tahoma, Arial, sans-serif !important;
+  }
+  body > * {
+    margin: 0 !important;
+    margin-top: 0 !important;
+    margin-block-start: 0 !important;
+    padding-top: 0 !important;
+    padding-block-start: 0 !important;
+    position: static !important;
+    top: auto !important;
+    transform: none !important;
+    min-height: 0 !important;
+    height: auto !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+`
 
 /** Print an HTML element via the browser print dialog (same as Ctrl+P), without popup windows. */
 export const printHtmlElement = async (element, pageOptions = {}) => {
@@ -53,14 +85,36 @@ export const printHtmlElement = async (element, pageOptions = {}) => {
     throw new Error('پنجره چاپ در دسترس نیست.')
   }
 
-  const pageStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-    .map((node) => node.outerHTML)
-    .join('\n')
-
   const contentWidthMm = Math.max(
     30,
     page.widthMm - page.marginLeftMm - page.marginRightMm
   )
+
+  // Thermal / receipt prints must stay isolated from app CSS (nav offsets, 100vh, flex centering).
+  // Paper invoices keep page styles for branded layout fidelity.
+  const pageStyles = page.thermal
+    ? ''
+    : Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((node) => node.outerHTML)
+      .join('\n')
+
+  const cloned = element.cloneNode(true)
+  if (cloned instanceof HTMLElement) {
+    cloned.style.margin = '0'
+    cloned.style.marginTop = '0'
+    cloned.style.paddingTop = cloned.style.paddingTop || ''
+    cloned.style.minHeight = '0'
+    cloned.style.height = 'auto'
+    cloned.style.position = 'static'
+    cloned.style.top = 'auto'
+    cloned.style.transform = 'none'
+    cloned.querySelectorAll('.invoice-sheet, .worker-receipt-pdf').forEach((node) => {
+      if (!(node instanceof HTMLElement)) return
+      node.style.minHeight = '0'
+      node.style.height = 'auto'
+      node.style.marginTop = '0'
+    })
+  }
 
   frameDoc.open()
   frameDoc.write(`<!DOCTYPE html>
@@ -70,44 +124,18 @@ export const printHtmlElement = async (element, pageOptions = {}) => {
   <title>چاپ فاکتور</title>
   ${pageStyles}
   <style id="carnowash-print-page-style">
+    ${THERMAL_PRINT_CSS}
     html, body {
-      margin: 0 !important;
-      padding: 0 !important;
-      background: #fff;
-      color: #111;
       width: ${contentWidthMm}mm;
       max-width: ${contentWidthMm}mm;
-      height: auto !important;
-      min-height: 0 !important;
-      display: block !important;
-      align-items: flex-start !important;
-      justify-content: flex-start !important;
-      vertical-align: top !important;
-    }
-    body {
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-      position: relative !important;
-      top: 0 !important;
-      inset-block-start: 0 !important;
     }
     body > .invoice-template,
+    body > .invoice-sheet,
     body > .worker-receipt-pdf,
     body > * {
       width: ${contentWidthMm}mm !important;
       max-width: ${contentWidthMm}mm !important;
-      min-height: 0 !important;
-      height: auto !important;
-      margin: 0 !important;
-      margin-block-start: 0 !important;
-      margin-top: 0 !important;
-      padding-block-start: 0 !important;
-      box-shadow: none !important;
-      border: 0 !important;
       overflow: visible !important;
-      position: static !important;
-      top: auto !important;
-      transform: none !important;
       align-self: flex-start !important;
       vertical-align: top !important;
     }
@@ -121,22 +149,22 @@ export const printHtmlElement = async (element, pageOptions = {}) => {
     }
   </style>
 </head>
-<body>${element.outerHTML}</body>
+<body></body>
 </html>`)
   frameDoc.close()
+  frameDoc.body.appendChild(cloned)
 
   await new Promise((resolve) => {
     const done = () => resolve()
     if (frameDoc.readyState === 'complete') {
-      window.setTimeout(done, 180)
+      window.setTimeout(done, 120)
       return
     }
-    iframe.onload = () => window.setTimeout(done, 180)
-    window.setTimeout(done, 900)
+    iframe.onload = () => window.setTimeout(done, 120)
+    window.setTimeout(done, 700)
   })
 
   const root = frameDoc.body.firstElementChild || frameDoc.body
-  // Strip preview min-heights so measured page height hugs content from the top.
   root.style.minHeight = '0'
   root.style.height = 'auto'
   root.querySelectorAll('.invoice-sheet, .worker-receipt-pdf').forEach((node) => {
@@ -145,8 +173,12 @@ export const printHtmlElement = async (element, pageOptions = {}) => {
   })
 
   const measuredHeightMm = Math.ceil(pxToMm(root.scrollHeight || frameDoc.body.scrollHeight || 0))
+  // Hug content tightly — do not inflate thermal pages with unused blank height.
   const heightMm = page.fixedHeightMm
-    || Math.max(page.minHeightMm, measuredHeightMm + page.marginTopMm + page.marginBottomMm)
+    || Math.max(
+      page.thermal ? Math.max(30, measuredHeightMm) : page.minHeightMm,
+      measuredHeightMm + (page.thermal ? 0 : (page.marginTopMm + page.marginBottomMm))
+    )
 
   const pageStyleNode = frameDoc.getElementById('carnowash-print-page-style')
   if (pageStyleNode) {
@@ -161,6 +193,8 @@ export const printHtmlElement = async (element, pageOptions = {}) => {
           max-width: ${contentWidthMm}mm !important;
           margin: 0 !important;
           padding: 0 !important;
+          height: auto !important;
+          min-height: 0 !important;
         }
       }
     `

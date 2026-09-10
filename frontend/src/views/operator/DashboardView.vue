@@ -2591,7 +2591,7 @@ const invoicePageMetrics = computed(() => {
       printWidthMm: paperWidth,
       printHeightMm: null,
       printMarginMm: paperWidth <= 58 ? 1 : 1.5,
-      printMinHeightMm: 80,
+      printMinHeightMm: 40,
       thermal: true
     }
   }
@@ -2611,9 +2611,9 @@ const invoicePageMetrics = computed(() => {
 const invoicePrintPageOptions = computed(() => ({
   widthMm: invoicePageMetrics.value.printWidthMm,
   heightMm: invoicePageMetrics.value.printHeightMm,
-  minHeightMm: invoicePageMetrics.value.printMinHeightMm || invoicePageMetrics.value.minHeight,
+  minHeightMm: invoicePageMetrics.value.printMinHeightMm || (invoiceLayout.value.preset === 'thermal' ? 40 : invoicePageMetrics.value.minHeight),
   marginMm: invoicePageMetrics.value.printMarginMm,
-  marginTopMm: invoiceLayout.value.preset === 'thermal' ? 0 : invoicePageMetrics.value.printMarginMm,
+  marginTopMm: 0,
   marginRightMm: invoicePageMetrics.value.printMarginMm,
   marginBottomMm: invoicePageMetrics.value.printMarginMm,
   marginLeftMm: invoicePageMetrics.value.printMarginMm,
@@ -3203,7 +3203,8 @@ const printInvoiceHtml = async () => {
   try {
     invoiceGenerating.value = true
     await nextTick()
-    await printHtmlElement(invoiceTemplateRef.value, invoicePrintPageOptions.value)
+    const sheetNode = invoiceTemplateRef.value.querySelector('.invoice-sheet') || invoiceTemplateRef.value
+    await printHtmlElement(sheetNode, invoicePrintPageOptions.value)
   } catch (error) {
     console.error('printInvoiceHtml error:', error)
     invoiceErrorMessage.value = resolvePrintErrorMessage(error)

@@ -187,8 +187,8 @@
             <h3>گزارش حق نیرو</h3>
             <div v-if="selectedWorkerSummary" class="action-row">
               <button class="primary-btn btn-with-icon" @click="openPayoutModal('wage')"><IconlyIcon name="wallet" size="sm" />{{ payoutButtonLabel }}</button>
+              <button class="primary-btn btn-with-icon" @click="openPayoutModal('advance')"><IconlyIcon name="wallet" size="sm" />{{ advancePayoutButtonLabel }}</button>
               <button class="primary-btn btn-with-icon" @click="openPayoutModal('insurance')"><IconlyIcon name="wallet" size="sm" />{{ insurancePayoutButtonLabel }}</button>
-              <button class="secondary-btn btn-with-icon" @click="openPayoutModal('tip')"><IconlyIcon name="wallet" size="sm" />{{ tipPayoutButtonLabel }}</button>
             </div>
           </div>
           <div v-if="selectedWorkerSummary" class="worker-summary-grid">
@@ -199,11 +199,13 @@
             <article class="payout-card"><p>پاداش</p><strong>{{ money(selectedWorkerSummary.bonus_total) }}</strong></article>
             <article class="payout-card"><p>جریمه</p><strong>{{ money(selectedWorkerSummary.penalty_total) }}</strong></article>
             <article class="payout-card"><p>حقوق پرداخت‌شده</p><strong>{{ money(selectedWorkerSummary.wage_paid_total) }}</strong></article>
+            <article class="payout-card"><p>مساعده پرداخت‌شده</p><strong>{{ money(selectedWorkerSummary.advance_paid_total) }}</strong></article>
             <article class="payout-card"><p>مانده قابل پرداخت حقوق</p><strong>{{ money(selectedWorkerSummary.payable_total) }}</strong></article>
             <article class="payout-card"><p>حق بیمه هر ماه</p><strong>{{ money(selectedWorkerSummary.insurance_monthly_amount) }}</strong></article>
             <article class="payout-card"><p>پرداخت بیمه این ماه</p><strong>{{ money(selectedWorkerSummary.insurance_selected_month_paid_total) }}</strong></article>
             <article class="payout-card"><p>مانده بیمه این ماه</p><strong>{{ money(selectedWorkerSummary.insurance_selected_month_balance) }}</strong></article>
             <article class="payout-card"><p>جمع انعام (دوره)</p><strong>{{ money(selectedWorkerSummary.tip_total) }}</strong></article>
+            <article class="payout-card"><p>انعام پرداخت‌شده</p><strong>{{ money(selectedWorkerSummary.tip_paid_total) }}</strong></article>
             <article class="payout-card"><p>مانده انعام قابل پرداخت</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
           </div>
           <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>مبلغ سفارش بدون انعام</th><th>انعام</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
@@ -271,6 +273,43 @@
             :from="pagedTables.tips.from"
             :to="pagedTables.tips.to"
             @update:page="setTablePage('tips', $event)"
+          />
+        </template>
+
+        <template v-else-if="activeTab === 'products'">
+          <h3>گزارش محصولات</h3>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>محصول</th><th>تعداد</th><th>فی فروش</th><th>مبلغ فروش</th><th>بهای تمام‌شده</th><th>سود</th><th>راننده</th><th class="col-plate">پلاک</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
+            <tr v-for="row in pagedTables.products.rows" :key="`p-${row.row}-${row.product_id || 0}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)">
+              <td>{{ row.row }}</td>
+              <td>{{ row.product_name }}</td>
+              <td>{{ faNumber(row.quantity) }}</td>
+              <td>{{ money(row.unit_price) }}</td>
+              <td>{{ money(row.sale_amount) }}</td>
+              <td>{{ money(row.cost_amount) }}</td>
+              <td>{{ money(row.profit_amount) }}</td>
+              <td>{{ row.driver_name }}</td>
+              <td class="col-plate"><span class="report-plate-cell"><IranPlateMark
+                      :plate-number="row.plate_number"
+                      :plate-left="row.plate_left"
+                      :plate-letter="row.plate_letter"
+                      :plate-mid="row.plate_mid"
+                      :plate-right="row.plate_right"
+                      :plate-type="row.plate_type || 'car'"
+                      compact
+                    /></span></td>
+              <td>{{ row.worker_name || '-' }}</td>
+              <td>{{ dateTime(row.created_at) }}</td>
+            </tr>
+            <tr v-if="!pagedTables.products.rows.length"><td colspan="11">در این بازه فروش محصولی ثبت نشده است.</td></tr>
+          </tbody></table></div>
+          <ReportPager
+            v-if="!exportAllRows"
+            :page="pagedTables.products.page"
+            :pages="pagedTables.products.pages"
+            :total="pagedTables.products.total"
+            :from="pagedTables.products.from"
+            :to="pagedTables.products.to"
+            @update:page="setTablePage('products', $event)"
           />
         </template>
 
@@ -410,27 +449,46 @@
   <div v-if="payoutModal.open" class="modal-overlay" @click.self="closePayoutModal">
     <section class="modal-panel action-panel">
       <header class="modal-head">
-        <h3>{{ payoutModal.target === 'tip' ? 'پرداخت انعام' : payoutModal.target === 'insurance' ? 'پرداخت حق بیمه' : 'پرداخت حقوق' }} {{ selectedWorkerSummary?.worker_name || '' }}</h3>
+        <h3>
+          {{
+            payoutModal.target === 'advance'
+              ? 'پرداخت مساعده'
+              : payoutModal.target === 'insurance'
+                ? 'پرداخت حق بیمه'
+                : 'پرداخت حقوق'
+          }}
+          {{ selectedWorkerSummary?.worker_name || '' }}
+        </h3>
         <button class="close-btn" @click="closePayoutModal">✕</button>
       </header>
       <div class="modal-body">
-        <label><span>نوع پرداخت</span><select v-model="payoutModal.mode"><option value="full">{{ payoutModal.target === 'tip' ? 'کل انعام' : payoutModal.target === 'insurance' ? 'کل حق بیمه' : 'کل حقوق' }}</option><option value="partial">{{ payoutModal.target === 'tip' ? 'بخشی از انعام' : payoutModal.target === 'insurance' ? 'بخشی از حق بیمه' : 'بخشی از حقوق' }}</option></select></label>
-        <label v-if="payoutModal.target === 'insurance'">
-          <span>ماه بیمه (شمسی)</span>
-          <select v-model="payoutModal.insuranceMonth">
-            <option value="" disabled>انتخاب ماه</option>
-            <option v-for="item in insuranceMonthOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-          </select>
-        </label>
-        <label v-if="payoutModal.mode === 'partial'"><span>مبلغ (تومان)</span><input :value="moneyInputValue(payoutModal.amount)" type="text" inputmode="numeric" @input="payoutModal.amount = parseMoneyInput($event.target.value)" /></label>
-        <p v-if="payoutModal.mode === 'partial'" class="helper-note" :class="{ error: payoutValidationMessage }">
-          {{ payoutValidationMessage || `مانده قابل پرداخت: ${money(payoutModalMaxAmount)}. مبلغ باید کمتر از مانده باشد.` }}
-        </p>
+        <template v-if="payoutModal.target === 'advance'">
+          <label><span>مبلغ مساعده (تومان)</span><input :value="moneyInputValue(payoutModal.amount)" type="text" inputmode="numeric" @input="payoutModal.amount = parseMoneyInput($event.target.value)" /></label>
+          <p class="helper-note">مساعده در تراکنش‌های مالی ثبت می‌شود و از مانده قابل پرداخت حقوق کم می‌شود.</p>
+        </template>
+        <template v-else>
+          <label><span>نوع پرداخت</span><select v-model="payoutModal.mode"><option value="full">{{ payoutModal.target === 'insurance' ? 'کل حق بیمه' : 'کل حقوق' }}</option><option value="partial">{{ payoutModal.target === 'insurance' ? 'بخشی از حق بیمه' : 'بخشی از حقوق' }}</option></select></label>
+          <label v-if="payoutModal.target === 'insurance'">
+            <span>ماه بیمه (شمسی)</span>
+            <select v-model="payoutModal.insuranceMonth">
+              <option value="" disabled>انتخاب ماه</option>
+              <option v-for="item in insuranceMonthOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+            </select>
+          </label>
+          <label v-if="payoutModal.mode === 'partial'"><span>مبلغ (تومان)</span><input :value="moneyInputValue(payoutModal.amount)" type="text" inputmode="numeric" @input="payoutModal.amount = parseMoneyInput($event.target.value)" /></label>
+          <p v-if="payoutModal.mode === 'partial'" class="helper-note" :class="{ error: payoutValidationMessage }">
+            {{ payoutValidationMessage || `مانده قابل پرداخت: ${money(payoutModalMaxAmount)}. مبلغ باید کمتر از مانده باشد.` }}
+          </p>
+          <label v-if="payoutModal.target === 'wage'" class="checkbox-row">
+            <input v-model="payoutModal.includeTip" type="checkbox" />
+            <span>پرداخت انعام هم انجام شود (مانده انعام: {{ money(selectedWorkerSummary?.tip_balance || 0) }})</span>
+          </label>
+        </template>
         <p v-if="payoutSubmitError" class="helper-note error">
           {{ payoutSubmitError }}
         </p>
         <label><span>توضیح</span><input v-model="payoutModal.note" type="text" /></label>
-        <button class="primary-btn" :disabled="payoutModal.submitting" @click="submitPayout">{{ payoutModal.submitting ? 'در حال ثبت...' : 'ثبت پرداخت' }}</button>
+        <button class="primary-btn" :disabled="payoutModal.submitting || !canSubmitPayout" @click="submitPayout">{{ payoutModal.submitting ? 'در حال ثبت...' : 'ثبت پرداخت' }}</button>
       </div>
     </section>
   </div>
@@ -578,12 +636,13 @@ const summary = reactive({
   bonus_total: 0,
   penalty_total: 0
 })
-const sectionTotals = reactive({ overall: {}, carwash: {}, worker: {}, tips: {}, discount: {}, revenue: {}, attendance: {}, blacklist: {} })
+const sectionTotals = reactive({ overall: {}, carwash: {}, worker: {}, tips: {}, products: {}, discount: {}, revenue: {}, attendance: {}, blacklist: {} })
 const data = reactive({
   overall_report: [],
   carwash_report: [],
   worker_report: [],
   tips_report: [],
+  products_report: [],
   discount_report: [],
   attendance_report: [],
   blacklist_report: [],
@@ -604,6 +663,7 @@ const tablePage = reactive({
   worker: 1,
   workerTx: 1,
   tips: 1,
+  products: 1,
   discount: 1,
   revenue: 1,
   attendance: 1,
@@ -614,6 +674,7 @@ const sectionMeta = reactive({
   carwash: { total: 0, pages: 1, page: 1 },
   worker: { total: 0, pages: 1, page: 1 },
   tips: { total: 0, pages: 1, page: 1 },
+  products: { total: 0, pages: 1, page: 1 },
   discount: { total: 0, pages: 1, page: 1 },
   revenue: { total: 0, pages: 1, page: 1 },
   attendance: { total: 0, pages: 1, page: 1 },
@@ -621,7 +682,7 @@ const sectionMeta = reactive({
 })
 const vehicleModal = reactive({ open: false, loading: false, data: null })
 const blacklistModal = reactive({ open: false, submitting: false, row: null, error: '' })
-const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '' })
+const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '', includeTip: false })
 const payoutSubmitError = ref('')
 const adjustmentModal = reactive({ open: false, submitting: false, kind: 'bonus', amount: 0, note: '' })
 const pdfFormatModal = reactive({ open: false })
@@ -633,6 +694,7 @@ const tabs = [
   { key: 'carwash', label: 'حق کارواش', icon: 'wallet', help: sectionHelpByPage.reports.carwash },
   { key: 'worker', label: 'حق نیرو', icon: 'users3', help: sectionHelpByPage.reports.worker },
   { key: 'tips', label: 'انعام', icon: 'message', help: sectionHelpByPage.reports.tips },
+  { key: 'products', label: 'محصولات', icon: 'buy', help: sectionHelpByPage.reports.products || 'گزارش فروش محصولات و سود هر ردیف' },
   { key: 'discount', label: 'تخفیف', icon: 'star', help: sectionHelpByPage.reports.discount },
   { key: 'revenue', label: 'گزارش درآمد', icon: 'graph', help: sectionHelpByPage.reports.revenue },
   { key: 'attendance', label: 'ورود و خروج', icon: 'calendar', help: sectionHelpByPage.reports.attendance },
@@ -691,6 +753,7 @@ const pagedTables = computed(() => ({
     }
   })(),
   tips: paginateList(data.tips_report, 'tips'),
+  products: paginateList(data.products_report, 'products'),
   discount: paginateList(data.discount_report, 'discount'),
   revenue: paginateList(data.revenue_report, 'revenue'),
   attendance: paginateList(data.attendance_report, 'attendance'),
@@ -746,7 +809,7 @@ const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assi
 const formatGender = (value) => ({ male: 'آقا', female: 'خانم' }[value] || '-')
 const workerPaymentTypeLabel = (value) => ({ hourly: 'ساعتی', fixed: 'ثابت', percent: 'درصدی' }[value] || '-')
 const workHoursLabel = (value) => `${Number(value || 0).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ساعت`
-const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', insurance_payment: 'پرداخت حق بیمه', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
+const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', insurance_payment: 'پرداخت حق بیمه', advance_payment: 'پرداخت مساعده', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
 const paymentMethodLabel = (value) => ({ cash: 'نقدی', transfer: 'کارت به کارت', cheque: 'چک', credit: 'نسیه', pos: 'کارت‌خوان', manual: 'دستی' }[value] || value || '-')
 const paymentStateLabel = (value) => ({ success: 'تسویه شده', pending: 'در انتظار', failed: 'ناموفق', refunded: 'مرجوعی' }[value] || value || '-')
 const normalizeServicesValue = (value) => {
@@ -804,6 +867,8 @@ const visibleSummaryCards = computed(() => {
     return [
       { key: 'worker_total', label: selectedWorkerSummary.value ? 'جمع حق نیرو (دوره)' : 'جمع حق نیرو', value: money(summary.worker_total) },
       { key: 'payable_worker_total', label: selectedWorkerSummary.value ? 'مانده قابل پرداخت حقوق' : 'مانده حق نیرو', value: money(summary.payable_worker_total) },
+      { key: 'advance_paid_total', label: 'مساعده پرداخت‌شده', value: money(selectedWorkerSummary.value?.advance_paid_total || 0) },
+      { key: 'tip_balance', label: 'مانده انعام', value: money(selectedWorkerSummary.value?.tip_balance || summary.payable_tip_total || 0) },
       { key: 'insurance_total', label: 'مانده بیمه این ماه', value: money(summary.insurance_total) },
       { key: 'bonus_total', label: 'پاداش', value: money(summary.bonus_total) },
       { key: 'penalty_total', label: 'جریمه', value: money(summary.penalty_total) }
@@ -812,6 +877,15 @@ const visibleSummaryCards = computed(() => {
   if (activeTab.value === 'tips') {
     return [
       { key: 'tips_total', label: 'انعام', value: money(summary.tips_total) }
+    ]
+  }
+  if (activeTab.value === 'products') {
+    return [
+      { key: 'products_count', label: 'تعداد ردیف‌ها', value: Number(sectionTotals.products?.count || 0).toLocaleString('fa-IR') },
+      { key: 'quantity_total', label: 'جمع تعداد', value: Number(sectionTotals.products?.quantity_total || 0).toLocaleString('fa-IR') },
+      { key: 'sale_total', label: 'جمع فروش', value: money(sectionTotals.products?.sale_total || 0) },
+      { key: 'cost_total', label: 'جمع بهای تمام‌شده', value: money(sectionTotals.products?.cost_total || 0) },
+      { key: 'profit_total', label: 'جمع سود', value: money(sectionTotals.products?.profit_total || 0) }
     ]
   }
   if (activeTab.value === 'discount') {
@@ -949,7 +1023,7 @@ const buildWorkerSyncSignature = () => JSON.stringify({
 
 const payoutButtonLabel = computed(() => `پرداخت حقوق ${selectedWorkerSummary.value?.worker_name || ''}`)
 const insurancePayoutButtonLabel = computed(() => `پرداخت حق بیمه ${selectedWorkerSummary.value?.worker_name || ''}`)
-const tipPayoutButtonLabel = computed(() => `پرداخت انعام ${selectedWorkerSummary.value?.worker_name || ''}`)
+const advancePayoutButtonLabel = computed(() => `پرداخت مساعده ${selectedWorkerSummary.value?.worker_name || ''}`)
 const selectedInsuranceMonthKey = computed(() => normalizeInsuranceMonth(payoutModal.insuranceMonth) || selectedWorkerSummary.value?.insurance_month || '')
 const selectedInsuranceMonthPaidAmount = computed(() => {
   if (!selectedInsuranceMonthKey.value) return 0
@@ -964,13 +1038,16 @@ const selectedInsuranceMonthBalance = computed(() => {
   return Math.max(0, monthlyAmount - selectedInsuranceMonthPaidAmount.value)
 })
 const payoutModalMaxAmount = computed(() => (
-  payoutModal.target === 'tip'
-    ? Number(selectedWorkerSummary.value?.tip_balance || 0)
-    : payoutModal.target === 'insurance'
-      ? selectedInsuranceMonthBalance.value
-      : Number(selectedWorkerSummary.value?.payable_total || 0)
+  payoutModal.target === 'insurance'
+    ? selectedInsuranceMonthBalance.value
+    : Number(selectedWorkerSummary.value?.payable_total || 0)
 ))
 const payoutValidationMessage = computed(() => {
+  if (payoutModal.target === 'advance') {
+    const amount = Number(fromThousandsTomanInput(payoutModal.amount || 0))
+    if (amount <= 0) return 'مبلغ مساعده باید بیشتر از صفر باشد.'
+    return ''
+  }
   if (payoutModal.mode !== 'partial') return ''
   const amount = Number(fromThousandsTomanInput(payoutModal.amount || 0))
   if (amount <= 0) return 'مبلغ پرداخت باید بیشتر از صفر باشد.'
@@ -978,10 +1055,17 @@ const payoutValidationMessage = computed(() => {
   return ''
 })
 const isPayoutAmountValid = computed(() => {
+  if (payoutModal.target === 'advance') {
+    return Number(fromThousandsTomanInput(payoutModal.amount || 0)) > 0
+  }
+  if (payoutModal.target === 'wage' && payoutModal.includeTip && Number(selectedWorkerSummary.value?.tip_balance || 0) > 0) {
+    if (payoutModal.mode === 'full') return true
+  }
   if (payoutModal.mode !== 'partial') return payoutModalMaxAmount.value > 0
   const amount = Number(fromThousandsTomanInput(payoutModal.amount || 0))
   return amount > 0 && amount < payoutModalMaxAmount.value
 })
+const canSubmitPayout = computed(() => isPayoutAmountValid.value)
 
 const hasPlateFilter = computed(() => Boolean(
   filters.plateLeft
@@ -1181,6 +1265,7 @@ const fetchReports = async ({
     Object.assign(sectionTotals.carwash, payload.section_totals?.carwash || {})
     Object.assign(sectionTotals.worker, payload.section_totals?.worker || {})
     Object.assign(sectionTotals.tips, payload.section_totals?.tips || {})
+    Object.assign(sectionTotals.products, payload.section_totals?.products || {})
     Object.assign(sectionTotals.discount, payload.section_totals?.discount || {})
     Object.assign(sectionTotals.attendance, payload.section_totals?.attendance || {})
     Object.assign(sectionTotals.blacklist, payload.section_totals?.blacklist || {})
@@ -1190,6 +1275,7 @@ const fetchReports = async ({
     data.carwash_report = payload.carwash_report || []
     data.worker_report = payload.worker_report || []
     data.tips_report = payload.tips_report || []
+    data.products_report = payload.products_report || []
     data.discount_report = payload.discount_report || []
     data.attendance_report = payload.attendance_report || []
     data.blacklist_report = payload.blacklist_report || []
@@ -1406,7 +1492,7 @@ const exportWorkerReceiptPdf = async () => {
       marginRightMm: 1.5,
       marginBottomMm: 1.5,
       marginLeftMm: 1.5,
-      minHeightMm: 80,
+      minHeightMm: 40,
       thermal: true,
       formatLabel: 'فیش حق نیرو'
     })
@@ -1615,12 +1701,13 @@ const openPayoutModal = (target = 'wage') => {
   payoutModal.target = target
   payoutModal.mode = 'full'
   payoutModal.note = ''
+  payoutModal.includeTip = false
   payoutModal.insuranceMonth = String(selectedWorkerSummary.value?.insurance_month || '').split('/')[1] || '01'
   payoutModal.amount = Math.max(0, Math.round(
-    target === 'tip'
-      ? selectedWorkerSummary.value?.tip_balance || 0
-      : target === 'insurance'
-        ? selectedInsuranceMonthBalance.value || 0
+    target === 'insurance'
+      ? selectedInsuranceMonthBalance.value || 0
+      : target === 'advance'
+        ? 0
         : selectedWorkerSummary.value?.payable_total || 0
   ))
 }
@@ -1629,6 +1716,7 @@ const closePayoutModal = () => {
   payoutModal.submitting = false
   payoutModal.target = 'wage'
   payoutModal.insuranceMonth = ''
+  payoutModal.includeTip = false
   payoutSubmitError.value = ''
 }
 const submitPayout = async () => {
@@ -1648,35 +1736,41 @@ const submitPayout = async () => {
     return
   }
   if (!isPayoutAmountValid.value) {
-    payoutSubmitError.value = 'الان نمی‌توانید ثبت کنید، چون مبلغ باید بیشتر از صفر و کمتر از مانده مجاز باشد.'
+    payoutSubmitError.value = payoutModal.target === 'advance'
+      ? 'مبلغ مساعده باید بیشتر از صفر باشد.'
+      : 'الان نمی‌توانید ثبت کنید، چون مبلغ باید بیشتر از صفر و کمتر از مانده مجاز باشد.'
     errorMessage.value = payoutSubmitError.value
     return
   }
   payoutModal.submitting = true
   try {
-    await api.post('/reports/workers/payouts/', {
+    const payload = {
       worker_id: selectedWorkerSummary.value.worker_id,
       payout_target: payoutModal.target,
-      mode: payoutModal.mode,
-      amount: payoutModal.mode === 'partial' ? fromThousandsTomanInput(payoutModal.amount || 0) : undefined,
+      mode: payoutModal.target === 'advance' ? 'partial' : payoutModal.mode,
       insurance_month: normalizedInsuranceMonth || undefined,
-      note: payoutModal.note || undefined
-    })
+      note: payoutModal.note || undefined,
+      include_tip: payoutModal.target === 'wage' ? Boolean(payoutModal.includeTip) : undefined
+    }
+    if (payoutModal.target === 'advance' || payoutModal.mode === 'partial') {
+      payload.amount = fromThousandsTomanInput(payoutModal.amount || 0)
+    }
+    await api.post('/reports/workers/payouts/', payload)
     if (payoutModal.target === 'insurance' && normalizedInsuranceMonth) {
       filters.insuranceMonthJalali = insuranceMonthToFilterDate(normalizedInsuranceMonth)
     }
     closePayoutModal()
     await fetchReports()
   } catch (error) {
-    const fallback = payoutModal.target === 'tip'
-      ? 'الان نمی‌توانید پرداخت انعام را ثبت کنید.'
+    const fallback = payoutModal.target === 'advance'
+      ? 'الان نمی‌توانید پرداخت مساعده را ثبت کنید.'
       : payoutModal.target === 'insurance'
         ? 'الان نمی‌توانید پرداخت حق بیمه را ثبت کنید.'
         : 'الان نمی‌توانید پرداخت را ثبت کنید.'
     const reason = resolveApiErrorMessage(error, fallback)
     payoutSubmitError.value = reason.startsWith('الان نمی‌توانید')
       ? reason
-      : `الان نمی‌توانید ثبت کنید، چون ${reason}`
+      : `${fallback} ${reason}`
     errorMessage.value = payoutSubmitError.value
   } finally {
     payoutModal.submitting = false
@@ -1806,7 +1900,24 @@ onBeforeUnmount(() => {
 .kpi-card strong{display:block;margin-top:6px;font-size:15px;color:#0f172a;word-break:break-word}
 .kpi-hint{display:block;margin-top:6px;color:#64748b;font-size:11px;line-height:1.6}
 .discount-tab-note{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;font-size:12px;line-height:1.8}
-.tabs-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px}
+.tabs-bar{
+  display:flex;
+  flex-wrap:nowrap;
+  align-items:stretch;
+  gap:6px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  padding-bottom:2px;
+}
+.tabs-bar .chip{
+  flex:1 1 0;
+  min-width:max-content;
+  width:auto;
+  white-space:nowrap;
+  padding:6px 10px;
+}
 .export-studio-actions{display:grid;grid-template-columns:repeat(2,minmax(180px,220px));justify-content:start;gap:12px}
 .export-action-btn{border:0;border-radius:18px;padding:14px 16px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;font-weight:700;transition:transform .18s ease, box-shadow .18s ease, opacity .18s ease}
 .export-action-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 14px 30px rgba(15,23,42,.14)}
@@ -1928,6 +2039,8 @@ onBeforeUnmount(() => {
 .payout-card{border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:8px 10px}
 .payout-card p{margin:0;color:#64748b;font-size:11px}
 .payout-card strong{display:block;margin-top:6px;color:#0f172a;font-size:13px}
+.checkbox-row{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px;color:#334155}
+.checkbox-row input{width:16px;height:16px;accent-color:#0f4c81}
 .transactions-shell{margin-top:14px}
 .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.48);display:flex;align-items:center;justify-content:center;z-index:90;padding:18px}
 .modal-panel{width:min(720px,100%);background:#fff;border-radius:16px;overflow:hidden}

@@ -124,16 +124,54 @@
             <h2>هزینه‌ها</h2>
             <button class="primary-btn btn-with-icon" @click="openExpenseModal()"><IconlyIcon name="plus" size="sm" />ثبت هزینه جدید</button>
           </div>
-          <div class="expense-summary-strip">
-            <article>
-              <span>تعداد ردیف‌ها</span>
-              <strong>{{ Number(filteredExpenses.length || 0).toLocaleString('fa-IR') }}</strong>
-            </article>
-            <article>
-              <span>جمع هزینه‌ها</span>
-              <strong>{{ money(expensesTotal) }}</strong>
-            </article>
-          </div>
+
+          <section class="expense-report-panel">
+            <div class="expense-report-head">
+              <h3>گزارش هزینه‌ها</h3>
+              <p>فیلتر ماه، بازه تاریخ و جستجو برای دیدن هزینه‌ها به تفکیک</p>
+            </div>
+            <div class="expense-report-filters">
+              <label>
+                <span>بازه سریع</span>
+                <select v-model="expenseFilters.rangeKey">
+                  <option value="all">همه</option>
+                  <option value="month">ماه جاری</option>
+                  <option value="custom">بازه دلخواه</option>
+                </select>
+              </label>
+              <label>
+                <span>ماه (شمسی)</span>
+                <select v-model="expenseFilters.monthKey">
+                  <option value="">همه ماه‌ها</option>
+                  <option v-for="item in expenseMonthOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+                </select>
+              </label>
+              <label>
+                <span>از تاریخ</span>
+                <BaseDatePicker v-model="expenseFilters.startJalali" placeholder="1405/01/01" />
+              </label>
+              <label>
+                <span>تا تاریخ</span>
+                <BaseDatePicker v-model="expenseFilters.endJalali" placeholder="1405/01/30" />
+              </label>
+              <button type="button" class="secondary-btn" @click="resetExpenseFilters">پاک کردن فیلتر</button>
+            </div>
+            <div class="expense-summary-strip">
+              <article>
+                <span>تعداد ردیف‌ها</span>
+                <strong>{{ Number(filteredExpenses.length || 0).toLocaleString('fa-IR') }}</strong>
+              </article>
+              <article>
+                <span>جمع هزینه‌ها</span>
+                <strong>{{ money(expensesTotal) }}</strong>
+              </article>
+              <article v-for="row in expenseMonthlyBreakdown" :key="row.key">
+                <span>{{ row.label }}</span>
+                <strong>{{ money(row.total) }}</strong>
+              </article>
+            </div>
+          </section>
+
           <div class="table-wrap">
             <table>
               <thead>
@@ -172,6 +210,7 @@
                     <span v-if="!item.can_edit && !item.can_delete" class="table-meta-note">خودکار</span>
                   </td>
                 </tr>
+                <tr v-if="!filteredExpenses.length"><td colspan="9">در این فیلتر هزینه‌ای پیدا نشد.</td></tr>
               </tbody>
             </table>
           </div>
@@ -847,6 +886,12 @@ const tabs = [
 const workers = ref([])
 const products = ref([])
 const expenses = ref([])
+const expenseFilters = reactive({
+  rangeKey: 'all',
+  monthKey: '',
+  startJalali: '',
+  endJalali: ''
+})
 const services = ref([])
 const inventoryItems = ref([])
 const generalSettings = reactive({
@@ -1081,7 +1126,64 @@ const filteredWorkers = computed(() => workers.value
   .sort((a, b) => workerRoleOrder(a) - workerRoleOrder(b) || String(a.full_name || '').localeCompare(String(b.full_name || ''), 'fa'))
 )
 const filteredProducts = computed(() => productsWithStock.value.filter((i) => (`${i.name} ${i.description || ''} ${i.unit || ''}`).includes(search.value)))
-const filteredExpenses = computed(() => expenses.value.filter((i) => (`${i.title || ''} ${i.details || ''} ${i.source_label || ''}`).includes(search.value)))
+const expenseMonthKeyFromDate = (value) => {
+  const jalali = toJalaliInput(value)
+  if (!jalali) return ''
+  const parts = jalali.split('/')
+  if (parts.length < 2) return ''
+  return `${parts[0]}/${String(parts[1]).padStart(2, '0')}`
+}
+const currentExpenseMonthKey = computed(() => expenseMonthKeyFromDate(new Date().toISOString()))
+const expenseMonthOptions = computed(() => {
+  const map = new Map()
+  for (const item of expenses.value) {
+    const key = expenseMonthKeyFromDate(item.spent_at || item.created_at)
+    if (!key || map.has(key)) continue
+    const [year, month] = key.split('/')
+    map.set(key, { value: key, label: `${year}/${month}` })
+  }
+  return Array.from(map.values()).sort((a, b) => String(b.value).localeCompare(String(a.value)))
+})
+const expenseInSelectedRange = (item) => {
+  const spentAt = item.spent_at || item.created_at
+  if (!spentAt) return expenseFilters.rangeKey === 'all' && !expenseFilters.monthKey && !expenseFilters.startJalali && !expenseFilters.endJalali
+  const monthKey = expenseMonthKeyFromDate(spentAt)
+  if (expenseFilters.monthKey && monthKey !== expenseFilters.monthKey) return false
+  if (expenseFilters.rangeKey === 'month' && !expenseFilters.monthKey && monthKey !== currentExpenseMonthKey.value) return false
+  const startIso = parseJalaliToIso(expenseFilters.startJalali)
+  const endIso = parseJalaliToIso(expenseFilters.endJalali)
+  if (startIso || endIso || expenseFilters.rangeKey === 'custom') {
+    const stamp = new Date(spentAt).getTime()
+    if (startIso) {
+      const startStamp = new Date(`${startIso}T00:00:00`).getTime()
+      if (Number.isFinite(startStamp) && stamp < startStamp) return false
+    }
+    if (endIso) {
+      const endStamp = new Date(`${endIso}T23:59:59`).getTime()
+      if (Number.isFinite(endStamp) && stamp > endStamp) return false
+    }
+  }
+  return true
+}
+const filteredExpenses = computed(() => expenses.value
+  .filter((i) => (`${i.title || ''} ${i.details || ''} ${i.source_label || ''}`).includes(search.value))
+  .filter((i) => expenseInSelectedRange(i)))
+const expenseMonthlyBreakdown = computed(() => {
+  const map = new Map()
+  for (const item of filteredExpenses.value) {
+    const key = expenseMonthKeyFromDate(item.spent_at || item.created_at) || 'بدون تاریخ'
+    const current = map.get(key) || { key, label: key === 'بدون تاریخ' ? 'بدون تاریخ' : `جمع ${key}`, total: 0 }
+    current.total += Number(item.amount || 0)
+    map.set(key, current)
+  }
+  return Array.from(map.values()).sort((a, b) => String(b.key).localeCompare(String(a.key))).slice(0, 6)
+})
+const resetExpenseFilters = () => {
+  expenseFilters.rangeKey = 'all'
+  expenseFilters.monthKey = ''
+  expenseFilters.startJalali = ''
+  expenseFilters.endJalali = ''
+}
 const filteredServices = computed(() => services.value.filter((i) => (`${i.name} ${i.description || ''}`).includes(search.value)))
 const fullStarDiscountLabel = computed(() => `${Number((Number(generalSettings.discount_percent_per_half_star || 0) * 2).toFixed(2)).toLocaleString('fa-IR')}٪`)
 const normalizeFixedVisitDiscounts = (value = {}) => {
@@ -1856,10 +1958,17 @@ onBeforeUnmount(() => {
 .head-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; }
 .head-actions { display: flex; gap: 8px; }
 h2 { margin: 0; font-size: 20px; }
-.expense-summary-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 10px; margin-bottom: 14px; }
+.expense-summary-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .expense-summary-strip article { border: 1px solid #dbe7f5; border-radius: 14px; padding: 12px 14px; background: linear-gradient(180deg, #fbfdff 0%, #f3f8ff 100%); display: grid; gap: 6px; }
 .expense-summary-strip span { color: #64748b; font-size: 12px; }
 .expense-summary-strip strong { color: #0f172a; font-size: 16px; }
+.expense-report-panel { border: 1px solid #dbe7f5; border-radius: 16px; padding: 14px; background: #f8fbff; margin-bottom: 14px; display: grid; gap: 12px; }
+.expense-report-head h3 { margin: 0; font-size: 15px; color: #0f172a; }
+.expense-report-head p { margin: 4px 0 0; color: #64748b; font-size: 12px; }
+.expense-report-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; align-items: end; }
+.expense-report-filters label { display: grid; gap: 6px; }
+.expense-report-filters span { font-size: 12px; color: #64748b; }
+.expense-report-filters select, .expense-report-filters input { width: 100%; border: 1px solid #dbe7f5; border-radius: 12px; padding: 8px 10px; background: #fff; }
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; white-space: nowrap; }
