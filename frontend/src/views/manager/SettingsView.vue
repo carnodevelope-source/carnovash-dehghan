@@ -1315,7 +1315,6 @@ const ensureAssignedSmsTemplateDetails = (template, { includeFinancials = true }
   if (includeFinancials && !text.includes('[جمع تخفیف]')) insertions.push('تخفیف این سفارش: [جمع تخفیف]')
   if (includeFinancials && !text.includes('[مالیات]')) insertions.push('مالیات: [مالیات]')
   if (includeFinancials && !text.includes('[مبلغ نهایی]')) insertions.push('مبلغ نهایی: [مبلغ نهایی]')
-  if (!text.includes('آماده ترخیص')) insertions.push('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
   if (!text.includes('از اعتماد شما سپاسگزاریم')) insertions.push('از اعتماد شما سپاسگزاریم')
   if (insertions.length) {
     const anchorIndex = lines.findIndex((line) => line.includes('[جمع کل]') || line.includes('[جمع نرخ نامه]'))

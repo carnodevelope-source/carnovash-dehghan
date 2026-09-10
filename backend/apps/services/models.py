@@ -120,8 +120,6 @@ def normalize_vehicle_assigned_sms_template(template):
         insertions.append('مالیات: [مالیات]')
     if '[مبلغ نهایی]' not in text:
         insertions.append('مبلغ نهایی: [مبلغ نهایی]')
-    if 'آماده ترخیص' not in text:
-        insertions.append('خودروی شما حدود 30 دقیقه دیگر آماده ترخیص است.')
     if 'از اعتماد شما سپاسگزاریم' not in text:
         insertions.append('از اعتماد شما سپاسگزاریم')
     if insertions:
