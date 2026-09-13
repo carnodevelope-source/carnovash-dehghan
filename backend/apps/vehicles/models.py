@@ -349,6 +349,9 @@ class VehicleJob(TimestampedModel):
     delivered_to_worker_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     released_at = models.DateTimeField(null=True, blank=True)
+    # True while assigned washers are still "busy" on this open vehicle (before free/release).
+    workers_held = models.BooleanField(default=False)
+    workers_freed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-id']

@@ -56,6 +56,13 @@ export const loadOperatorCatalog = async ({ plateType = 'car', tariffType = 'typ
   return promise
 }
 
+export const loadOperatorWorkers = async ({ silent = true } = {}) => {
+  const meta = { trackLoading: false, showErrorToast: silent ? false : undefined }
+  const { data } = await api.get('/workers/', { meta })
+  cache.workers = data
+  return data
+}
+
 export const prefetchOperatorCatalog = (plateType = 'car', tariffType = 'type_1') => {
   void loadOperatorCatalog({ plateType, tariffType, silent: true })
 }

@@ -20,6 +20,10 @@ export const useLoadingStore = defineStore('loading', {
       if (next > 0) this.pendingByKey[key] = next
       else delete this.pendingByKey[key]
     },
+    reset() {
+      this.pendingRequests = 0
+      this.pendingByKey = {}
+    },
     isPending(key) {
       return (this.pendingByKey[key] || 0) > 0
     }

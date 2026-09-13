@@ -133,7 +133,7 @@
               v-if="showActions && !vehicle.is_plate_blocked"
               type="button"
               class="vehicle-details-secondary-btn"
-              @click="$emit('block-plate')"
+              @click="openBlockReasonModal"
             >
               بلاک کردن پلاک
             </button>
@@ -144,6 +144,23 @@
               @click="$emit('unblock-plate')"
             >
               خارج کردن از لیست سیاه
+            </button>
+            <button
+              v-if="showActions && canFreeWorkers"
+              type="button"
+              class="vehicle-details-secondary-btn vehicle-details-free-btn"
+              :disabled="freeingWorkers"
+              @click="$emit('free-workers')"
+            >
+              {{ freeingWorkers ? 'در حال آزادسازی...' : 'آزادسازی نیرو' }}
+            </button>
+            <button
+              v-if="showActions && vehicle.status === 'cancelled'"
+              type="button"
+              class="vehicle-details-primary-btn"
+              @click="$emit('restore')"
+            >
+              بازگردانی رزرو
             </button>
             <button
               v-if="showActions && vehicle.status !== 'cancelled'"
@@ -163,6 +180,31 @@
       :vehicle="vehicle"
       @close="invoiceOpen = false"
     />
+
+    <div v-if="showBlockReasonModal" class="block-reason-overlay" @click.self="closeBlockReasonModal">
+      <section class="block-reason-panel" @click.stop>
+        <header class="block-reason-head">
+          <div>
+            <p>بلاک پلاک</p>
+            <h3>دلیل بلاک را بنویسید</h3>
+          </div>
+          <button type="button" class="vehicle-details-close-btn" @click="closeBlockReasonModal">✕</button>
+        </header>
+        <label class="block-reason-field">
+          <span>دلیل بلاک</span>
+          <textarea
+            v-model="blockReasonNote"
+            rows="4"
+            placeholder="مثلاً مشتری بدحساب، پلاک مشکل‌دار..."
+          />
+        </label>
+        <p v-if="blockReasonError" class="block-reason-error">{{ blockReasonError }}</p>
+        <footer class="block-reason-actions">
+          <button type="button" class="vehicle-details-secondary-btn" @click="closeBlockReasonModal">انصراف</button>
+          <button type="button" class="vehicle-details-primary-btn" @click="submitBlockReason">ثبت</button>
+        </footer>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -178,18 +220,58 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   vehicle: { type: Object, default: null },
   title: { type: String, default: 'جزئیات کامل خودرو' },
-  showActions: { type: Boolean, default: true }
+  showActions: { type: Boolean, default: true },
+  freeingWorkers: { type: Boolean, default: false }
 })
 
-defineEmits(['close', 'cancel', 'block-plate', 'unblock-plate', 'edit-vehicle'])
+const emit = defineEmits(['close', 'cancel', 'restore', 'block-plate', 'unblock-plate', 'edit-vehicle', 'free-workers'])
 
 const authStore = useAuthStore()
 const invoiceOpen = ref(false)
+const showBlockReasonModal = ref(false)
+const blockReasonNote = ref('')
+const blockReasonError = ref('')
 const canSeeDriverGender = computed(() => authStore.role !== 'worker')
+const canFreeWorkers = computed(() => {
+  const vehicle = props.vehicle
+  if (!vehicle) return false
+  if (['released', 'cancelled'].includes(String(vehicle.status || ''))) return false
+  const job = vehicle.job || {}
+  if (job.workers_held === false) return false
+  const snapshot = Array.isArray(job.assigned_workers_snapshot) ? job.assigned_workers_snapshot : []
+  const hasSnapshotWorkers = snapshot.some((item) => Number(item?.id || item) > 0)
+  const hasAssigned = Number(job.assigned_worker || 0) > 0 || hasSnapshotWorkers
+  return hasAssigned
+})
 
 watch(() => props.open, (isOpen) => {
-  if (!isOpen) invoiceOpen.value = false
+  if (!isOpen) {
+    invoiceOpen.value = false
+    closeBlockReasonModal()
+  }
 })
+
+const openBlockReasonModal = () => {
+  blockReasonNote.value = ''
+  blockReasonError.value = ''
+  showBlockReasonModal.value = true
+}
+
+const closeBlockReasonModal = () => {
+  showBlockReasonModal.value = false
+  blockReasonNote.value = ''
+  blockReasonError.value = ''
+}
+
+const submitBlockReason = () => {
+  const note = String(blockReasonNote.value || '').trim()
+  if (!note) {
+    blockReasonError.value = 'دلیل بلاک را بنویسید.'
+    return
+  }
+  emit('block-plate', { note })
+  closeBlockReasonModal()
+}
 
 const formatStatus = (value) => ({
   entered: 'وارد شده',
@@ -272,6 +354,16 @@ const workerTotalWithTip = (job) => {
 .vehicle-details-modal-head h2 { margin: 0; font-size: 22px; }
 .vehicle-details-modal-step { margin: 0 0 6px; color: #64748b; font-size: 12px; }
 .vehicle-details-close-btn { width: 38px; height: 38px; border: 1px solid #dbe3ef; border-radius: 10px; background: #fff; cursor: pointer; }
+.block-reason-overlay { position: absolute; inset: 0; z-index: 5; background: rgba(15, 23, 42, .45); display: flex; align-items: center; justify-content: center; padding: 18px; }
+.block-reason-panel { width: min(460px, 100%); background: #fff; border-radius: 18px; box-shadow: 0 24px 50px -24px rgba(15, 23, 42, .55); overflow: hidden; }
+.block-reason-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid #e2e8f0; }
+.block-reason-head p { margin: 0 0 4px; color: #64748b; font-size: 12px; }
+.block-reason-head h3 { margin: 0; font-size: 18px; color: #0f172a; }
+.block-reason-field { display: grid; gap: 8px; padding: 16px 18px 8px; }
+.block-reason-field span { color: #475569; font-size: 13px; font-weight: 700; }
+.block-reason-field textarea { width: 100%; min-height: 110px; resize: vertical; border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px 12px; font: inherit; background: #f8fbff; }
+.block-reason-error { margin: 0 18px 8px; color: #b91c1c; font-size: 12px; font-weight: 700; }
+.block-reason-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 18px; }
 .vehicle-details-modal-loading { padding: 16px 22px; }
 .vehicle-details-grid { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 18px 22px 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .vehicle-details-card { border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; background: #fff; }
@@ -302,6 +394,7 @@ const workerTotalWithTip = (job) => {
 .vehicle-details-primary-btn,.vehicle-details-secondary-btn,.vehicle-details-danger-btn { border:none; border-radius:10px; padding:8px 12px; cursor:pointer; }
 .vehicle-details-primary-btn { background:#2563eb; color:#fff; font-weight:700; }
 .vehicle-details-secondary-btn { background:#e2e8f0; color:#334155; }
+.vehicle-details-free-btn { background:#dcfce7; color:#166534; font-weight:700; }
 .vehicle-details-blocked-btn { background:#fee2e2; color:#991b1b; }
 .vehicle-details-danger-btn { background:#fee2e2; color:#b91c1c; }
 .vehicle-details-danger-btn:disabled { background:#e5e7eb; color:#94a3b8; cursor:not-allowed; }

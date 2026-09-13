@@ -208,20 +208,25 @@ class AttendanceApiTests(APITestCase):
         self.assertEqual(dashboard.status_code, 200)
         self.assertEqual(create_event.status_code, 201)
 
-    def test_worker_list_uses_attendance_queue_and_assignment_tail(self):
+    def test_worker_list_uses_attendance_queue_and_frees_insert_naturally(self):
         user_model = get_user_model()
+        self.worker.active_jobs_count = 0
+        self.worker.load_status = 'free'
+        self.worker.save(update_fields=['active_jobs_count', 'load_status', 'updated_at'])
         second_user = user_model.objects.create_user(
             username='worker2',
             password='pass12345',
             phone='09120000003',
             role='worker',
             tenant=self.tenant,
-            full_name='Earlier Assigned',
+            full_name='Earlier Checkin',
         )
         second_worker = WorkerProfile.objects.create(
             user=second_user,
             tenant=self.tenant,
             last_assigned_at=timezone.now() - timedelta(minutes=10),
+            active_jobs_count=0,
+            load_status='free',
         )
         third_user = user_model.objects.create_user(
             username='worker3',
@@ -231,7 +236,7 @@ class AttendanceApiTests(APITestCase):
             tenant=self.tenant,
             full_name='Absent Worker',
         )
-        WorkerProfile.objects.create(user=third_user, tenant=self.tenant)
+        third_worker = WorkerProfile.objects.create(user=third_user, tenant=self.tenant)
 
         WorkerAttendance.objects.create(
             worker=self.worker,
@@ -250,11 +255,84 @@ class AttendanceApiTests(APITestCase):
         self.client.force_authenticate(self.manager)
 
         response = self.client.get(reverse('worker-list-create'))
+        rows = response.data if isinstance(response.data, list) else response.data.get('results', [])
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([item['id'] for item in response.data[:2]], [self.worker.id, second_worker.id])
-        self.assertEqual(response.data[0]['current_status'], 'in')
-        self.assertIsNotNone(response.data[0]['queue_position_at'])
+        by_id = {item['id']: item for item in rows}
+        self.assertEqual(by_id[self.worker.id]['current_status'], 'in')
+        self.assertEqual(by_id[second_worker.id]['current_status'], 'in')
+        # Free workers sort by check-in, not last_assigned — earlier check-in stays ahead.
+        self.assertEqual([item['id'] for item in rows[:2]], [second_worker.id, self.worker.id])
+        self.assertIsNotNone(rows[0]['queue_position_at'])
+
+        second_worker.active_jobs_count = 1
+        second_worker.load_status = 'normal'
+        second_worker.save(update_fields=['active_jobs_count', 'load_status', 'updated_at'])
+
+        busy_response = self.client.get(reverse('worker-list-create'))
+        busy_rows = busy_response.data if isinstance(busy_response.data, list) else busy_response.data.get('results', [])
+        self.assertEqual(busy_response.status_code, 200)
+        ordered_ids = [item['id'] for item in busy_rows]
+        # Free present washer stays ahead; busy washer drops behind all free peers.
+        self.assertEqual(ordered_ids[0], self.worker.id)
+        self.assertLess(ordered_ids.index(self.worker.id), ordered_ids.index(second_worker.id))
+        self.assertLess(ordered_ids.index(third_worker.id), ordered_ids.index(second_worker.id))
+        self.assertEqual(ordered_ids[-1], second_worker.id)
+        self.assertFalse(next(item for item in busy_rows if item['id'] == self.worker.id)['is_busy'])
+        self.assertTrue(next(item for item in busy_rows if item['id'] == second_worker.id)['is_busy'])
+
+    def test_worker_list_frees_stale_holds_from_previous_days(self):
+        user_model = get_user_model()
+        self.worker.active_jobs_count = 0
+        self.worker.load_status = 'free'
+        self.worker.save(update_fields=['active_jobs_count', 'load_status', 'updated_at'])
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.post(
+            reverse('vehicle-list-create'),
+            {
+                'plate_number': '14 ب 345 67',
+                'plate_left': '14',
+                'plate_letter': 'ب',
+                'plate_mid': '345',
+                'plate_right': '67',
+                'car_model': 'Old Car',
+                'car_color': 'Blue',
+                'driver_name': 'Old Driver',
+                'driver_phone': '09120000113',
+                'status': 'ready_to_settle',
+                'worker_id': self.worker.id,
+                'staff_members': [
+                    {'id': self.worker.id, 'name': 'Ali Worker', 'worker_share_percent': 100},
+                ],
+                'services': [
+                    {'title': 'Wash', 'price': 1000, 'discount_amount': 0},
+                ],
+                'share': {'type': 'percent', 'value': 40},
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        vehicle_id = response.data['id']
+        from apps.vehicles.models import VehicleEntry
+        vehicle = VehicleEntry.objects.get(id=vehicle_id)
+        vehicle.check_in_at = timezone.now() - timedelta(days=3)
+        vehicle.save(update_fields=['check_in_at', 'updated_at'])
+        self.worker.refresh_from_db()
+        self.assertEqual(self.worker.active_jobs_count, 1)
+
+        list_response = self.client.get(reverse('worker-list-create'))
+        rows = list_response.data if isinstance(list_response.data, list) else list_response.data.get('results', [])
+        self.assertEqual(list_response.status_code, 200)
+        self.worker.refresh_from_db()
+        self.assertEqual(self.worker.active_jobs_count, 0)
+        self.assertFalse(next(item for item in rows if item['id'] == self.worker.id)['is_busy'])
+        # Yesterday's assignment must not keep ordering the worker as today's busy turn.
+        self.worker.last_assigned_at = timezone.now() - timedelta(days=2)
+        self.worker.save(update_fields=['last_assigned_at', 'updated_at'])
+        ordered = self.client.get(reverse('worker-list-create'))
+        ordered_rows = ordered.data if isinstance(ordered.data, list) else ordered.data.get('results', [])
+        self.assertIsNone(next(item for item in ordered_rows if item['id'] == self.worker.id)['queue_position_at'])
 
     @patch('apps.workers.views.send_user_credentials_sms')
     def test_worker_create_sends_credentials_sms(self, mock_send_credentials_sms):
@@ -355,6 +433,25 @@ class AttendanceApiTests(APITestCase):
         second_worker.refresh_from_db()
         self.assertIsNotNone(self.worker.last_assigned_at)
         self.assertIsNotNone(second_worker.last_assigned_at)
+        self.assertEqual(self.worker.active_jobs_count, 1)
+        self.assertEqual(second_worker.active_jobs_count, 1)
+        queue_response = self.client.get(reverse('worker-list-create'))
+        queue_rows = queue_response.data if isinstance(queue_response.data, list) else queue_response.data.get('results', [])
+        assigned_ids = {self.worker.id, second_worker.id}
+        free_ids = [item['id'] for item in queue_rows if item['id'] not in assigned_ids]
+        assigned_order = [item['id'] for item in queue_rows if item['id'] in assigned_ids]
+        self.assertTrue(all(item['is_busy'] for item in queue_rows if item['id'] in assigned_ids))
+        if free_ids:
+            self.assertLess(queue_rows.index(next(item for item in queue_rows if item['id'] == free_ids[0])), queue_rows.index(next(item for item in queue_rows if item['id'] == assigned_order[0])))
+        self.assertTrue(response.data['job']['workers_held'])
+
+        free_response = self.client.post(reverse('vehicle-free-workers', kwargs={'pk': response.data['id']}))
+        self.assertEqual(free_response.status_code, 200)
+        self.worker.refresh_from_db()
+        second_worker.refresh_from_db()
+        self.assertEqual(self.worker.active_jobs_count, 0)
+        self.assertEqual(second_worker.active_jobs_count, 0)
+        self.assertFalse(free_response.data['vehicle']['job']['workers_held'])
 
     def test_vehicle_assignment_ignores_operator_profiles(self):
         user_model = get_user_model()

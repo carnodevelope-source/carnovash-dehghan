@@ -37,6 +37,13 @@ from apps.payments.models import Payment
 from apps.products.models import Product
 from apps.services.models import GeneralSettings, Service
 from apps.workers.models import WorkerProfile
+from apps.workers.load import (
+    free_job_workers,
+    hold_job_workers,
+    recompute_worker_loads_for_tenant,
+    sync_held_job_workers,
+    worker_ids_from_job,
+)
 from apps.reports.models import WorkerPayoutTransaction
 from .ai_audit import log_ai_plate_audit_event
 
@@ -253,42 +260,66 @@ def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', pla
         plate_type=plate_type,
     )
     queryset = VehicleEntry.objects.filter(tenant=tenant).exclude(status=VehicleEntry.Status.CANCELLED)
-    candidates = []
+    query = Q()
+    plate_numbers = set()
     if parts['plate_number']:
-        candidates.append(queryset.filter(plate_number=parts['plate_number']).order_by('-check_in_at').first())
+        plate_numbers.add(parts['plate_number'])
     letter_variants = plate_letter_lookup_variants(parts['plate_letter'] or plate_letter)
     if parts['plate_mid'] and letter_variants:
         if parts['plate_left'] and parts['plate_right']:
-            candidates.append(
-                queryset.filter(
-                    _q_digit_field('plate_left', parts['plate_left']),
-                    _q_digit_field('plate_mid', parts['plate_mid']),
-                    _q_digit_field('plate_right', parts['plate_right']),
-                    plate_letter__in=letter_variants,
-                ).order_by('-check_in_at').first()
+            query |= (
+                _q_digit_field('plate_left', parts['plate_left'])
+                & _q_digit_field('plate_mid', parts['plate_mid'])
+                & _q_digit_field('plate_right', parts['plate_right'])
+                & Q(plate_letter__in=letter_variants)
             )
         elif not parts['plate_left'] and not parts['plate_right']:
-            candidates.append(
-                queryset.filter(
-                    _q_digit_field('plate_mid', parts['plate_mid']),
-                    plate_letter__in=letter_variants,
-                    plate_left='',
-                    plate_right='',
-                ).order_by('-check_in_at').first()
+            query |= (
+                _q_digit_field('plate_mid', parts['plate_mid'])
+                & Q(plate_letter__in=letter_variants)
+                & Q(plate_left='')
+                & Q(plate_right='')
             )
     # Legacy rows may still store short "ا" while lookup uses "الف".
     for letter in letter_variants:
-        legacy_number = ''
         if parts['plate_left'] and letter and parts['plate_mid'] and parts['plate_right']:
-            legacy_number = f"{parts['plate_left']} {letter} {parts['plate_mid']} {parts['plate_right']}"
+            plate_numbers.add(f"{parts['plate_left']} {letter} {parts['plate_mid']} {parts['plate_right']}")
         elif parts['plate_mid'] and letter and not parts['plate_left'] and not parts['plate_right']:
-            legacy_number = f"{parts['plate_mid']} {letter}"
-        if legacy_number and legacy_number != parts['plate_number']:
-            candidates.append(queryset.filter(plate_number=legacy_number).order_by('-check_in_at').first())
-    found = [item for item in candidates if item]
+            plate_numbers.add(f"{parts['plate_mid']} {letter}")
+    if plate_numbers:
+        query |= Q(plate_number__in=list(plate_numbers))
+
+    # Digits-only unique fallback: letter OCR/normalize may fail while history still matches.
+    if not query and parts['plate_mid'] and parts['plate_left'] and parts['plate_right']:
+        digit_hits = list(
+            queryset.filter(
+                _q_digit_field('plate_left', parts['plate_left']),
+                _q_digit_field('plate_mid', parts['plate_mid']),
+                _q_digit_field('plate_right', parts['plate_right']),
+            ).order_by('-check_in_at')[:2]
+        )
+        if len(digit_hits) == 1:
+            return digit_hits[0], parts
+        return None, parts
+
+    if not query:
+        return None, parts
+
+    found = queryset.filter(query).order_by('-check_in_at').first()
     if found:
-        found.sort(key=lambda item: item.check_in_at or timezone.now(), reverse=True)
-        return found[0], parts
+        return found, parts
+
+    # When letter was wrong/ambiguous but digits uniquely match history, still autofill.
+    if parts['plate_mid'] and parts['plate_left'] and parts['plate_right']:
+        digit_hits = list(
+            queryset.filter(
+                _q_digit_field('plate_left', parts['plate_left']),
+                _q_digit_field('plate_mid', parts['plate_mid']),
+                _q_digit_field('plate_right', parts['plate_right']),
+            ).order_by('-check_in_at')[:2]
+        )
+        if len(digit_hits) == 1:
+            return digit_hits[0], parts
 
     return None, parts
 
@@ -396,18 +427,201 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
         ).update(status=Payment.Status.REFUNDED, updated_at=timezone.now())
         self._restore_vehicle_product_inventory(instance, request_user)
 
+    def _reapply_vehicle_product_inventory(self, instance, request_user):
+        """
+        After un-cancel, put stock back to the deducted state that existed before cancel.
+        Prefer reversing cancel_restore IN rows; fall back to product line quantities.
+        """
+        restore_movements = list(
+            StockMovement.objects.select_related('inventory_item', 'inventory_item__product')
+            .filter(
+                tenant=instance.tenant,
+                reference_type='vehicle_cancel_restore',
+                reference_id=instance.id,
+                movement_type=StockMovement.MovementType.IN,
+            )
+            .order_by('id')
+        )
+        already_reapplied = {
+            item['inventory_item_id']: Decimal(str(item['total'] or 0))
+            for item in (
+                StockMovement.objects.filter(
+                    tenant=instance.tenant,
+                    reference_type='vehicle_uncancel_deduct',
+                    reference_id=instance.id,
+                    movement_type=StockMovement.MovementType.OUT,
+                )
+                .values('inventory_item_id')
+                .annotate(total=Sum('quantity'))
+            )
+        }
+
+        if restore_movements:
+            totals = {}
+            for movement in restore_movements:
+                item_id = movement.inventory_item_id
+                if item_id not in totals:
+                    totals[item_id] = {'quantity': Decimal('0'), 'movement': movement}
+                totals[item_id]['quantity'] += Decimal(str(movement.quantity or 0))
+            for item_id, payload in totals.items():
+                deduct_quantity = payload['quantity'] - already_reapplied.get(item_id, Decimal('0'))
+                if deduct_quantity <= 0:
+                    continue
+                inventory_item = InventoryItem.objects.select_for_update().filter(pk=item_id).first()
+                if not inventory_item:
+                    continue
+                available = Decimal(str(getattr(inventory_item, 'available_quantity', None) or inventory_item.quantity_on_hand or 0))
+                if available < deduct_quantity:
+                    product_name = getattr(getattr(inventory_item, 'product', None), 'name', None) or 'محصول'
+                    raise ValueError(f'موجودی محصول «{product_name}» برای بازگردانی کافی نیست.')
+                inventory_item.quantity_on_hand = Decimal(str(inventory_item.quantity_on_hand or 0)) - deduct_quantity
+                inventory_item.save(update_fields=['quantity_on_hand', 'updated_at'])
+                sample = payload['movement']
+                StockMovement.objects.create(
+                    tenant=instance.tenant,
+                    inventory_item=inventory_item,
+                    movement_type=StockMovement.MovementType.OUT,
+                    quantity=deduct_quantity,
+                    unit_cost=sample.unit_cost or Decimal('0'),
+                    sale_price_snapshot=sample.sale_price_snapshot or Decimal('0'),
+                    note='کسر مجدد موجودی پس از بازگردانی رزرو لغو‌شده',
+                    reference_type='vehicle_uncancel_deduct',
+                    reference_id=instance.id,
+                    created_by=request_user if getattr(request_user, 'is_authenticated', False) else None,
+                )
+            return
+
+        job = getattr(instance, 'job', None)
+        if not job:
+            return
+        for line in job.product_lines.select_related('product').all():
+            quantity = Decimal(str(line.quantity or 0))
+            if quantity <= 0 or not line.product_id:
+                continue
+            inventory_item, _created = InventoryItem.objects.select_for_update().get_or_create(
+                product=line.product,
+                tenant=instance.tenant,
+                defaults={'quantity_on_hand': 0, 'reserved_quantity': 0, 'min_quantity_alert': 0},
+            )
+            available = Decimal(str(getattr(inventory_item, 'available_quantity', None) or inventory_item.quantity_on_hand or 0))
+            if available < quantity:
+                raise ValueError(f'موجودی محصول «{line.product.name}» برای بازگردانی کافی نیست.')
+            inventory_item.quantity_on_hand = Decimal(str(inventory_item.quantity_on_hand or 0)) - quantity
+            inventory_item.save(update_fields=['quantity_on_hand', 'updated_at'])
+            StockMovement.objects.create(
+                tenant=instance.tenant,
+                inventory_item=inventory_item,
+                movement_type=StockMovement.MovementType.OUT,
+                quantity=quantity,
+                unit_cost=line.unit_price or Decimal('0'),
+                sale_price_snapshot=line.unit_price or Decimal('0'),
+                note='کسر مجدد موجودی پس از بازگردانی رزرو لغو‌شده',
+                reference_type='vehicle_uncancel_deduct',
+                reference_id=instance.id,
+                created_by=request_user if getattr(request_user, 'is_authenticated', False) else None,
+            )
+
+    def _restore_cancelled_payment_effects(self, instance, target_status):
+        payments = list(Payment.objects.filter(vehicle_entry=instance))
+        if not payments:
+            instance.payment_status = VehicleEntry.PaymentStatus.UNPAID
+            instance.payment_method = ''
+            return ['payment_status', 'payment_method']
+
+        for payment in payments:
+            if payment.status != Payment.Status.REFUNDED:
+                continue
+            if payment.method in {Payment.Method.CREDIT, Payment.Method.CHEQUE}:
+                payment.status = Payment.Status.PENDING
+                payment.paid_at = None
+            else:
+                payment.status = Payment.Status.SUCCESS
+                if not payment.paid_at:
+                    payment.paid_at = timezone.now()
+            payment.save(update_fields=['status', 'paid_at', 'updated_at'])
+
+        latest = payments[-1]
+        instance.payment_method = latest.method or instance.payment_method or ''
+        if target_status == VehicleEntry.Status.RELEASED:
+            if any(item.status == Payment.Status.SUCCESS for item in payments):
+                instance.payment_status = VehicleEntry.PaymentStatus.PAID
+            elif any(item.status == Payment.Status.PENDING for item in payments):
+                instance.payment_status = VehicleEntry.PaymentStatus.UNPAID
+            else:
+                instance.payment_status = VehicleEntry.PaymentStatus.UNPAID
+        else:
+            instance.payment_status = VehicleEntry.PaymentStatus.UNPAID
+        return ['payment_status', 'payment_method']
+
+    def _resolve_restore_status(self, instance, requested_status=''):
+        valid_statuses = {choice[0] for choice in VehicleEntry.Status.choices} - {VehicleEntry.Status.CANCELLED}
+        requested = str(requested_status or '').strip()
+        if requested in valid_statuses:
+            return requested
+        last_cancel = (
+            VehicleStatusLog.objects.filter(
+                vehicle=instance,
+                to_status=VehicleEntry.Status.CANCELLED,
+            )
+            .order_by('-changed_at', '-id')
+            .first()
+        )
+        if last_cancel and last_cancel.from_status in valid_statuses:
+            return last_cancel.from_status
+        job = getattr(instance, 'job', None)
+        has_services = bool(job and job.service_lines.exists())
+        if has_services:
+            return VehicleEntry.Status.READY_TO_SETTLE
+        return VehicleEntry.Status.ENTERED
+
+    def _reactivate_cancelled_vehicle_effects(self, instance, request_user, target_status):
+        self._reapply_vehicle_product_inventory(instance, request_user)
+        payment_fields = self._restore_cancelled_payment_effects(instance, target_status)
+        rebuild_customer_score(instance.customer)
+        if not instance.is_piece_wash:
+            rebuild_plate_loyalty(
+                get_or_create_plate_loyalty(
+                    tenant=instance.tenant,
+                    plate_number=instance.plate_number,
+                    plate_left=instance.plate_left,
+                    plate_letter=instance.plate_letter,
+                    plate_mid=instance.plate_mid,
+                    plate_right=instance.plate_right,
+                    plate_type=getattr(instance, 'plate_type', 'car'),
+                ),
+                discount_percent_per_half_star=self.get_serializer()._discount_percent_per_half_star(instance.tenant),
+            )
+        return payment_fields
+
     @transaction.atomic
     def patch(self, request, *args, **kwargs):
         instance = self.get_object()
+        restore_requested = str(request.data.get('restore', '')).strip().lower() in {
+            '1', 'true', 'yes', 'on',
+        }
         new_status = request.data.get('status')
+        previous_status = instance.status
+        if restore_requested or (
+            previous_status == VehicleEntry.Status.CANCELLED
+            and str(new_status or '').strip() == 'restore'
+        ):
+            if previous_status != VehicleEntry.Status.CANCELLED:
+                return Response(
+                    {'status': ['فقط سفارش‌های لغو‌شده قابل بازگردانی هستند.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            new_status = self._resolve_restore_status(instance, new_status if new_status != 'restore' else '')
         valid_statuses = {choice[0] for choice in VehicleEntry.Status.choices}
         if new_status not in valid_statuses:
             return Response({'status': ['Invalid status value.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        previous_status = instance.status
         is_new_cancellation = (
             new_status == VehicleEntry.Status.CANCELLED
             and previous_status != VehicleEntry.Status.CANCELLED
+        )
+        is_restore_from_cancel = (
+            previous_status == VehicleEntry.Status.CANCELLED
+            and new_status != VehicleEntry.Status.CANCELLED
         )
         has_payments = Payment.objects.filter(vehicle_entry=instance).exists()
         instance.status = new_status
@@ -427,6 +641,22 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
             )
             instance.payment_method = ''
             update_fields.extend(['released_at', 'payment_status', 'payment_method'])
+        if is_restore_from_cancel:
+            try:
+                payment_fields = self._reactivate_cancelled_vehicle_effects(
+                    instance,
+                    request.user,
+                    new_status,
+                )
+            except ValueError as exc:
+                return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            for field in payment_fields:
+                if field not in update_fields:
+                    update_fields.append(field)
+            if new_status != VehicleEntry.Status.RELEASED:
+                instance.released_at = None
+                if 'released_at' not in update_fields:
+                    update_fields.append('released_at')
         instance.save(update_fields=update_fields)
 
         if is_new_cancellation:
@@ -451,7 +681,7 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
             from_status=previous_status,
             to_status=new_status,
             changed_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
-            note=(request.data.get('note') or '').strip(),
+            note=(request.data.get('note') or ('بازگردانی رزرو لغو‌شده' if is_restore_from_cancel else '')).strip(),
         )
 
         if hasattr(instance, 'job') and instance.job:
@@ -461,11 +691,21 @@ class VehicleEntryStatusUpdateView(generics.UpdateAPIView):
             elif new_status == VehicleEntry.Status.RELEASED:
                 instance.job.released_at = timezone.now()
                 instance.job.save(update_fields=['released_at', 'updated_at'])
+                free_job_workers(instance.job, tenant=instance.tenant)
+                recompute_worker_loads_for_tenant(instance.tenant)
             elif new_status == VehicleEntry.Status.CANCELLED:
                 instance.job.released_at = None
                 instance.job.save(update_fields=['released_at', 'updated_at'])
+                free_job_workers(instance.job, tenant=instance.tenant)
+                recompute_worker_loads_for_tenant(instance.tenant)
+            elif is_restore_from_cancel and new_status != VehicleEntry.Status.RELEASED:
+                instance.job.released_at = None
+                instance.job.save(update_fields=['released_at', 'updated_at'])
+                instance.job.vehicle = instance
+                hold_job_workers(instance.job, tenant=instance.tenant)
 
-        if previous_status != new_status:
+        # Skip SMS on restore — operator is undoing cancel, not creating a new visit event.
+        if previous_status != new_status and not is_restore_from_cancel:
             if new_status == VehicleEntry.Status.READY_TO_SETTLE:
                 loyalty = loyalty_snapshot(get_or_create_plate_loyalty(
                     tenant=instance.tenant,
@@ -634,7 +874,12 @@ class VehiclePlateLookupView(APIView):
         if latest_vehicle and not plate_number:
             plate_number = latest_vehicle.plate_number or ''
 
-        settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
+        settings_obj = GeneralSettings.objects.filter(tenant=tenant).only(
+            'id',
+            'discount_percent_per_half_star',
+            'discount_calculation_mode',
+            'fixed_visit_discounts',
+        ).order_by('id').first()
         discount_percent_per_half_star = Decimal(
             str(getattr(settings_obj, 'discount_percent_per_half_star', 0) or 0)
         )
@@ -665,8 +910,26 @@ class VehiclePlateLookupView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        loyalty_profile = sync_plate_loyalty(
-            get_or_create_plate_loyalty(
+        # Fast path: read loyalty without write/sync when profile already looks healthy.
+        from .models import PlateLoyaltyProfile
+        from .plate_normalize import plate_letter_lookup_variants
+
+        plate_numbers = {str(latest_vehicle.plate_number or '').strip(), str(plate_number or '').strip()}
+        letter_variants = plate_letter_lookup_variants(latest_vehicle.plate_letter)
+        for letter in letter_variants:
+            if latest_vehicle.plate_left and letter and latest_vehicle.plate_mid and latest_vehicle.plate_right:
+                plate_numbers.add(
+                    f'{latest_vehicle.plate_left} {letter} {latest_vehicle.plate_mid} {latest_vehicle.plate_right}'
+                )
+        plate_numbers = [item for item in plate_numbers if item]
+        loyalty_profile = (
+            PlateLoyaltyProfile.objects.filter(tenant=tenant, plate_number__in=plate_numbers)
+            .order_by('-visit_count', '-updated_at', '-id')
+            .first()
+            if plate_numbers else None
+        )
+        if loyalty_profile is None:
+            loyalty_profile = get_or_create_plate_loyalty(
                 tenant=tenant,
                 plate_number=latest_vehicle.plate_number,
                 plate_left=latest_vehicle.plate_left,
@@ -674,9 +937,16 @@ class VehiclePlateLookupView(APIView):
                 plate_mid=latest_vehicle.plate_mid,
                 plate_right=latest_vehicle.plate_right,
                 plate_type=getattr(latest_vehicle, 'plate_type', 'car'),
-            ),
-            discount_percent_per_half_star=discount_percent_per_half_star,
-        )
+            )
+        else:
+            # Only rebuild when profile is empty/stale; skip expensive sync on hot path.
+            current_visits = int(loyalty_profile.visit_count or 0)
+            current_score = Decimal(str(loyalty_profile.score or 0))
+            if current_visits <= 0 or (current_visits > 0 and current_score <= 0 and current_visits % 10 != 0):
+                loyalty_profile = sync_plate_loyalty(
+                    loyalty_profile,
+                    discount_percent_per_half_star=discount_percent_per_half_star,
+                )
         loyalty = loyalty_snapshot(loyalty_profile)
         # If profile is still empty somehow, treat as first visit.
         if int(loyalty.get('visit_count', 0) or 0) <= 0:
@@ -923,6 +1193,23 @@ class VehicleReleaseCheckoutView(APIView):
         if percent > 100:
             return Decimal('100')
         return percent
+
+    def _services_share_pool(self, services_total, loyalty_discount_total=0, manual_discount_total=0):
+        """Worker/carwash split base: services after post-sale discounts. Never products/tax/tip."""
+        pool = self._money(services_total) - self._money(loyalty_discount_total) - self._money(manual_discount_total)
+        return max(Decimal('0'), pool)
+
+    def _worker_share_from_payment_config(self, job, share_pool):
+        """Always derive worker share from payment config × services pool (ignore inflated stored amounts)."""
+        share_pool = max(Decimal('0'), self._money(share_pool))
+        payment_type = getattr(job, 'worker_payment_type', '') or ''
+        if payment_type == VehicleJob.WorkerPaymentType.PERCENT:
+            percent = self._clamp_percent(getattr(job, 'worker_payment_percent', 0))
+            return self._money((share_pool * percent) / Decimal('100'))
+        if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
+            return min(share_pool, self._money(getattr(job, 'worker_payment_fixed', 0)))
+        stored = self._money(getattr(job, 'worker_share_amount', 0))
+        return min(share_pool, stored)
 
     def _discount_percent_per_half_star(self, tenant):
         settings_obj = GeneralSettings.objects.filter(tenant=tenant).order_by('id').first()
@@ -1428,11 +1715,18 @@ class VehicleReleaseCheckoutView(APIView):
         tax_percent = self._tax_percent(tenant)
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount
+        # Products never enter the commission pool — only discounted services.
+        share_pool = self._services_share_pool(
+            services_total,
+            loyalty_discount_total=loyalty_discount_total,
+            manual_discount_total=manual_discount_total,
+        )
+        worker_share_amount = self._worker_share_from_payment_config(vehicle.job, share_pool)
         assigned_workers = self._resolve_assigned_workers(vehicle.job)
         worker_share_distribution, distributed_worker_share_total = self._normalize_worker_share_distribution(
             assigned_workers=assigned_workers,
             raw_distribution=snapshot if isinstance((snapshot := vehicle.job.assigned_workers_snapshot), list) else [],
-            worker_share_base=vehicle.job.worker_share_amount or Decimal('0'),
+            worker_share_base=worker_share_amount,
         )
         distribution_by_id = {int(item['id']): item for item in worker_share_distribution if item.get('id')}
         for worker in assigned_workers:
@@ -1443,6 +1737,10 @@ class VehicleReleaseCheckoutView(APIView):
         assigned_workers_with_tip, workers_tip_share_amount = self._distribute_tip(
             tip_amount=tip_amount,
             assigned_workers=assigned_workers,
+        )
+        carwash_share_amount = max(Decimal('0'), share_pool - distributed_worker_share_total) + max(
+            Decimal('0'),
+            tip_amount - workers_tip_share_amount,
         )
         assigned_workers_names = [item['name'] for item in assigned_workers_with_tip]
         manager = get_user_model().objects.filter(tenant=tenant, role='manager').order_by('id').first()
@@ -1478,6 +1776,7 @@ class VehicleReleaseCheckoutView(APIView):
                     'service_list_subtotal': service_list_subtotal,
                     'services_total': services_total,
                     'products_total': products_total,
+                    'share_pool_total': share_pool,
                     'discount_percent_per_half_star': float(discount_percent_per_half_star),
                     'discount_calculation_mode': getattr(settings_obj, 'discount_calculation_mode', 'step') if settings_obj else 'step',
                     'fixed_visit_discounts': getattr(settings_obj, 'fixed_visit_discounts', {}) if settings_obj else {},
@@ -1492,10 +1791,13 @@ class VehicleReleaseCheckoutView(APIView):
                     'tax_percent': float(tax_percent),
                     'tip_amount': tip_amount,
                     'final_total': final_total,
-                    'worker_share_amount': vehicle.job.worker_share_amount,
+                    'worker_payment_type': vehicle.job.worker_payment_type,
+                    'worker_payment_percent': float(vehicle.job.worker_payment_percent or 0),
+                    'worker_payment_fixed': float(vehicle.job.worker_payment_fixed or 0),
+                    'worker_share_amount': worker_share_amount,
                     'worker_share_distributed_total': distributed_worker_share_total,
                     'workers_tip_share_amount': workers_tip_share_amount,
-                    'carwash_share_amount': vehicle.job.carwash_share_amount,
+                    'carwash_share_amount': carwash_share_amount,
                     'assigned_workers_names': assigned_workers_names,
                     'assigned_workers': [
                         {
@@ -1529,6 +1831,8 @@ class VehicleReleaseCheckoutView(APIView):
             return Response({'detail': 'Vehicle job not found.'}, status=status.HTTP_400_BAD_REQUEST)
         previous_status = vehicle.status
         is_existing_release = previous_status == VehicleEntry.Status.RELEASED
+        previous_worker_ids = worker_ids_from_job(vehicle.job)
+        workers_were_held = bool(vehicle.job.workers_held)
 
         service_lines_payload = request.data.get('service_lines', [])
         new_service_lines_payload = request.data.get('new_service_lines', [])
@@ -1828,18 +2132,13 @@ class VehicleReleaseCheckoutView(APIView):
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount
 
-        # Product sales are not shareable — commission pool is services only.
-        share_base_total = completed_service_totals
-        worker_share_base = vehicle.job.worker_share_amount or Decimal('0')
-        if worker_share_base <= 0:
-            payment_type = getattr(vehicle.job, 'worker_payment_type', '') or ''
-            if payment_type == VehicleJob.WorkerPaymentType.PERCENT:
-                percent = min(Decimal('100'), max(Decimal('0'), Decimal(str(vehicle.job.worker_payment_percent or 0))))
-                worker_share_base = self._money((share_base_total * percent) / Decimal('100'))
-            elif payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
-                worker_share_base = min(share_base_total, self._money(vehicle.job.worker_payment_fixed or 0))
-        if worker_share_base > share_base_total:
-            worker_share_base = share_base_total
+        # Product sales are not shareable — commission pool is discounted services only.
+        share_base_total = self._services_share_pool(
+            completed_service_totals,
+            loyalty_discount_total=loyalty_discount_total,
+            manual_discount_total=manual_discount_total,
+        )
+        worker_share_base = self._worker_share_from_payment_config(vehicle.job, share_base_total)
 
         assigned_workers_from_payload = self._resolve_workers_from_payload(tenant, assigned_workers_payload)
         assigned_workers = (
@@ -1867,10 +2166,11 @@ class VehicleReleaseCheckoutView(APIView):
             tip_amount=tip_amount,
             assigned_workers=assigned_workers,
         )
+        # Discounts already removed from share_base_total — do not subtract them again.
         carwash_share = (share_base_total - worker_share_base_total) + max(
             Decimal('0'),
             tip_amount - workers_tip_share_amount,
-        ) - post_sale_discount_total
+        )
         if carwash_share < 0:
             carwash_share = Decimal('0')
         workers_map = {
@@ -1954,6 +2254,16 @@ class VehicleReleaseCheckoutView(APIView):
                 'updated_at',
             ]
         )
+        if workers_were_held:
+            # Keep load accounting correct if release also changed the assigned set.
+            sync_held_job_workers(
+                vehicle.job,
+                previous_worker_ids,
+                worker_ids_from_job(vehicle.job),
+                tenant=tenant,
+            )
+        free_job_workers(vehicle.job, tenant=tenant)
+        recompute_worker_loads_for_tenant(tenant)
 
         # Products are already deducted at intake (reservation). Only deduct on release
         # when this vehicle has no prior intake OUT movements (legacy / edge paths).
@@ -2153,13 +2463,20 @@ class VehicleJobAdjustView(VehicleReleaseCheckoutView):
         products_total = self._money(job.products_total or 0)
         discount_total = self._money(job.total_discount or job.discount_total or 0)
         tax_total = self._money(job.tax_total or 0)
+        loyalty_discount_total = self._money(job.loyalty_discount_total or 0)
+        manual_discount_total = self._money(job.manual_discount_total or 0)
+        share_pool = self._services_share_pool(
+            services_total,
+            loyalty_discount_total=loyalty_discount_total,
+            manual_discount_total=manual_discount_total,
+        )
         worker_share_amount = self._money(job.worker_share_amount or 0)
-        post_sale_discount_total = self._money(job.loyalty_discount_total or 0) + self._money(job.manual_discount_total or 0)
+        if worker_share_amount > share_pool:
+            worker_share_amount = share_pool
         final_total = max(Decimal('0'), service_list_subtotal - discount_total) + products_total + tax_total + tip_amount
         carwash_share = (
-            max(Decimal('0'), services_total - worker_share_amount)
+            max(Decimal('0'), share_pool - worker_share_amount)
             + max(Decimal('0'), tip_amount - workers_tip_share_amount)
-            - post_sale_discount_total
         )
         return self._money(final_total), max(Decimal('0'), self._money(carwash_share))
 
@@ -2176,6 +2493,7 @@ class VehicleJobAdjustView(VehicleReleaseCheckoutView):
             return Response({'detail': 'Vehicle job not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         job = vehicle.job
+        previous_worker_ids = worker_ids_from_job(job)
         assigned_workers_payload = request.data.get('assigned_workers', None)
         worker_share_distribution_payload = request.data.get('worker_share_distribution', [])
         tip_amount = self._money(request.data.get('tip_amount', job.tip_amount or 0))
@@ -2194,10 +2512,16 @@ class VehicleJobAdjustView(VehicleReleaseCheckoutView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        share_pool = self._services_share_pool(
+            job.services_total or 0,
+            loyalty_discount_total=job.loyalty_discount_total or 0,
+            manual_discount_total=job.manual_discount_total or 0,
+        )
+        worker_share_base = self._worker_share_from_payment_config(job, share_pool)
         worker_share_distribution, worker_share_base_total = self._normalize_worker_share_distribution(
             assigned_workers=assigned_workers,
             raw_distribution=worker_share_distribution_payload,
-            worker_share_base=job.worker_share_amount or Decimal('0'),
+            worker_share_base=worker_share_base,
         )
         distribution_by_id = {int(item['id']): item for item in worker_share_distribution if item.get('id')}
         for worker in assigned_workers:
@@ -2243,12 +2567,21 @@ class VehicleJobAdjustView(VehicleReleaseCheckoutView):
             'updated_at',
         ])
 
-        if assigned_workers_payload is not None and assigned_workers_with_tip:
-            WorkerProfile.objects.filter(
-                tenant=tenant,
-                id__in=[int(item['id']) for item in assigned_workers_with_tip],
-                user__role='worker',
-            ).update(last_assigned_at=timezone.now(), updated_at=timezone.now())
+        if assigned_workers_payload is not None:
+            next_ids = [int(item['id']) for item in assigned_workers_with_tip]
+            if job.workers_held:
+                sync_held_job_workers(job, previous_worker_ids, next_ids, tenant=tenant)
+                if not next_ids:
+                    job.workers_held = False
+                    job.workers_freed_at = timezone.now()
+                    job.save(update_fields=['workers_held', 'workers_freed_at', 'updated_at'])
+            elif next_ids and vehicle.status in {
+                VehicleEntry.Status.ENTERED,
+                VehicleEntry.Status.ASSIGNED,
+                VehicleEntry.Status.IN_PROGRESS,
+                VehicleEntry.Status.READY_TO_SETTLE,
+            }:
+                hold_job_workers(job, tenant=tenant)
 
         latest_payment = vehicle.payments.order_by('-created_at', '-id').first()
         if latest_payment:
@@ -2259,3 +2592,54 @@ class VehicleJobAdjustView(VehicleReleaseCheckoutView):
         vehicle.updated_by = request.user if getattr(request.user, 'is_authenticated', False) else None
         vehicle.save(update_fields=['updated_by', 'updated_at'])
         return Response(VehicleEntrySerializer(vehicle).data, status=status.HTTP_200_OK)
+
+
+class VehicleFreeWorkersView(APIView):
+    """Free assigned washers before checkout so they re-enter the turn queue."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, pk):
+        tenant = getattr(request.user, 'tenant', None)
+        vehicle = (
+            VehicleEntry.objects.select_for_update()
+            .select_related('job', 'job__assigned_worker', 'job__assigned_worker__user')
+            .filter(pk=pk, tenant=tenant)
+            .first()
+        )
+        if not vehicle or not getattr(vehicle, 'job', None):
+            return Response({'detail': 'خودرو یا شغل مربوطه پیدا نشد.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if vehicle.status in {VehicleEntry.Status.RELEASED, VehicleEntry.Status.CANCELLED}:
+            return Response(
+                {'detail': 'برای خودرو ترخیص‌شده یا لغو‌شده آزادسازی لازم نیست.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not worker_ids_from_job(vehicle.job):
+            return Response(
+                {'detail': 'پرسنلی برای این خودرو تخصیص داده نشده است.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not vehicle.job.workers_held:
+            return Response(
+                {
+                    'detail': 'نیروهای این خودرو قبلاً آزاد شده‌اند.',
+                    'vehicle': VehicleEntrySerializer(vehicle).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        freed = free_job_workers(vehicle.job, tenant=tenant)
+        recompute_worker_loads_for_tenant(tenant)
+        vehicle.refresh_from_db()
+        return Response(
+            {
+                'detail': 'نیروها آزاد شدند و به نوبت صف بازگشتند.' if freed else 'تغییری اعمال نشد.',
+                'freed': bool(freed),
+                'vehicle': VehicleEntrySerializer(vehicle).data,
+            },
+            status=status.HTTP_200_OK,
+        )

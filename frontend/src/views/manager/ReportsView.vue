@@ -236,9 +236,20 @@
                 <button class="secondary-btn danger-soft btn-with-icon" @click="openAdjustmentModal('penalty')"><IconlyIcon name="trash" size="sm" />ثبت جریمه</button>
               </div>
             </div>
-            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نوع</th><th>مبلغ</th><th>ماه بیمه</th><th>سفارش</th><th>توضیح</th><th>زمان</th></tr></thead><tbody>
-              <tr v-for="row in pagedTables.workerTx.rows" :key="row.id"><td>{{ faNumber(row._pageRow) }}</td><td>{{ payoutKindLabel(row.kind) }}</td><td>{{ money(row.amount) }}</td><td>{{ row.reference_month || '-' }}</td><td>{{ row.vehicle_job_id || '-' }}</td><td>{{ row.note || '-' }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
-              <tr v-if="!selectedWorkerTransactions.length"><td colspan="7">تراکنشی ثبت نشده است.</td></tr>
+            <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نوع</th><th>مبلغ</th><th>ماه بیمه</th><th>سفارش</th><th>توضیح</th><th>زمان</th><th>عملیات</th></tr></thead><tbody>
+              <tr v-for="row in pagedTables.workerTx.rows" :key="row.id">
+                <td>{{ faNumber(row._pageRow) }}</td>
+                <td>{{ payoutKindLabel(row.kind) }}</td>
+                <td>{{ money(row.amount) }}</td>
+                <td>{{ row.reference_month || '-' }}</td>
+                <td>{{ row.vehicle_job_id || '-' }}</td>
+                <td>{{ row.note || '-' }}</td>
+                <td>{{ dateTime(row.created_at) }}</td>
+                <td>
+                  <button type="button" class="secondary-btn table-edit-btn" @click.stop="openEditTransaction(row)">ویرایش</button>
+                </td>
+              </tr>
+              <tr v-if="!selectedWorkerTransactions.length"><td colspan="8">تراکنشی ثبت نشده است.</td></tr>
             </tbody></table></div>
             <ReportPager
               v-if="!exportAllRows"
@@ -451,11 +462,23 @@
       <header class="modal-head">
         <h3>
           {{
-            payoutModal.target === 'advance'
-              ? 'پرداخت مساعده'
-              : payoutModal.target === 'insurance'
-                ? 'پرداخت حق بیمه'
-                : 'پرداخت حقوق'
+            payoutModal.replaceId
+              ? (
+                payoutModal.target === 'advance'
+                  ? 'ویرایش مساعده'
+                  : payoutModal.target === 'insurance'
+                    ? 'ویرایش حق بیمه'
+                    : payoutModal.target === 'tip'
+                      ? 'ویرایش انعام'
+                      : 'ویرایش پرداخت حقوق'
+              )
+              : (
+                payoutModal.target === 'advance'
+                  ? 'پرداخت مساعده'
+                  : payoutModal.target === 'insurance'
+                    ? 'پرداخت حق بیمه'
+                    : 'پرداخت حقوق'
+              )
           }}
           {{ selectedWorkerSummary?.worker_name || '' }}
         </h3>
@@ -467,7 +490,7 @@
           <p class="helper-note">مساعده در تراکنش‌های مالی ثبت می‌شود و از مانده قابل پرداخت حقوق کم می‌شود.</p>
         </template>
         <template v-else>
-          <label><span>نوع پرداخت</span><select v-model="payoutModal.mode"><option value="full">{{ payoutModal.target === 'insurance' ? 'کل حق بیمه' : 'کل حقوق' }}</option><option value="partial">{{ payoutModal.target === 'insurance' ? 'بخشی از حق بیمه' : 'بخشی از حقوق' }}</option></select></label>
+          <label><span>نوع پرداخت</span><select v-model="payoutModal.mode"><option value="full">{{ payoutModal.target === 'insurance' ? 'کل حق بیمه' : payoutModal.target === 'tip' ? 'کل انعام' : 'کل حقوق' }}</option><option value="partial">{{ payoutModal.target === 'insurance' ? 'بخشی از حق بیمه' : payoutModal.target === 'tip' ? 'بخشی از انعام' : 'بخشی از حقوق' }}</option></select></label>
           <label v-if="payoutModal.target === 'insurance'">
             <span>ماه بیمه (شمسی)</span>
             <select v-model="payoutModal.insuranceMonth">
@@ -477,9 +500,9 @@
           </label>
           <label v-if="payoutModal.mode === 'partial'"><span>مبلغ (تومان)</span><input :value="moneyInputValue(payoutModal.amount)" type="text" inputmode="numeric" @input="payoutModal.amount = parseMoneyInput($event.target.value)" /></label>
           <p v-if="payoutModal.mode === 'partial'" class="helper-note" :class="{ error: payoutValidationMessage }">
-            {{ payoutValidationMessage || `مانده قابل پرداخت: ${money(payoutModalMaxAmount)}. مبلغ باید کمتر از مانده باشد.` }}
+            {{ payoutValidationMessage || `مانده قابل پرداخت: ${money(payoutModalMaxAmount)}. ${payoutModal.replaceId ? 'مبلغ می‌تواند تا سقف مانده باشد.' : 'مبلغ باید کمتر از مانده باشد.'}` }}
           </p>
-          <label v-if="payoutModal.target === 'wage'" class="checkbox-row">
+          <label v-if="payoutModal.target === 'wage' && !payoutModal.replaceId" class="checkbox-row">
             <input v-model="payoutModal.includeTip" type="checkbox" />
             <span>پرداخت انعام هم انجام شود (مانده انعام: {{ money(selectedWorkerSummary?.tip_balance || 0) }})</span>
           </label>
@@ -488,7 +511,7 @@
           {{ payoutSubmitError }}
         </p>
         <label><span>توضیح</span><input v-model="payoutModal.note" type="text" /></label>
-        <button class="primary-btn" :disabled="payoutModal.submitting || !canSubmitPayout" @click="submitPayout">{{ payoutModal.submitting ? 'در حال ثبت...' : 'ثبت پرداخت' }}</button>
+        <button class="primary-btn" :disabled="payoutModal.submitting || !canSubmitPayout" @click="submitPayout">{{ payoutModal.submitting ? 'در حال ثبت...' : (payoutModal.replaceId ? 'ثبت ویرایش' : 'ثبت پرداخت') }}</button>
       </div>
     </section>
   </div>
@@ -496,13 +519,13 @@
   <div v-if="adjustmentModal.open" class="modal-overlay" @click.self="closeAdjustmentModal">
     <section class="modal-panel action-panel">
       <header class="modal-head">
-        <h3>{{ adjustmentModal.kind === 'bonus' ? 'ثبت پاداش' : 'ثبت جریمه' }} برای {{ selectedWorkerSummary?.worker_name || '' }}</h3>
+        <h3>{{ adjustmentModal.replaceId ? 'ویرایش' : 'ثبت' }} {{ adjustmentModal.kind === 'bonus' ? 'پاداش' : 'جریمه' }} برای {{ selectedWorkerSummary?.worker_name || '' }}</h3>
         <button class="close-btn" @click="closeAdjustmentModal">✕</button>
       </header>
       <div class="modal-body">
         <label><span>مبلغ (تومان)</span><input :value="moneyInputValue(adjustmentModal.amount)" type="text" inputmode="numeric" @input="adjustmentModal.amount = parseMoneyInput($event.target.value)" /></label>
         <label><span>توضیح</span><input v-model.trim="adjustmentModal.note" type="text" placeholder="ثبت دلیل پاداش یا جریمه" /></label>
-        <button class="primary-btn" :disabled="adjustmentModal.submitting" @click="submitAdjustment">{{ adjustmentModal.submitting ? 'در حال ثبت...' : 'ثبت' }}</button>
+        <button class="primary-btn" :disabled="adjustmentModal.submitting" @click="submitAdjustment">{{ adjustmentModal.submitting ? 'در حال ثبت...' : (adjustmentModal.replaceId ? 'ثبت ویرایش' : 'ثبت') }}</button>
       </div>
     </section>
   </div>
@@ -682,9 +705,9 @@ const sectionMeta = reactive({
 })
 const vehicleModal = reactive({ open: false, loading: false, data: null })
 const blacklistModal = reactive({ open: false, submitting: false, row: null, error: '' })
-const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '', includeTip: false })
+const payoutModal = reactive({ open: false, submitting: false, target: 'wage', mode: 'full', amount: 0, note: '', insuranceMonth: '', includeTip: false, replaceId: null, replaceAmount: 0 })
 const payoutSubmitError = ref('')
-const adjustmentModal = reactive({ open: false, submitting: false, kind: 'bonus', amount: 0, note: '' })
+const adjustmentModal = reactive({ open: false, submitting: false, kind: 'bonus', amount: 0, note: '', replaceId: null })
 const pdfFormatModal = reactive({ open: false })
 const reportExportRef = ref(null)
 const exportState = reactive({ csvLoading: false, pdfLoading: false })
@@ -1037,11 +1060,19 @@ const selectedInsuranceMonthBalance = computed(() => {
   if (!isJalaliMonthOnOrAfter(selectedInsuranceMonthKey.value, dueStartMonth)) return 0
   return Math.max(0, monthlyAmount - selectedInsuranceMonthPaidAmount.value)
 })
-const payoutModalMaxAmount = computed(() => (
-  payoutModal.target === 'insurance'
-    ? selectedInsuranceMonthBalance.value
-    : Number(selectedWorkerSummary.value?.payable_total || 0)
-))
+const payoutModalMaxAmount = computed(() => {
+  const freed = payoutModal.replaceId ? Number(payoutModal.replaceAmount || 0) : 0
+  if (payoutModal.target === 'insurance') {
+    return selectedInsuranceMonthBalance.value + freed
+  }
+  if (payoutModal.target === 'tip') {
+    return Number(selectedWorkerSummary.value?.tip_balance || 0) + freed
+  }
+  if (payoutModal.target === 'advance') {
+    return Number.POSITIVE_INFINITY
+  }
+  return Number(selectedWorkerSummary.value?.payable_total || 0) + freed
+})
 const payoutValidationMessage = computed(() => {
   if (payoutModal.target === 'advance') {
     const amount = Number(fromThousandsTomanInput(payoutModal.amount || 0))
@@ -1051,6 +1082,10 @@ const payoutValidationMessage = computed(() => {
   if (payoutModal.mode !== 'partial') return ''
   const amount = Number(fromThousandsTomanInput(payoutModal.amount || 0))
   if (amount <= 0) return 'مبلغ پرداخت باید بیشتر از صفر باشد.'
+  if (payoutModal.replaceId) {
+    if (amount > payoutModalMaxAmount.value) return `مبلغ واردشده از مانده بیشتر است. سقف مجاز: ${money(payoutModalMaxAmount.value)}`
+    return ''
+  }
   if (amount >= payoutModalMaxAmount.value) return `مبلغ واردشده از مانده بیشتر است. مبلغ باید کمتر از مانده باشد: ${money(payoutModalMaxAmount.value)}`
   return ''
 })
@@ -1058,11 +1093,12 @@ const isPayoutAmountValid = computed(() => {
   if (payoutModal.target === 'advance') {
     return Number(fromThousandsTomanInput(payoutModal.amount || 0)) > 0
   }
-  if (payoutModal.target === 'wage' && payoutModal.includeTip && Number(selectedWorkerSummary.value?.tip_balance || 0) > 0) {
+  if (payoutModal.target === 'wage' && payoutModal.includeTip && !payoutModal.replaceId && Number(selectedWorkerSummary.value?.tip_balance || 0) > 0) {
     if (payoutModal.mode === 'full') return true
   }
   if (payoutModal.mode !== 'partial') return payoutModalMaxAmount.value > 0
   const amount = Number(fromThousandsTomanInput(payoutModal.amount || 0))
+  if (payoutModal.replaceId) return amount > 0 && amount <= payoutModalMaxAmount.value
   return amount > 0 && amount < payoutModalMaxAmount.value
 })
 const canSubmitPayout = computed(() => isPayoutAmountValid.value)
@@ -1608,10 +1644,15 @@ const cancelVehicle = async () => {
   }
 }
 
-const blockVehiclePlate = async () => {
+const blockVehiclePlate = async (payload = {}) => {
   if (!vehicleModal.data?.id) return
+  const note = String(payload?.note || '').trim()
+  if (!note) {
+    errorMessage.value = 'دلیل بلاک را بنویسید.'
+    return
+  }
   try {
-    const { data } = await api.post(`/vehicles/${vehicleModal.data.id}/block-plate/`, {})
+    const { data } = await api.post(`/vehicles/${vehicleModal.data.id}/block-plate/`, { note })
     if (data?.vehicle) {
       vehicleModal.data = {
         ...data.vehicle,
@@ -1702,6 +1743,8 @@ const openPayoutModal = (target = 'wage') => {
   payoutModal.mode = 'full'
   payoutModal.note = ''
   payoutModal.includeTip = false
+  payoutModal.replaceId = null
+  payoutModal.replaceAmount = 0
   payoutModal.insuranceMonth = String(selectedWorkerSummary.value?.insurance_month || '').split('/')[1] || '01'
   payoutModal.amount = Math.max(0, Math.round(
     target === 'insurance'
@@ -1711,12 +1754,57 @@ const openPayoutModal = (target = 'wage') => {
         : selectedWorkerSummary.value?.payable_total || 0
   ))
 }
+
+const openEditTransaction = (row) => {
+  if (!row?.id || !selectedWorkerSummary.value?.worker_id) return
+  const kind = String(row.kind || '')
+  if (kind === 'bonus' || kind === 'penalty') {
+    adjustmentModal.open = true
+    adjustmentModal.kind = kind
+    adjustmentModal.amount = Math.max(0, Math.round(Number(row.amount || 0)))
+    adjustmentModal.note = String(row.note || '')
+    adjustmentModal.replaceId = row.id
+    return
+  }
+  const targetMap = {
+    wage_payment: 'wage',
+    tip_payment: 'tip',
+    insurance_payment: 'insurance',
+    advance_payment: 'advance'
+  }
+  const target = targetMap[kind]
+  if (!target) return
+  payoutModal.open = true
+  payoutSubmitError.value = ''
+  payoutModal.target = target
+  payoutModal.replaceId = row.id
+  payoutModal.replaceAmount = Math.max(0, Number(row.amount || 0))
+  payoutModal.includeTip = false
+  payoutModal.note = String(row.note || '')
+  if (target === 'advance') {
+    payoutModal.mode = 'partial'
+    payoutModal.amount = Math.max(0, Math.round(Number(row.amount || 0)))
+    payoutModal.insuranceMonth = ''
+    return
+  }
+  payoutModal.mode = 'partial'
+  payoutModal.amount = Math.max(0, Math.round(Number(row.amount || 0)))
+  if (target === 'insurance') {
+    const month = normalizeInsuranceMonth(row.reference_month) || selectedWorkerSummary.value?.insurance_month || ''
+    payoutModal.insuranceMonth = String(month).split('/')[1] || String(month).slice(-2) || '01'
+  } else {
+    payoutModal.insuranceMonth = String(selectedWorkerSummary.value?.insurance_month || '').split('/')[1] || '01'
+  }
+}
+
 const closePayoutModal = () => {
   payoutModal.open = false
   payoutModal.submitting = false
   payoutModal.target = 'wage'
   payoutModal.insuranceMonth = ''
   payoutModal.includeTip = false
+  payoutModal.replaceId = null
+  payoutModal.replaceAmount = 0
   payoutSubmitError.value = ''
 }
 const submitPayout = async () => {
@@ -1730,7 +1818,7 @@ const submitPayout = async () => {
     errorMessage.value = payoutSubmitError.value
     return
   }
-  if (payoutModal.target === 'insurance' && selectedInsuranceMonthBalance.value <= 0) {
+  if (payoutModal.target === 'insurance' && payoutModalMaxAmount.value <= 0) {
     payoutSubmitError.value = `الان نمی‌توانید ثبت کنید، چون ماه ${normalizedInsuranceMonth} قبلا تسویه شده است.`
     errorMessage.value = payoutSubmitError.value
     return
@@ -1738,7 +1826,7 @@ const submitPayout = async () => {
   if (!isPayoutAmountValid.value) {
     payoutSubmitError.value = payoutModal.target === 'advance'
       ? 'مبلغ مساعده باید بیشتر از صفر باشد.'
-      : 'الان نمی‌توانید ثبت کنید، چون مبلغ باید بیشتر از صفر و کمتر از مانده مجاز باشد.'
+      : 'الان نمی‌توانید ثبت کنید، چون مبلغ باید بیشتر از صفر و در محدوده مانده مجاز باشد.'
     errorMessage.value = payoutSubmitError.value
     return
   }
@@ -1750,7 +1838,8 @@ const submitPayout = async () => {
       mode: payoutModal.target === 'advance' ? 'partial' : payoutModal.mode,
       insurance_month: normalizedInsuranceMonth || undefined,
       note: payoutModal.note || undefined,
-      include_tip: payoutModal.target === 'wage' ? Boolean(payoutModal.includeTip) : undefined
+      include_tip: payoutModal.target === 'wage' && !payoutModal.replaceId ? Boolean(payoutModal.includeTip) : undefined,
+      replace_transaction_id: payoutModal.replaceId || undefined
     }
     if (payoutModal.target === 'advance' || payoutModal.mode === 'partial') {
       payload.amount = fromThousandsTomanInput(payoutModal.amount || 0)
@@ -1762,11 +1851,13 @@ const submitPayout = async () => {
     closePayoutModal()
     await fetchReports()
   } catch (error) {
-    const fallback = payoutModal.target === 'advance'
-      ? 'الان نمی‌توانید پرداخت مساعده را ثبت کنید.'
-      : payoutModal.target === 'insurance'
-        ? 'الان نمی‌توانید پرداخت حق بیمه را ثبت کنید.'
-        : 'الان نمی‌توانید پرداخت را ثبت کنید.'
+    const fallback = payoutModal.replaceId
+      ? 'الان نمی‌توانید ویرایش پرداخت را ثبت کنید.'
+      : payoutModal.target === 'advance'
+        ? 'الان نمی‌توانید پرداخت مساعده را ثبت کنید.'
+        : payoutModal.target === 'insurance'
+          ? 'الان نمی‌توانید پرداخت حق بیمه را ثبت کنید.'
+          : 'الان نمی‌توانید پرداخت را ثبت کنید.'
     const reason = resolveApiErrorMessage(error, fallback)
     payoutSubmitError.value = reason.startsWith('الان نمی‌توانید')
       ? reason
@@ -1782,10 +1873,12 @@ const openAdjustmentModal = (kind) => {
   adjustmentModal.kind = kind
   adjustmentModal.amount = 0
   adjustmentModal.note = ''
+  adjustmentModal.replaceId = null
 }
 const closeAdjustmentModal = () => {
   adjustmentModal.open = false
   adjustmentModal.submitting = false
+  adjustmentModal.replaceId = null
 }
 const submitAdjustment = async () => {
   if (!selectedWorkerSummary.value?.worker_id) return
@@ -1799,7 +1892,8 @@ const submitAdjustment = async () => {
       worker_id: selectedWorkerSummary.value.worker_id,
       kind: adjustmentModal.kind,
       amount: Number(adjustmentModal.amount || 0),
-      note: adjustmentModal.note.trim()
+      note: adjustmentModal.note.trim(),
+      replace_transaction_id: adjustmentModal.replaceId || undefined
     })
     closeAdjustmentModal()
     await fetchReports()
@@ -2035,6 +2129,7 @@ onBeforeUnmount(() => {
 .services-expanded-box strong{display:block;margin-bottom:6px;color:#0f172a;font-size:12px}
 .services-expanded-box p{margin:0;color:#334155;line-height:1.8}
 .worker-head,.action-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.table-edit-btn{padding:5px 10px;font-size:11px;white-space:nowrap}
 .worker-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
 .payout-card{border:1px solid #dbeafe;background:#f8fbff;border-radius:12px;padding:8px 10px}
 .payout-card p{margin:0;color:#64748b;font-size:11px}

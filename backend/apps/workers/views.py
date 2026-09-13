@@ -35,6 +35,17 @@ def _today_bounds():
     return start, end, timezone.now()
 
 
+def _is_same_local_day(value, *, day_start=None):
+    if not value:
+        return False
+    start = day_start if day_start is not None else _today_bounds()[0]
+    try:
+        local_value = timezone.localtime(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return local_value >= start
+
+
 def _worker_name(worker):
     if not worker or not worker.user:
         return '-'
@@ -95,6 +106,7 @@ def _worker_queue_states(workers, tenant):
             'last_event_at': None,
             'open_shift_started_at': None,
             'queue_position_at': None,
+            'is_busy': False,
         }
         for worker in workers
     }
@@ -119,31 +131,52 @@ def _worker_queue_states(workers, tenant):
 
     for worker in workers:
         state = states.setdefault(worker.id, {})
+        is_busy = int(getattr(worker, 'active_jobs_count', 0) or 0) > 0
+        state['is_busy'] = is_busy
         open_shift_started_at = state.get('open_shift_started_at')
-        if state.get('current_status') == WorkerAttendance.EventType.IN and open_shift_started_at:
-            last_assigned_at = worker.last_assigned_at
-            state['queue_position_at'] = (
-                last_assigned_at
-                if last_assigned_at and last_assigned_at > open_shift_started_at
-                else open_shift_started_at
-            )
+        is_present = state.get('current_status') == WorkerAttendance.EventType.IN
+        today_assigned_at = worker.last_assigned_at if _is_same_local_day(worker.last_assigned_at, day_start=start) else None
+        if is_busy:
+            # Busy washers sit at the tail until freed; only today's assignment orders them.
+            state['queue_position_at'] = today_assigned_at or open_shift_started_at
+        elif is_present and open_shift_started_at:
+            # Free + checked-in today: natural turn from attendance.
+            state['queue_position_at'] = open_shift_started_at
         else:
+            # No attendance for this worker today — alphabetical among free peers.
             state['queue_position_at'] = None
     return states
 
 
-def _queue_sort_key(worker):
+def _queue_has_attendance(workers):
+    for worker in workers:
+        state = getattr(worker, '_attendance_queue_state', {}) or {}
+        if state.get('current_status') == WorkerAttendance.EventType.IN:
+            return True
+    return False
+
+
+def _queue_sort_key(worker, *, attendance_mode=False):
     state = getattr(worker, '_attendance_queue_state', {}) or {}
     is_present = state.get('current_status') == WorkerAttendance.EventType.IN
-    queue_position_at = state.get('queue_position_at')
+    is_busy = bool(state.get('is_busy')) or int(getattr(worker, 'active_jobs_count', 0) or 0) > 0
     name = _worker_name(worker)
-    return (
-        0 if is_present else 1,
-        0 if worker.is_available is not False else 1,
-        queue_position_at.timestamp() if queue_position_at else float('inf'),
-        name,
-        worker.id or 0,
-    )
+    open_shift_started_at = state.get('open_shift_started_at')
+    last_assigned_at = getattr(worker, 'last_assigned_at', None)
+    today_assigned_at = last_assigned_at if _is_same_local_day(last_assigned_at) else None
+    busy_rank = today_assigned_at.timestamp() if today_assigned_at else float('inf')
+
+    # Busy washers always sit after every free worker (end of the turn queue).
+    if is_busy:
+        return (1, 0 if is_present else 1, busy_rank, name, worker.id or 0)
+
+    if attendance_mode:
+        if is_present and open_shift_started_at:
+            return (0, 0, open_shift_started_at.timestamp(), name, worker.id or 0)
+        return (0, 1, float('inf'), name, worker.id or 0)
+
+    # No attendance punches today: free alphabetically.
+    return (0, 0, name, worker.id or 0)
 
 
 def _create_attendance_event(worker, event_type, source='manager', note='', request=None):
@@ -227,12 +260,16 @@ class WorkerProfileListCreateView(generics.ListCreateAPIView):
         )
 
     def list(self, request, *args, **kwargs):
+        tenant = _resolve_request_tenant(request)
+        from .load import free_stale_worker_holds
+        free_stale_worker_holds(tenant)
         queryset = self.filter_queryset(self.get_queryset())
         workers = list(queryset)
-        states = _worker_queue_states(workers, _resolve_request_tenant(request))
+        states = _worker_queue_states(workers, tenant)
         for worker in workers:
             worker._attendance_queue_state = states.get(worker.id, {})
-        workers.sort(key=_queue_sort_key)
+        attendance_mode = _queue_has_attendance(workers)
+        workers.sort(key=lambda worker: _queue_sort_key(worker, attendance_mode=attendance_mode))
 
         page = self.paginate_queryset(workers)
         if page is not None:

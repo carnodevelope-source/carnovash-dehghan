@@ -53,5 +53,36 @@ class BlockPlateKeepsVisitActiveTests(APITestCase):
         self.assertTrue(block_response.data['vehicle']['is_plate_blocked'])
         self.assertTrue(BlockedPlate.objects.filter(tenant=self.tenant, plate_number='11 ب 222 33').exists())
 
+    def test_block_plate_stores_note(self):
+        create_response = self.client.post(
+            reverse('vehicle-list-create'),
+            {
+                'plate_number': '22 ب 333 44',
+                'plate_left': '22',
+                'plate_letter': 'ب',
+                'plate_mid': '333',
+                'plate_right': '44',
+                'plate_type': VehicleEntry.PlateType.CAR,
+                'car_model': 'Pride',
+                'car_color': 'White',
+                'driver_name': 'Blocked Driver',
+                'driver_phone': '09123334456',
+                'status': VehicleEntry.Status.ENTERED,
+            },
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, 201)
+        vehicle_id = create_response.data['id']
+
+        block_response = self.client.post(
+            reverse('vehicle-block-plate', args=[vehicle_id]),
+            {'note': 'مشتری بدحساب'},
+            format='json',
+        )
+        self.assertEqual(block_response.status_code, 200)
+        self.assertEqual(block_response.data['note'], 'مشتری بدحساب')
+        blocked = BlockedPlate.objects.get(tenant=self.tenant, plate_number='22 ب 333 44')
+        self.assertEqual(blocked.note, 'مشتری بدحساب')
+
         vehicle = VehicleEntry.objects.get(id=vehicle_id)
         self.assertEqual(vehicle.status, VehicleEntry.Status.ENTERED)

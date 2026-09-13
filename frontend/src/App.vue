@@ -45,6 +45,21 @@ watch(isLoading, (loading) => {
   }, OVERLAY_DELAY_MS)
 }, { immediate: true })
 
+// Hard safety net: if pending counters drift (aborted nav, HMR, stuck GET),
+// clear them so the operator UI never stays non-interactive forever.
+let stuckLoadingTimer = null
+watch(isLoading, (loading) => {
+  if (stuckLoadingTimer) {
+    window.clearTimeout(stuckLoadingTimer)
+    stuckLoadingTimer = null
+  }
+  if (!loading) return
+  stuckLoadingTimer = window.setTimeout(() => {
+    stuckLoadingTimer = null
+    if (loadingStore.isLoading) loadingStore.reset()
+  }, 25000)
+})
+
 const handleUnexpectedError = () => {
   notifyError('در اجرای صفحه خطای غیرمنتظره رخ داد. لطفا صفحه را یک بار نوسازی کنید.', {
     title: 'خطای برنامه'
@@ -66,5 +81,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('error', handleUnexpectedError)
   window.removeEventListener('unhandledrejection', handleUnhandledRejection)
   if (overlayTimer) window.clearTimeout(overlayTimer)
+  if (stuckLoadingTimer) window.clearTimeout(stuckLoadingTimer)
 })
 </script>

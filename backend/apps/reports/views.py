@@ -327,7 +327,7 @@ def _job_final_total_without_tip(job):
 
 
 def _job_share_base_total(job):
-    """Commission base used at checkout: services only after line discounts (never products or rate-card list prices)."""
+    """Commission base: discounted services only (never products, tax, tip, or rate-card list prices)."""
     if not job:
         return Decimal('0')
     services_total = _normalize_decimal(getattr(job, 'services_total', 0))
@@ -339,7 +339,12 @@ def _job_share_base_total(job):
             ),
             Decimal('0'),
         )
-    return max(Decimal('0'), services_total)
+    post_sale_discount = min(
+        services_total,
+        _normalize_decimal(getattr(job, 'loyalty_discount_total', 0))
+        + _normalize_decimal(getattr(job, 'manual_discount_total', 0)),
+    )
+    return max(Decimal('0'), services_total - post_sale_discount)
 
 
 def _job_worker_service_total_for(job, worker_id):
@@ -619,16 +624,12 @@ def _build_synced_snapshot(job, worker_share_total, tip_amount):
 
 
 def _expected_carwash_share(job, share_base, worker_share_total, tip_amount, workers_tip_share_amount):
-    post_sale_discount = min(
-        _money_q(getattr(job, 'services_total', 0)),
-        _money_q(getattr(job, 'loyalty_discount_total', 0)) + _money_q(getattr(job, 'manual_discount_total', 0)),
-    )
+    # share_base is already discounted services — do not subtract discounts again.
     return max(
         Decimal('0'),
         _money_q(share_base)
         - _money_q(worker_share_total)
-        + max(Decimal('0'), _money_q(tip_amount) - _money_q(workers_tip_share_amount))
-        - post_sale_discount,
+        + max(Decimal('0'), _money_q(tip_amount) - _money_q(workers_tip_share_amount)),
     )
 
 
@@ -1610,6 +1611,7 @@ class ReportsExportView(APIView):
 
 
 class ReportsWorkerPayoutView(APIView):
+    @transaction.atomic
     def post(self, request):
         tenant = getattr(request.user, 'tenant', None)
         worker_id = request.data.get('worker_id')
@@ -1619,6 +1621,7 @@ class ReportsWorkerPayoutView(APIView):
         include_tip = str(request.data.get('include_tip', '')).strip().lower() in {
             '1', 'true', 'yes', 'on',
         }
+        replace_transaction_id = request.data.get('replace_transaction_id')
         try:
             worker_id = int(worker_id)
         except (TypeError, ValueError):
@@ -1632,6 +1635,36 @@ class ReportsWorkerPayoutView(APIView):
         worker = WorkerProfile.objects.select_related('user').filter(id=worker_id, tenant=tenant).first()
         if not worker:
             return Response({'worker_id': ['Worker not found.']}, status=status.HTTP_404_NOT_FOUND)
+
+        replace_tx = None
+        if replace_transaction_id not in (None, ''):
+            try:
+                replace_transaction_id = int(replace_transaction_id)
+            except (TypeError, ValueError):
+                return Response({'replace_transaction_id': ['شناسه تراکنش نامعتبر است.']}, status=status.HTTP_400_BAD_REQUEST)
+            replace_tx = (
+                WorkerPayoutTransaction.objects.select_for_update()
+                .filter(id=replace_transaction_id, tenant=tenant, worker=worker)
+                .first()
+            )
+            if not replace_tx:
+                return Response({'replace_transaction_id': ['تراکنش پیدا نشد.']}, status=status.HTTP_404_NOT_FOUND)
+            kind_to_target = {
+                WorkerPayoutTransaction.Kind.WAGE_PAYMENT: 'wage',
+                WorkerPayoutTransaction.Kind.TIP_PAYMENT: 'tip',
+                WorkerPayoutTransaction.Kind.INSURANCE_PAYMENT: 'insurance',
+                WorkerPayoutTransaction.Kind.ADVANCE_PAYMENT: 'advance',
+            }
+            expected_target = kind_to_target.get(replace_tx.kind)
+            if expected_target and expected_target != payout_target:
+                return Response(
+                    {'replace_transaction_id': ['نوع تراکنش با نوع پرداخت انتخاب‌شده هم‌خوانی ندارد.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if replace_tx.kind == WorkerPayoutTransaction.Kind.INSURANCE_PAYMENT and not insurance_month:
+                insurance_month = _normalize_jalali_month(replace_tx.reference_month)
+            # Remove old row first so financials free its amount for the replacement.
+            replace_tx.delete()
 
         jobs = _get_worker_jobs(tenant, worker_id)
         if payout_target == 'insurance' and not insurance_month:
@@ -1652,11 +1685,12 @@ class ReportsWorkerPayoutView(APIView):
                 created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
             )
             return Response({
-                'detail': 'پرداخت مساعده ثبت شد.',
+                'detail': 'پرداخت مساعده ویرایش شد.' if replace_transaction_id else 'پرداخت مساعده ثبت شد.',
                 'transaction_id': tx.id,
                 'paid_amount': float(amount),
                 'remaining_payable': float(max(Decimal('0'), worker_state['payable_total'] - amount)),
                 'payout_target': payout_target,
+                'replaced_transaction_id': replace_transaction_id or None,
                 'transactions': [{'id': tx.id, 'kind': tx.kind, 'amount': float(tx.amount)}],
             })
 
@@ -1687,7 +1721,10 @@ class ReportsWorkerPayoutView(APIView):
             amount = _normalize_decimal(request.data.get('amount'))
             if amount <= 0:
                 return Response({'amount': ['مبلغ باید بیشتر از صفر باشد.']}, status=status.HTTP_400_BAD_REQUEST)
-            if amount >= payable_total and payable_total > 0:
+            if amount > payable_total:
+                return Response({'amount': ['مبلغ باید کمتر یا مساوی مانده کل باشد.']}, status=status.HTTP_400_BAD_REQUEST)
+            # New partial payments must stay strictly below balance; edits may keep the prior full amount.
+            if amount >= payable_total and payable_total > 0 and not replace_transaction_id:
                 return Response({'amount': ['مبلغ باید کمتر از مانده کل باشد.']}, status=status.HTTP_400_BAD_REQUEST)
             if payable_total <= 0:
                 return Response({'amount': ['مانده حقوقی برای پرداخت جزئی وجود ندارد.']}, status=status.HTTP_400_BAD_REQUEST)
@@ -1716,7 +1753,7 @@ class ReportsWorkerPayoutView(APIView):
             created_transactions.append(tx)
 
         tip_paid_amount = Decimal('0')
-        if payout_target == 'wage' and include_tip:
+        if payout_target == 'wage' and include_tip and not replace_transaction_id:
             tip_balance = worker_state['tip_balance']
             if tip_balance > 0:
                 tip_tx = WorkerPayoutTransaction.objects.create(
@@ -1734,7 +1771,10 @@ class ReportsWorkerPayoutView(APIView):
         if remaining < 0:
             remaining = Decimal('0')
         detail = (
-            'پرداخت انعام ثبت شد.' if payout_target == 'tip'
+            'پرداخت انعام ویرایش شد.' if payout_target == 'tip' and replace_transaction_id
+            else 'پرداخت حق بیمه ویرایش شد.' if payout_target == 'insurance' and replace_transaction_id
+            else 'پرداخت حقوق ویرایش شد.' if replace_transaction_id
+            else 'پرداخت انعام ثبت شد.' if payout_target == 'tip'
             else 'پرداخت حق بیمه ثبت شد.' if payout_target == 'insurance'
             else 'پرداخت حقوق و انعام ثبت شد.' if tip_paid_amount > 0
             else 'پرداخت حقوق ثبت شد.'
@@ -1749,6 +1789,7 @@ class ReportsWorkerPayoutView(APIView):
             'payout_target': payout_target,
             'insurance_month': insurance_month,
             'include_tip': include_tip,
+            'replaced_transaction_id': replace_transaction_id or None,
             'transactions': [
                 {'id': item.id, 'kind': item.kind, 'amount': float(item.amount or 0)}
                 for item in created_transactions
@@ -1757,6 +1798,7 @@ class ReportsWorkerPayoutView(APIView):
 
 
 class ReportsWorkerAdjustmentView(APIView):
+    @transaction.atomic
     def post(self, request):
         tenant = getattr(request.user, 'tenant', None)
         worker_id = request.data.get('worker_id')
@@ -1764,6 +1806,7 @@ class ReportsWorkerAdjustmentView(APIView):
         kind = str(request.data.get('kind', '')).strip().lower()
         note = str(request.data.get('note', '')).strip()
         amount = _normalize_decimal(request.data.get('amount'))
+        replace_transaction_id = request.data.get('replace_transaction_id')
 
         try:
             worker_id = int(worker_id)
@@ -1777,6 +1820,29 @@ class ReportsWorkerAdjustmentView(APIView):
         worker = WorkerProfile.objects.select_related('user').filter(id=worker_id, tenant=tenant).first()
         if not worker:
             return Response({'worker_id': ['Worker not found.']}, status=status.HTTP_404_NOT_FOUND)
+
+        replace_tx = None
+        if replace_transaction_id not in (None, ''):
+            try:
+                replace_transaction_id = int(replace_transaction_id)
+            except (TypeError, ValueError):
+                return Response({'replace_transaction_id': ['شناسه تراکنش نامعتبر است.']}, status=status.HTTP_400_BAD_REQUEST)
+            replace_tx = (
+                WorkerPayoutTransaction.objects.select_for_update()
+                .filter(id=replace_transaction_id, tenant=tenant, worker=worker)
+                .first()
+            )
+            if not replace_tx:
+                return Response({'replace_transaction_id': ['تراکنش پیدا نشد.']}, status=status.HTTP_404_NOT_FOUND)
+            if replace_tx.kind not in {WorkerPayoutTransaction.Kind.BONUS, WorkerPayoutTransaction.Kind.PENALTY}:
+                return Response(
+                    {'replace_transaction_id': ['این تراکنش قابل ویرایش به‌عنوان پاداش/جریمه نیست.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            kind = replace_tx.kind
+            if not vehicle_job_id:
+                vehicle_job_id = replace_tx.vehicle_job_id
+            replace_tx.delete()
 
         vehicle_job = None
         if vehicle_job_id:
@@ -1797,10 +1863,11 @@ class ReportsWorkerAdjustmentView(APIView):
             created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
         )
         return Response({
-            'detail': 'تعدیل حقوق ثبت شد.',
+            'detail': 'تعدیل حقوق ویرایش شد.' if replace_transaction_id else 'تعدیل حقوق ثبت شد.',
             'transaction_id': tx.id,
             'amount': float(amount),
             'kind': kind,
+            'replaced_transaction_id': replace_transaction_id or None,
         }, status=status.HTTP_201_CREATED)
 
 

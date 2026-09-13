@@ -79,6 +79,7 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
     last_event_at = serializers.SerializerMethodField()
     open_shift_started_at = serializers.SerializerMethodField()
     queue_position_at = serializers.SerializerMethodField()
+    is_busy = serializers.SerializerMethodField()
 
     def get_full_name(self, obj):
         return obj.user.full_name or obj.user.username
@@ -142,6 +143,12 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
     def get_queue_position_at(self, obj):
         return self._attendance_queue_state(obj).get('queue_position_at')
 
+    def get_is_busy(self, obj):
+        state = self._attendance_queue_state(obj)
+        if 'is_busy' in state:
+            return bool(state.get('is_busy'))
+        return int(getattr(obj, 'active_jobs_count', 0) or 0) > 0
+
     class Meta:
         model = WorkerProfile
         fields = [
@@ -176,6 +183,7 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
             'last_event_at',
             'open_shift_started_at',
             'queue_position_at',
+            'is_busy',
             'updated_at',
         ]
 

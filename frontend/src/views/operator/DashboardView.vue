@@ -205,9 +205,12 @@
     <VehicleDetailsModal
       :open="showVehicleDetailsModal"
       :vehicle="selectedVehicle"
+      :freeing-workers="freeingWorkers"
       title="جزئیات کامل خودرو"
       @close="closeVehicleDetails"
       @cancel="cancelVehicle"
+      @restore="restoreCancelledVehicle"
+      @free-workers="freeSelectedVehicleWorkers"
       @block-plate="blockSelectedVehiclePlate"
       @unblock-plate="unblockSelectedVehiclePlate"
       @edit-vehicle="editSelectedVehicleVisit"
@@ -1020,6 +1023,7 @@ const dateRangeDraft = ref({
 })
 const showVehicleModal = ref(false)
 const showVehicleDetailsModal = ref(false)
+const freeingWorkers = ref(false)
 const showPlateEditModal = ref(false)
 const showReleaseModal = ref(false)
 const showDateRangeModal = ref(false)
@@ -1077,6 +1081,10 @@ const releaseForm = ref({
   assignedWorkers: [],
   availableWorkers: [],
   workerShareAmount: 0,
+  workerPaymentType: 'percent',
+  workerPaymentPercent: 0,
+  workerPaymentFixed: 0,
+  sharePoolTotal: 0,
   customerScore: 0,
   applyLoyaltyDiscount: true,
   discountPercentPerHalfStar: 0,
@@ -1525,18 +1533,22 @@ const startVehicleCardsAutoRefresh = () => {
 const onGlobalLiveEvent = (event) => {
   const type = String(event?.detail?.type || '')
   if (!type) return
+  // Worker load/queue chatter must not rebuild the whole vehicle board — that
+  // used to stack heavy GETs and freeze the operator tablet until reload.
   if (
     type.startsWith('worker.')
     || type.startsWith('service.')
     || type.startsWith('product.')
+    || type === 'settings.updated'
+  ) {
+    invalidateOperatorCatalog()
+  }
+  if (
+    type.startsWith('vehicle.')
     || type.startsWith('inventory.')
     || type.startsWith('payment.')
-    || type === 'settings.updated'
     || type === 'system.full_resync_required'
   ) {
-    if (type.startsWith('worker.') || type.startsWith('service.') || type.startsWith('product.') || type === 'settings.updated') {
-      invalidateOperatorCatalog()
-    }
     if (vehicleLiveRefreshTimer.value) window.clearTimeout(vehicleLiveRefreshTimer.value)
     vehicleLiveRefreshTimer.value = window.setTimeout(refreshVehicleCardsFromDatabase, 400)
   }
@@ -1840,6 +1852,10 @@ const closeReleaseModal = (options = {}) => {
       assignedWorkers: [],
       availableWorkers: [],
       workerShareAmount: 0,
+      workerPaymentType: 'percent',
+      workerPaymentPercent: 0,
+      workerPaymentFixed: 0,
+      sharePoolTotal: 0,
       customerScore: 0,
       applyLoyaltyDiscount: true,
     discountPercentPerHalfStar: 0,
@@ -2493,6 +2509,10 @@ const openReleaseModal = async (car) => {
       assignedWorkers: normalizeReleaseAssignedWorkers(preferredAssignedWorkers),
       availableWorkers: normalizeAvailableReleaseWorkers(workersData),
       workerShareAmount: Number(data?.job?.worker_share_amount || 0),
+      workerPaymentType: String(data?.job?.worker_payment_type || 'percent'),
+      workerPaymentPercent: Math.max(0, Math.min(100, Number(data?.job?.worker_payment_percent || 0))),
+      workerPaymentFixed: Math.max(0, Number(data?.job?.worker_payment_fixed || 0)),
+      sharePoolTotal: Math.max(0, Number(data?.job?.share_pool_total || 0)),
       customerScore: Math.max(0, Number(data?.vehicle?.customer_score || releaseCandidate.value?.customerScore || 0)),
       customerLoyaltyVisitCount: Math.max(0, Number(data?.vehicle?.customer_loyalty_visit_count || 0)),
       customerLoyaltyDiscountPercent: Math.max(0, Number(data?.vehicle?.customer_loyalty_discount_percent || 0)),
@@ -2995,8 +3015,19 @@ const releaseSummary = computed(() => {
     Math.max(0, serviceListSubtotal),
     Number((facilityDiscountAmount + customerDiscountAmount + manualDiscountAmount).toFixed(2))
   )
-  const shareBaseTotal = Math.max(0, servicesTotal)
-  const workerShareBase = Math.min(shareBaseTotal, Number(releaseForm.value.workerShareAmount || 0))
+  const shareBaseTotal = Math.max(0, Number((servicesTotal - customerDiscountAmount - manualDiscountAmount).toFixed(2)))
+  const paymentType = String(releaseForm.value.workerPaymentType || 'percent')
+  const paymentPercent = Math.max(0, Math.min(100, Number(releaseForm.value.workerPaymentPercent || 0)))
+  const paymentFixed = Math.max(0, Number(releaseForm.value.workerPaymentFixed || 0))
+  let workerShareBase = 0
+  if (paymentType === 'fixed' || paymentType === 'hourly') {
+    workerShareBase = Math.min(shareBaseTotal, paymentFixed)
+  } else if (paymentPercent > 0) {
+    workerShareBase = Math.round((shareBaseTotal * paymentPercent) / 100)
+  } else {
+    // Fallback to server-computed services-only share (never inflate with products).
+    workerShareBase = Math.min(shareBaseTotal, Math.max(0, Number(releaseForm.value.workerShareAmount || 0)))
+  }
   const taxableTotal = Math.max(0, serviceListSubtotal + productsTotal - discountAmount)
   const taxPercent = releaseForm.value.taxEnabled ? Math.max(0, Math.min(100, Number(releaseForm.value.taxPercent || 0))) : 0
   const taxAmount = Number(((taxableTotal * taxPercent) / 100).toFixed(2))
@@ -3069,7 +3100,7 @@ const releaseSummary = computed(() => {
   }
   const carwashShare = Math.max(
     0,
-    Number((shareBaseTotal - workerShareBase + (tipAmount - allocatedTipTotal) - Math.min(servicesTotal, customerDiscountAmount + manualDiscountAmount)).toFixed(2))
+    Number((shareBaseTotal - workerShareBase + (tipAmount - allocatedTipTotal)).toFixed(2))
   )
   return {
     serviceListSubtotal,
@@ -3307,6 +3338,7 @@ const confirmReleaseVehicle = async () => {
     }, { meta: mutationMeta(`vehicle:release:${releaseCandidate.value.id}`, { timeoutMs: 30000 }) })
     const idx = vehicleStore.vehicles.findIndex((item) => item.id === releaseCandidate.value.id)
     if (idx >= 0) vehicleStore.vehicles[idx] = data
+    invalidateOperatorCatalog()
     closeReleaseModal({ force: true })
   } catch (error) {
     console.error('confirmReleaseVehicle error:', error?.response?.data || error)
@@ -3713,6 +3745,7 @@ const handleStepTwoAssign = async (payload) => {
 
       if (editFlow) {
         const savedVehicle = await saveVehicle(payload, nextStatus)
+        invalidateOperatorCatalog()
         if (reopenReleaseAfterSave) {
           await openReleaseModal({
             ...savedVehicle,
@@ -3730,6 +3763,7 @@ const handleStepTwoAssign = async (payload) => {
         return
       }
       await saveVehicle(payload, 'ready_to_settle')
+      invalidateOperatorCatalog()
       void refreshVehicleCardsFromDatabase()
     } catch (error) {
       console.error('assign step two error:', error?.response?.data || error)
@@ -3858,7 +3892,43 @@ const cancelVehicle = async () => {
   }
 }
 
-const blockSelectedVehiclePlate = async () => {
+const freeSelectedVehicleWorkers = async () => {
+  if (!selectedVehicle.value?.id || freeingWorkers.value) return
+  freeingWorkers.value = true
+  try {
+    const { data } = await api.post(`/vehicles/${selectedVehicle.value.id}/free-workers/`, {})
+    const vehicle = data?.vehicle || data
+    if (vehicle?.id) {
+      vehicleStore.upsertVehicle(vehicle)
+      vehicleStore.selectedVehicle = vehicle
+    }
+    notifySuccess(data?.detail || 'نیروها آزاد شدند.', { title: 'آزادسازی نیرو' })
+    invalidateOperatorCatalog()
+  } catch (error) {
+    console.error('freeSelectedVehicleWorkers error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'آزادسازی نیرو ناموفق بود.'), { title: 'آزادسازی نیرو' })
+  } finally {
+    freeingWorkers.value = false
+  }
+}
+
+const restoreCancelledVehicle = async () => {
+  if (!selectedVehicle.value?.id || selectedVehicle.value.status !== 'cancelled') return
+  try {
+    const { data } = await api.patch(`/vehicles/${selectedVehicle.value.id}/status/`, {
+      restore: true,
+      note: 'بازگردانی رزرو توسط اپراتور'
+    })
+    vehicleStore.selectedVehicle = data
+    vehicleStore.upsertVehicle(data)
+    notifySuccess('رزرو لغو‌شده بازگردانی شد.', { title: 'بازگردانی رزرو' })
+  } catch (error) {
+    console.error('restoreCancelledVehicle error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'بازگردانی رزرو ناموفق بود.'), { title: 'خطا در بازگردانی' })
+  }
+}
+
+const blockSelectedVehiclePlate = async (payload = {}) => {
   if (!selectedVehicle.value?.id) return
   const plateNumber = String(selectedVehicle.value.plate_number || '').trim()
   const hasParts = [
@@ -3876,8 +3946,13 @@ const blockSelectedVehiclePlate = async () => {
     })
     return
   }
+  const note = String(payload?.note || '').trim()
+  if (!note) {
+    notifyError('دلیل بلاک را بنویسید.', { title: 'خطا در بلاک پلاک' })
+    return
+  }
   try {
-    const { data } = await api.post(`/vehicles/${selectedVehicle.value.id}/block-plate/`, {})
+    const { data } = await api.post(`/vehicles/${selectedVehicle.value.id}/block-plate/`, { note })
     const vehiclePayload = data?.vehicle
     if (vehiclePayload?.id) {
       syncVehicleSnapshot({

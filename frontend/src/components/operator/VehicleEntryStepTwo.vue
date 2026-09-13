@@ -241,14 +241,15 @@
             <div class="worker-top">
               <div class="worker-ident">
                 <div>
-                  <h5>{{ worker.full_name }}</h5>
+                  <h5>
+                    {{ worker.full_name }}
+                    <span class="worker-free-busy" :class="isWorkerBusy(worker) ? 'is-busy' : 'is-free'">
+                      {{ isWorkerBusy(worker) ? 'مشغول' : 'آزاد' }}
+                    </span>
+                  </h5>
                   <p>{{ worker.role || 'پرسنل کارواش' }}</p>
                 </div>
               </div>
-              <span class="worker-status" :class="`status-${workerStatus(worker).key}`">
-                <span class="status-dot"></span>
-                {{ workerStatus(worker).label }}
-              </span>
             </div>
 
             <div class="worker-queue-meta">
@@ -432,7 +433,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { getCachedCatalog, loadOperatorCatalog } from '../../services/catalogCache'
+import { getCachedCatalog, loadOperatorCatalog, loadOperatorWorkers } from '../../services/catalogCache'
 import BaseSpinner from '../base/BaseSpinner.vue'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
@@ -597,7 +598,15 @@ const vehiclePhone = computed(() => normalizedVehicle.value.mobile)
 const isPlateBlocked = computed(() => Boolean(props.vehicleInfo?.is_plate_blocked))
 
 const isWorkerPresent = (worker) => String(worker?.current_status || '').toLowerCase() === 'in'
-const isQueueSelectableWorker = (worker) => isWorkerPresent(worker) && worker?.is_available !== false
+const isWorkerBusy = (worker) => {
+  if (typeof worker?.is_busy === 'boolean') return worker.is_busy
+  return Number(worker?.active_jobs_count || 0) > 0
+}
+const isQueueSelectableWorker = (worker) => (
+  isWorkerPresent(worker)
+  && worker?.is_available !== false
+  && !isWorkerBusy(worker)
+)
 const isWashAssignableWorker = (worker) => {
   const role = String(worker?.role_key || worker?.user?.role || worker?.role || '').trim().toLowerCase()
   if (role !== 'worker') return false
@@ -606,19 +615,61 @@ const isWashAssignableWorker = (worker) => {
   if (worker?.user?.is_active === false) return false
   return true
 }
+const queueTimeMs = (value) => {
+  if (!value) return Number.POSITIVE_INFINITY
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY
+  return date.getTime()
+}
+const isSameLocalDay = (value) => {
+  if (!value) return false
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return false
+  const now = new Date()
+  return (
+    date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate()
+  )
+}
+const todayQueueTimeMs = (value) => (isSameLocalDay(value) ? queueTimeMs(value) : Number.POSITIVE_INFINITY)
+const sortWorkersForQueue = (list) => [...list].sort((first, second) => {
+  const firstBusy = isWorkerBusy(first) ? 1 : 0
+  const secondBusy = isWorkerBusy(second) ? 1 : 0
+  if (firstBusy !== secondBusy) return firstBusy - secondBusy
+  if (firstBusy) {
+    const assignedDiff = todayQueueTimeMs(first.queue_position_at || first.last_assigned_at)
+      - todayQueueTimeMs(second.queue_position_at || second.last_assigned_at)
+    if (assignedDiff) return assignedDiff
+  } else {
+    const firstPresent = isWorkerPresent(first) ? 0 : 1
+    const secondPresent = isWorkerPresent(second) ? 0 : 1
+    if (firstPresent !== secondPresent) return firstPresent - secondPresent
+    const checkinDiff = todayQueueTimeMs(first.open_shift_started_at || first.queue_position_at)
+      - todayQueueTimeMs(second.open_shift_started_at || second.queue_position_at)
+    if (checkinDiff) return checkinDiff
+  }
+  const nameDiff = String(first.full_name || '').localeCompare(String(second.full_name || ''), 'fa')
+  if (nameDiff) return nameDiff
+  return Number(first.id || 0) - Number(second.id || 0)
+})
 const queueFrontWorkerId = computed(() => {
-  const assignableWorkers = workers.value.filter(isWashAssignableWorker)
-  const preferred = assignableWorkers.find(isQueueSelectableWorker) || assignableWorkers.find(isWorkerPresent) || assignableWorkers[0]
+  const assignableWorkers = sortWorkersForQueue(workers.value.filter(isWashAssignableWorker))
+  const preferred = (
+    assignableWorkers.find(isQueueSelectableWorker)
+    || assignableWorkers.find((worker) => isWorkerPresent(worker) && !isWorkerBusy(worker))
+    || assignableWorkers.find((worker) => !isWorkerBusy(worker))
+  )
   return preferred ? Number(preferred.id) : null
 })
 
 const filteredWorkers = computed(() => {
   const query = workerSearch.value.trim().toLowerCase()
-  return workers.value.filter((item) => {
+  return sortWorkersForQueue(workers.value.filter((item) => {
     if (!isWashAssignableWorker(item)) return false
     if (!query) return true
     return `${item.full_name || ''} ${item.phone || ''}`.toLowerCase().includes(query)
-  })
+  }))
 })
 
 const selectedServices = computed(() => {
@@ -949,11 +1000,10 @@ const decreaseSelectedProduct = (productId) => {
   productLinesByProductId.value = next
 }
 
-const workerStatus = (worker) => {
-  if (!isWorkerPresent(worker)) return { key: 'off', label: 'خارج از شیفت' }
-  if (worker.is_available === false || worker.load_status === 'busy') return { key: 'busy', label: 'مشغول' }
-  if (worker.load_status === 'normal' || Number(worker.active_jobs_count || 0) > 0) return { key: 'normal', label: 'در حال کار' }
-  return { key: 'free', label: 'آزاد' }
+const unwrapList = (data) => {
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.results)) return data.results
+  return []
 }
 
 const isWorkerSelected = (id) => selectedWorkerIds.value.includes(Number(id))
@@ -1228,8 +1278,7 @@ const applyCatalogPayload = ({ serviceData, workerData, productData }) => {
     }))
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'fa'))
 
-  workers.value = (Array.isArray(workerData) ? workerData : [])
-    .filter(isWashAssignableWorker)
+  workers.value = unwrapList(workerData).filter(isWashAssignableWorker)
 
   const existingStaff = Array.isArray(normalizedVehicle.value.staffMembers)
     ? normalizedVehicle.value.staffMembers
@@ -1290,19 +1339,20 @@ const loadInitialData = async () => {
     if (cached) {
       applyCatalogPayload({
         serviceData: cached.services,
-        workerData: cached.workers,
+        workerData: [],
         productData: cached.products
       })
-      loading.value = false
-      if ((Date.now() - cached.at) > 20_000) {
-        void loadOperatorCatalog({ plateType, tariffType, silent: true, force: true }).then((fresh) => {
-          applyCatalogPayload({
-            serviceData: fresh.services,
-            workerData: fresh.workers,
-            productData: fresh.products
-          })
-        }).catch(() => {})
-      }
+      const [freshWorkers, staleCatalog] = await Promise.all([
+        loadOperatorWorkers({ silent: true }),
+        (Date.now() - cached.at) > 20_000
+          ? loadOperatorCatalog({ plateType, tariffType, silent: true, force: true }).catch(() => null)
+          : Promise.resolve(null)
+      ])
+      applyCatalogPayload({
+        serviceData: staleCatalog?.services || cached.services,
+        workerData: freshWorkers,
+        productData: staleCatalog?.products || cached.products
+      })
       return
     }
 
@@ -2174,6 +2224,24 @@ onMounted(loadInitialData)
   margin: 0;
   font-size: 18px;
   color: #191c1e;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.worker-free-busy {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.worker-free-busy.is-free {
+  color: #15803d;
+}
+
+.worker-free-busy.is-busy {
+  color: #dc2626;
 }
 
 .service-head strong {

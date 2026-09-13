@@ -965,6 +965,23 @@ watch(() => form.plateLetter, (value) => {
 
 let lookupTimer = null
 let suppressPlateLookupWatch = false
+let plateLookupSeq = 0
+const plateLookupCache = new Map()
+const PLATE_LOOKUP_CACHE_LIMIT = 40
+
+const plateLookupCacheKey = (parts) => (
+  `${parts.plateType}|${parts.left}|${parts.letter}|${parts.mid}|${parts.right}`
+)
+
+const rememberPlateLookup = (parts, data) => {
+  const key = plateLookupCacheKey(parts)
+  if (plateLookupCache.has(key)) plateLookupCache.delete(key)
+  plateLookupCache.set(key, data)
+  while (plateLookupCache.size > PLATE_LOOKUP_CACHE_LIMIT) {
+    const oldest = plateLookupCache.keys().next().value
+    plateLookupCache.delete(oldest)
+  }
+}
 
 const currentLookupParts = () => {
   if (isMotorcyclePlate()) {
@@ -1019,12 +1036,17 @@ const lookupMatchesCurrentPlate = (data) => {
   const mid = normalizeDigits(data.plate_mid || '').replace(/\D/g, '').slice(0, 3)
   const right = normalizeDigits(data.plate_right || '').replace(/\D/g, '').slice(0, 2)
   const letter = normalizePlateLetter(data.plate_letter || '')
-  return (
-    left === normalizeDigits(form.plateLeft).replace(/\D/g, '').slice(0, 2)
-    && mid === normalizeDigits(form.plateMid).replace(/\D/g, '').slice(0, 3)
-    && right === normalizeDigits(form.plateRight).replace(/\D/g, '').slice(0, 2)
-    && letter === normalizePlateLetter(form.plateLetter)
-  )
+  const formLeft = normalizeDigits(form.plateLeft).replace(/\D/g, '').slice(0, 2)
+  const formMid = normalizeDigits(form.plateMid).replace(/\D/g, '').slice(0, 3)
+  const formRight = normalizeDigits(form.plateRight).replace(/\D/g, '').slice(0, 2)
+  const formLetter = normalizePlateLetter(form.plateLetter)
+  // Digits are authoritative; letter may differ after OCR/history correction.
+  if (left === formLeft && mid === formMid && right === formRight) {
+    if (!letter || !formLetter || letter === formLetter) return true
+    // Accept history hit when digits uniquely matched and letter was corrected by backend.
+    return Boolean(data.driver_phone || data.car_model || data.driver_name)
+  }
+  return false
 }
 
 const applyPlateLookupData = (data = {}) => {
@@ -1052,6 +1074,20 @@ const fetchPlateLookup = async () => {
   if (form.isAnonymous || form.isPieceWash || !hasCompleteManualPlate()) return null
   const requestParts = currentLookupParts()
   syncNormalizedPlatePartsToForm(requestParts)
+  const cacheKey = plateLookupCacheKey(requestParts)
+  if (plateLookupCache.has(cacheKey)) {
+    const cached = plateLookupCache.get(cacheKey)
+    if (cached?.found && lookupMatchesCurrentPlate(cached)) {
+      applyPlateLookupData(cached)
+      return cached
+    }
+    if (cached && !cached.found) {
+      form.customerScore = Math.max(0, Number(cached?.customer_score ?? 0.5))
+      form.customerLoyaltyVisitCount = Math.max(1, Number(cached?.customer_loyalty_visit_count ?? 1))
+      form.customerLoyaltyDiscountPercent = Math.max(0, Number(cached?.customer_loyalty_discount_percent ?? 0))
+      return cached
+    }
+  }
   const lookupPlateNumber = buildPlateNumber({
     left: requestParts.left,
     letter: requestParts.letter,
@@ -1059,6 +1095,7 @@ const fetchPlateLookup = async () => {
     right: requestParts.right,
     plateType: requestParts.plateType
   })
+  const requestId = ++plateLookupSeq
   try {
     const { data } = await api.get('/vehicles/plate-lookup/', {
       params: {
@@ -1071,8 +1108,9 @@ const fetchPlateLookup = async () => {
       },
       meta: { trackLoading: false, showErrorToast: false }
     })
-    // Only discard when the operator already changed the plate.
-    if (!lookupPartsStillMatch(requestParts)) return null
+    // Only discard when the operator already changed the plate or a newer lookup started.
+    if (requestId !== plateLookupSeq || !lookupPartsStillMatch(requestParts)) return null
+    rememberPlateLookup(requestParts, data || { found: false })
     if (data?.found && lookupMatchesCurrentPlate(data)) {
       applyPlateLookupData(data)
       return data
@@ -1095,7 +1133,7 @@ watch(
     if (!hasCompleteManualPlate()) return
     lookupTimer = setTimeout(() => {
       fetchPlateLookup()
-    }, 220)
+    }, 80)
   }
 )
 
