@@ -270,7 +270,7 @@ const tenantTabCounts = computed(() => TENANT_REPORT_TABS.reduce((acc, tab) => {
 const tenantColumns = computed(() => ({
   overall: [['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['status', 'وضعیت'], ['final_total', 'نهایی'], ['carwash_share', 'کارواش'], ['worker_share', 'نیرو'], ['discount_total', 'تخفیف'], ['tip_amount', 'انعام'], ['worker_name', 'نیرو'], ['services', 'خدمات'], ['created_at', 'تاریخ']],
   carwash: [['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['carwash_share', 'حق کارواش'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ']],
-  worker: [['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['worker_share', 'حق نیرو'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ']],
+  worker: [['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['service_total', 'جمع خدمات'], ['products_total', 'محصولات'], ['worker_share', 'حق نیرو'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ']],
   tips: [['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['tip_amount', 'انعام'], ['worker_name', 'نیرو'], ['products', 'کالا'], ['created_at', 'تاریخ']],
   revenue: [['created_at', 'تاریخ'], ['driver_name', 'راننده'], ['payment_method', 'روش'], ['payment_status', 'وضعیت'], ['final_total', 'نهایی'], ['received_amount', 'دریافتی'], ['outstanding_amount', 'مانده']],
   attendance: [['worker_name', 'نیرو'], ['event_type', 'رویداد'], ['source', 'منبع'], ['event_at', 'زمان']],

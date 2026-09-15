@@ -208,7 +208,7 @@
             <article class="payout-card"><p>انعام پرداخت‌شده</p><strong>{{ money(selectedWorkerSummary.tip_paid_total) }}</strong></article>
             <article class="payout-card"><p>مانده انعام قابل پرداخت</p><strong>{{ money(selectedWorkerSummary.tip_balance) }}</strong></article>
           </div>
-          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>مبلغ سفارش بدون انعام</th><th>انعام</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
+          <div class="table-wrap"><table><thead><tr><th>ردیف</th><th>نام راننده</th><th>مدل</th><th>رنگ</th><th class="col-plate">پلاک</th><th>جمع خدمات</th><th>محصولات</th><th>انعام</th><th>حق نیرو</th><th>نام نیرو</th><th>تاریخ</th></tr></thead><tbody>
             <tr v-for="row in pagedTables.worker.rows" :key="`w-${row.row}`" class="clickable-row" @click="openVehicleDetail(row.vehicle_id)"><td>{{ row.row }}</td><td>{{ row.driver_name }}</td><td>{{ row.car_model }}</td><td>{{ row.car_color || '-' }}</td><td class="col-plate"><span class="report-plate-cell"><IranPlateMark
                       :plate-number="row.plate_number"
                       :plate-left="row.plate_left"
@@ -217,7 +217,7 @@
                       :plate-right="row.plate_right"
                       :plate-type="row.plate_type || 'car'"
                       compact
-                    /></span></td><td>{{ money(row.final_total_without_tip ?? row.service_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
+                    /></span></td><td>{{ money(row.service_total) }}</td><td>{{ money(row.products_total) }}</td><td>{{ money(row.tip_amount) }}</td><td>{{ money(row.worker_share) }}</td><td>{{ row.worker_name }}</td><td>{{ dateTime(row.created_at) }}</td></tr>
           </tbody></table></div>
           <ReportPager
             v-if="!exportAllRows"
@@ -601,7 +601,7 @@ import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import IranPlateMark from '../../components/vehicles/IranPlateMark.vue'
 import PlateEditor from '../../components/vehicles/PlateEditor.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
-import { formatJalaliDate, formatJalaliDateTime } from '../../utils/date'
+import { formatJalaliDate } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { normalizeDigits, normalizePlateLetter as normalizePlateLetterUtil } from '../../utils/plate'
 import { resolveApiErrorMessage } from '../../utils/apiError'
@@ -825,9 +825,10 @@ const money = (v) => formatThousandsToman(v)
 const faNumber = (value) => Number(value || 0).toLocaleString('fa-IR')
 const dateTime = (v) => formatJalaliDate(v)
 const dateOnly = (v) => formatJalaliDate(v)
-const receiptDateTime = (v) => formatJalaliDateTime(v)
+const receiptDateShort = (v) => formatJalaliDate(v)
 const faNumberLatin = (value) => Number(value || 0).toLocaleString('en-US')
 const moneyLatin = (value) => Number(value || 0).toLocaleString('en-US')
+const receiptMoney = (value) => `${moneyLatin(value)}`
 const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assigned: 'در انتظار تکمیل', in_progress: 'در حال انجام', ready_to_settle: 'در انتظار تکمیل', released: 'ترخیص شده', cancelled: 'لغو' }[value] || '-')
 const formatGender = (value) => ({ male: 'آقا', female: 'خانم' }[value] || '-')
 const workerPaymentTypeLabel = (value) => ({ hourly: 'ساعتی', fixed: 'ثابت', percent: 'درصدی' }[value] || '-')
@@ -1379,15 +1380,16 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#039;')
 
 const workerReceiptOrderPrice = (row) => {
-  // Final charged order price without tip: (sale - discounts). Never rate-card list price.
-  if (row?.final_total_without_tip !== undefined && row?.final_total_without_tip !== null) {
-    return Math.max(0, Number(row.final_total_without_tip || 0))
-  }
-  if (row?.final_total !== undefined && row?.final_total !== null) {
-    return Math.max(0, Number(row.final_total || 0) - Number(row.tip_amount || 0))
-  }
+  // Services-only share base (after post-sale discounts). Products never enter worker share math.
   if (row?.service_total !== undefined && row?.service_total !== null) {
     return Math.max(0, Number(row.service_total || 0))
+  }
+  if (row?.final_total_without_tip !== undefined && row?.final_total_without_tip !== null) {
+    const products = Math.max(0, Number(row.products_total || 0))
+    return Math.max(0, Number(row.final_total_without_tip || 0) - products)
+  }
+  if (row?.final_total !== undefined && row?.final_total !== null) {
+    return Math.max(0, Number(row.final_total || 0) - Number(row.tip_amount || 0) - Number(row.products_total || 0))
   }
   return 0
 }
@@ -1396,8 +1398,8 @@ const workerReceiptRows = computed(() => (
   Array.isArray(data.worker_report) ? data.worker_report : []
 ).map((row, index) => ({
   row: index + 1,
-  date: receiptDateTime(row.created_at),
-  car: row.car_model || '-',
+  date: receiptDateShort(row.created_at),
+  car: String(row.car_model || '-').trim() || '-',
   price: workerReceiptOrderPrice(row),
   tip: Number(row.tip_amount || 0),
   share: Number(row.worker_share || 0)
@@ -1419,64 +1421,213 @@ const workerReceiptStaffShare = computed(() => {
 const workerReceiptGrandTotal = computed(() => workerReceiptStaffShare.value + workerReceiptTotalTip.value)
 
 const buildWorkerReceiptElement = () => {
+  const workerName = selectedWorkerSummary.value?.worker_name || '-'
+  const paymentType = workerPaymentTypeLabel(selectedWorkerSummary.value?.payment_type)
   const rowsHtml = workerReceiptRows.value.map((row) => `
     <tr>
-      <td>${escapeHtml(faNumberLatin(row.row))}</td>
-      <td>${escapeHtml(row.date)}</td>
-      <td>${escapeHtml(row.car)}</td>
-      <td>${escapeHtml(moneyLatin(row.price))}</td>
-      <td>${escapeHtml(moneyLatin(row.tip))}</td>
+      <td class="col-idx">${escapeHtml(faNumberLatin(row.row))}</td>
+      <td class="col-date">${escapeHtml(row.date)}</td>
+      <td class="col-car">${escapeHtml(row.car)}</td>
+      <td class="col-num">${escapeHtml(receiptMoney(row.share))}</td>
+      <td class="col-num">${escapeHtml(receiptMoney(row.tip))}</td>
     </tr>
   `).join('')
+  const emptyRow = '<tr><td colspan="5" class="empty-row">سفارشی در این بازه نیست</td></tr>'
+
+  // Styles must live INSIDE the printable node — thermal print clones only this element.
   const element = document.createElement('div')
   element.innerHTML = `
-    <article class="worker-receipt-pdf" dir="rtl">
-      <header>
-        <span>صورت‌حساب: ${escapeHtml(selectedWorkerSummary.value?.worker_name || '-')}</span>
-        <span>دوره گزارش: ${escapeHtml(reportPeriodLabel.value)}</span>
+    <article class="worker-receipt-pdf" dir="rtl" lang="fa">
+      <style>
+        .worker-receipt-pdf, .worker-receipt-pdf * {
+          box-sizing: border-box !important;
+          color: #000 !important;
+          background: #fff !important;
+          box-shadow: none !important;
+          text-shadow: none !important;
+          font-family: Tahoma, "IRANSans", "Segoe UI", Arial, sans-serif !important;
+          letter-spacing: 0 !important;
+          -webkit-font-smoothing: none !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        .worker-receipt-pdf {
+          width: 74mm;
+          max-width: 74mm;
+          margin: 0;
+          padding: 2mm 1.5mm 2.5mm;
+          direction: rtl;
+          line-height: 1.45;
+          font-size: 13px;
+          font-weight: 700;
+          overflow: visible;
+          page-break-inside: auto;
+          break-inside: auto;
+        }
+        .worker-receipt-pdf .head {
+          display: grid;
+          gap: 4px;
+          text-align: center;
+          padding: 0 0 8px;
+          margin: 0 0 8px;
+          border-bottom: 2px solid #000;
+        }
+        .worker-receipt-pdf .head .title {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 800;
+          line-height: 1.3;
+        }
+        .worker-receipt-pdf .head .name {
+          margin: 0;
+          font-size: 15px;
+          font-weight: 700;
+          line-height: 1.35;
+        }
+        .worker-receipt-pdf .meta {
+          display: grid;
+          gap: 4px;
+          margin: 0 0 8px;
+          padding: 0 0 8px;
+          border-bottom: 1px dashed #000;
+          font-size: 12px;
+          font-weight: 700;
+          line-height: 1.45;
+        }
+        .worker-receipt-pdf .meta p {
+          margin: 0;
+          display: flex;
+          justify-content: space-between;
+          gap: 8px;
+          align-items: baseline;
+        }
+        .worker-receipt-pdf .meta span { font-weight: 700; white-space: nowrap; }
+        .worker-receipt-pdf .meta strong {
+          font-weight: 700;
+          text-align: left;
+          direction: ltr;
+          unicode-bidi: plaintext;
+          overflow-wrap: anywhere;
+        }
+        .worker-receipt-pdf table {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+          margin: 0;
+          border: 1.5px solid #000;
+        }
+        .worker-receipt-pdf th,
+        .worker-receipt-pdf td {
+          border: 1px solid #000;
+          padding: 5px 3px;
+          text-align: center;
+          vertical-align: middle;
+          font-size: 11px;
+          line-height: 1.35;
+          font-weight: 700;
+        }
+        .worker-receipt-pdf th {
+          font-size: 11px;
+          font-weight: 800;
+          padding: 6px 3px;
+        }
+        .worker-receipt-pdf .col-idx { width: 8%; }
+        .worker-receipt-pdf .col-date { width: 22%; white-space: nowrap; direction: ltr; unicode-bidi: plaintext; }
+        .worker-receipt-pdf .col-car {
+          width: 26%;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          font-size: 11px;
+        }
+        .worker-receipt-pdf .col-num {
+          width: 22%;
+          white-space: nowrap;
+          direction: ltr;
+          unicode-bidi: plaintext;
+          font-size: 11px;
+          font-weight: 800;
+        }
+        .worker-receipt-pdf .empty-row {
+          padding: 10px 4px;
+          font-size: 12px;
+          font-weight: 700;
+        }
+        .worker-receipt-pdf .totals {
+          display: grid;
+          gap: 5px;
+          margin: 8px 0 0;
+          padding: 8px 0 0;
+          border-top: 2px solid #000;
+        }
+        .worker-receipt-pdf .totals p {
+          margin: 0;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+          font-size: 13px;
+          line-height: 1.4;
+          font-weight: 700;
+        }
+        .worker-receipt-pdf .totals span { white-space: nowrap; }
+        .worker-receipt-pdf .totals strong {
+          white-space: nowrap;
+          direction: ltr;
+          unicode-bidi: plaintext;
+          font-weight: 800;
+          font-size: 13px;
+        }
+        .worker-receipt-pdf .totals .grand {
+          margin-top: 3px;
+          padding-top: 6px;
+          border-top: 2px solid #000;
+          border-bottom: 3px double #000;
+          padding-bottom: 6px;
+          font-size: 14px;
+          font-weight: 800;
+        }
+        .worker-receipt-pdf .totals .grand strong { font-size: 15px; font-weight: 800; }
+        .worker-receipt-pdf .foot-note {
+          margin: 8px 0 0;
+          text-align: center;
+          font-size: 11px;
+          font-weight: 700;
+          line-height: 1.4;
+        }
+      </style>
+      <header class="head">
+        <p class="title">فیش حق نیرو</p>
+        <p class="name">${escapeHtml(workerName)}</p>
       </header>
+      <section class="meta">
+        <p><span>دوره</span><strong>${escapeHtml(reportPeriodLabel.value || '-')}</strong></p>
+        <p><span>نوع پرداخت</span><strong>${escapeHtml(paymentType)}</strong></p>
+        <p><span>تعداد سفارش</span><strong>${escapeHtml(faNumberLatin(workerReceiptRows.value.length))}</strong></p>
+      </section>
       <table>
         <thead>
-          <tr><th>#</th><th>تاریخ</th><th>ماشین</th><th>قیمت</th><th>انعام</th></tr>
+          <tr>
+            <th class="col-idx">#</th>
+            <th class="col-date">تاریخ</th>
+            <th class="col-car">خودرو</th>
+            <th class="col-num">حق نیرو</th>
+            <th class="col-num">انعام</th>
+          </tr>
         </thead>
-        <tbody>${rowsHtml || '<tr><td colspan="5">رکوردی ثبت نشده است.</td></tr>'}</tbody>
+        <tbody>${rowsHtml || emptyRow}</tbody>
       </table>
-      <footer>
-        <p><span>جمع مبلغ سفارش‌ها</span><strong>${escapeHtml(moneyLatin(workerReceiptTotalServices.value))}</strong></p>
-        <p><span>جمع حق نیرو</span><strong>${escapeHtml(moneyLatin(workerReceiptStaffShare.value))}</strong></p>
-        <p><span>جمع انعام نیرو</span><strong>${escapeHtml(moneyLatin(workerReceiptTotalTip.value))}</strong></p>
-        <p class="grand"><span>جمع انعام + حق نیرو</span><strong>${escapeHtml(moneyLatin(workerReceiptGrandTotal.value))}</strong></p>
-      </footer>
+      <section class="totals">
+        <p><span>جمع خدمات</span><strong>${escapeHtml(receiptMoney(workerReceiptTotalServices.value))}</strong></p>
+        <p><span>جمع حق نیرو</span><strong>${escapeHtml(receiptMoney(workerReceiptStaffShare.value))}</strong></p>
+        <p><span>جمع انعام</span><strong>${escapeHtml(receiptMoney(workerReceiptTotalTip.value))}</strong></p>
+        <p class="grand"><span>قابل پرداخت</span><strong>${escapeHtml(receiptMoney(workerReceiptGrandTotal.value))}</strong></p>
+      </section>
+      <p class="foot-note">مبالغ به تومان — محصولات جزو سهم نیست</p>
     </article>
   `
-  const style = document.createElement('style')
-  style.textContent = `
-    .worker-receipt-pdf,.worker-receipt-pdf *{box-sizing:border-box;color:#000!important;background:#fff!important;background-color:#fff!important;box-shadow:none!important;text-shadow:none!important;border-color:#000!important;font-family:Tahoma,Arial,sans-serif!important;font-weight:900!important;letter-spacing:0!important}
-    .worker-receipt-pdf{width:80mm;max-width:80mm;min-width:0;min-height:0;height:auto;padding:2mm 3mm 3mm;margin:0;direction:rtl;line-height:1.45;font-size:11px;overflow:hidden;align-content:start}
-    .worker-receipt-pdf header{display:grid;gap:4px;text-align:center;padding:0 0 7px;margin:0;border-bottom:2px solid #000}
-    .worker-receipt-pdf header strong{font-size:13px;line-height:1.6}
-    .worker-receipt-pdf header span{font-size:11px;line-height:1.6}
-    .worker-receipt-pdf table{width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px;border:2px solid #000}
-    .worker-receipt-pdf th,.worker-receipt-pdf td{border:1.5px solid #000;padding:4px 2px;text-align:center;vertical-align:middle;font-size:8px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
-    .worker-receipt-pdf th:first-child,.worker-receipt-pdf td:first-child{width:8%}
-    .worker-receipt-pdf th:nth-child(2),.worker-receipt-pdf td:nth-child(2){width:25%}
-    .worker-receipt-pdf th:nth-child(3),.worker-receipt-pdf td:nth-child(3){width:27%}
-    .worker-receipt-pdf th:nth-child(4),.worker-receipt-pdf td:nth-child(4){width:20%}
-    .worker-receipt-pdf th:nth-child(5),.worker-receipt-pdf td:nth-child(5){width:20%}
-    .worker-receipt-pdf footer{display:grid;gap:4px;margin-top:8px;padding-top:7px;border-top:2px solid #000}
-    .worker-receipt-pdf footer p{margin:0;display:flex;justify-content:space-between;gap:8px;font-size:12px;line-height:1.6}
-    .worker-receipt-pdf footer .grand{padding-top:5px;border-top:2px solid #000;font-size:13px}
-  `
+
   const wrapper = document.createElement('div')
-  wrapper.style.position = 'fixed'
-  wrapper.style.top = '0'
-  wrapper.style.left = '0'
-  wrapper.style.width = '80mm'
-  wrapper.style.maxWidth = '80mm'
-  wrapper.style.background = '#fff'
-  wrapper.style.zIndex = '-1'
-  wrapper.style.pointerEvents = 'none'
-  wrapper.appendChild(style)
+  wrapper.style.cssText = 'position:fixed;top:0;left:0;width:74mm;max-width:74mm;background:#fff;z-index:-1;pointer-events:none;opacity:0;'
   wrapper.appendChild(element.firstElementChild)
   document.body.appendChild(wrapper)
   return wrapper
@@ -1523,12 +1674,12 @@ const exportWorkerReceiptPdf = async () => {
     if (!receiptNode) throw new Error('محتوای فیش پیدا نشد.')
     await printHtmlElement(receiptNode, {
       widthMm: 80,
-      marginMm: 1.5,
-      marginTopMm: 0,
-      marginRightMm: 1.5,
-      marginBottomMm: 1.5,
-      marginLeftMm: 1.5,
-      minHeightMm: 40,
+      marginMm: 2,
+      marginTopMm: 1,
+      marginRightMm: 2,
+      marginBottomMm: 2,
+      marginLeftMm: 2,
+      minHeightMm: 30,
       thermal: true,
       formatLabel: 'فیش حق نیرو'
     })

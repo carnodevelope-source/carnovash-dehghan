@@ -207,7 +207,7 @@ def _build_export_config(tab_key):
     configs = {
         'overall': {'filename': 'overall-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_gender', 'جنسیت'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('status', 'وضعیت'), ('carwash_share', 'حق کارواش'), ('worker_share', 'حق نیرو'), ('discount_total', 'تخفیف'), ('tax_total', 'مالیات'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('services', 'خدمات'), ('created_at', 'تاریخ')], 'rows_key': 'overall_report'},
         'carwash': {'filename': 'carwash-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('carwash_share', 'حق کارواش'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'carwash_report'},
-        'worker': {'filename': 'worker-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('final_total_without_tip', 'مبلغ سفارش بدون انعام'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_share', 'حق نیرو'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'worker_report'},
+        'worker': {'filename': 'worker-share-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('service_total', 'جمع خدمات'), ('products_total', 'محصولات'), ('discount_total', 'تخفیف'), ('tip_amount', 'انعام'), ('worker_share', 'حق نیرو'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'worker_report'},
         'tips': {'filename': 'tips-report', 'headers': [('row', 'ردیف'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('tip_amount', 'انعام'), ('worker_name', 'نام نیرو'), ('products', 'کالا'), ('created_at', 'تاریخ')], 'rows_key': 'tips_report'},
         'products': {'filename': 'products-report', 'headers': [('row', 'ردیف'), ('product_name', 'محصول'), ('quantity', 'تعداد'), ('unit_price', 'فی فروش'), ('sale_amount', 'مبلغ فروش'), ('cost_amount', 'بهای تمام‌شده'), ('profit_amount', 'سود'), ('driver_name', 'راننده'), ('plate_number', 'پلاک'), ('worker_name', 'نام نیرو'), ('created_at', 'تاریخ')], 'rows_key': 'products_report'},
         'revenue': {'filename': 'revenue-report', 'headers': [('row', 'ردیف'), ('created_at', 'تاریخ'), ('driver_name', 'نام راننده'), ('driver_phone', 'شماره'), ('car_model', 'مدل خودرو'), ('car_color', 'رنگ'), ('plate_number', 'پلاک'), ('payment_method', 'روش پرداخت'), ('payment_status', 'وضعیت پرداخت'), ('service_amount', 'خدمات'), ('product_amount', 'محصولات'), ('discount_amount', 'تخفیف'), ('tip_amount', 'انعام'), ('tax_amount', 'مالیات'), ('final_total', 'مبلغ نهایی'), ('received_amount', 'وصول شده'), ('outstanding_amount', 'مانده'), ('cheque_number', 'شماره چک'), ('reminder_due_at', 'سررسید')], 'rows_key': 'revenue_report'},
@@ -362,13 +362,74 @@ def _job_worker_commission_percent_for(job):
     return min(Decimal('100'), max(Decimal('0'), _normalize_decimal(job.worker_payment_percent)))
 
 
+def _job_workers_tip_total(job):
+    if not job:
+        return Decimal('0')
+    stored = _money_q(getattr(job, 'workers_tip_share_amount', 0) or 0)
+    if stored > 0:
+        return stored
+    snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
+    from_snapshot = sum(
+        (_money_q(item.get('tip_share_amount')) for item in snapshot if isinstance(item, dict)),
+        Decimal('0'),
+    )
+    if from_snapshot > 0:
+        return from_snapshot
+    return Decimal('0')
+
+
+def _job_worker_share_total(job):
+    """Whole-job worker share from discounted services only (never products/tax/tip)."""
+    if not job:
+        return Decimal('0')
+    share_base = _job_share_base_total(job)
+    expected, _, _ = _expected_worker_share_total(job, share_base)
+    stored = min(share_base, _money_q(getattr(job, 'worker_share_amount', 0)))
+    payment_type = getattr(job, 'worker_payment_type', '') or VehicleJob.WorkerPaymentType.PERCENT
+    if payment_type == VehicleJob.WorkerPaymentType.PERCENT:
+        percent, _ = _recover_job_commission_percent(job)
+        if percent > 0:
+            return expected
+    if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
+        return expected
+    if expected > 0:
+        return min(stored, expected) if stored > 0 else expected
+    return stored
+
+
+def _job_carwash_share_amount(job):
+    """Carwash share from discounted services remainder (+ leftover tip). Products stay out."""
+    if not job:
+        return Decimal('0')
+    share_base = _job_share_base_total(job)
+    worker_share = _job_worker_share_total(job)
+    tip_amount = _money_q(getattr(job, 'tip_amount', 0))
+    workers_tip = _job_workers_tip_total(job)
+    expected = _expected_carwash_share(job, share_base, worker_share, tip_amount, workers_tip)
+    stored = _money_q(getattr(job, 'carwash_share_amount', 0))
+    # Prefer expected whenever payment config / share base can derive it; otherwise cap stored.
+    if share_base > 0 or tip_amount > 0:
+        return expected
+    return stored
+
+
 def _job_worker_share_for(job, worker_id):
-    """Per-worker share owed for a job. Prefer checkout snapshot; never inflate with rate-card prices."""
+    """Per-worker share owed for a job. Services-only; never inflate with products or list prices."""
     if not job or not worker_id:
         return Decimal('0')
     worker_ids = _job_worker_ids(job)
     if not worker_ids or int(worker_id) not in {int(item) for item in worker_ids}:
         return Decimal('0')
+
+    share_base = _job_share_base_total(job)
+    expected_total, _, _ = _expected_worker_share_total(job, share_base)
+    distribution_percent = _job_worker_distribution_percent_for(job, worker_id)
+    expected_for_worker = (
+        _money_q((expected_total * distribution_percent) / Decimal('100'))
+        if expected_total > 0 and distribution_percent > 0
+        else Decimal('0')
+    )
+    worker_base_cap = _money_q((share_base * distribution_percent) / Decimal('100')) if distribution_percent > 0 else share_base
 
     snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
     for item in snapshot:
@@ -382,16 +443,25 @@ def _job_worker_share_for(job, worker_id):
         if item.get('worker_share_amount') is not None:
             snapshot_amount = max(Decimal('0'), _normalize_decimal(item.get('worker_share_amount')))
             if snapshot_amount > 0:
-                return snapshot_amount
+                cap = expected_for_worker if expected_for_worker > 0 else worker_base_cap
+                return min(snapshot_amount, cap) if cap > 0 else min(snapshot_amount, share_base)
         break
 
     total = _normalize_decimal(getattr(job, 'worker_share_amount', 0))
     if total > 0:
-        distribution_percent = _job_worker_distribution_percent_for(job, worker_id)
         if distribution_percent > 0:
-            return (total * distribution_percent) / Decimal('100')
-        if len(worker_ids) == 1:
-            return total
+            portion = (total * distribution_percent) / Decimal('100')
+        elif len(worker_ids) == 1:
+            portion = total
+        else:
+            portion = Decimal('0')
+        portion = _money_q(portion)
+        if expected_for_worker > 0:
+            return min(portion, expected_for_worker)
+        return min(portion, worker_base_cap) if worker_base_cap > 0 else min(portion, share_base)
+
+    if expected_for_worker > 0:
+        return expected_for_worker
 
     commission_percent = _job_worker_commission_percent_for(job)
     if commission_percent > 0:
@@ -1050,6 +1120,7 @@ class ReportsDashboardView(APIView):
             job_adjustments = adjustment_map.get(job.id if job else 0, {'bonus_total': Decimal('0'), 'penalty_total': Decimal('0')})
             product_names = []
             service_names = []
+            products_total = Decimal('0')
             if job:
                 for line in job.product_lines.all():
                     if line.quantity and line.quantity > 0 and line.product:
@@ -1057,6 +1128,9 @@ class ReportsDashboardView(APIView):
                 for line in job.service_lines.all():
                     if line.quantity and line.quantity > 0:
                         service_names.append(line.custom_service_name or (line.service.name if line.service else 'خدمت'))
+                products_total = _normalize_decimal(getattr(job, 'products_total', 0))
+            row_worker_share = _job_worker_share_total(job) if job else Decimal('0')
+            row_carwash_share = _job_carwash_share_amount(job) if job else Decimal('0')
             row = {
                 'row': idx,
                 'vehicle_id': vehicle.id,
@@ -1072,8 +1146,8 @@ class ReportsDashboardView(APIView):
                 'plate_right': vehicle.plate_right,
                 'plate_type': vehicle.plate_type,
                 'status': vehicle.status,
-                'carwash_share': float(job.carwash_share_amount) if job else 0,
-                'worker_share': float(job.worker_share_amount) if job else 0,
+                'carwash_share': float(row_carwash_share),
+                'worker_share': float(row_worker_share),
                 'bonus_total': float(job_adjustments['bonus_total']),
                 'penalty_total': float(job_adjustments['penalty_total']),
                 'discount_total': float(_job_discount_total(job)),
@@ -1081,7 +1155,8 @@ class ReportsDashboardView(APIView):
                 'loyalty_discount_total': float(_normalize_decimal(getattr(job, 'loyalty_discount_total', 0))) if job else 0,
                 'manual_discount_total': float(_normalize_decimal(getattr(job, 'manual_discount_total', 0))) if job else 0,
                 'tax_total': float(job.tax_total) if job else 0,
-                'service_total': float(job.services_total) if job else 0,
+                'service_total': float(_job_share_base_total(job)) if job else 0,
+                'products_total': float(products_total),
                 'final_total': float(job.final_total) if job else 0,
                 'final_total_without_tip': float(max(Decimal('0'), _normalize_decimal(job.final_total) - _normalize_decimal(job.tip_amount))) if job else 0,
                 'before_discount_total': float((_normalize_decimal(job.final_total) + _job_discount_total(job))) if job else 0,
@@ -1098,7 +1173,7 @@ class ReportsDashboardView(APIView):
                 row.pop('driver_gender', None)
 
         all_jobs = [vehicle.job for vehicle in vehicles if getattr(vehicle, 'job', None)]
-        total_carwash = sum((_normalize_decimal(getattr(job, 'carwash_share_amount', 0)) for job in all_jobs), Decimal('0'))
+        total_carwash = sum((_job_carwash_share_amount(job) for job in all_jobs), Decimal('0'))
         total_discount = sum((_job_discount_total(job) for job in all_jobs), Decimal('0'))
         total_facility_discount = sum((_normalize_decimal(getattr(job, 'facility_discount_total', 0)) for job in all_jobs), Decimal('0'))
         total_loyalty_discount = sum((_normalize_decimal(getattr(job, 'loyalty_discount_total', 0)) for job in all_jobs), Decimal('0'))
@@ -1113,7 +1188,7 @@ class ReportsDashboardView(APIView):
             total_worker = sum((_job_worker_share_for(job, worker_id) for job in all_jobs), Decimal('0'))
             total_tip = sum((_job_worker_tip_for(job, worker_id) for job in all_jobs), Decimal('0'))
         else:
-            total_worker = sum((_normalize_decimal(getattr(job, 'worker_share_amount', 0)) for job in all_jobs), Decimal('0'))
+            total_worker = sum((_job_worker_share_total(job) for job in all_jobs), Decimal('0'))
             total_tip = sum((_normalize_decimal(getattr(job, 'tip_amount', 0)) for job in all_jobs), Decimal('0'))
         all_workers_totals = _compute_all_workers_totals(
             tenant,
@@ -1155,6 +1230,11 @@ class ReportsDashboardView(APIView):
                 if job
                 else _normalize_decimal(r['service_total'])
             )
+            row_products_total = (
+                _normalize_decimal(getattr(job, 'products_total', 0))
+                if job
+                else _normalize_decimal(r.get('products_total', 0))
+            )
             row_tip_amount = (
                 _job_worker_tip_for(job, worker_id)
                 if worker_id and job
@@ -1177,6 +1257,7 @@ class ReportsDashboardView(APIView):
                 'worker_share': float(row_worker_share),
                 'worker_commission_percent': float(row_commission_percent),
                 'service_total': float(row_service_total),
+                'products_total': float(row_products_total),
                 'final_total_without_tip': float(row_final_without_tip),
                 'discount_total': r['discount_total'],
                 'final_total': r['final_total'],

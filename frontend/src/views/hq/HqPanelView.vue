@@ -1545,7 +1545,7 @@ const tenantReportColumns = computed(() => ({
     ['row', 'ردیف'], ['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['carwash_share', 'حق کارواش', 'money'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ', 'date']
   ],
   worker: [
-    ['row', 'ردیف'], ['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['worker_share', 'حق نیرو', 'money'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ', 'date']
+    ['row', 'ردیف'], ['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['service_total', 'جمع خدمات', 'money'], ['products_total', 'محصولات', 'money'], ['worker_share', 'حق نیرو', 'money'], ['worker_name', 'نیرو'], ['created_at', 'تاریخ', 'date']
   ],
   tips: [
     ['row', 'ردیف'], ['driver_name', 'راننده'], ['plate_number', 'پلاک'], ['tip_amount', 'انعام', 'money'], ['worker_name', 'نیرو'], ['products', 'کالا'], ['created_at', 'تاریخ', 'date']

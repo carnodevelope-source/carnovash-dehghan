@@ -359,3 +359,62 @@ class WorkerHourlyReportsTests(APITestCase):
         self.assertEqual(state['insurance_balance'], Decimal('600'))
         self.assertEqual(state['insurance_selected_month_paid_total'], Decimal('400'))
         self.assertEqual(state['insurance_selected_month_balance'], Decimal('600'))
+
+    def test_worker_share_excludes_products_even_when_snapshot_is_inflated(self):
+        """Products stay out of worker/carwash share; report columns keep them separate."""
+        self.worker.payment_type = WorkerProfile.PaymentType.PERCENT
+        self.worker.default_commission_percent = 50
+        self.worker.save(update_fields=['payment_type', 'default_commission_percent'])
+        vehicle = VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='44 D 444 44',
+            plate_left='44',
+            plate_letter='D',
+            plate_mid='444',
+            plate_right='44',
+            car_model='Product Car',
+            car_color='Red',
+            driver_name='Product Customer',
+            driver_phone='09120004444',
+            status=VehicleEntry.Status.RELEASED,
+        )
+        # Inflated historical share wrongly included products (50% of 100k services + 80k products).
+        VehicleJob.objects.create(
+            tenant=self.tenant,
+            vehicle=vehicle,
+            assigned_worker=self.worker,
+            assigned_workers_snapshot=[{
+                'id': self.worker.id,
+                'name': 'Hourly Worker',
+                'worker_share_percent': 100,
+                'worker_share_amount': 90000,
+                'tip_share_amount': 0,
+            }],
+            worker_payment_type=VehicleJob.WorkerPaymentType.PERCENT,
+            worker_payment_percent=50,
+            services_total=100000,
+            products_total=80000,
+            tip_amount=0,
+            final_total=180000,
+            worker_share_amount=90000,
+            carwash_share_amount=90000,
+            released_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.get(
+            reverse('reports-dashboard'),
+            {'worker_id': self.worker.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data['worker_report'][0]
+        overall = response.data['overall_report'][0]
+        self.assertEqual(row['service_total'], 100000.0)
+        self.assertEqual(row['products_total'], 80000.0)
+        self.assertEqual(row['worker_share'], 50000.0)
+        self.assertEqual(overall['worker_share'], 50000.0)
+        self.assertEqual(overall['carwash_share'], 50000.0)
+        self.assertEqual(overall['products_total'], 80000.0)
+        self.assertEqual(response.data['summary']['worker_total'], 50000.0)
+        self.assertEqual(response.data['selected_worker_summary']['wage_total'], 50000.0)

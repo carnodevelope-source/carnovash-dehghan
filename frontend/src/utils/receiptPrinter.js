@@ -37,7 +37,7 @@ const THERMAL_PRINT_CSS = `
     top: 0 !important;
     inset: auto !important;
     transform: none !important;
-    font-family: Tahoma, Arial, sans-serif !important;
+    font-family: Tahoma, "Segoe UI", Arial, sans-serif !important;
   }
   body > * {
     margin: 0 !important;
@@ -174,10 +174,11 @@ export const printHtmlElement = async (element, pageOptions = {}) => {
 
   const measuredHeightMm = Math.ceil(pxToMm(root.scrollHeight || frameDoc.body.scrollHeight || 0))
   // Hug content tightly — do not inflate thermal pages with unused blank height.
+  // Small buffer keeps the last line from spilling onto a blank second page.
   const heightMm = page.fixedHeightMm
     || Math.max(
-      page.thermal ? Math.max(30, measuredHeightMm) : page.minHeightMm,
-      measuredHeightMm + (page.thermal ? 0 : (page.marginTopMm + page.marginBottomMm))
+      page.thermal ? Math.max(30, measuredHeightMm + 3) : page.minHeightMm,
+      measuredHeightMm + (page.thermal ? 3 : (page.marginTopMm + page.marginBottomMm))
     )
 
   const pageStyleNode = frameDoc.getElementById('carnowash-print-page-style')
@@ -195,6 +196,7 @@ export const printHtmlElement = async (element, pageOptions = {}) => {
           padding: 0 !important;
           height: auto !important;
           min-height: 0 !important;
+          overflow: hidden !important;
         }
       }
     `
