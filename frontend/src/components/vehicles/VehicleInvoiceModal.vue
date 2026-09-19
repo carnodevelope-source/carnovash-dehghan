@@ -818,7 +818,8 @@ const printInvoiceHtml = async () => {
   try {
     invoiceGenerating.value = true
     await nextTick()
-    await printHtmlElement(invoiceTemplateRef.value, invoicePrintPageOptions.value)
+    const sheetNode = invoiceTemplateRef.value.querySelector('.invoice-sheet') || invoiceTemplateRef.value
+    await printHtmlElement(sheetNode, invoicePrintPageOptions.value)
   } catch (error) {
     console.error('VehicleInvoiceModal print error:', error)
     invoiceErrorMessage.value = resolvePrintErrorMessage(error)

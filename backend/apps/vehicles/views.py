@@ -29,6 +29,7 @@ from .loyalty import (
     resolve_vehicle_loyalty_snapshot,
     sync_plate_loyalty,
 )
+from .shares import carwash_remainder, worker_commission_pool
 from .serializers import VehicleEntryBoardSerializer, VehicleEntrySerializer
 from apps.inventory.models import InventoryItem, StockMovement
 from apps.notifications.models import NotificationLog
@@ -1195,9 +1196,25 @@ class VehicleReleaseCheckoutView(APIView):
         return percent
 
     def _services_share_pool(self, services_total, loyalty_discount_total=0, manual_discount_total=0):
-        """Worker/carwash split base: services after post-sale discounts. Never products/tax/tip."""
-        pool = self._money(services_total) - self._money(loyalty_discount_total) - self._money(manual_discount_total)
-        return max(Decimal('0'), pool)
+        """Worker commission base: charged services minus manual discount. Loyalty stays on carwash."""
+        return worker_commission_pool(services_total, manual_discount_total=manual_discount_total)
+
+    def _carwash_share_amount(
+        self,
+        worker_pool,
+        worker_share,
+        *,
+        loyalty_discount_total=0,
+        tip_amount=0,
+        workers_tip_share_amount=0,
+    ):
+        return carwash_remainder(
+            worker_pool,
+            worker_share,
+            loyalty_discount_total=loyalty_discount_total,
+            tip_amount=tip_amount,
+            workers_tip_share_amount=workers_tip_share_amount,
+        )
 
     def _worker_share_from_payment_config(self, job, share_pool):
         """Always derive worker share from payment config × services pool (ignore inflated stored amounts)."""
@@ -1293,8 +1310,8 @@ class VehicleReleaseCheckoutView(APIView):
             worker_share_percent_by_id[worker_id] = self._clamp_percent(item.get('worker_share_percent', 0))
             worker_share_amount_by_id[worker_id] = self._money(item.get('worker_share_amount', 0))
 
-        if job.assigned_worker_id and job.assigned_worker_id not in ordered_ids:
-            ordered_ids.insert(0, int(job.assigned_worker_id))
+        if not ordered_ids and job.assigned_worker_id:
+            ordered_ids = [int(job.assigned_worker_id)]
 
         if orphan_names:
             candidate_profiles = list(
@@ -1496,6 +1513,20 @@ class VehicleReleaseCheckoutView(APIView):
 
         total_amount = sum((item['worker_share_amount'] for item in normalized), Decimal('0'))
         return normalized, total_amount
+
+    def _snapshot_from_workers(self, assigned_workers_with_tip):
+        return [
+            {
+                'id': int(item['id']),
+                'name': item.get('name') or '',
+                'worker_share_percent': float(item.get('worker_share_percent') or 0),
+                'worker_share_amount': float(item.get('worker_share_amount') or 0),
+                'tip_share_percent': float(item.get('tip_share_percent') or 0),
+                'tip_share_amount': float(item.get('tip_share_amount') or 0),
+            }
+            for item in assigned_workers_with_tip
+            if item.get('id')
+        ]
 
     def _distribute_tip(self, tip_amount, assigned_workers):
         tip_value = max(Decimal('0'), Decimal(str(tip_amount or 0)))
@@ -1715,7 +1746,7 @@ class VehicleReleaseCheckoutView(APIView):
         tax_percent = self._tax_percent(tenant)
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount
-        # Products never enter the commission pool — only discounted services.
+        # Products never enter the commission pool. Loyalty/step/fixed discounts stay on carwash.
         share_pool = self._services_share_pool(
             services_total,
             loyalty_discount_total=loyalty_discount_total,
@@ -1738,9 +1769,12 @@ class VehicleReleaseCheckoutView(APIView):
             tip_amount=tip_amount,
             assigned_workers=assigned_workers,
         )
-        carwash_share_amount = max(Decimal('0'), share_pool - distributed_worker_share_total) + max(
-            Decimal('0'),
-            tip_amount - workers_tip_share_amount,
+        carwash_share_amount = self._carwash_share_amount(
+            share_pool,
+            distributed_worker_share_total,
+            loyalty_discount_total=loyalty_discount_total,
+            tip_amount=tip_amount,
+            workers_tip_share_amount=workers_tip_share_amount,
         )
         assigned_workers_names = [item['name'] for item in assigned_workers_with_tip]
         manager = get_user_model().objects.filter(tenant=tenant, role='manager').order_by('id').first()
@@ -2132,7 +2166,7 @@ class VehicleReleaseCheckoutView(APIView):
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount
 
-        # Product sales are not shareable — commission pool is discounted services only.
+        # Product sales are not shareable. Loyalty/step/fixed discounts stay on carwash.
         share_base_total = self._services_share_pool(
             completed_service_totals,
             loyalty_discount_total=loyalty_discount_total,
@@ -2166,58 +2200,22 @@ class VehicleReleaseCheckoutView(APIView):
             tip_amount=tip_amount,
             assigned_workers=assigned_workers,
         )
-        # Discounts already removed from share_base_total — do not subtract them again.
-        carwash_share = (share_base_total - worker_share_base_total) + max(
-            Decimal('0'),
-            tip_amount - workers_tip_share_amount,
+        carwash_share = self._carwash_share_amount(
+            share_base_total,
+            worker_share_base_total,
+            loyalty_discount_total=loyalty_discount_total,
+            tip_amount=tip_amount,
+            workers_tip_share_amount=workers_tip_share_amount,
         )
-        if carwash_share < 0:
-            carwash_share = Decimal('0')
-        workers_map = {
-            int(item['id']): item for item in assigned_workers_with_tip if item.get('id')
-        }
-        snapshot = (
-            vehicle.job.assigned_workers_snapshot
-            if isinstance(vehicle.job.assigned_workers_snapshot, list)
-            else []
-        )
-        updated_snapshot = []
-        used_ids = set()
-        for item in snapshot:
-            if not isinstance(item, dict):
-                continue
-            try:
-                worker_id = int(item.get('id'))
-            except (TypeError, ValueError):
-                continue
-            worker_data = workers_map.get(worker_id)
-            if not worker_data:
-                continue
-            used_ids.add(worker_id)
-            updated_snapshot.append(
-                {
-                    'id': worker_id,
-                    'name': worker_data.get('name') or (item.get('name') or ''),
-                    'worker_share_percent': float(worker_data.get('worker_share_percent') or 0),
-                    'worker_share_amount': float(worker_data.get('worker_share_amount') or 0),
-                    'tip_share_percent': float(worker_data.get('tip_share_percent') or 0),
-                    'tip_share_amount': float(worker_data.get('tip_share_amount') or 0),
-                }
-            )
-        for worker_data in assigned_workers_with_tip:
-            worker_id = int(worker_data['id'])
-            if worker_id in used_ids:
-                continue
-            updated_snapshot.append(
-                {
-                    'id': worker_id,
-                    'name': worker_data.get('name') or '',
-                    'worker_share_percent': float(worker_data.get('worker_share_percent') or 0),
-                    'worker_share_amount': float(worker_data.get('worker_share_amount') or 0),
-                    'tip_share_percent': float(worker_data.get('tip_share_percent') or 0),
-                    'tip_share_amount': float(worker_data.get('tip_share_amount') or 0),
-                }
-            )
+        updated_snapshot = self._snapshot_from_workers(assigned_workers_with_tip)
+        primary_worker_id = assigned_workers_with_tip[0]['id'] if assigned_workers_with_tip else None
+        primary_worker = None
+        if primary_worker_id:
+            primary_worker = WorkerProfile.objects.filter(
+                tenant=tenant,
+                id=primary_worker_id,
+                user__role='worker',
+            ).first()
 
         vehicle.job.services_total = completed_service_totals
         vehicle.job.products_total = product_totals
@@ -2232,6 +2230,7 @@ class VehicleReleaseCheckoutView(APIView):
         vehicle.job.final_total = final_total
         vehicle.job.worker_share_amount = worker_share_base_total
         vehicle.job.carwash_share_amount = carwash_share
+        vehicle.job.assigned_worker = primary_worker
         vehicle.job.assigned_workers_snapshot = updated_snapshot
         vehicle.job.released_at = timezone.now()
         vehicle.job.save(
@@ -2249,6 +2248,7 @@ class VehicleReleaseCheckoutView(APIView):
                 'final_total',
                 'worker_share_amount',
                 'carwash_share_amount',
+                'assigned_worker',
                 'assigned_workers_snapshot',
                 'released_at',
                 'updated_at',
@@ -2443,20 +2443,6 @@ class VehicleReleaseCheckoutView(APIView):
 class VehicleJobAdjustView(VehicleReleaseCheckoutView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def _snapshot_from_workers(self, assigned_workers_with_tip):
-        return [
-            {
-                'id': int(item['id']),
-                'name': item.get('name') or '',
-                'worker_share_percent': float(item.get('worker_share_percent') or 0),
-                'worker_share_amount': float(item.get('worker_share_amount') or 0),
-                'tip_share_percent': float(item.get('tip_share_percent') or 0),
-                'tip_share_amount': float(item.get('tip_share_amount') or 0),
-            }
-            for item in assigned_workers_with_tip
-            if item.get('id')
-        ]
-
     def _recompute_job_totals(self, job, *, tip_amount, workers_tip_share_amount):
         service_list_subtotal = self._money(job.service_list_subtotal or 0)
         services_total = self._money(job.services_total or 0)
@@ -2474,11 +2460,14 @@ class VehicleJobAdjustView(VehicleReleaseCheckoutView):
         if worker_share_amount > share_pool:
             worker_share_amount = share_pool
         final_total = max(Decimal('0'), service_list_subtotal - discount_total) + products_total + tax_total + tip_amount
-        carwash_share = (
-            max(Decimal('0'), share_pool - worker_share_amount)
-            + max(Decimal('0'), tip_amount - workers_tip_share_amount)
+        carwash_share = self._carwash_share_amount(
+            share_pool,
+            worker_share_amount,
+            loyalty_discount_total=loyalty_discount_total,
+            tip_amount=tip_amount,
+            workers_tip_share_amount=workers_tip_share_amount,
         )
-        return self._money(final_total), max(Decimal('0'), self._money(carwash_share))
+        return self._money(final_total), self._money(carwash_share)
 
     @transaction.atomic
     def patch(self, request, pk):

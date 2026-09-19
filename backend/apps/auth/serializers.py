@@ -264,9 +264,9 @@ class CarWashUpdateSerializer(serializers.Serializer):
 class HqSupportUserCreateSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
-    username = serializers.CharField(max_length=150, required=False, allow_blank=True)
-    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    username = serializers.CharField(max_length=150, required=True, allow_blank=False)
+    phone = serializers.CharField(max_length=20, required=True, allow_blank=False)
+    password = serializers.CharField(write_only=True, required=True, allow_blank=False, min_length=6)
     tenant_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate_first_name(self, value):
@@ -279,11 +279,26 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
 
     def validate_username(self, value):
         value = str(value or '').strip()
+        if not value:
+            raise serializers.ValidationError('نام کاربری الزامی است.')
+        user_model = get_user_model()
+        if user_model.objects.filter(username__iexact=value, is_deleted=False).exists():
+            raise serializers.ValidationError('این نام کاربری قبلا ثبت شده است.')
         return value
 
     def validate_phone(self, value):
         value = str(value or '').strip()
-        return value
+        if not value:
+            raise serializers.ValidationError('شماره موبایل الزامی است.')
+        from apps.notifications.services import is_valid_iran_mobile, normalize_phone
+
+        phone = normalize_phone(value)
+        if not is_valid_iran_mobile(phone):
+            raise serializers.ValidationError('شماره موبایل معتبر نیست و باید با 09 شروع شود.')
+        user_model = get_user_model()
+        if user_model.objects.filter(phone=phone, is_deleted=False).exists():
+            raise serializers.ValidationError('این شماره موبایل قبلا ثبت شده است.')
+        return phone
 
     def validate_password(self, value):
         value = str(value or '').strip()
@@ -309,24 +324,7 @@ class HqSupportUserCreateSerializer(serializers.Serializer):
         full_name = f'{first_name} {last_name}'.strip()[:150]
         user_model = get_user_model()
         username = (validated_data.get('username') or '').strip()
-        if not username:
-            username = f"support_{first_name}_{last_name}".strip('_').replace(' ', '_')
-        base_username = username[:150] or 'support_user'
-        counter = 1
-        while user_model.objects.filter(username__iexact=username).exists():
-            counter += 1
-            suffix = f'_{counter}'
-            username = f"{base_username[: max(1, 150 - len(suffix))]}{suffix}"
         phone = (validated_data.get('phone') or '').strip()
-        if not phone:
-            phone = f'0999{user_model.objects.count() + 1:07d}'
-        base_phone = phone[:20] or '09990000000'
-        phone_counter = 1
-        while user_model.objects.filter(phone=phone).exists():
-            phone_counter += 1
-            suffix = str(phone_counter)
-            trimmed = base_phone[: max(1, 20 - len(suffix))]
-            phone = f'{trimmed}{suffix}'
         password = str(validated_data.get('password') or '').strip()
         user = user_model.objects.create(
             username=username,

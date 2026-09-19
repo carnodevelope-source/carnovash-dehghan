@@ -418,3 +418,57 @@ class WorkerHourlyReportsTests(APITestCase):
         self.assertEqual(overall['products_total'], 80000.0)
         self.assertEqual(response.data['summary']['worker_total'], 50000.0)
         self.assertEqual(response.data['selected_worker_summary']['wage_total'], 50000.0)
+
+    def test_loyalty_discount_reduces_carwash_not_worker_share(self):
+        self.worker.payment_type = WorkerProfile.PaymentType.PERCENT
+        self.worker.default_commission_percent = 40
+        self.worker.save(update_fields=['payment_type', 'default_commission_percent'])
+        vehicle = VehicleEntry.objects.create(
+            tenant=self.tenant,
+            plate_number='22 B 222 22',
+            plate_left='22',
+            plate_letter='B',
+            plate_mid='222',
+            plate_right='22',
+            car_model='Loyalty Car',
+            car_color='Blue',
+            driver_name='Loyalty Customer',
+            driver_phone='09120002222',
+            status=VehicleEntry.Status.RELEASED,
+        )
+        VehicleJob.objects.create(
+            tenant=self.tenant,
+            vehicle=vehicle,
+            assigned_worker=self.worker,
+            assigned_workers_snapshot=[{
+                'id': self.worker.id,
+                'name': 'Hourly Worker',
+                'worker_share_percent': 100,
+                'worker_share_amount': 320000,
+            }],
+            worker_payment_type=VehicleJob.WorkerPaymentType.PERCENT,
+            worker_payment_percent=40,
+            services_total=1000000,
+            products_total=0,
+            loyalty_discount_total=200000,
+            discount_total=200000,
+            worker_share_amount=320000,
+            carwash_share_amount=480000,
+            final_total=800000,
+            released_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.manager)
+
+        response = self.client.get(
+            reverse('reports-dashboard'),
+            {'worker_id': self.worker.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data['worker_report'][0]
+        overall = response.data['overall_report'][0]
+        self.assertEqual(row['worker_share'], 400000.0)
+        self.assertEqual(overall['worker_share'], 400000.0)
+        self.assertEqual(overall['carwash_share'], 400000.0)
+        self.assertEqual(response.data['summary']['worker_total'], 400000.0)
+        self.assertEqual(response.data['selected_worker_summary']['wage_total'], 400000.0)

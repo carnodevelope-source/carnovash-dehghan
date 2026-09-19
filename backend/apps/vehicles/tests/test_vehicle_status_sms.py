@@ -19,6 +19,7 @@ from apps.vehicles.models import (
     VehicleJob,
     VehicleJobService,
 )
+from apps.workers.models import WorkerProfile
 
 
 @override_settings(
@@ -577,6 +578,58 @@ class VehicleStatusSmsTests(APITestCase):
         self.assertEqual(job.worker_share_amount, Decimal('175000.00'))
 
     @patch('apps.notifications.services.send_provider_sms')
+    def test_loyalty_discount_reduces_carwash_share_not_worker_share(self, mock_send_provider_sms):
+        mock_send_provider_sms.return_value = {
+            'ok': True,
+            'message': 'sent',
+            'provider_status': 200,
+            'provider_data': {'status': 'success', 'data': {'id': 'provider-loyalty-share'}},
+            'provider_id': 'provider-loyalty-share',
+            'raw_body': '{"status":"success","data":{"id":"provider-loyalty-share"}}',
+            'payload': {'line_number': '30001234', 'recipients': ['09124445555']},
+        }
+        GeneralSettings.objects.create(
+            tenant=self.tenant,
+            discount_percent_per_half_star=Decimal('10'),
+            tax_enabled=False,
+        )
+        service = Service.objects.create(
+            tenant=self.tenant,
+            name='Loyalty share service',
+            code='LOYALTY-SHARE-TEST',
+            base_price=Decimal('1000000'),
+        )
+
+        response = self.client.post(
+            reverse('vehicle-list-create'),
+            {
+                'plate_number': '55 س 666 77',
+                'plate_left': '55',
+                'plate_letter': 'س',
+                'plate_mid': '666',
+                'plate_right': '77',
+                'plate_type': VehicleEntry.PlateType.CAR,
+                'tariff_type': VehicleEntry.TariffType.TYPE_1,
+                'car_model': 'loyalty',
+                'car_color': 'blue',
+                'driver_name': 'Loyalty Share Customer',
+                'driver_phone': '09124445555',
+                'status': VehicleEntry.Status.READY_TO_SETTLE,
+                'services': [{'id': service.id, 'title': service.name, 'price': 1000000, 'discount_amount': 0}],
+                'share': {'type': VehicleJob.WorkerPaymentType.PERCENT, 'value': 40},
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        vehicle = VehicleEntry.objects.get(id=response.data['id'])
+        job = vehicle.job
+        self.assertEqual(job.services_total, Decimal('1000000.00'))
+        self.assertEqual(job.loyalty_discount_total, Decimal('100000.00'))
+        self.assertEqual(job.worker_share_amount, Decimal('400000.00'))
+        self.assertEqual(job.carwash_share_amount, Decimal('500000.00'))
+
+    @patch('apps.notifications.services.send_provider_sms')
     def test_manual_service_price_override_on_update_keeps_list_price(self, mock_send_provider_sms):
         mock_send_provider_sms.return_value = {
             'ok': True,
@@ -630,7 +683,7 @@ class VehicleStatusSmsTests(APITestCase):
         self.assertEqual(self.job.manual_discount_total, Decimal('20000.00'))
         self.assertEqual(self.job.discount_total, Decimal('160000.00'))
         self.assertEqual(self.job.final_total, Decimal('340000.00'))
-        self.assertEqual(self.job.worker_share_amount, Decimal('180000.00'))
+        self.assertEqual(self.job.worker_share_amount, Decimal('170000.00'))
 
     @patch('apps.notifications.services.send_provider_sms')
     def test_vehicle_create_reuses_existing_customer_profile_by_phone(self, mock_send_provider_sms):
@@ -673,3 +726,61 @@ class VehicleStatusSmsTests(APITestCase):
         self.assertEqual(vehicle.customer_id, existing_customer.id)
         existing_customer.refresh_from_db()
         self.assertEqual(existing_customer.full_name, 'مشتری جدید')
+
+    @patch('apps.notifications.services.send_provider_sms')
+    def test_patch_staff_members_replaces_previous_workers(self, mock_send_provider_sms):
+        mock_send_provider_sms.return_value = {
+            'ok': True,
+            'message': 'sent',
+            'provider_status': 200,
+            'provider_data': {'status': 'success', 'data': {'id': 'provider-staff-replace'}},
+            'provider_id': 'provider-staff-replace',
+            'raw_body': '{"status":"success","data":{"id":"provider-staff-replace"}}',
+            'payload': {'line_number': '30001234', 'recipients': ['09120000000']},
+        }
+        user_model = get_user_model()
+        first_user = user_model.objects.create_user(
+            username='first-worker',
+            password='pass12345',
+            phone='09128880001',
+            role='worker',
+            tenant=self.tenant,
+            full_name='نیروی اول',
+        )
+        second_user = user_model.objects.create_user(
+            username='second-worker',
+            password='pass12345',
+            phone='09128880002',
+            role='worker',
+            tenant=self.tenant,
+            full_name='نیروی دوم',
+        )
+        first_worker = WorkerProfile.objects.create(user=first_user, tenant=self.tenant)
+        second_worker = WorkerProfile.objects.create(user=second_user, tenant=self.tenant)
+        self.job.assigned_worker = first_worker
+        self.job.assigned_workers_snapshot = [
+            {'id': first_worker.id, 'name': 'نیروی اول', 'worker_share_percent': 100},
+        ]
+        self.job.save(update_fields=['assigned_worker', 'assigned_workers_snapshot', 'updated_at'])
+        self.vehicle.status = VehicleEntry.Status.READY_TO_SETTLE
+        self.vehicle.save(update_fields=['status', 'updated_at'])
+
+        response = self.client.patch(
+            reverse('vehicle-detail', args=[self.vehicle.id]),
+            {
+                'worker_id': second_worker.id,
+                'staff_members': [
+                    {'id': second_worker.id, 'name': 'نیروی دوم', 'worker_share_percent': 100},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.job.refresh_from_db()
+        snapshot_ids = [item.get('id') for item in (self.job.assigned_workers_snapshot or [])]
+        self.assertEqual(snapshot_ids, [second_worker.id])
+        self.assertEqual(self.job.assigned_worker_id, second_worker.id)
+        names = list(response.data['job']['assigned_workers_names'] or [])
+        self.assertEqual(len(names), 1, names)
+        self.assertNotIn(first_user.full_name, names)

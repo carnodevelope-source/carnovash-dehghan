@@ -601,7 +601,7 @@ import PlateBadge from '../../components/vehicles/PlateBadge.vue'
 import IranPlateMark from '../../components/vehicles/IranPlateMark.vue'
 import PlateEditor from '../../components/vehicles/PlateEditor.vue'
 import VehicleDetailsModal from '../../components/vehicles/VehicleDetailsModal.vue'
-import { formatJalaliDate } from '../../utils/date'
+import { formatJalaliDate, formatJalaliMonthDay } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { normalizeDigits, normalizePlateLetter as normalizePlateLetterUtil } from '../../utils/plate'
 import { resolveApiErrorMessage } from '../../utils/apiError'
@@ -825,7 +825,7 @@ const money = (v) => formatThousandsToman(v)
 const faNumber = (value) => Number(value || 0).toLocaleString('fa-IR')
 const dateTime = (v) => formatJalaliDate(v)
 const dateOnly = (v) => formatJalaliDate(v)
-const receiptDateShort = (v) => formatJalaliDate(v)
+const receiptDateShort = (v) => formatJalaliMonthDay(v)
 const faNumberLatin = (value) => Number(value || 0).toLocaleString('en-US')
 const moneyLatin = (value) => Number(value || 0).toLocaleString('en-US')
 const receiptMoney = (value) => `${moneyLatin(value)}`
@@ -1428,7 +1428,7 @@ const buildWorkerReceiptElement = () => {
       <td class="col-idx">${escapeHtml(faNumberLatin(row.row))}</td>
       <td class="col-date">${escapeHtml(row.date)}</td>
       <td class="col-car">${escapeHtml(row.car)}</td>
-      <td class="col-num">${escapeHtml(receiptMoney(row.share))}</td>
+      <td class="col-num">${escapeHtml(receiptMoney(row.price))}</td>
       <td class="col-num">${escapeHtml(receiptMoney(row.tip))}</td>
     </tr>
   `).join('')
@@ -1531,10 +1531,20 @@ const buildWorkerReceiptElement = () => {
           font-weight: 800;
           padding: 6px 3px;
         }
-        .worker-receipt-pdf .col-idx { width: 8%; }
-        .worker-receipt-pdf .col-date { width: 22%; white-space: nowrap; direction: ltr; unicode-bidi: plaintext; }
+        .worker-receipt-pdf .col-idx {
+          width: 10%;
+          white-space: nowrap;
+          overflow: hidden;
+        }
+        .worker-receipt-pdf .col-date {
+          width: 16%;
+          white-space: nowrap;
+          overflow: hidden;
+          direction: ltr;
+          unicode-bidi: isolate;
+        }
         .worker-receipt-pdf .col-car {
-          width: 26%;
+          width: 30%;
           overflow-wrap: anywhere;
           word-break: break-word;
           font-size: 11px;
@@ -1610,7 +1620,7 @@ const buildWorkerReceiptElement = () => {
             <th class="col-idx">#</th>
             <th class="col-date">تاریخ</th>
             <th class="col-car">خودرو</th>
-            <th class="col-num">حق نیرو</th>
+            <th class="col-num">خدمات</th>
             <th class="col-num">انعام</th>
           </tr>
         </thead>

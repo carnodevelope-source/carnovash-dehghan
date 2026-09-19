@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from apps.payments.models import Payment
 from apps.vehicles.models import BlockedPlate, VehicleEntry, VehicleJob
+from apps.vehicles.shares import carwash_remainder, worker_commission_pool
 from apps.workers.models import WorkerAttendance, WorkerProfile
 from apps.reports.models import WorkerPayoutTransaction
 
@@ -270,16 +271,7 @@ def _job_worker_names(job):
 def _job_has_worker(job, worker_id):
     if not worker_id or not job:
         return True
-    if job.assigned_worker_id == worker_id:
-        return True
-    snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
-    for item in snapshot:
-        try:
-            if int(item.get('id')) == int(worker_id):
-                return True
-        except (TypeError, ValueError, AttributeError):
-            continue
-    return False
+    return int(worker_id) in {int(item) for item in _job_worker_ids(job)}
 
 
 def _job_worker_ids(job):
@@ -294,9 +286,11 @@ def _job_worker_ids(job):
             continue
         if worker_id > 0 and worker_id not in result:
             result.append(worker_id)
-    if job.assigned_worker_id and int(job.assigned_worker_id) not in result:
-        result.insert(0, int(job.assigned_worker_id))
-    return result
+    if result:
+        return result
+    if job.assigned_worker_id:
+        return [int(job.assigned_worker_id)]
+    return []
 
 
 def _job_worker_distribution_percent_for(job, worker_id):
@@ -326,8 +320,8 @@ def _job_final_total_without_tip(job):
     )
 
 
-def _job_share_base_total(job):
-    """Commission base: discounted services only (never products, tax, tip, or rate-card list prices)."""
+def _job_services_charged_total(job):
+    """Charged services amount (never products, tax, tip, or rate-card list prices)."""
     if not job:
         return Decimal('0')
     services_total = _normalize_decimal(getattr(job, 'services_total', 0))
@@ -339,12 +333,17 @@ def _job_share_base_total(job):
             ),
             Decimal('0'),
         )
-    post_sale_discount = min(
-        services_total,
-        _normalize_decimal(getattr(job, 'loyalty_discount_total', 0))
-        + _normalize_decimal(getattr(job, 'manual_discount_total', 0)),
+    return max(Decimal('0'), services_total)
+
+
+def _job_share_base_total(job):
+    """Worker commission base: charged services minus manual discount. Loyalty stays on carwash."""
+    if not job:
+        return Decimal('0')
+    return worker_commission_pool(
+        _job_services_charged_total(job),
+        manual_discount_total=getattr(job, 'manual_discount_total', 0),
     )
-    return max(Decimal('0'), services_total - post_sale_discount)
 
 
 def _job_worker_service_total_for(job, worker_id):
@@ -379,7 +378,7 @@ def _job_workers_tip_total(job):
 
 
 def _job_worker_share_total(job):
-    """Whole-job worker share from discounted services only (never products/tax/tip)."""
+    """Whole-job worker share from charged services (loyalty/step/fixed discounts stay on carwash)."""
     if not job:
         return Decimal('0')
     share_base = _job_share_base_total(job)
@@ -398,7 +397,7 @@ def _job_worker_share_total(job):
 
 
 def _job_carwash_share_amount(job):
-    """Carwash share from discounted services remainder (+ leftover tip). Products stay out."""
+    """Carwash share: leftover after worker share and loyalty/step/fixed discounts."""
     if not job:
         return Decimal('0')
     share_base = _job_share_base_total(job)
@@ -430,6 +429,8 @@ def _job_worker_share_for(job, worker_id):
         else Decimal('0')
     )
     worker_base_cap = _money_q((share_base * distribution_percent) / Decimal('100')) if distribution_percent > 0 else share_base
+    if expected_for_worker > 0:
+        return expected_for_worker
 
     snapshot = job.assigned_workers_snapshot if isinstance(job.assigned_workers_snapshot, list) else []
     for item in snapshot:
@@ -438,12 +439,10 @@ def _job_worker_share_for(job, worker_id):
                 continue
         except (TypeError, ValueError, AttributeError):
             continue
-        # Explicit zero in snapshot is often leftover from assignment/release sync bugs.
-        # Only trust positive snapshot amounts; otherwise fall back to job totals.
         if item.get('worker_share_amount') is not None:
             snapshot_amount = max(Decimal('0'), _normalize_decimal(item.get('worker_share_amount')))
             if snapshot_amount > 0:
-                cap = expected_for_worker if expected_for_worker > 0 else worker_base_cap
+                cap = worker_base_cap
                 return min(snapshot_amount, cap) if cap > 0 else min(snapshot_amount, share_base)
         break
 
@@ -694,12 +693,13 @@ def _build_synced_snapshot(job, worker_share_total, tip_amount):
 
 
 def _expected_carwash_share(job, share_base, worker_share_total, tip_amount, workers_tip_share_amount):
-    # share_base is already discounted services — do not subtract discounts again.
-    return max(
-        Decimal('0'),
-        _money_q(share_base)
-        - _money_q(worker_share_total)
-        + max(Decimal('0'), _money_q(tip_amount) - _money_q(workers_tip_share_amount)),
+    # share_base is the worker commission pool (services minus manual). Loyalty comes off carwash.
+    return carwash_remainder(
+        share_base,
+        worker_share_total,
+        loyalty_discount_total=getattr(job, 'loyalty_discount_total', 0),
+        tip_amount=tip_amount,
+        workers_tip_share_amount=workers_tip_share_amount,
     )
 
 
@@ -1013,6 +1013,99 @@ def _compute_all_workers_totals(tenant, jobs, insurance_month='', start=None, en
     }
 
 
+def _reports_plate_match_q(
+    *,
+    plate_number='',
+    plate_left='',
+    plate_letter='',
+    plate_mid='',
+    plate_right='',
+    plate_type='',
+):
+    """Partial plate filter: each filled segment narrows results as the user types."""
+    from apps.vehicles.plate_normalize import (
+        normalize_digits,
+        normalize_plate_letter,
+        normalize_plate_parts,
+        plate_letter_lookup_variants,
+    )
+
+    kind = str(plate_type or '').strip().lower()
+    raw_left = ''.join(ch for ch in normalize_digits(plate_left) if ch.isdigit())[:2]
+    raw_mid = ''.join(ch for ch in normalize_digits(plate_mid) if ch.isdigit())[:3]
+    raw_right = ''.join(ch for ch in normalize_digits(plate_right) if ch.isdigit())[:2]
+    raw_letter = str(plate_letter or '').strip()
+    raw_plate = str(plate_number or '').strip()
+
+    if not (raw_left or raw_letter or raw_mid or raw_right):
+        if not raw_plate:
+            return Q()
+        # Free-text / joined fragment — match anywhere on stored plate text.
+        return Q(plate_number__icontains=raw_plate)
+
+    # Motorcycle letter field is digits; car letter is Persian/Latin glyph.
+    letter_is_motor = kind == 'motorcycle' or (
+        not kind and bool(raw_letter) and raw_letter.isdigit()
+    )
+    if letter_is_motor:
+        raw_letter = ''.join(ch for ch in normalize_digits(raw_letter) if ch.isdigit())[:5]
+        raw_left = ''
+        raw_right = ''
+    else:
+        # Keep incomplete typed letters (normalize may blank unknown glyphs).
+        normalized_letter = normalize_plate_letter(raw_letter)
+        raw_letter = normalized_letter or raw_letter
+
+    parts = normalize_plate_parts(
+        plate_left=raw_left,
+        plate_letter=raw_letter if letter_is_motor else (normalize_plate_letter(raw_letter) or ''),
+        plate_mid=raw_mid,
+        plate_right=raw_right,
+        plate_type='motorcycle' if letter_is_motor else (kind or 'car'),
+    )
+    left = str(parts.get('plate_left') or raw_left or '').strip()
+    mid = str(parts.get('plate_mid') or raw_mid or '').strip()
+    right = str(parts.get('plate_right') or raw_right or '').strip()
+    letter = str(parts.get('plate_letter') or raw_letter or '').strip()
+
+    match_q = Q()
+    has_constraint = False
+
+    def _part_q(field_name, value):
+        """Prefer segment columns; fall back to plate_number only when segment is blank."""
+        blank_segment = Q(**{field_name: ''}) | Q(**{f'{field_name}__isnull': True})
+        return Q(**{f'{field_name}__startswith': value}) | (
+            blank_segment & Q(plate_number__icontains=value)
+        )
+
+    if left:
+        match_q &= _part_q('plate_left', left)
+        has_constraint = True
+    if mid:
+        match_q &= _part_q('plate_mid', mid)
+        has_constraint = True
+    if right:
+        match_q &= _part_q('plate_right', right)
+        has_constraint = True
+    if letter:
+        if letter_is_motor or letter.isdigit():
+            match_q &= _part_q('plate_letter', letter)
+        else:
+            letter_q = Q()
+            variants = plate_letter_lookup_variants(letter) or [letter]
+            for variant in variants:
+                blank_letter = Q(plate_letter='') | Q(plate_letter__isnull=True)
+                letter_q |= Q(plate_letter=variant) | Q(plate_letter__startswith=variant) | (
+                    blank_letter & Q(plate_number__icontains=variant)
+                )
+            match_q &= letter_q
+        has_constraint = True
+
+    if not has_constraint and raw_plate:
+        return Q(plate_number__icontains=raw_plate)
+    return match_q
+
+
 class ReportsDashboardView(APIView):
     @staticmethod
     def _base_queryset(tenant):
@@ -1027,7 +1120,20 @@ class ReportsDashboardView(APIView):
         )
 
     @classmethod
-    def _build_filtered_vehicles(cls, start, end, query, tenant, worker_id=None, plate_number='', plate_type=''):
+    def _build_filtered_vehicles(
+        cls,
+        start,
+        end,
+        query,
+        tenant,
+        worker_id=None,
+        plate_number='',
+        plate_left='',
+        plate_letter='',
+        plate_mid='',
+        plate_right='',
+        plate_type='',
+    ):
         vehicles = cls._base_queryset(tenant)
         if start:
             vehicles = vehicles.filter(released_at__gte=start)
@@ -1042,8 +1148,16 @@ class ReportsDashboardView(APIView):
                 | Q(job__assigned_worker__user__full_name__icontains=query)
                 | Q(job__assigned_worker__user__username__icontains=query)
             ).distinct()
-        if plate_number:
-            vehicles = vehicles.filter(plate_number__icontains=plate_number)
+        plate_q = _reports_plate_match_q(
+            plate_number=plate_number,
+            plate_left=plate_left,
+            plate_letter=plate_letter,
+            plate_mid=plate_mid,
+            plate_right=plate_right,
+            plate_type=plate_type,
+        )
+        if plate_q:
+            vehicles = vehicles.filter(plate_q)
         if plate_type in {'car', 'motorcycle'}:
             vehicles = vehicles.filter(plate_type=plate_type)
 
@@ -1063,9 +1177,6 @@ class ReportsDashboardView(APIView):
         plate_right = request.query_params.get('plate_right', '').strip()
         plate_type = request.query_params.get('plate_type', '').strip().lower()
         insurance_month = _normalize_jalali_month(request.query_params.get('insurance_month')) or _current_jalali_month()
-        if not plate_number:
-            plate_parts = [plate_left, plate_letter, plate_mid, plate_right]
-            plate_number = ' '.join([part for part in plate_parts if part])
         tenant = getattr(request.user, 'tenant', None)
         worker_id = request.query_params.get('worker_id')
         try:
@@ -1083,6 +1194,10 @@ class ReportsDashboardView(APIView):
             tenant=tenant,
             worker_id=worker_id,
             plate_number=plate_number,
+            plate_left=plate_left,
+            plate_letter=plate_letter,
+            plate_mid=plate_mid,
+            plate_right=plate_right,
             plate_type=plate_type,
         )
         sync_jobs = _query_flag(request.query_params.get('sync'))
@@ -1441,8 +1556,16 @@ class ReportsDashboardView(APIView):
                 | Q(blocked_by__full_name__icontains=query)
                 | Q(blocked_by__username__icontains=query)
             )
-        if plate_number:
-            blocked_plates = blocked_plates.filter(plate_number__icontains=plate_number)
+        plate_q = _reports_plate_match_q(
+            plate_number=plate_number,
+            plate_left=plate_left,
+            plate_letter=plate_letter,
+            plate_mid=plate_mid,
+            plate_right=plate_right,
+            plate_type=plate_type,
+        )
+        if plate_q:
+            blocked_plates = blocked_plates.filter(plate_q)
         if plate_type in {'car', 'motorcycle'}:
             blocked_plates = blocked_plates.filter(plate_type=plate_type)
 

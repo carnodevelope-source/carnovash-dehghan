@@ -2460,28 +2460,26 @@ const openReleaseModal = async (car) => {
       }))
       : []
     const resolvedAssignedWorkers = extractReleaseAssignedWorkers(data)
-    const sourceSnapshotWorkers = Array.isArray(sourceVehicle?.job?.assigned_workers_snapshot)
-      ? sourceVehicle.job.assigned_workers_snapshot
-        .map((item, index) => ({
-          id: Number(item?.id || 0),
-          name: normalizeWorkerName(item?.name || item?.worker_name),
-          tip_share_percent: Number(item?.tip_share_percent || 0),
-          worker_share_percent: Number(item?.worker_share_percent || 0),
-          worker_share_amount: Number(item?.worker_share_amount || 0),
-          worker_local_key: String(item?.worker_local_key || `source-worker-${index + 1}`)
-        }))
-        .filter((item) => isRealWorkerName(item.name))
-      : []
-    const cardAssignedWorkers = extractReleaseAssignedWorkers({ workerName: car?.workerName || '' })
-    const fallbackAssignedWorkers = sourceVehicle
-      ? extractReleaseAssignedWorkers(sourceVehicle)
-      : extractReleaseAssignedWorkers({ workerName: car?.workerName || '' })
-    const preferredAssignedWorkers = pickBestReleaseAssignedWorkers(
-      resolvedAssignedWorkers,
-      sourceSnapshotWorkers,
-      fallbackAssignedWorkers,
-      cardAssignedWorkers
-    )
+    const preferredAssignedWorkers = resolvedAssignedWorkers.length
+      ? resolvedAssignedWorkers
+      : pickBestReleaseAssignedWorkers(
+        Array.isArray(sourceVehicle?.job?.assigned_workers_snapshot)
+          ? sourceVehicle.job.assigned_workers_snapshot
+            .map((item, index) => ({
+              id: Number(item?.id || 0),
+              name: normalizeWorkerName(item?.name || item?.worker_name),
+              tip_share_percent: Number(item?.tip_share_percent || 0),
+              worker_share_percent: Number(item?.worker_share_percent || 0),
+              worker_share_amount: Number(item?.worker_share_amount || 0),
+              worker_local_key: String(item?.worker_local_key || `source-worker-${index + 1}`)
+            }))
+            .filter((item) => isRealWorkerName(item.name))
+          : [],
+        sourceVehicle
+          ? extractReleaseAssignedWorkers(sourceVehicle)
+          : extractReleaseAssignedWorkers({ workerName: car?.workerName || '' }),
+        extractReleaseAssignedWorkers({ workerName: car?.workerName || '' })
+      )
     const availableProducts = Array.isArray(data?.job?.available_products)
       ? data.job.available_products.map((item) => {
         const selectedQty = Number(item.selected_quantity || 0)
@@ -3015,7 +3013,8 @@ const releaseSummary = computed(() => {
     Math.max(0, serviceListSubtotal),
     Number((facilityDiscountAmount + customerDiscountAmount + manualDiscountAmount).toFixed(2))
   )
-  const shareBaseTotal = Math.max(0, Number((servicesTotal - customerDiscountAmount - manualDiscountAmount).toFixed(2)))
+  const shareBaseTotal = Math.max(0, Number((servicesTotal - manualDiscountAmount).toFixed(2)))
+  const netSharePool = Math.max(0, Number((servicesTotal - customerDiscountAmount - manualDiscountAmount).toFixed(2)))
   const paymentType = String(releaseForm.value.workerPaymentType || 'percent')
   const paymentPercent = Math.max(0, Math.min(100, Number(releaseForm.value.workerPaymentPercent || 0)))
   const paymentFixed = Math.max(0, Number(releaseForm.value.workerPaymentFixed || 0))
@@ -3100,7 +3099,7 @@ const releaseSummary = computed(() => {
   }
   const carwashShare = Math.max(
     0,
-    Number((shareBaseTotal - workerShareBase + (tipAmount - allocatedTipTotal)).toFixed(2))
+    Number((netSharePool - workerShareBase + (tipAmount - allocatedTipTotal)).toFixed(2))
   )
   return {
     serviceListSubtotal,
@@ -3480,7 +3479,7 @@ const handleStepOneContinue = async (payload) => {
         return null
       }
 
-      const savedVehicle = await saveVehicle({ vehicle: payload }, 'entered')
+      const savedVehicle = await saveVehicle({ vehicle: payloadWithSmsDefault }, 'entered')
       if (modalStep.value === 2 || Number(vehicleDraft.value?.id) === Number(savedVehicle?.id)) {
         vehicleDraft.value = mergeAiDraftFields({
           ...mapVehicleToDraft(savedVehicle),
@@ -3671,28 +3670,26 @@ const handleStepOneRefer = async (payload) => {
   if (stepSubmitting.value) return
   stepSubmitting.value = true
   stepTransitionLoading.value = true
-  closeVehicleModal({ force: true })
-  stepSubmitting.value = false
-  stepTransitionLoading.value = false
-
-  void (async () => {
-    try {
-      const plateStatus = await fetchPlateBlockedStatus(payload)
-      if (plateStatus.is_blocked) {
-        vehicleDraft.value = { ...payload, is_plate_blocked: true }
-        vehicleEditFlow.value = ''
-        modalStep.value = 2
-        showVehicleModal.value = true
-        notifyWarning('این پلاک مسدود است. ابتدا وضعیت را در مرحله دوم بررسی کنید.', { title: 'پلاک مسدود' })
-        return
-      }
-      await saveVehicle({ vehicle: payload }, 'entered')
-      void refreshVehicleCardsFromDatabase()
-    } catch (error) {
-      console.error('refer step one error:', error?.response?.data || error)
-      notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
+  try {
+    const plateStatus = await fetchPlateBlockedStatus(payload)
+    if (plateStatus.is_blocked) {
+      vehicleDraft.value = { ...payload, is_plate_blocked: true }
+      vehicleEditFlow.value = ''
+      modalStep.value = 2
+      showVehicleModal.value = true
+      notifyWarning('این پلاک مسدود است. ابتدا وضعیت را در مرحله دوم بررسی کنید.', { title: 'پلاک مسدود' })
+      return
     }
-  })()
+    await saveVehicle({ vehicle: payload }, 'entered')
+    closeVehicleModal({ force: true })
+    void refreshVehicleCardsFromDatabase()
+  } catch (error) {
+    console.error('refer step one error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'ثبت ارجاع ناموفق بود.'), { title: 'خطا در ثبت ارجاع' })
+  } finally {
+    stepSubmitting.value = false
+    stepTransitionLoading.value = false
+  }
 }
 
 const handleStepTwoBack = async () => {
@@ -3723,53 +3720,88 @@ const handleStepTwoAssign = async (payload) => {
   const pendingStepOne = stepOnePersistPromise
   let ensuredId = payload?.vehicle?.id || vehicleDraft.value?.id || null
   const nextStatus = editFlow ? resolveAssignStatus() : 'ready_to_settle'
-  closeVehicleModal({ force: true })
-  stepSubmitting.value = false
-  stepTransitionLoading.value = false
+  const draftSnapshot = vehicleDraft.value ? { ...vehicleDraft.value } : null
 
-  void (async () => {
-    try {
-      // Wait for the optimistic step-1 create so we PATCH the same vehicle
-      // instead of accidentally POSTing a duplicate admission.
-      if (pendingStepOne) {
-        try {
-          const persisted = await pendingStepOne
-          if (persisted?.id) ensuredId = persisted.id
-        } catch (_error) {
+  try {
+    // Must finish step-1 create before closing the modal; otherwise a failed
+    // background create silently drops the whole visit.
+    if (pendingStepOne) {
+      try {
+        const persisted = await pendingStepOne
+        if (persisted?.id) {
+          ensuredId = persisted.id
+          if (payload?.vehicle) {
+            payload = { ...payload, vehicle: { ...payload.vehicle, id: persisted.id } }
+          }
+          if (vehicleDraft.value) {
+            vehicleDraft.value = { ...vehicleDraft.value, id: persisted.id }
+          }
+        } else if (!editFlow && !ensuredId) {
+          notifyError('ثبت مرحله اول پذیرش انجام نشد. دوباره تلاش کنید.', { title: 'خطا در ثبت پذیرش' })
           return
         }
-      }
-      if (ensuredId && payload?.vehicle && !payload.vehicle.id) {
-        payload = { ...payload, vehicle: { ...payload.vehicle, id: ensuredId } }
-      }
-
-      if (editFlow) {
-        const savedVehicle = await saveVehicle(payload, nextStatus)
-        invalidateOperatorCatalog()
-        if (reopenReleaseAfterSave) {
-          await openReleaseModal({
-            ...savedVehicle,
-            statusKey: savedVehicle.status,
-            plateDisplay: savedVehicle.plate_number,
-            plateLeft: savedVehicle.plate_left,
-            plateLetter: savedVehicle.plate_letter,
-            plateMid: savedVehicle.plate_mid,
-            plateRight: savedVehicle.plate_right,
-            plateType: savedVehicle.plate_type
-          })
-        } else {
-          void refreshVehicleCardsFromDatabase()
+      } catch (_error) {
+        notifyError('ثبت مرحله اول پذیرش ناموفق بود. مودال باز ماند تا دوباره ذخیره کنید.', { title: 'خطا در ثبت پذیرش' })
+        if (!showVehicleModal.value && draftSnapshot) {
+          vehicleDraft.value = draftSnapshot
+          modalStep.value = 2
+          vehicleEditFlow.value = editFlow || ''
+          showVehicleModal.value = true
         }
         return
       }
-      await saveVehicle(payload, 'ready_to_settle')
-      invalidateOperatorCatalog()
-      void refreshVehicleCardsFromDatabase()
-    } catch (error) {
-      console.error('assign step two error:', error?.response?.data || error)
-      notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
     }
-  })()
+
+    if (ensuredId && payload?.vehicle && !payload.vehicle.id) {
+      payload = { ...payload, vehicle: { ...payload.vehicle, id: ensuredId } }
+    }
+
+    if (!editFlow && !ensuredId && !payload?.vehicle?.id) {
+      notifyError('شناسه پذیرش ساخته نشد. لطفاً دوباره از مرحله اول ثبت کنید.', { title: 'خطا در ثبت پذیرش' })
+      return
+    }
+
+    if (editFlow) {
+      const savedVehicle = await saveVehicle(payload, nextStatus)
+      closeVehicleModal({ force: true })
+      invalidateOperatorCatalog()
+      if (reopenReleaseAfterSave) {
+        await openReleaseModal({
+          ...savedVehicle,
+          statusKey: savedVehicle.status,
+          plateDisplay: savedVehicle.plate_number,
+          plateLeft: savedVehicle.plate_left,
+          plateLetter: savedVehicle.plate_letter,
+          plateMid: savedVehicle.plate_mid,
+          plateRight: savedVehicle.plate_right,
+          plateType: savedVehicle.plate_type
+        })
+      } else {
+        void refreshVehicleCardsFromDatabase()
+      }
+      return
+    }
+
+    await saveVehicle(payload, 'ready_to_settle')
+    closeVehicleModal({ force: true })
+    invalidateOperatorCatalog()
+    void refreshVehicleCardsFromDatabase()
+  } catch (error) {
+    console.error('assign step two error:', error?.response?.data || error)
+    notifyError(apiErrorText(error, 'ثبت تخصیص ناموفق بود.'), { title: 'خطا در ثبت تخصیص' })
+    if (!showVehicleModal.value && draftSnapshot) {
+      vehicleDraft.value = {
+        ...draftSnapshot,
+        id: ensuredId || draftSnapshot.id || null
+      }
+      modalStep.value = 2
+      vehicleEditFlow.value = editFlow || ''
+      showVehicleModal.value = true
+    }
+  } finally {
+    stepSubmitting.value = false
+    stepTransitionLoading.value = false
+  }
 }
 const cars = computed(() => vehicles.value.map((item) => {
   const plateLeftKey = String(item.plate_left || '').trim()

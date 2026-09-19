@@ -33,10 +33,12 @@ def worker_ids_from_job(job):
             continue
         if worker_id > 0 and worker_id not in ordered:
             ordered.append(worker_id)
+    if ordered:
+        return ordered
     assigned_id = getattr(job, 'assigned_worker_id', None)
-    if assigned_id and int(assigned_id) not in ordered:
-        ordered.insert(0, int(assigned_id))
-    return ordered
+    if assigned_id:
+        return [int(assigned_id)]
+    return []
 
 
 def _load_status_for_count(count):

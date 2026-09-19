@@ -34,6 +34,7 @@ from .loyalty import (
     resolve_vehicle_loyalty_snapshot,
     sync_plate_loyalty,
 )
+from .shares import carwash_remainder, worker_commission_pool
 
 
 VALID_IRAN_MOBILE_PATTERN = r'^0\d{10}$'
@@ -148,8 +149,8 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
             if raw_name:
                 names_by_ref[ref_id] = raw_name
 
-        if obj.assigned_worker_id and obj.assigned_worker_id not in ordered_ids:
-            ordered_ids.insert(0, int(obj.assigned_worker_id))
+        if not ordered_ids and obj.assigned_worker_id:
+            ordered_ids = [int(obj.assigned_worker_id)]
 
         if not ordered_ids:
             return []
@@ -179,11 +180,12 @@ class VehicleJobDetailSerializer(serializers.ModelSerializer):
 
     def get_assigned_workers_names(self, obj):
         names = self._resolve_snapshot_worker_names(obj)
+        if names:
+            return names
         if obj.assigned_worker and obj.assigned_worker.user:
             primary_name = (obj.assigned_worker.user.full_name or obj.assigned_worker.user.username or '').strip()
-            if primary_name and primary_name not in names:
-                names.insert(0, primary_name)
-        return names
+            return [primary_name] if primary_name else []
+        return []
 
     class Meta:
         model = VehicleJob
@@ -481,8 +483,6 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
     def _assigned_worker_ids_from_payload(self, payload, assigned_worker=None):
         worker_ids = []
-        if assigned_worker:
-            worker_ids.append(int(assigned_worker.id))
         if isinstance(payload, list):
             for item in payload:
                 worker_id = item.get('id') if isinstance(item, dict) else item
@@ -492,7 +492,38 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                     continue
                 if normalized_id > 0:
                     worker_ids.append(normalized_id)
-        return list(dict.fromkeys(worker_ids))
+        worker_ids = list(dict.fromkeys(worker_ids))
+        if worker_ids:
+            return worker_ids
+        if assigned_worker:
+            return [int(assigned_worker.id)]
+        return []
+
+    def _resolve_job_assignment(self, *, tenant, staff_payload, assigned_worker=None):
+        snapshot = self._normalize_staff_members_payload(
+            staff_payload or [],
+            assigned_worker=None,
+            tenant=tenant,
+        )
+        snapshot_ids = []
+        for item in snapshot:
+            try:
+                snapshot_ids.append(int(item.get('id')))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        primary = None
+        if assigned_worker and int(assigned_worker.id) in snapshot_ids:
+            primary = assigned_worker
+        elif snapshot_ids:
+            primary = WorkerProfile.objects.filter(
+                tenant=tenant,
+                id=snapshot_ids[0],
+                user__role='worker',
+            ).select_related('user').first()
+        elif assigned_worker:
+            primary = assigned_worker
+            snapshot = self._normalize_staff_members_payload([], assigned_worker, tenant=tenant)
+        return primary, snapshot
 
     def _mark_workers_assigned(
         self,
@@ -872,29 +903,34 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             vehicle_entry.loyalty_discount_percent_snapshot = financials.get('loyalty_discount_percent') or Decimal('0')
             vehicle_entry.save(update_fields=['loyalty_discount_percent_snapshot', 'updated_at'])
         services_total = financials['services_total']
-        # Product sales are not shareable — commission pool is discounted services only.
-        share_base_total = max(
-            Decimal('0'),
-            services_total
-            - Decimal(str(financials.get('loyalty_discount_total') or 0))
-            - Decimal(str(financials.get('manual_discount_total') or 0)),
+        # Worker share is based on charged services minus manual discount only.
+        # Loyalty/step/fixed discounts are absorbed by the carwash remainder.
+        share_base_total = worker_commission_pool(
+            services_total,
+            manual_discount_total=financials.get('manual_discount_total') or 0,
         )
         if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
             worker_share_amount = min(share_base_total, Decimal(str(share_value or 0)))
         else:
             percent = min(Decimal('100'), max(Decimal('0'), Decimal(str(share_value or 0))))
             worker_share_amount = (share_base_total * percent) / Decimal('100')
-        carwash_share_amount = share_base_total - worker_share_amount
+        carwash_share_amount = carwash_remainder(
+            share_base_total,
+            worker_share_amount,
+            loyalty_discount_total=financials.get('loyalty_discount_total') or 0,
+        )
+
+        assigned_worker, staff_snapshot = self._resolve_job_assignment(
+            tenant=tenant,
+            staff_payload=staff_members_payload,
+            assigned_worker=assigned_worker,
+        )
 
         vehicle_job = VehicleJob.objects.create(
             vehicle=vehicle_entry,
             tenant=tenant,
             assigned_worker=assigned_worker,
-            assigned_workers_snapshot=self._normalize_staff_members_payload(
-                staff_members_payload,
-                assigned_worker,
-                tenant=tenant,
-            ),
+            assigned_workers_snapshot=staff_snapshot,
             worker_payment_type=payment_type
             if payment_type in dict(VehicleJob.WorkerPaymentType.choices)
             else VehicleJob.WorkerPaymentType.PERCENT,
@@ -1110,16 +1146,26 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         )
         previous_worker_ids = worker_ids_from_job(vehicle_job)
 
-        if worker_id_provided or worker_name_provided:
+        if staff_members_provided:
+            assigned_worker, staff_snapshot = self._resolve_job_assignment(
+                tenant=tenant,
+                staff_payload=staff_members_payload or [],
+                assigned_worker=assigned_worker,
+            )
             vehicle_job.assigned_worker = assigned_worker
+            vehicle_job.assigned_workers_snapshot = staff_snapshot
+        elif worker_id_provided or worker_name_provided:
+            vehicle_job.assigned_worker = assigned_worker
+            if assigned_worker:
+                vehicle_job.assigned_workers_snapshot = self._normalize_staff_members_payload(
+                    [assigned_worker.id],
+                    assigned_worker,
+                    tenant=tenant,
+                )
+            else:
+                vehicle_job.assigned_workers_snapshot = []
         elif vehicle_job.assigned_worker:
             assigned_worker = vehicle_job.assigned_worker
-        if staff_members_provided:
-            vehicle_job.assigned_workers_snapshot = self._normalize_staff_members_payload(
-                staff_members_payload or [],
-                assigned_worker,
-                tenant=tenant,
-            )
 
         if services_provided:
             vehicle_job.service_lines.all().delete()
@@ -1309,12 +1355,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             tax_percent=self._tax_percent(tenant),
             loyalty_visit_count=order_loyalty.get('visit_count'),
         )
-        # Product sales are not shareable — commission pool is discounted services only.
-        share_base_total = max(
-            Decimal('0'),
-            services_total
-            - Decimal(str(financials.get('loyalty_discount_total') or 0))
-            - Decimal(str(financials.get('manual_discount_total') or 0)),
+        # Worker share is based on charged services minus manual discount only.
+        # Loyalty/step/fixed discounts are absorbed by the carwash remainder.
+        share_base_total = worker_commission_pool(
+            services_total,
+            manual_discount_total=financials.get('manual_discount_total') or 0,
         )
         if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
             fixed_amount = max(Decimal('0'), share_value)
@@ -1337,7 +1382,11 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
         elif apply_loyalty_provided or services_provided:
             instance.loyalty_discount_percent_snapshot = financials.get('loyalty_discount_percent') or Decimal('0')
             instance.save(update_fields=['loyalty_discount_percent_snapshot', 'updated_at'])
-        carwash_share_amount = share_base_total - worker_share_amount
+        carwash_share_amount = carwash_remainder(
+            share_base_total,
+            worker_share_amount,
+            loyalty_discount_total=financials.get('loyalty_discount_total') or 0,
+        )
         final_total = financials['final_total']
 
         if instance.status == VehicleEntry.Status.READY_TO_SETTLE and not vehicle_job.completed_at:
@@ -1417,6 +1466,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 },
             )
 
+        instance.job = vehicle_job
         return instance
 
     def validate_plate_type(self, value):
@@ -1610,13 +1660,13 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             primary_name = (
                 assigned_worker.user.full_name or assigned_worker.user.username
             ) if getattr(assigned_worker, 'user', None) else ''
-            if primary_id not in seen_ids:
-                result.insert(0, {'id': primary_id, 'name': primary_name})
-            else:
+            if primary_id in seen_ids:
                 for item in result:
                     if int(item.get('id')) == primary_id and not (item.get('name') or '').strip():
                         item['name'] = primary_name
                         break
+            elif not result:
+                result.append({'id': primary_id, 'name': primary_name})
 
         return result
 

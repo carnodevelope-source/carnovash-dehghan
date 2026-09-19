@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -20,6 +21,22 @@ def publish_support_ticket_event(sender, instance: SupportTicket, created: bool,
             'priority': instance.priority,
         },
     )
+    if not created or not instance.pk:
+        return
+
+    ticket_id = instance.pk
+
+    def _notify_hq_sms():
+        try:
+            from apps.auth.support_tickets import notify_hq_alert_ticket_sms
+
+            notify_hq_alert_ticket_sms(ticket_id)
+        except Exception as exc:
+            print(f'hq ticket sms webhook failed for ticket {ticket_id}: {exc}')
+
+    # After commit so payment/registration transactions don't SMS half-created rows,
+    # and so duplicate callers + this webhook share one idempotent send.
+    transaction.on_commit(_notify_hq_sms)
 
 
 @receiver(post_save, sender=SupportTicketMessage)

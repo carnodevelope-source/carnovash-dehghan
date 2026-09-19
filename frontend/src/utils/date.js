@@ -11,9 +11,19 @@ const jalaliTimeFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn'
   minute: '2-digit'
 })
 
+const jalaliMonthDayFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian-nu-latn', {
+  month: '2-digit',
+  day: '2-digit'
+})
+
 export const formatJalaliDate = (value) => {
   if (!value) return '-'
   return jalaliDateFormatter.format(new Date(value))
+}
+
+export const formatJalaliMonthDay = (value) => {
+  if (!value) return '-'
+  return jalaliMonthDayFormatter.format(new Date(value))
 }
 
 export const formatJalaliDateTime = (value) => {

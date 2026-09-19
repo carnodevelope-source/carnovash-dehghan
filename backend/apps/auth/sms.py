@@ -111,12 +111,20 @@ def send_logged_sms(*, tenant, text, phone, template_code, payload=None, created
 
 
 def send_user_credentials_sms(*, tenant, tenant_name, phone, username, password, role, created_by=None, template_code='user_credentials'):
-    text = (
-        f'{role_sms_label(role)} جدید برای {tenant_name} ثبت شد.\n'
-        f'نام کاربری: {username}\n'
-        f'رمز عبور: {password}\n'
-        f'ورود از پنل کارنوواش'
-    )
+    if role == 'hq_support':
+        text = (
+            'پشتیبان ساده در سامانه کارنوواش ثبت شد.\n'
+            f'نام کاربری: {username}\n'
+            f'رمز عبور: {password}\n'
+            'ورود از پنل کارنوواش'
+        )
+    else:
+        text = (
+            f'{role_sms_label(role)} جدید برای {tenant_name} ثبت شد.\n'
+            f'نام کاربری: {username}\n'
+            f'رمز عبور: {password}\n'
+            f'ورود از پنل کارنوواش'
+        )
     return send_logged_sms(
         tenant=tenant,
         text=text,

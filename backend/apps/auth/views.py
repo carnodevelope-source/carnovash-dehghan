@@ -1236,7 +1236,10 @@ class HqSupportUserListCreateView(HqBaseView):
         if forbidden:
             return forbidden
         users = (
-            User.objects.filter(platform_role__in=[User.PlatformRoles.HQ_ADMIN, User.PlatformRoles.HQ_SUPPORT])
+            User.objects.filter(
+                platform_role__in=[User.PlatformRoles.HQ_ADMIN, User.PlatformRoles.HQ_SUPPORT],
+                is_deleted=False,
+            )
             .select_related('tenant')
             .order_by('platform_role', 'first_name', 'last_name')
         )
@@ -1251,19 +1254,39 @@ class HqSupportUserListCreateView(HqBaseView):
         serializer = HqSupportUserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        raw_password = getattr(user, '_raw_password', '')
-        if raw_password and getattr(user, 'phone', ''):
-            send_system_user_credentials_sms(
-                tenant=getattr(user, 'tenant', None),
-                tenant_name=(user.tenant.name if getattr(user, 'tenant_id', None) else 'پنل مرکزی'),
-                phone=user.phone,
-                username=user.username,
-                password=raw_password,
-                role='hq_support',
-                created_by=request.user,
-                template_code='hq_support_credentials',
-            )
-        return Response(HqSupportUserListSerializer(user).data, status=status.HTTP_201_CREATED)
+        raw_password = str(getattr(user, '_raw_password', '') or '').strip()
+        phone = str(getattr(user, 'phone', '') or '').strip()
+        sms_result = {'ok': False, 'message': 'پیامک اطلاعات ورود ارسال نشد.'}
+
+        if raw_password and phone:
+            sms_kwargs = {
+                'tenant': getattr(user, 'tenant', None),
+                'tenant_name': (user.tenant.name if getattr(user, 'tenant_id', None) else 'سامانه کارنوواش'),
+                'phone': phone,
+                'username': user.username,
+                'password': raw_password,
+                'role': 'hq_support',
+                'created_by': request.user,
+                'template_code': 'hq_support_credentials',
+            }
+
+            def _send_credentials_sms():
+                try:
+                    send_system_user_credentials_sms(**sms_kwargs)
+                except Exception as exc:
+                    print(f'hq support credentials sms failed for user {user.pk}: {exc}')
+
+            # After commit so a provider error never rolls back the new support user.
+            transaction.on_commit(_send_credentials_sms)
+            sms_result = {'ok': True, 'message': 'پیامک اطلاعات ورود در صف ارسال قرار گرفت.'}
+        elif not phone:
+            sms_result = {'ok': False, 'message': 'شماره موبایل برای ارسال پیامک موجود نیست.'}
+        elif not raw_password:
+            sms_result = {'ok': False, 'message': 'رمز عبور برای ارسال پیامک موجود نیست.'}
+
+        payload = HqSupportUserListSerializer(user).data
+        payload['credentials_sms'] = sms_result
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class HqSupportUserDetailView(HqBaseView):
@@ -1272,7 +1295,11 @@ class HqSupportUserDetailView(HqBaseView):
         if forbidden:
             return forbidden
 
-        user = User.objects.filter(pk=pk, platform_role=User.PlatformRoles.HQ_SUPPORT).select_related('tenant').first()
+        user = User.objects.filter(
+            pk=pk,
+            platform_role=User.PlatformRoles.HQ_SUPPORT,
+            is_deleted=False,
+        ).select_related('tenant').first()
         if not user:
             return Response({'detail': 'پشتیبان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -1320,17 +1347,32 @@ class HqSupportUserDetailView(HqBaseView):
         if forbidden:
             return forbidden
 
-        user = User.objects.filter(pk=pk, platform_role=User.PlatformRoles.HQ_SUPPORT).first()
+        user = User.objects.filter(
+            pk=pk,
+            platform_role=User.PlatformRoles.HQ_SUPPORT,
+            is_deleted=False,
+        ).first()
         if not user:
             return Response({'detail': 'پشتیبان یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
 
         SupportTicket.objects.filter(assigned_to=user).update(assigned_to=None)
+        stamp = timezone.now().strftime('%Y%m%d%H%M%S')
+        # Free unique username/phone so the same person can be re-added later.
+        user.username = f'del_{user.pk}_{stamp}'[:150]
+        user.phone = f'000{user.pk}{stamp}'[-20:]
         user.is_active = False
         user.is_deleted = True
         user.deleted_at = timezone.now()
         user.deleted_by = request.user if getattr(request.user, 'is_authenticated', False) else None
-        user.save(update_fields=['is_active', 'is_deleted', 'deleted_at', 'deleted_by'])
-        return Response({'soft_deleted': True}, status=status.HTTP_200_OK)
+        user.save(update_fields=[
+            'username',
+            'phone',
+            'is_active',
+            'is_deleted',
+            'deleted_at',
+            'deleted_by',
+        ])
+        return Response({'soft_deleted': True, 'id': pk}, status=status.HTTP_200_OK)
 
 
 class HqTicketListView(HqBaseView):

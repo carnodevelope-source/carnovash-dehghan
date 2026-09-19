@@ -279,59 +279,65 @@ def apply_loyalty_visit(profile, *, discount_percent_per_half_star=0, now=None):
     return profile
 
 
+def _loyalty_plate_match_query(profile):
+    from django.db.models import Q
+
+    from .plate_normalize import plate_letter_lookup_variants
+
+    plate_numbers = {str(getattr(profile, 'plate_number', '') or '').strip()}
+    letter_variants = plate_letter_lookup_variants(getattr(profile, 'plate_letter', ''))
+    left = str(getattr(profile, 'plate_left', '') or '').strip()
+    mid = str(getattr(profile, 'plate_mid', '') or '').strip()
+    right = str(getattr(profile, 'plate_right', '') or '').strip()
+    for letter in letter_variants:
+        if left and letter and mid and right:
+            plate_numbers.add(f'{left} {letter} {mid} {right}')
+        elif mid and letter and not left and not right:
+            plate_numbers.add(f'{mid} {letter}')
+    plate_numbers = [item for item in plate_numbers if item]
+
+    query = Q()
+    if plate_numbers:
+        query |= Q(plate_number__in=plate_numbers)
+    if left and mid and right and letter_variants:
+        query |= Q(
+            plate_left=left,
+            plate_mid=mid,
+            plate_right=right,
+            plate_letter__in=list(letter_variants),
+        )
+    return query
+
+
+def _loyalty_vehicle_queryset(profile):
+    from .models import VehicleEntry
+
+    query = _loyalty_plate_match_query(profile)
+    if not query:
+        return VehicleEntry.objects.none()
+    return (
+        VehicleEntry.objects.filter(tenant=profile.tenant, is_piece_wash=False)
+        .filter(query)
+        .exclude(status=VehicleEntry.Status.CANCELLED)
+    )
+
+
 def count_loyalty_vehicle_entries(profile):
     if not profile or not profile.tenant_id:
         return 0
-    from .models import VehicleEntry
-    from .plate_normalize import plate_letter_lookup_variants
-
-    plate_numbers = {str(profile.plate_number or '').strip()}
-    letter_variants = plate_letter_lookup_variants(profile.plate_letter)
-    for letter in letter_variants:
-        if profile.plate_left and letter and profile.plate_mid and profile.plate_right:
-            plate_numbers.add(f'{profile.plate_left} {letter} {profile.plate_mid} {profile.plate_right}')
-        elif profile.plate_mid and letter and not profile.plate_left and not profile.plate_right:
-            plate_numbers.add(f'{profile.plate_mid} {letter}')
-    plate_numbers = [item for item in plate_numbers if item]
-    if not plate_numbers:
-        return 0
-
-    return (
-        VehicleEntry.objects.filter(
-            tenant=profile.tenant,
-            plate_number__in=plate_numbers,
-            is_piece_wash=False,
-        )
-        .exclude(status=VehicleEntry.Status.CANCELLED)
-        .count()
-    )
+    return _loyalty_vehicle_queryset(profile).count()
 
 
 def rebuild_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None):
     if not profile:
         return None
-    from .models import VehicleEntry
-    from .plate_normalize import plate_letter_lookup_variants
 
     now = timezone.localtime(now or timezone.now())
-    plate_numbers = {str(profile.plate_number or '').strip()}
-    letter_variants = plate_letter_lookup_variants(profile.plate_letter)
-    for letter in letter_variants:
-        if profile.plate_left and letter and profile.plate_mid and profile.plate_right:
-            plate_numbers.add(f'{profile.plate_left} {letter} {profile.plate_mid} {profile.plate_right}')
-        elif profile.plate_mid and letter and not profile.plate_left and not profile.plate_right:
-            plate_numbers.add(f'{profile.plate_mid} {letter}')
-    plate_numbers = [item for item in plate_numbers if item]
     # Replaying every historical visit as its own UPDATE made saving a regular
     # customer's order slower the more often they had visited. The end state is
     # a pure function of the visit count, so derive it and write once.
     check_in_times = list(
-        VehicleEntry.objects.filter(
-            tenant=profile.tenant,
-            plate_number__in=plate_numbers,
-            is_piece_wash=False,
-        )
-        .exclude(status=VehicleEntry.Status.CANCELLED)
+        _loyalty_vehicle_queryset(profile)
         .order_by('check_in_at', 'id')
         .values_list('check_in_at', flat=True)
     )
@@ -386,21 +392,23 @@ def sync_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None):
     current_visits = int(profile.visit_count or 0)
     current_score = Decimal(str(profile.score or 0))
     cycle_just_completed = current_visits > 0 and current_visits % CYCLE_VISIT_LIMIT == 0
-    # Healthy profiles skip the extra count query on every serialize.
-    if current_visits > 0 and (current_score > 0 or cycle_just_completed):
-        return profile
-
     expected_visits = count_loyalty_vehicle_entries(profile)
+    if expected_visits != current_visits:
+        return rebuild_plate_loyalty(
+            profile,
+            discount_percent_per_half_star=discount_percent_per_half_star,
+            now=now,
+        )
     first_visit_missing_score = (
         expected_visits > 0 and current_visits > 0 and current_score == 0 and not cycle_just_completed
     )
-    if expected_visits == current_visits and not first_visit_missing_score:
-        return profile
-    return rebuild_plate_loyalty(
-        profile,
-        discount_percent_per_half_star=discount_percent_per_half_star,
-        now=now,
-    )
+    if first_visit_missing_score:
+        return rebuild_plate_loyalty(
+            profile,
+            discount_percent_per_half_star=discount_percent_per_half_star,
+            now=now,
+        )
+    return profile
 
 
 def rebuild_customer_score(customer, *, now=None):

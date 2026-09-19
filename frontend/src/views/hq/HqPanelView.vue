@@ -2272,7 +2272,7 @@ const createSupportUser = async () => {
     return
   }
   try {
-    await api.post('/auth/hq/team/', {
+    const { data } = await api.post('/auth/hq/team/', {
       first_name: supportForm.first_name,
       last_name: supportForm.last_name,
       username: supportForm.username,
@@ -2289,6 +2289,11 @@ const createSupportUser = async () => {
     })
     await loadTeam()
     await loadOverview()
+    if (data?.credentials_sms?.ok) {
+      window.alert('پشتیبان ثبت شد و پیامک نام کاربری و رمز عبور برایش ارسال می‌شود.')
+    } else if (data?.credentials_sms?.message) {
+      window.alert(`پشتیبان ثبت شد، اما پیامک ارسال نشد: ${data.credentials_sms.message}`)
+    }
   } catch (error) {
     const data = error?.response?.data
     if (typeof data?.detail === 'string' && data.detail) {
@@ -2368,10 +2373,15 @@ const updateSupportUser = async () => {
 
 const deleteSupportUser = async (member) => {
   if (!window.confirm(`پشتیبان «${member.full_name || member.username}» حذف شود؟`)) return
-  await api.delete(`/auth/hq/team/${member.id}/`)
-  await loadTeam()
-  await loadTickets()
-  await loadOverview()
+  try {
+    await api.delete(`/auth/hq/team/${member.id}/`)
+    hqTeam.value = hqTeam.value.filter((item) => Number(item.id) !== Number(member.id))
+    await Promise.all([loadTeam(), loadTickets(), loadOverview()])
+  } catch (error) {
+    console.error('deleteSupportUser error:', error?.response?.data || error)
+    const detail = error?.response?.data?.detail
+    window.alert(String(detail || 'حذف پشتیبان انجام نشد. دوباره تلاش کنید.'))
+  }
 }
 
 const logout = async () => {

@@ -3,6 +3,7 @@ import re
 import time
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.core.cache import cache
 from django.db.models import Q
 from django.utils import timezone
 
@@ -13,6 +14,7 @@ from .models import SupportTicket, User
 
 SUPPORT_TICKET_AUTO_CLOSE_AFTER_DAYS = 3
 WALLET_CARD_DEPOSIT_TAX_PERCENT = Decimal('10')
+_HQ_TICKET_SMS_CACHE_TTL_SECONDS = 60 * 60 * 24
 
 
 def calculate_wallet_card_deposit_amounts(gross_amount):
@@ -120,6 +122,23 @@ def is_payment_support_ticket(ticket):
     return is_wallet_card_payment_ticket(ticket) or is_wallet_bank_withdrawal_ticket(ticket)
 
 
+def hq_ticket_alert_kind(ticket):
+    """Return alert label for payment / withdrawal / registration tickets, else None."""
+    if not ticket:
+        return None
+    if getattr(ticket, 'is_registration_request', False):
+        return 'ثبت‌نام'
+    if is_wallet_bank_withdrawal_ticket(ticket):
+        return 'برداشت'
+    if is_wallet_card_payment_ticket(ticket):
+        return 'پرداخت'
+    return None
+
+
+def should_alert_hq_ticket_sms(ticket):
+    return hq_ticket_alert_kind(ticket) is not None
+
+
 def simple_support_users():
     return User.objects.filter(
         platform_role=User.PlatformRoles.HQ_SUPPORT,
@@ -201,46 +220,57 @@ def _collect_hq_alert_phones():
     return phones
 
 
-def send_payment_ticket_sms_to_simple_supporters(ticket):
+def _hq_ticket_sms_cache_key(ticket_id):
+    return f'hq_ticket_sms_notified:{int(ticket_id)}'
+
+
+def notify_hq_alert_ticket_sms(ticket_or_id, *, force=False):
     """
-    SMS for payment deposit/withdrawal tickets to HQ supporters and HQ managers.
-    Manual/general tickets do not trigger SMS.
+    One SMS blast to every active HQ team member (simple support + managers).
+    Idempotent per ticket so the create webhook and legacy callers do not double-send.
     """
-    if not ticket or not is_payment_support_ticket(ticket):
-        return {'sent': False, 'reason': 'not_payment_ticket'}
+    if ticket_or_id is None:
+        return {'sent': False, 'reason': 'missing_ticket'}
+
+    if isinstance(ticket_or_id, SupportTicket):
+        ticket = ticket_or_id
+    else:
+        ticket = SupportTicket.objects.filter(pk=ticket_or_id).first()
+    if not ticket:
+        return {'sent': False, 'reason': 'ticket_not_found'}
+
+    kind = hq_ticket_alert_kind(ticket)
+    if not kind:
+        return {'sent': False, 'reason': 'not_alert_ticket'}
+
+    cache_key = _hq_ticket_sms_cache_key(ticket.pk)
+    if not force and not cache.add(cache_key, '1', timeout=_HQ_TICKET_SMS_CACHE_TTL_SECONDS):
+        return {'sent': False, 'reason': 'already_notified'}
 
     phones = _collect_hq_alert_phones()
     if not phones:
+        cache.delete(cache_key)
         return {'sent': False, 'reason': 'no_hq_phones'}
 
-    if is_wallet_bank_withdrawal_ticket(ticket):
-        label = 'تیکت برداشت جدید ثبت شد'
-    else:
-        label = 'تیکت پرداخت جدید ثبت شد'
-
-    tenant_name = ticket.tenant.name if getattr(ticket, 'tenant_id', None) else '-'
-    body = f'{label}\nشماره تیکت: {ticket.id}\nکارواش: {tenant_name}'
+    body = f'تیکت {kind} #{ticket.id} ثبت شد\nسامانه کارنوواش'
     try:
-        return send_provider_sms(None, body, phones)
+        result = send_provider_sms(None, body, phones)
+        if not result.get('ok'):
+            cache.delete(cache_key)
+        return result
     except Exception as exc:
+        cache.delete(cache_key)
         return {'sent': False, 'error': str(exc)}
+
+
+def send_payment_ticket_sms_to_simple_supporters(ticket):
+    """Backward-compatible alias — payment/withdrawal alerts to the full HQ team."""
+    return notify_hq_alert_ticket_sms(ticket)
 
 
 def send_registration_ticket_sms_to_hq(ticket):
-    """SMS for new carwash registration tickets to HQ supporters and managers."""
-    if not ticket or not getattr(ticket, 'is_registration_request', False):
-        return {'sent': False, 'reason': 'not_registration_ticket'}
-
-    phones = _collect_hq_alert_phones()
-    if not phones:
-        return {'sent': False, 'reason': 'no_hq_phones'}
-
-    tenant_name = ticket.tenant.name if getattr(ticket, 'tenant_id', None) else '-'
-    body = f'تیکت ثبت‌نام جدید ثبت شد\nشماره تیکت: {ticket.id}\nکارواش: {tenant_name}'
-    try:
-        return send_provider_sms(None, body, phones)
-    except Exception as exc:
-        return {'sent': False, 'error': str(exc)}
+    """Backward-compatible alias — registration alerts to the full HQ team."""
+    return notify_hq_alert_ticket_sms(ticket)
 
 
 def _format_registration_document_status(documents_count, document_names=None):
