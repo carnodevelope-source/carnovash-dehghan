@@ -2,10 +2,6 @@
   <AppShell
     title="باشگاه مشتریان"
     subtitle="مدیریت مشتریان، گروه‌بندی هوشمند و ارتباط هدفمند"
-    :show-search="true"
-    search-placeholder="جستجو با نام، موبایل یا پلاک..."
-    :search-query="searchQuery"
-    @update:search-query="searchQuery = $event"
   >
     <template #header-actions>
       <button type="button" class="club-ghost-btn btn-with-icon" @click="exportCustomers"><IconlyIcon name="document" size="sm" />خروجی اکسل</button>
@@ -75,6 +71,45 @@
       </section>
 
       <section class="club-filter-shell">
+        <div class="club-search-panel">
+          <div class="club-search-copy">
+            <span class="club-search-icon" aria-hidden="true">
+              <IconlyIcon name="search" size="sm" />
+            </span>
+            <div>
+              <strong>جستجو در مشتریان</strong>
+              <small>نام مشتری، شماره موبایل یا پلاک خودرو را وارد کنید</small>
+            </div>
+          </div>
+
+          <div class="club-search-input-wrap">
+            <IconlyIcon name="search" size="sm" />
+            <input
+              v-model="searchQuery"
+              type="search"
+              inputmode="search"
+              autocomplete="off"
+              aria-label="جستجوی مشتری"
+              placeholder="مثلاً محمد، 0912 یا پلاک خودرو..."
+            />
+            <button
+              v-if="searchQuery"
+              type="button"
+              class="club-search-clear"
+              aria-label="پاک کردن جستجو"
+              title="پاک کردن"
+              @click="searchQuery = ''"
+            >
+              ×
+            </button>
+          </div>
+
+          <span class="club-search-result">
+            <strong>{{ toFa(filteredCustomers.length) }}</strong>
+            مشتری یافت شد
+          </span>
+        </div>
+
         <div class="club-filter-grid">
           <label class="filter-field">
             <span>گروه‌بندی</span>
@@ -135,7 +170,7 @@
       <div class="club-body" :class="{ advanced: activePlan === 'advanced' }">
         <section class="club-main-col">
           <article
-            v-for="section in visibleSections"
+            v-for="section in paginatedSections"
             :key="section.key"
             class="customer-section"
             :class="{ highlighted: highlightedGroupId === section.sourceGroupId }"
@@ -147,7 +182,7 @@
               </div>
 
               <div class="customer-section-actions">
-                <span class="section-count">{{ toFa(section.customers.length) }} مشتری</span>
+                <span class="section-count">{{ toFa(section.totalCustomersCount) }} مشتری</span>
                 <button
                   v-if="activePlan === 'advanced' && section.customers.length"
                   type="button"
@@ -237,6 +272,54 @@
               <span>فیلترها را تغییر دهید یا گروه تازه‌ای بسازید.</span>
             </div>
           </article>
+
+          <nav v-if="paginationTotalItems" class="club-pagination" aria-label="صفحه‌بندی مشتریان">
+            <div class="pagination-summary">
+              نمایش
+              <strong>{{ toFa(paginationStart) }} تا {{ toFa(paginationEnd) }}</strong>
+              از
+              <strong>{{ toFa(paginationTotalItems) }}</strong>
+              مشتری
+            </div>
+
+            <div class="pagination-controls">
+              <button
+                type="button"
+                class="pagination-nav"
+                :disabled="currentPage === 1"
+                aria-label="صفحه قبلی"
+                @click="goToPage(currentPage - 1)"
+              >
+                ‹
+                <span>قبلی</span>
+              </button>
+
+              <template v-for="item in paginationItems" :key="item.key">
+                <span v-if="item.type === 'ellipsis'" class="pagination-ellipsis">…</span>
+                <button
+                  v-else
+                  type="button"
+                  class="pagination-page"
+                  :class="{ active: item.page === currentPage }"
+                  :aria-current="item.page === currentPage ? 'page' : undefined"
+                  @click="goToPage(item.page)"
+                >
+                  {{ toFa(item.page) }}
+                </button>
+              </template>
+
+              <button
+                type="button"
+                class="pagination-nav"
+                :disabled="currentPage === paginationTotalPages"
+                aria-label="صفحه بعدی"
+                @click="goToPage(currentPage + 1)"
+              >
+                <span>بعدی</span>
+                ›
+              </button>
+            </div>
+          </nav>
         </section>
 
         <aside v-if="activePlan === 'advanced'" class="club-side-col">
@@ -832,7 +915,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import AppShell from '../../components/layout/AppShell.vue'
 import IconlyIcon from '../../components/base/IconlyIcon.vue'
 import HelpTip from '../../components/base/HelpTip.vue'
@@ -866,6 +949,8 @@ let liveReloadTimer = null
 const smsSending = ref(false)
 const templateSaving = ref(false)
 const customers = ref([])
+const currentPage = ref(1)
+const pageSize = 10
 const smsCreditBalance = ref(0)
 const smsPricePerSegment = ref(185)
 const smsCharsPerSegment = ref(70)
@@ -968,8 +1053,17 @@ const smsCreditStateLabel = computed(() => {
   return 'اعتبار مناسب'
 })
 
+const normalizeSearchText = (value) => String(value ?? '')
+  .toLowerCase()
+  .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+  .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+  .replace(/ي/g, 'ی')
+  .replace(/ك/g, 'ک')
+  .replace(/\s+/g, ' ')
+  .trim()
+
 const filteredCustomers = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
+  const query = normalizeSearchText(searchQuery.value)
   const minSpentValue = Number(filters.minSpent || 0)
   const activeGroup = customGroups.value.find((group) => String(group.id) === String(filters.groupId || ''))
   const items = customers.value.filter((customer) => {
@@ -978,7 +1072,16 @@ const filteredCustomers = computed(() => {
     if (Number(customer.total_spent || 0) < minSpentValue) return false
     if (Number(customer.score || 0) < Number(filters.minScore || 0)) return false
     if (!query) return true
-    const haystack = `${customer.name} ${customer.phone} ${customer.primary_plate} ${customer.carwash_name}`.toLowerCase()
+    const haystack = normalizeSearchText([
+      customer.name,
+      customer.phone,
+      customer.primary_plate,
+      customer.primary_plate_left,
+      customer.primary_plate_letter,
+      customer.primary_plate_mid,
+      customer.primary_plate_right,
+      customer.carwash_name
+    ].filter(Boolean).join(' '))
     return haystack.includes(query)
   })
 
@@ -1023,6 +1126,83 @@ const visibleSections = computed(() => {
 })
 
 const filteredCustomerKeys = computed(() => new Set(filteredCustomers.value.map((item) => item.key)))
+
+const paginationRows = computed(() => visibleSections.value.flatMap((section) => (
+  section.customers.map((customer) => ({ section, customer }))
+)))
+
+const paginationTotalItems = computed(() => paginationRows.value.length)
+const paginationTotalPages = computed(() => Math.max(1, Math.ceil(paginationTotalItems.value / pageSize)))
+const paginationStart = computed(() => (
+  paginationTotalItems.value ? ((currentPage.value - 1) * pageSize) + 1 : 0
+))
+const paginationEnd = computed(() => Math.min(currentPage.value * pageSize, paginationTotalItems.value))
+
+const paginatedSections = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  const pageRows = paginationRows.value.slice(start, start + pageSize)
+  const sections = []
+
+  pageRows.forEach(({ section, customer }) => {
+    let pageSection = sections.find((item) => item.key === section.key)
+    if (!pageSection) {
+      pageSection = {
+        ...section,
+        totalCustomersCount: section.customers.length,
+        customers: []
+      }
+      sections.push(pageSection)
+    }
+    pageSection.customers.push(customer)
+  })
+
+  return sections
+})
+
+const paginationItems = computed(() => {
+  const total = paginationTotalPages.value
+  const active = currentPage.value
+  const pages = new Set([1, total, active - 1, active, active + 1])
+  const normalized = [...pages]
+    .filter((page) => page >= 1 && page <= total)
+    .sort((a, b) => a - b)
+  const items = []
+
+  normalized.forEach((page, index) => {
+    if (index && page - normalized[index - 1] > 1) {
+      items.push({ type: 'ellipsis', key: `ellipsis-${normalized[index - 1]}-${page}` })
+    }
+    items.push({ type: 'page', page, key: `page-${page}` })
+  })
+
+  return items
+})
+
+const goToPage = (page) => {
+  const nextPage = Math.min(paginationTotalPages.value, Math.max(1, Number(page) || 1))
+  if (nextPage === currentPage.value) return
+  currentPage.value = nextPage
+  requestAnimationFrame(() => {
+    document.querySelector('.club-main-col')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+watch(
+  () => [
+    searchQuery.value,
+    filters.groupId,
+    filters.minOrders,
+    filters.minSpent,
+    filters.minScore,
+    filters.sortBy,
+    groupingMode.value
+  ],
+  () => { currentPage.value = 1 }
+)
+
+watch(paginationTotalPages, (totalPages) => {
+  if (currentPage.value > totalPages) currentPage.value = totalPages
+})
 
 const manualSelectableCustomers = computed(() => {
   const query = groupBuilder.manualSearch.trim().toLowerCase()
@@ -1955,6 +2135,143 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 
+.club-search-panel {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.72fr) minmax(320px, 1.6fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(147, 197, 253, 0.72);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 92% 15%, rgba(14, 165, 233, 0.14), transparent 34%),
+    linear-gradient(135deg, #f8fbff 0%, #eef6ff 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.club-search-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.club-search-copy > div {
+  display: grid;
+  gap: 4px;
+}
+
+.club-search-copy strong {
+  color: #0f3156;
+  font-size: 14px;
+}
+
+.club-search-copy small {
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.club-search-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 15px;
+  color: #fff;
+  background: linear-gradient(135deg, #0058be, #0ea5e9);
+  box-shadow: 0 10px 22px rgba(0, 88, 190, 0.2);
+}
+
+.club-search-icon :deep(.iconly-shell) {
+  --iconly-filter: brightness(0) saturate(100%) invert(100%);
+}
+
+.club-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.club-search-input-wrap > :deep(.iconly-shell) {
+  position: absolute;
+  right: 16px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.club-search-input-wrap input {
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 48px 0 46px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.club-search-input-wrap input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.club-search-input-wrap input:focus {
+  outline: none;
+  border-color: rgba(0, 88, 190, 0.48);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(0, 88, 190, 0.08), 0 14px 28px rgba(0, 88, 190, 0.09);
+}
+
+.club-search-clear {
+  position: absolute;
+  left: 12px;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: #eef4fb;
+  color: #64748b;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.club-search-clear:hover {
+  color: #0058be;
+  background: #dbeafe;
+}
+
+.club-search-result {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 0 13px;
+  border-radius: 13px;
+  color: #47627f;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(191, 219, 254, 0.78);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.club-search-result strong {
+  color: #0058be;
+  font-size: 13px;
+}
+
 .club-filter-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2089,6 +2406,90 @@ onBeforeUnmount(() => {
   box-shadow:
     0 22px 56px rgba(0, 88, 190, 0.14),
     inset 0 0 0 1px rgba(37, 99, 235, 0.16);
+}
+
+.club-pagination {
+  direction: rtl;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(191, 219, 254, 0.78);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(14, 165, 233, 0.11), transparent 38%),
+    linear-gradient(135deg, #ffffff, #f5f9ff);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.06);
+}
+
+.pagination-summary {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pagination-summary strong {
+  color: #0f4c81;
+  font-size: 13px;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.pagination-page,
+.pagination-nav {
+  min-width: 40px;
+  height: 40px;
+  border: 1px solid rgba(191, 219, 254, 0.88);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.pagination-page:hover:not(:disabled),
+.pagination-nav:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(0, 88, 190, 0.42);
+  box-shadow: 0 9px 18px rgba(0, 88, 190, 0.12);
+}
+
+.pagination-page.active {
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(135deg, #0058be, #2585e8);
+  box-shadow: 0 10px 20px rgba(0, 88, 190, 0.22);
+}
+
+.pagination-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 76px;
+  padding: 0 12px;
+}
+
+.pagination-page:disabled,
+.pagination-nav:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.pagination-ellipsis {
+  min-width: 24px;
+  color: #94a3b8;
+  text-align: center;
+  font-weight: 900;
 }
 
 .customer-section-head h3,
@@ -2918,6 +3319,15 @@ onBeforeUnmount(() => {
   .club-filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .club-search-panel {
+    grid-template-columns: minmax(200px, 0.7fr) minmax(280px, 1.3fr);
+  }
+
+  .club-search-result {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
 }
 
 @media (max-width: 768px) {
@@ -2930,6 +3340,17 @@ onBeforeUnmount(() => {
 
   .club-hero-copy h2 {
     font-size: 22px;
+  }
+
+  .club-search-panel {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .club-search-result {
+    grid-column: auto;
+    justify-self: stretch;
   }
 
   .club-hero-copy p,
@@ -3017,6 +3438,19 @@ onBeforeUnmount(() => {
     width: min(280px, 100%);
     height: 560px;
   }
+
+  .club-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pagination-summary {
+    text-align: center;
+  }
+
+  .pagination-controls {
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 480px) {
@@ -3101,6 +3535,15 @@ onBeforeUnmount(() => {
   .customer-profile-hero {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .pagination-nav {
+    min-width: 42px;
+    padding: 0 8px;
+  }
+
+  .pagination-nav span {
+    display: none;
   }
 }
 </style>

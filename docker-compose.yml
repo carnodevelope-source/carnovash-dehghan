@@ -7,6 +7,19 @@ x-logging: &default-logging
     max-file: ${DOCKER_LOG_MAX_FILE:-3}
 
 services:
+  phpmyadmin:
+    image: phpmyadmin:latest
+    restart: unless-stopped
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: change-me-root
+    ports:
+      - "8081:80"
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     image: ${MYSQL_IMAGE:-docker.arvancloud.ir/mysql:8.4}
     logging: *default-logging

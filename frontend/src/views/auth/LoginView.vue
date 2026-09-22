@@ -57,8 +57,8 @@
     </footer>
 
     <div v-if="registerModal.open" class="register-modal-overlay" @click.self="closeRegisterModal">
-      <section class="register-modal">
-        <header class="register-modal-head">
+        <section ref="registerModalEl" class="register-modal">
+          <header class="register-modal-head">
           <div>
             <p class="panel-kicker">ثبت نام کارواش</p>
             <h3>اطلاعات کارواش و مدیر را کامل کنید</h3>
@@ -112,11 +112,11 @@
                 <input v-model.trim="registerForm.manager_username" type="text" placeholder="مثلا amiran-manager" required />
               </label>
               <BasePhoneInput
-                v-model="registerForm.manager_phone"
-                label="شماره موبایل مدیر"
-                :required="true"
-                :force-show-error="registerPhoneTouched"
-              />
+                  v-model="registerForm.manager_phone"
+                  label="شماره موبایل مدیر"
+                  :required="true"
+                  :force-show-error="registerPhoneTouched"
+                />
               <label class="field field-soft">
                 <span>رمز عبور اولیه</span>
                 <input v-model="registerForm.manager_password" :type="showRegisterPassword ? 'text' : 'password'" placeholder="حداقل 6 کاراکتر" required />
@@ -165,7 +165,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { ensureCsrfToken } from '../../services/api'
 import { useAuthStore } from '../../store/auth.store'
@@ -179,8 +179,11 @@ const showRegisterPassword = ref(false)
 const isLoading = ref(false)
 const registerLoading = ref(false)
 const registerPhoneTouched = ref(false)
+const registerModalEl = ref(null)
+
 const errorMessage = ref('')
 const registerError = ref('')
+
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
@@ -202,6 +205,7 @@ const registerForm = reactive({
 })
 
 const registerModal = reactive({ open: false })
+
 const registerSuccess = reactive({
   tenantName: '',
   pendingApproval: false,
@@ -226,7 +230,40 @@ const resetRegisterForm = () => {
   registerForm.manager_phone = ''
   registerForm.manager_password = ''
   registerForm.business_identity_documents = []
+
   registerPhoneTouched.value = false
+}
+
+/*
+ * فقط بعد از ثبت موفق استفاده می‌شود.
+ * ابتدا Validation موبایل خاموش می‌شود و سپس فرم Reset می‌شود.
+ * در انتها اسکرول Modal روی نتیجه ثبت باقی می‌ماند.
+ */
+const resetRegisterFormAfterSuccess = async () => {
+  // قبل از خالی کردن موبایل، نمایش خطا را خاموش می‌کنیم
+  registerPhoneTouched.value = false
+  registerError.value = ''
+
+  // پاک کردن اطلاعات فرم
+  registerForm.carwash_name = ''
+  registerForm.carwash_address = ''
+  registerForm.manager_first_name = ''
+  registerForm.manager_last_name = ''
+  registerForm.manager_username = ''
+ // registerForm.manager_phone = ''
+  registerForm.manager_password = ''
+  registerForm.business_identity_documents = []
+
+  // منتظر می‌مانیم Vue تغییرات DOM را اعمال کند
+  await nextTick()
+
+  // اسکرول Modal را پایین نگه می‌داریم
+  if (registerModalEl.value) {
+    registerModalEl.value.scrollTo({
+      top: registerModalEl.value.scrollHeight,
+      behavior: 'smooth'
+    })
+  }
 }
 
 const openRegisterModal = () => {
@@ -240,7 +277,9 @@ const closeRegisterModal = () => {
 }
 
 const onRegisterDocumentsChange = (event) => {
-  registerForm.business_identity_documents = Array.from(event?.target?.files || [])
+  registerForm.business_identity_documents = Array.from(
+    event?.target?.files || []
+  )
 }
 
 onMounted(() => {
@@ -251,6 +290,7 @@ onMounted(() => {
 
 const onSubmit = async () => {
   if (isLoading.value) return
+
   errorMessage.value = ''
 
   if (!form.username || !form.password) {
@@ -259,16 +299,27 @@ const onSubmit = async () => {
   }
 
   isLoading.value = true
+
   try {
     await ensureCsrfToken()
+
     const { data } = await api.post('/auth/login/', {
       username: form.username,
       password: form.password
     })
+
     authStore.setUser(data)
-    await router.push(authStore.isHq ? '/hq' : (defaultRouteByRole[authStore.role] || '/panel'))
+
+    await router.push(
+      authStore.isHq
+        ? '/hq'
+        : (defaultRouteByRole[authStore.role] || '/panel')
+    )
   } catch (error) {
-    errorMessage.value = resolveApiErrorMessage(error, 'ورود ناموفق بود. لطفا اطلاعات را بررسی کنید.')
+    errorMessage.value = resolveApiErrorMessage(
+      error,
+      'ورود ناموفق بود. لطفا اطلاعات را بررسی کنید.'
+    )
   } finally {
     isLoading.value = false
   }
@@ -276,43 +327,129 @@ const onSubmit = async () => {
 
 const submitRegister = async () => {
   if (registerLoading.value) return
+
   resetRegisterState()
+
+  // فقط هنگام Submit اعتبارسنجی موبایل را نمایش بده
   registerPhoneTouched.value = true
-  registerForm.manager_phone = normalizeIranMobile(registerForm.manager_phone)
-  const phoneError = iranMobileErrorMessage(registerForm.manager_phone, { label: 'شماره موبایل مدیر' })
+
+  registerForm.manager_phone = normalizeIranMobile(
+    registerForm.manager_phone
+  )
+
+  const phoneError = iranMobileErrorMessage(
+    registerForm.manager_phone,
+    {
+      label: 'شماره موبایل مدیر'
+    }
+  )
+
   if (phoneError) {
     registerError.value = phoneError
     return
   }
 
   registerLoading.value = true
+
   try {
     await ensureCsrfToken()
+
     const payload = new FormData()
-    payload.append('carwash_name', registerForm.carwash_name)
-    payload.append('carwash_address', registerForm.carwash_address || '')
-    payload.append('manager_first_name', registerForm.manager_first_name)
-    payload.append('manager_last_name', registerForm.manager_last_name)
-    payload.append('manager_username', registerForm.manager_username)
-    payload.append('manager_phone', registerForm.manager_phone)
-    payload.append('manager_password', registerForm.manager_password)
+
+    payload.append(
+      'carwash_name',
+      registerForm.carwash_name
+    )
+
+    payload.append(
+      'carwash_address',
+      registerForm.carwash_address || ''
+    )
+
+    payload.append(
+      'manager_first_name',
+      registerForm.manager_first_name
+    )
+
+    payload.append(
+      'manager_last_name',
+      registerForm.manager_last_name
+    )
+
+    payload.append(
+      'manager_username',
+      registerForm.manager_username
+    )
+
+    payload.append(
+      'manager_phone',
+      registerForm.manager_phone
+    )
+
+    payload.append(
+      'manager_password',
+      registerForm.manager_password
+    )
+
     registerForm.business_identity_documents.forEach((file) => {
-      payload.append('business_identity_documents', file)
+      payload.append(
+        'business_identity_documents',
+        file
+      )
     })
-    const { data } = await api.post('/auth/tenants/register/', payload, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    registerSuccess.tenantName = data?.tenant?.name || registerForm.carwash_name
-    registerSuccess.pendingApproval = data?.registration?.status === 'pending'
-    registerSuccess.ticketId = Number(data?.registration?.ticket_id || 0)
-    registerSuccess.smsMessage = data?.registration?.message || 'درخواست شما برای بررسی پشتیبانی ثبت شد.'
+
+    const { data } = await api.post(
+      '/auth/tenants/register/',
+      payload,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      }
+    )
+
+    /*
+     * اطلاعات نتیجه را قبل از Reset فرم ذخیره می‌کنیم
+     */
+    registerSuccess.tenantName =
+      data?.tenant?.name ||
+      registerForm.carwash_name
+
+    registerSuccess.pendingApproval =
+      data?.registration?.status === 'pending'
+
+    registerSuccess.ticketId =
+      Number(
+        data?.registration?.ticket_id || 0
+      )
+
+    registerSuccess.smsMessage =
+      data?.registration?.message ||
+      'درخواست شما برای بررسی پشتیبانی ثبت شد.'
+
+    /*
+     * نام کاربری را برای فرم Login نگه می‌داریم
+     * قبل از اینکه فرم ثبت نام پاک شود.
+     */
     form.username = registerForm.manager_username
     form.password = ''
-    resetRegisterForm()
+
+    /*
+     * Reset مخصوص ثبت موفق
+     */
+    await resetRegisterFormAfterSuccess()
+
   } catch (error) {
-    registerError.value = resolveApiErrorMessage(error, 'ثبت نام ناموفق بود.')
+
+    registerError.value = resolveApiErrorMessage(
+      error,
+      'ثبت نام ناموفق بود.'
+    )
+
   } finally {
+
     registerLoading.value = false
+
   }
 }
 </script>
