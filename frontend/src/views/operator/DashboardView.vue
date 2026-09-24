@@ -3756,10 +3756,17 @@ const handleStepTwoAssign = async (payload) => {
       payload = { ...payload, vehicle: { ...payload.vehicle, id: ensuredId } }
     }
 
-    if (!editFlow && !ensuredId && !payload?.vehicle?.id) {
-      notifyError('شناسه پذیرش ساخته نشد. لطفاً دوباره از مرحله اول ثبت کنید.', { title: 'خطا در ثبت پذیرش' })
-      return
-    }
+      if (!editFlow && !ensuredId && !payload?.vehicle?.id) {
+        const savedVehicle = await saveVehicle(payload, 'entered')
+
+        if (!savedVehicle?.id) {
+          notifyError('شناسه پذیرش ساخته نشد.', { title: 'خطا در ثبت پذیرش' })
+          return
+        }
+
+        ensuredId = savedVehicle.id
+        payload.vehicle.id = savedVehicle.id
+      }
 
     if (editFlow) {
       const savedVehicle = await saveVehicle(payload, nextStatus)

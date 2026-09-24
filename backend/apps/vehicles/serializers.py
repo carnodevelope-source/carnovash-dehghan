@@ -1076,6 +1076,19 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
                 {'blocked_plate_payment_confirmed': ['برای پلاک بلاک‌شده باید پرداخت تایید شود.']}
             )
 
+        if blocked_plate_payment_confirmed:
+            blocked_plate = self._find_blocked_plate_record(
+                tenant=tenant,
+                plate_number=validated_data.get('plate_number', instance.plate_number),
+                plate_left=validated_data.get('plate_left', instance.plate_left),
+                plate_letter=validated_data.get('plate_letter', instance.plate_letter),
+                plate_mid=validated_data.get('plate_mid', instance.plate_mid),
+                plate_right=validated_data.get('plate_right', instance.plate_right),
+            )
+
+            if blocked_plate:
+                blocked_plate.delete()
+
         driver_phone = self._normalize_phone(validated_data.get('driver_phone', instance.driver_phone))
         driver_name = (validated_data.get('driver_name', instance.driver_name) or '').strip()
         if driver_phone:
