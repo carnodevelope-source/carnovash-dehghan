@@ -1742,7 +1742,10 @@ class VehicleReleaseCheckoutView(APIView):
             service_list_subtotal,
             facility_discount_total + loyalty_discount_total + manual_discount_total,
         )
-        taxable_total = max(Decimal('0'), service_list_subtotal - discount_total) + products_total
+        taxable_total = max(
+            Decimal('0'),
+            services_total - loyalty_discount_total - manual_discount_total
+        ) + products_total
         tax_percent = self._tax_percent(tenant)
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount
@@ -2002,10 +2005,27 @@ class VehicleReleaseCheckoutView(APIView):
         for item in service_lines_payload:
             line_id = item.get('id')
             line = service_lines_map.get(line_id)
+
             if not line:
                 continue
+
             line.is_completed = bool(item.get('is_completed', False))
-            line.save(update_fields=['is_completed'])
+
+            if 'line_total' in item:
+                line_total = self._money(item.get('line_total'))
+
+                if line_total >= 0:
+                    line.line_total = line_total
+
+                    quantity = Decimal(str(line.quantity or 1))
+                    if quantity > 0:
+                        line.unit_price = self._money(line_total / quantity)
+
+            line.save(update_fields=[
+                'is_completed',
+                'line_total',
+                'unit_price',
+            ])
 
         for item in new_service_lines_payload:
             service_obj = None
@@ -2161,7 +2181,10 @@ class VehicleReleaseCheckoutView(APIView):
             completed_service_totals,
             loyalty_discount_total + manual_discount_total,
         )
-        taxable_total = max(Decimal('0'), completed_service_list_subtotal - discount_total) + product_totals
+        taxable_total = max(
+        Decimal('0'),
+        completed_service_totals - loyalty_discount_total - manual_discount_total
+        ) + product_totals 
         tax_percent = self._tax_percent(tenant)
         tax_total = self._money((taxable_total * tax_percent) / Decimal('100'))
         final_total = taxable_total + tax_total + tip_amount

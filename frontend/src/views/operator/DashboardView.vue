@@ -2756,10 +2756,10 @@ const invoicePaymentStatusLabel = computed(() => (
   releaseSummary.value.finalTotal > 0 ? paymentStatusLabel(releaseCandidate.value?.payment_status) : 'تسویه شده'
 ))
 const invoiceServiceLineListTotal = (line) => {
-  const quantity = Math.max(1, Number(line?.quantity || 1) || 1)
-  const listUnit = Number(line?.list_unit_price || 0)
-  if (listUnit > 0) return Number((listUnit * quantity).toFixed(2))
-  return Number((Number(line?.line_total || 0) + Number(line?.discount_amount || 0)).toFixed(2))
+  const lineTotal = Number(line?.line_total || 0)
+  const discountAmount = Number(line?.discount_amount || 0)
+
+  return Number((lineTotal + discountAmount).toFixed(2))
 }
 const invoiceSubtotal = computed(() => Number((
   Number(releaseSummary.value.serviceListSubtotal || 0) + Number(releaseSummary.value.productsTotal || 0)
@@ -3286,7 +3286,8 @@ const confirmReleaseVehicle = async () => {
     releaseSubmitting.value = true
     const service_lines = releaseForm.value.serviceLines.map((line) => ({
       id: line.id,
-      is_completed: Boolean(line.is_completed)
+      is_completed: Boolean(line.is_completed),
+      line_total: Number(line.line_total || 0)
     })).filter((line) => line.id)
     const product_lines = releaseForm.value.availableProducts
       .map((product) => ({

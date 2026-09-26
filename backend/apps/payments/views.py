@@ -426,6 +426,94 @@ def _feature_option_payload(tenant, feature_key, purchase=None):
         'purchased_at': purchase.purchased_at if purchase else None,
     }
 
+def activate_core_software_installment(tenant, wallet, user=None):
+    if tenant is None or wallet is None:
+        return None
+
+    # اگر قبلاً لایسنس اصلی فعال شده، دوباره خرید ایجاد نکن
+    existing = CarWashFeaturePurchase.objects.select_for_update().filter(
+        tenant=tenant,
+        feature_key=CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE,
+        is_active=True,
+    ).first()
+
+    if existing:
+        return existing
+
+    feature_key = CarWashFeaturePurchase.FeatureKey.CORE_SOFTWARE
+
+    (
+        total_amount,
+        upfront_amount,
+        remaining_amount,
+        installment_months,
+        monthly_installment,
+    ) = _feature_installment_terms(feature_key)
+
+    current_balance = _money(wallet.balance)
+
+    if current_balance < upfront_amount:
+     return None
+
+    purchase, _ = CarWashFeaturePurchase.objects.select_for_update().get_or_create(
+        tenant=tenant,
+        feature_key=feature_key,
+        defaults={'is_active': False},
+    )
+
+    purchase.is_active = True
+    purchase.payment_plan = CarWashFeaturePurchase.PaymentPlan.INSTALLMENT
+    purchase.total_amount = total_amount
+    purchase.paid_amount = upfront_amount
+    purchase.remaining_amount = remaining_amount
+    purchase.installment_months = installment_months
+    purchase.monthly_installment_amount = monthly_installment
+    purchase.next_installment_due_at = timezone.now() + timedelta(days=30)
+
+    purchase.save(
+        update_fields=[
+            'is_active',
+            'payment_plan',
+            'total_amount',
+            'paid_amount',
+            'remaining_amount',
+            'installment_months',
+            'monthly_installment_amount',
+            'next_installment_due_at',
+            'updated_at',
+        ]
+    )
+
+    wallet.balance = _money(current_balance - upfront_amount)
+    wallet.save(update_fields=['balance', 'updated_at'])
+
+    transaction_record = CashflowTransaction.objects.create(
+        tenant=tenant,
+        wallet=wallet,
+        direction=CashflowTransaction.Direction.OUT,
+        amount=upfront_amount,
+        description='فعال‌سازی خودکار نرم‌افزار کارنوواش - پیش‌پرداخت',
+        reference_type='feature_option_purchase',
+        reference_id=purchase.id,
+        created_by=user if getattr(user, 'is_authenticated', False) else None,
+    )
+
+    invalidate_license_status_cache(tenant.id)
+
+    try:
+        from apps.subscriptions.services import sync_subscription_from_feature_purchase
+
+        sync_subscription_from_feature_purchase(
+            purchase,
+            actor=user if getattr(user, 'is_authenticated', False) else None,
+            cashflow=transaction_record,
+            debit_amount=upfront_amount,
+        )
+    except Exception:
+        pass
+
+    return purchase
+
 
 class WalletBaseMixin:
     wallet_deposit_roles = {'accountant', 'admin', 'owner', 'manager', 'operator'}
@@ -808,6 +896,97 @@ class WalletOptionsView(WalletBaseMixin, APIView):
             return Response(
                 {
                     'detail': f'قسط بعدی به مبلغ {installment_amount} با موفقیت پرداخت شد.',
+                    'wallet': WalletSerializer(wallet).data,
+                    'option': _feature_option_payload(tenant, feature_key, purchase),
+                    'transaction': CashflowTransactionSerializer(transaction_record).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+
+        if action == 'pay_full':
+            purchase = CarWashFeaturePurchase.objects.select_for_update().filter(
+                tenant=tenant,
+                feature_key=feature_key,
+                is_active=True,
+                payment_plan=CarWashFeaturePurchase.PaymentPlan.INSTALLMENT,
+            ).first()
+
+            if not purchase:
+                return Response(
+                    {'detail': 'خرید قسطی فعالی برای این آپشن پیدا نشد.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            remaining_amount = _money(purchase.remaining_amount)
+
+            if remaining_amount <= 0:
+                return Response(
+                    {'detail': 'این آپشن قبلاً به طور کامل پرداخت شده است.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            wallet = self._get_or_create_default_wallet(tenant)
+            wallet = Wallet.objects.select_for_update().get(pk=wallet.pk)
+
+            current_balance = _money(wallet.balance)
+
+            if current_balance < remaining_amount:
+                return Response(
+                    {'detail': 'موجودی کیف پول برای پرداخت کامل کافی نیست.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            wallet.balance = _money(current_balance - remaining_amount)
+            wallet.save(update_fields=['balance', 'updated_at'])
+
+            purchase.paid_amount = _money(
+                Decimal(str(purchase.paid_amount or 0)) + remaining_amount
+            )
+            purchase.remaining_amount = Decimal('0')
+            purchase.monthly_installment_amount = Decimal('0')
+            purchase.next_installment_due_at = None
+            purchase.payment_plan = CarWashFeaturePurchase.PaymentPlan.CASH
+
+            purchase.save(
+                update_fields=[
+                    'paid_amount',
+                    'remaining_amount',
+                    'monthly_installment_amount',
+                    'next_installment_due_at',
+                    'payment_plan',
+                    'updated_at',
+                ]
+            )
+
+            transaction_record = CashflowTransaction.objects.create(
+                tenant=tenant,
+                wallet=wallet,
+                direction=CashflowTransaction.Direction.OUT,
+                amount=remaining_amount,
+                description=f"تسویه کامل {FEATURE_OPTION_CATALOG[feature_key]['title']}",
+                reference_type='feature_option_full_payment',
+                reference_id=purchase.id,
+                created_by=request.user if getattr(request.user, 'is_authenticated', False) else None,
+            )
+
+            invalidate_license_status_cache(getattr(tenant, 'id', None))
+
+            try:
+                from apps.subscriptions.services import sync_subscription_from_feature_purchase
+
+                sync_subscription_from_feature_purchase(
+                    purchase,
+                    actor=request.user if getattr(request.user, 'is_authenticated', False) else None,
+                    cashflow=transaction_record,
+                    debit_amount=remaining_amount,
+                )
+            except Exception:
+                pass
+
+            return Response(
+                {
+                    'detail': 'باقی‌مانده مبلغ با موفقیت به طور کامل پرداخت شد.',
                     'wallet': WalletSerializer(wallet).data,
                     'option': _feature_option_payload(tenant, feature_key, purchase),
                     'transaction': CashflowTransactionSerializer(transaction_record).data,

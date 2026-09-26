@@ -18,6 +18,7 @@ from apps.inventory.models import ExpenseEntry, StockMovement
 from apps.notifications.models import NotificationLog
 from apps.notifications.services import normalize_phone, send_provider_sms
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
+from apps.payments.views import activate_core_software_installment
 from apps.reports.views import ReportsDashboardView
 from apps.vehicles.models import VehicleEntry
 from apps.workers.models import WorkerAttendance, WorkerProfile
@@ -1561,6 +1562,13 @@ class HqTicketWalletTransferView(HqBaseView):
             reference_id=ticket.id,
             created_by=request.user,
         )
+
+        activate_core_software_installment(
+            tenant=ticket.tenant,
+            wallet=wallet,
+            user=request.user,
+        )
+
         message = SupportTicketMessage.objects.create(
             ticket=ticket,
             sender=request.user,

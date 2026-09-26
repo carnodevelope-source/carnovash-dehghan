@@ -228,6 +228,21 @@
             <small v-else>این قابلیت برای این کارواش فعال است.</small>
           </div>
           <button
+            v-if="
+              option.is_active &&
+              option.payment_plan === 'installment' &&
+              Number(option.remaining_amount || 0) > 0
+            "
+            class="option-pay-full-btn"
+            type="button"
+            @click="payOptionFull(option)"
+          >
+            پرداخت کامل
+            <span>
+              {{ moneyWithUnit(option.remaining_amount) }}
+            </span>
+          </button>
+          <button
             class="option-buy-btn"
             type="button"
             :disabled="option.is_active || option.is_available === false"
@@ -456,7 +471,7 @@
             </div>
             <div class="deposit-tax-rows">
               <div><span>مبلغ خام واریزی</span><strong>{{ moneyWithUnit(selectedActionAmount) }}</strong></div>
-              <div><span>کسر مالیات ۱۰٪</span><strong class="tax">− {{ moneyWithUnit(depositTaxAmount) }}</strong></div>
+              <div><span>کسر مالیات 0</span><strong class="tax">− {{ moneyWithUnit(depositTaxAmount) }}</strong></div>
               <div class="net"><span>مبلغ نهایی اضافه‌شده به کیف پول</span><strong>{{ moneyWithUnit(depositNetAmount) }}</strong></div>
             </div>
           </div>
@@ -567,7 +582,7 @@
           </div>
 
           <div v-else class="wallet-note">
-            {{ actionModal.type === 'deposit' ? 'واریز کارت به کارت بعد از تایید پشتیبانی با کسر ۱۰٪ مالیات به کیف پول اضافه می‌شود.' : 'انتقال بین کیف‌پول‌ها بلافاصله انجام می‌شود.' }}
+            {{ actionModal.type === 'deposit' ? 'واریز کارت به کارت بعد از تایید پشتیبانی با کسر 0% مالیات به کیف پول اضافه می‌شود.' : 'انتقال بین کیف‌پول‌ها بلافاصله انجام می‌شود.' }}
           </div>
 
           <button v-if="actionModal.type !== 'deposit' || actionModal.paymentMethod !== 'card'" class="submit-btn" :class="actionModal.type === 'deposit' ? 'submit-deposit' : 'submit-withdraw'" type="button" :disabled="!canSubmitAction" @click="submitAction">
@@ -767,7 +782,7 @@ import { formatJalaliDate, parseJalaliToIso } from '../../utils/date'
 import { formatThousandsToman, formatThousandsTomanValue, fromThousandsTomanInput } from '../../utils/money'
 import { resolveApiErrorMessage } from '../../utils/apiError'
 import { useAuthStore } from '../../store/auth.store'
-import { notifySuccess, notifyWarning } from '../../utils/notify'
+import { notifySuccess, notifyWarning, notifyError } from '../../utils/notify'
 
 const props = defineProps({
   searchQuery: { type: String, default: '' }
@@ -1150,7 +1165,7 @@ const actionQuickAmounts = computed(() => (
   actionModal.type === 'deposit' ? dynamicDepositAmounts.value : dynamicWithdrawAmounts.value
 ))
 const selectedActionAmount = computed(() => parseAmount(actionModal.amountText))
-const WALLET_DEPOSIT_TAX_PERCENT = 10
+const WALLET_DEPOSIT_TAX_PERCENT = 0
 const depositTaxAmount = computed(() => {
   if (actionModal.type !== 'deposit' || actionModal.paymentMethod !== 'card') return 0
   const gross = Math.max(0, Number(selectedActionAmount.value || 0))
@@ -1552,6 +1567,58 @@ const submitNextInstallmentPayment = async (option) => {
   }
 }
 
+const payOptionFull = async (option) => {
+  clearMessages()
+
+  if (!option?.feature_key) return
+
+  payingInstallmentFeatureKey.value = option.feature_key
+
+  try {
+    const { data } = await api.post('/payments/wallet/options/', {
+      action: 'pay_full',
+      feature_key: option.feature_key
+    }, {
+      meta: mutationMeta(
+        `wallet:full-payment:${option.feature_key}`,
+        { timeoutMs: 30000 }
+      )
+    })
+
+    state.successMessage = data?.detail || 'باقی‌مانده مبلغ با موفقیت پرداخت شد.'
+
+    if (data?.wallet) {
+      const index = state.wallets.findIndex(
+        (wallet) => Number(wallet.id) === Number(data.wallet.id)
+      )
+
+      if (index >= 0) {
+        state.wallets[index] = data.wallet
+      }
+    }
+
+    await Promise.all([
+      loadWalletDashboard(),
+      loadWalletOptions()
+    ])
+
+    await authStore.fetchMe()
+
+    reloadAfterOptionChange()
+
+  } catch (error) {
+    state.error = resolveApiErrorMessage(
+      error,
+      'پرداخت کامل ناموفق بود.'
+    )
+    notifyError(message, {
+    title: 'خطا در پرداخت کامل'
+    })
+  } finally {
+    payingInstallmentFeatureKey.value = ''
+  }
+}
+
 watch(() => props.searchQuery, async () => {
   await loadWalletDashboard()
 })
@@ -1900,6 +1967,11 @@ onBeforeUnmount(() => {
 .installment-live-preview div{padding:11px;border:1px solid var(--wallet-border);border-radius:12px;background:#fff;display:grid;gap:4px}
 .installment-live-preview span{color:var(--wallet-muted);font-size:11px;font-weight:800}
 .installment-live-preview strong{color:var(--wallet-text);font-size:15px;font-weight:850}
+.option-pay-full-btn{width:100%;min-height:46px;margin-top:10px;padding:10px 14px;border:1px solid #bbf7d0;border-radius:12px;background:#f0fdf4;color:#166534;display:flex;align-items:center;justify-content:space-between;gap:10px;font:inherit;font-size:12px;font-weight:850;cursor:pointer;transition:.2s ease}
+.option-pay-full-btn span{font-size:12px;font-weight:800;color:#15803d}
+.option-pay-full-btn:hover{background:#dcfce7;border-color:#86efac}
+.option-pay-full-btn:active{transform:translateY(1px)}
+
 @media (max-width:900px){
   .stats-row{grid-template-columns:1fr}
   .balance-strip{flex-direction:column;align-items:stretch}

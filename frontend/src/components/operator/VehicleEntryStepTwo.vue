@@ -2898,6 +2898,8 @@ onMounted(loadInitialData)
 @media (max-width: 1380px) {
   .step-two-grid {
     grid-template-columns: 1fr;
+    flex: none;
+    overflow: visible;
   }
 
   .service-picker-grid {

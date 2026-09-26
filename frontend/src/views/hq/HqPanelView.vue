@@ -1628,7 +1628,7 @@ const walletOperationHint = computed(() => (
     ? 'اول واریز بانکی را انجام دهید، بعد تایید کنید تا مبلغ از کیف پول کم شود.'
     : 'مبلغ خام رسید را وارد کنید. بعد از تایید، ۱۰٪ مالیات کسر و باقی‌مانده به کیف پول اضافه می‌شود.'
 ))
-const WALLET_DEPOSIT_TAX_PERCENT = 10
+const WALLET_DEPOSIT_TAX_PERCENT = 0
 const walletTransferGross = computed(() => parseTransferAmount(walletTransfer.amountText) || 0)
 const walletTransferTax = computed(() => Math.round((walletTransferGross.value * WALLET_DEPOSIT_TAX_PERCENT) / 100))
 const walletTransferNet = computed(() => Math.max(0, walletTransferGross.value - walletTransferTax.value))
