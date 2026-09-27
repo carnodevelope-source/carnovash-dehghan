@@ -1,9 +1,11 @@
 ﻿from datetime import datetime, time, timedelta
 from collections import defaultdict
 import re
+import secrets
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model, login, logout
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, OuterRef, Prefetch, Q, Subquery
 from django.utils import timezone
@@ -16,7 +18,11 @@ from rest_framework.views import APIView
 
 from apps.inventory.models import ExpenseEntry, StockMovement
 from apps.notifications.models import NotificationLog
-from apps.notifications.services import normalize_phone, send_provider_sms
+from apps.notifications.services import (
+    normalize_phone,
+    send_provider_sms,
+    send_provider_pattern_sms,
+)
 from apps.payments.models import CashflowTransaction, Payment, Wallet, WalletGatewayRequest
 from apps.payments.views import activate_core_software_installment
 from apps.reports.views import ReportsDashboardView
@@ -25,6 +31,7 @@ from apps.workers.models import WorkerAttendance, WorkerProfile
 from .feature_access import ATTENDANCE_FREE_WORKERS_LIMIT, feature_access_map_for_tenant, tenant_worker_count
 from .models import CarWash, CarWashFeaturePurchase, PendingTenantRegistration, SupportTicket, SupportTicketAttachment, SupportTicketMessage, User
 from .sms import (
+    send_logged_sms,
     send_registration_credentials_sms as send_system_registration_credentials_sms,
     send_user_credentials_sms as send_system_user_credentials_sms,
 )
@@ -528,6 +535,176 @@ class LoginView(APIView):
         login(request, user)
         return Response(_auth_payload(user), status=status.HTTP_200_OK)
 
+class PasswordResetRequestView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        phone = normalize_phone(request.data.get('phone', ''))
+
+        if not phone:
+            return Response(
+                {'detail': 'شماره موبایل را وارد کنید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.filter(
+            phone=phone,
+            is_active=True,
+            is_deleted=False,
+        ).select_related('tenant').first()
+
+        if not user:
+            return Response(
+                {'detail': 'کاربری با این شماره موبایل پیدا نشد.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        code = f'{secrets.randbelow(1000000):06d}'
+
+        cache_key = f'password_reset:{phone}'
+
+        cache.set(
+            cache_key,
+            {
+                'user_id': user.id,
+                'code': code,
+                'verified': False,
+            },
+            timeout=300,  
+        )
+
+        sms_result = send_provider_pattern_sms(
+            tenant=user.tenant,
+            recipient=phone,
+            pattern_code='tEomvvCIw7',
+            attributes={
+                'code': code,
+            },
+        )
+
+        if not sms_result.get('ok'):
+            cache.delete(cache_key)
+
+            return Response(
+                {'detail': 'ارسال پیامک انجام نشد. دوباره تلاش کنید.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response(
+            {
+                'detail': 'کد تایید ارسال شد.',
+                'expires_in': 300,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+class PasswordResetVerifyView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        phone = normalize_phone(request.data.get('phone', ''))
+        code = str(request.data.get('code', '')).strip()
+
+        if not phone or not code:
+            return Response(
+                {'detail': 'شماره موبایل و کد تایید را وارد کنید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not re.fullmatch(r'\d{6}', code):
+            return Response(
+                {'detail': 'کد تایید باید ۶ رقم باشد.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cache_key = f'password_reset:{phone}'
+        reset_data = cache.get(cache_key)
+
+        if not reset_data:
+            return Response(
+                {'detail': 'کد تایید منقضی شده است. دوباره درخواست کد کنید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if reset_data.get('code') != code:
+            return Response(
+                {'detail': 'کد تایید صحیح نیست.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reset_data['verified'] = True
+
+        cache.set(
+            cache_key,
+            reset_data,
+            timeout=300,
+        )
+
+        return Response(
+            {'detail': 'کد تایید شد.'},
+            status=status.HTTP_200_OK,
+        )
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        phone = normalize_phone(request.data.get('phone', ''))
+        new_password = str(request.data.get('new_password', ''))
+        confirm_password = str(request.data.get('confirm_password', ''))
+
+        if not phone or not new_password or not confirm_password:
+            return Response(
+                {'detail': 'تمام فیلدها را تکمیل کنید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if new_password != confirm_password:
+            return Response(
+                {'detail': 'رمز عبور و تکرار آن یکسان نیستند.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(new_password) < 8:
+            return Response(
+                {'detail': 'رمز عبور باید حداقل ۸ کاراکتر باشد.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cache_key = f'password_reset:{phone}'
+        reset_data = cache.get(cache_key)
+
+        if not reset_data or not reset_data.get('verified'):
+            return Response(
+                {'detail': 'ابتدا کد تایید را تایید کنید.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.filter(
+            id=reset_data.get('user_id'),
+            phone=phone,
+            is_active=True,
+            is_deleted=False,
+        ).first()
+
+        if not user:
+            cache.delete(cache_key)
+
+            return Response(
+                {'detail': 'حساب کاربری پیدا نشد.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+
+        # کد تایید بعد از استفاده دیگر قابل استفاده نباشد
+        cache.delete(cache_key)
+
+        return Response(
+            {'detail': 'رمز عبور با موفقیت تغییر کرد.'},
+            status=status.HTTP_200_OK,
+        )
 
 class LogoutView(APIView):
     def post(self, request):

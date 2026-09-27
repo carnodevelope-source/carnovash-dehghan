@@ -49,6 +49,17 @@
           <p>کارواش جدید دارید؟</p>
           <button class="text-btn" type="button" @click="openRegisterModal">باز کردن فرم ثبت نام</button>
         </div>
+        <div class="forgot-password-row">
+          <span>رمز عبور خود را فراموش کرده‌اید؟</span>
+
+          <button
+            class="text-btn forgot-password-btn"
+            type="button"
+            @click="openForgotPasswordModal"
+          >
+            بازیابی رمز عبور
+          </button>
+        </div>
       </section>
     </main>
 
@@ -161,7 +172,132 @@
         </form>
       </section>
     </div>
+    <!-- فراموشی رمز عبور -->
+<div
+  v-if="forgotPasswordModal.open"
+  class="register-modal-overlay"
+  @click.self="closeForgotPasswordModal"
+>
+  <section class="register-modal forgot-modal">
+
+    <header class="register-modal-head">
+      <div>
+        <p class="panel-kicker">بازیابی حساب</p>
+        <h3>فراموشی رمز عبور</h3>
+        <span>شماره موبایل حساب خود را وارد کنید.</span>
+      </div>
+
+      <button
+        class="modal-close"
+        type="button"
+        @click="closeForgotPasswordModal"
+      >
+        ×
+      </button>
+    </header>
+
+    <div v-if="forgotPasswordModal.step === 1" class="register-form">
+
+      <label class="field field-soft">
+        <span>شماره موبایل</span>
+
+        <input
+          v-model.trim="forgotPasswordForm.phone"
+          type="tel"
+          placeholder="09123456789"
+        />
+      </label>
+
+      <p v-if="forgotPasswordError" class="error-text">
+        {{ forgotPasswordError }}
+      </p>
+
+      <button
+        class="submit-btn"
+        type="button"
+        :disabled="forgotPasswordLoading"
+        @click="requestPasswordResetCode"
+      >
+        {{ forgotPasswordLoading ? 'در حال ارسال...' : 'ارسال کد تأیید' }}
+      </button>
+
+    </div>
+
+    <!-- مرحله دوم: تایید کد -->
+<div v-if="forgotPasswordModal.step === 2" class="register-form">
+
+  <label class="field field-soft">
+    <span>کد تأیید</span>
+
+    <input
+      v-model.trim="forgotPasswordForm.code"
+      type="text"
+      inputmode="numeric"
+      maxlength="6"
+      placeholder="کد ۶ رقمی"
+      autocomplete="one-time-code"
+    />
+  </label>
+
+  <p v-if="forgotPasswordError" class="error-text">
+    {{ forgotPasswordError }}
+  </p>
+
+  <button
+    class="submit-btn"
+    type="button"
+    :disabled="forgotPasswordLoading"
+    @click="verifyPasswordResetCode"
+  >
+    {{ forgotPasswordLoading ? 'در حال بررسی...' : 'تأیید کد' }}
+  </button>
+
+</div>
+
+<!-- مرحله سوم: تعیین رمز عبور جدید -->
+<div v-if="forgotPasswordModal.step === 3" class="register-form">
+
+  <label class="field field-soft">
+    <span>رمز عبور جدید</span>
+
+    <input
+      v-model="forgotPasswordForm.newPassword"
+      type="password"
+      placeholder="حداقل ۸ کاراکتر"
+      autocomplete="new-password"
+    />
+  </label>
+
+  <label class="field field-soft">
+    <span>تکرار رمز عبور جدید</span>
+
+    <input
+      v-model="forgotPasswordForm.confirmPassword"
+      type="password"
+      placeholder="رمز عبور را دوباره وارد کنید"
+      autocomplete="new-password"
+    />
+  </label>
+
+  <p v-if="forgotPasswordError" class="error-text">
+    {{ forgotPasswordError }}
+  </p>
+
+  <button
+    class="submit-btn"
+    type="button"
+    :disabled="forgotPasswordLoading"
+    @click="confirmPasswordReset"
+  >
+    {{ forgotPasswordLoading ? 'در حال تغییر...' : 'تغییر رمز عبور' }}
+  </button>
+
+</div>
+
+  </section>
+</div>
   </div>
+  
 </template>
 
 <script setup>
@@ -205,6 +341,153 @@ const registerForm = reactive({
 })
 
 const registerModal = reactive({ open: false })
+
+const forgotPasswordModal = reactive({
+  open: false,
+  step: 1
+})
+
+const forgotPasswordForm = reactive({
+  phone: '',
+  code: '',
+  newPassword: '',
+  confirmPassword: ''
+})
+
+const forgotPasswordError = ref('')
+const forgotPasswordLoading = ref(false)
+
+const openForgotPasswordModal = () => {
+  forgotPasswordError.value = ''
+  forgotPasswordModal.step = 1
+
+  forgotPasswordForm.phone = ''
+  forgotPasswordForm.code = ''
+  forgotPasswordForm.newPassword = ''
+  forgotPasswordForm.confirmPassword = ''
+
+  forgotPasswordModal.open = true
+}
+
+const closeForgotPasswordModal = () => {
+  forgotPasswordModal.open = false
+}
+
+const requestPasswordResetCode = async () => {
+  if (forgotPasswordLoading.value) return
+
+  forgotPasswordError.value = ''
+
+  const phone = normalizeIranMobile(forgotPasswordForm.phone)
+  const phoneError = iranMobileErrorMessage(phone)
+
+  if (phoneError) {
+    forgotPasswordError.value = phoneError
+    return
+  }
+
+  forgotPasswordLoading.value = true
+
+  try {
+    await ensureCsrfToken()
+
+    await api.post('/auth/password-reset/request/', {
+      phone
+    })
+
+    forgotPasswordForm.phone = phone
+    forgotPasswordModal.step = 2
+  } catch (error) {
+    forgotPasswordError.value = resolveApiErrorMessage(
+      error,
+      'ارسال کد تأیید انجام نشد.'
+    )
+  } finally {
+    forgotPasswordLoading.value = false
+  }
+}
+
+const verifyPasswordResetCode = async () => {
+  if (forgotPasswordLoading.value) return
+
+  forgotPasswordError.value = ''
+
+  const code = String(forgotPasswordForm.code || '').trim()
+
+  if (!/^\d{6}$/.test(code)) {
+    forgotPasswordError.value = 'کد تأیید باید ۶ رقم باشد.'
+    return
+  }
+
+  forgotPasswordLoading.value = true
+
+  try {
+    await ensureCsrfToken()
+
+    await api.post('/auth/password-reset/verify/', {
+      phone: forgotPasswordForm.phone,
+      code
+    })
+
+    forgotPasswordModal.step = 3
+  } catch (error) {
+    forgotPasswordError.value = resolveApiErrorMessage(
+      error,
+      'کد تأیید صحیح نیست یا منقضی شده است.'
+    )
+  } finally {
+    forgotPasswordLoading.value = false
+  }
+}
+
+const confirmPasswordReset = async () => {
+  if (forgotPasswordLoading.value) return
+
+  forgotPasswordError.value = ''
+
+  const newPassword = forgotPasswordForm.newPassword
+  const confirmPassword = forgotPasswordForm.confirmPassword
+
+  if (!newPassword || !confirmPassword) {
+    forgotPasswordError.value = 'رمز عبور و تکرار آن را وارد کنید.'
+    return
+  }
+
+  if (newPassword.length < 8) {
+    forgotPasswordError.value = 'رمز عبور باید حداقل ۸ کاراکتر باشد.'
+    return
+  }
+
+  if (newPassword !== confirmPassword) {
+    forgotPasswordError.value = 'رمز عبور و تکرار آن یکسان نیستند.'
+    return
+  }
+
+  forgotPasswordLoading.value = true
+
+  try {
+    await ensureCsrfToken()
+
+    await api.post('/auth/password-reset/confirm/', {
+      phone: forgotPasswordForm.phone,
+      new_password: newPassword,
+      confirm_password: confirmPassword
+    })
+
+    closeForgotPasswordModal()
+
+    form.username = forgotPasswordForm.phone
+    form.password = ''
+
+  } catch (error) {
+    forgotPasswordError.value = resolveApiErrorMessage(
+      error,
+      'تغییر رمز عبور انجام نشد.'
+    )
+  } finally {
+    forgotPasswordLoading.value = false
+  }
+}
 
 const registerSuccess = reactive({
   tenantName: '',
@@ -980,6 +1263,21 @@ const submitRegister = async () => {
   .login-foot p,
   .text-btn {
     color: #f8fbff;
+  }
+
+  .forgot-password-row {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #91bfff;
+  }
+
+  .forgot-password-btn {
+    padding: 0;
+    color: #fff;
   }
 
   .login-head h1 {

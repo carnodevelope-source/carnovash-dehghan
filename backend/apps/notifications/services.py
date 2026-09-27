@@ -923,6 +923,125 @@ def send_provider_sms(tenant, text, recipients, *, provider_config=None):
         'payload': payload,
     }
 
+def send_provider_pattern_sms(
+    tenant,
+    recipient,
+    pattern_code,
+    attributes,
+    *,
+    provider_config=None,
+):
+    config = provider_config or sms_provider_config()
+
+    api_key = str(config.get('api_key', '') or '').strip()
+    line_number = str(config.get('line_number', '') or '').strip()
+    base_url = str(
+        config.get('base_url', 'https://api.iranpayamak.com')
+        or 'https://api.iranpayamak.com'
+    ).rstrip('/')
+
+    if not api_key or not line_number:
+        return {
+            'ok': False,
+            'message': 'تنظیمات سرویس پیامک کامل نیست.',
+            'provider_status': 0,
+            'provider_data': {},
+            'raw_body': '',
+            'payload': {},
+        }
+
+    payload = {
+        'code': pattern_code,
+        'attributes': attributes,
+        'recipient': recipient,
+        'line_number': line_number,
+        'number_format': 'english',
+
+    }
+
+    req = urllib_request.Request(
+        url=f'{base_url}/ws/v1/sms/pattern',
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Api-Key': api_key,
+        },
+        method='POST',
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=15) as response:
+            raw_body = response.read().decode('utf-8')
+            response_status = response.status
+
+    except urllib_error.HTTPError as exc:
+        raw_body = exc.read().decode('utf-8', errors='replace')
+
+        try:
+            provider_data = json.loads(raw_body or '{}')
+        except json.JSONDecodeError:
+            provider_data = {'message': raw_body}
+
+        return {
+            'ok': False,
+            'message': provider_message_text(
+                provider_data,
+                fallback='سرویس پیامک درخواست را نپذیرفت.',
+            ),
+            'provider_status': exc.code,
+            'provider_data': provider_data,
+            'raw_body': raw_body,
+            'payload': payload,
+        }
+
+    except urllib_error.URLError as exc:
+        message = str(getattr(exc, 'reason', exc))
+
+        return {
+            'ok': False,
+            'message': 'ارتباط با سرویس پیامک برقرار نشد.',
+            'provider_status': 0,
+            'provider_data': {'message': message},
+            'raw_body': message,
+            'payload': payload,
+        }
+
+    try:
+        provider_data = json.loads(raw_body or '{}')
+    except json.JSONDecodeError:
+        provider_data = {
+            'status': 'error',
+            'message': raw_body,
+        }
+
+    if response_status not in {200, 201} or provider_data.get('status') != 'success':
+        return {
+            'ok': False,
+            'message': provider_message_text(provider_data),
+            'provider_status': response_status,
+            'provider_data': provider_data,
+            'raw_body': raw_body,
+            'payload': payload,
+        }
+
+    data = provider_data.get('data')
+
+    provider_id = (
+        str(data.get('id') or '')
+        if isinstance(data, dict)
+        else str(data or '')
+    )
+
+    return {
+        'ok': True,
+        'message': 'پیامک پترن با موفقیت ارسال شد.',
+        'provider_status': response_status,
+        'provider_data': provider_data,
+        'provider_id': provider_id,
+        'raw_body': raw_body,
+        'payload': payload,
+    }
 
 def _send_vehicle_event_sms_sync(event_code, tenant, vehicle, *, created_by=None, extra_context=None):
     from apps.notifications.models import NotificationLog
