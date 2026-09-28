@@ -152,7 +152,6 @@
             <option value="busy">شلوغ</option>
           </select>
         </label>
-        <button class="ghost-btn btn-with-icon" @click="loadDashboard"><IconlyIcon name="show" size="sm" />بروزرسانی</button>
       </section>
 
       <div v-if="activeTab === 'dashboard' && errorMessage" class="error-box">{{ errorMessage }}</div>

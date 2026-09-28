@@ -978,12 +978,12 @@ const resolveRangeDates = (rangeKey) => {
   if (rangeKey === 'today') {
     return { start: toIsoDate(start), end: toIsoDate(end) }
   }
-  if (rangeKey === 'week') {
-    const day = now.getDay()
-    const offset = day === 0 ? 6 : day - 1
-    start.setDate(now.getDate() - offset)
-    return { start: toIsoDate(start), end: toIsoDate(end) }
-  }
+if (rangeKey === 'week') {
+  const day = now.getDay()
+  const offset = (day + 1) % 7
+  start.setDate(now.getDate() - offset)
+  return { start: toIsoDate(start), end: toIsoDate(end) }
+}
   if (rangeKey === 'month') {
     start = new Date(now.getFullYear(), now.getMonth(), 1)
     return { start: toIsoDate(start), end: toIsoDate(end) }
