@@ -1289,6 +1289,10 @@ class ReportsDashboardView(APIView):
 
         all_jobs = [vehicle.job for vehicle in vehicles if getattr(vehicle, 'job', None)]
         total_carwash = sum((_job_carwash_share_amount(job) for job in all_jobs), Decimal('0'))
+        total_products = sum(
+            (_normalize_decimal(getattr(job, 'products_total', 0)) for job in all_jobs),
+            Decimal('0'),
+        )
         total_discount = sum((_job_discount_total(job) for job in all_jobs), Decimal('0'))
         total_facility_discount = sum((_normalize_decimal(getattr(job, 'facility_discount_total', 0)) for job in all_jobs), Decimal('0'))
         total_loyalty_discount = sum((_normalize_decimal(getattr(job, 'loyalty_discount_total', 0)) for job in all_jobs), Decimal('0'))
@@ -1696,6 +1700,7 @@ class ReportsDashboardView(APIView):
             'summary': {
                 'vehicles_count': len(rows),
                 'carwash_total': float(total_carwash),
+                'products_total': float(total_products),
                 'worker_total': float(total_worker),
                 'tips_total': float(total_tip),
                 'discount_total': float(total_discount),

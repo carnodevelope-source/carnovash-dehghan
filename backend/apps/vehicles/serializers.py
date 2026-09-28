@@ -700,7 +700,15 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             service_list_subtotal,
             facility_discount_total + loyalty_discount_total + manual_discount_total,
         )
-        taxable_total = max(Decimal('0'), service_list_subtotal - total_discount) + products_total
+        final_total = (
+            max(
+                Decimal('0'),
+                services_total - loyalty_discount_total - manual_discount_total,
+            )
+            + products_total
+            + tax_total
+            + tip_amount
+        )
         tax_total = (taxable_total * Decimal(str(tax_percent or 0))) / Decimal('100')
         final_total = taxable_total + tax_total + tip_amount
         return {
