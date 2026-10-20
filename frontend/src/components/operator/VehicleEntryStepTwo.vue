@@ -1073,10 +1073,30 @@ const formatQueueTime = (value) => {
 
 const resolveWorkerPaymentConfig = (worker) => {
   if (!worker) return { type: 'percent', value: 0 }
-  const paymentType = worker.payment_type || ((Number(worker.default_fixed_wage || 0) > 0) ? 'fixed' : 'percent')
-  const paymentValue = Math.max(0, Number(worker.payment_value || 0))
+  const paymentType =
+    worker.payment_type ||
+    ((Number(worker.default_fixed_wage || 0) > 0) ? 'fixed' : 'percent')
+
+  let paymentValue = 0
+
+  if (paymentType === 'fixed') {
+    paymentValue = Number(worker.default_fixed_wage || worker.payment_value || 0)
+  } else if (paymentType === 'hourly') {
+    paymentValue = Number(worker.default_hourly_wage || worker.payment_value || 0)
+  } else if (paymentType === 'monthly') {
+    // حقوق ماهیانه نباید وارد سهم این خودرو شود
+    paymentValue = 0
+  } else {
+    paymentValue = Number(worker.default_commission_percent || worker.payment_value || 0)
+  }
+
   return {
-    type: paymentType === 'fixed' ? 'fixed' : paymentType === 'hourly' ? 'fixed' : 'percent',
+    type:
+      paymentType === 'monthly'
+        ? 'monthly'
+        : ['fixed', 'hourly'].includes(paymentType)
+          ? 'fixed'
+          : 'percent',
     value: paymentValue
   }
 }
@@ -1094,6 +1114,12 @@ const applyWorkerPaymentDefaults = (workersList = selectedWorkers.value) => {
   const averageValue = configs.length
     ? configs.reduce((sum, item) => sum + Number(item.value || 0), 0) / configs.length
     : 0
+  if (resolvedType === 'monthly') {
+    shareType.value = 'monthly'
+    shareValueInput.value = '0'
+    return
+  }
+
   shareType.value = resolvedType === 'fixed' ? 'fixed' : 'percent'
   shareValueInput.value = String(Number(averageValue.toFixed(2)))
 }

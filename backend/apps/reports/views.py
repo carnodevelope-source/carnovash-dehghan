@@ -109,6 +109,69 @@ def _jalali_months_between(start_month, end_month):
         return 0
     return (end_index - start_index) + 1
 
+def _is_jalali_leap_year(year):
+    year = int(year)
+    return (((year + 39) * 682) % 2816) < 682
+
+
+def _jalali_month_days(year, month):
+    year = int(year)
+    month = int(month)
+
+    if 1 <= month <= 6:
+        return 31
+
+    if 7 <= month <= 11:
+        return 30
+
+    if month == 12:
+        return 30 if _is_jalali_leap_year(year) else 29
+
+    return 0
+
+def _worker_monthly_wage_for_month(worker, target_month):
+    monthly_wage = _normalize_decimal(
+        getattr(worker, 'default_monthly_wage', 0)
+    )
+
+    if monthly_wage <= 0:
+        return Decimal('0')
+
+    target_tuple = _jalali_month_tuple(target_month)
+    if not target_tuple:
+        return Decimal('0')
+
+    target_year, target_month_number = target_tuple
+
+    started_at = getattr(worker, 'started_at', None)
+
+    if not started_at:
+        return monthly_wage
+
+    start_year, start_month, start_day = _gregorian_to_jalali(started_at)
+
+    # ماه موردنظر قبل از شروع همکاری است
+    if (target_year, target_month_number) < (start_year, start_month):
+        return Decimal('0')
+
+    # ماه‌های بعد از ماه شروع = حقوق کامل
+    if (target_year, target_month_number) > (start_year, start_month):
+        return monthly_wage
+
+    # ماه اول همکاری = حقوق به نسبت روزهای باقی‌مانده
+    days_in_month = _jalali_month_days(start_year, start_month)
+
+    worked_days = max(0, days_in_month - start_day)
+
+    if worked_days <= 0:
+        return Decimal('0')
+
+    daily_wage = monthly_wage / Decimal(str(days_in_month))
+
+    return (daily_wage * Decimal(str(worked_days))).quantize(
+        Decimal('0.01'),
+        rounding=ROUND_HALF_UP,
+    )
 
 def _jalali_next_month(value):
     month_tuple = _jalali_month_tuple(value)
@@ -385,6 +448,8 @@ def _job_worker_share_total(job):
     expected, _, _ = _expected_worker_share_total(job, share_base)
     stored = min(share_base, _money_q(getattr(job, 'worker_share_amount', 0)))
     payment_type = getattr(job, 'worker_payment_type', '') or VehicleJob.WorkerPaymentType.PERCENT
+    if payment_type == VehicleJob.WorkerPaymentType.MONTHLY:
+        return Decimal('0')
     if payment_type == VehicleJob.WorkerPaymentType.PERCENT:
         percent, _ = _recover_job_commission_percent(job)
         if percent > 0:
@@ -419,7 +484,10 @@ def _job_worker_share_for(job, worker_id):
     worker_ids = _job_worker_ids(job)
     if not worker_ids or int(worker_id) not in {int(item) for item in worker_ids}:
         return Decimal('0')
+    payment_type = getattr(job, 'worker_payment_type', '') or ''
 
+    if payment_type == VehicleJob.WorkerPaymentType.MONTHLY:
+        return Decimal('0')
     share_base = _job_share_base_total(job)
     expected_total, _, _ = _expected_worker_share_total(job, share_base)
     distribution_percent = _job_worker_distribution_percent_for(job, worker_id)
@@ -566,6 +634,8 @@ def _expected_worker_share_total(job, share_base):
     share_base = max(Decimal('0'), _money_q(share_base))
     payment_type = getattr(job, 'worker_payment_type', '') or VehicleJob.WorkerPaymentType.PERCENT
     stored_share = min(share_base, _money_q(getattr(job, 'worker_share_amount', 0)))
+    if payment_type == VehicleJob.WorkerPaymentType.MONTHLY:
+        return Decimal('0'), False, Decimal('0')
     if payment_type == VehicleJob.WorkerPaymentType.HOURLY:
         return stored_share, False, _normalize_decimal(getattr(job, 'worker_payment_percent', 0))
     if payment_type == VehicleJob.WorkerPaymentType.FIXED:
@@ -876,6 +946,10 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
         transactions = transactions.filter(vehicle_job__isnull=True)
 
     aggregates = transactions.aggregate(
+        monthly_wage_accrual_total=Coalesce(
+            Sum('amount', filter=Q(kind=WorkerPayoutTransaction.Kind.MONTHLY_WAGE_ACCRUAL)),
+            Value(Decimal('0')),
+        ),
         bonus_total=Coalesce(
             Sum('amount', filter=Q(kind=WorkerPayoutTransaction.Kind.BONUS)),
             Value(Decimal('0')),
@@ -897,13 +971,37 @@ def _compute_worker_financials(worker, jobs, insurance_month='', start=None, end
             Value(Decimal('0')),
         ),
     )
-    attendance_minutes = _compute_worker_attendance_minutes(worker, start=start, end=end)
+    attendance_minutes = _compute_worker_attendance_minutes(
+        worker,
+        start=start,
+        end=end,
+    )
     attendance_hours = _decimal_hours_from_minutes(attendance_minutes)
-    hourly_wage = _normalize_decimal(getattr(worker, 'default_hourly_wage', 0))
-    if getattr(worker, 'payment_type', '') == WorkerProfile.PaymentType.HOURLY:
-        wage_total = (attendance_hours * hourly_wage).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    hourly_wage = _normalize_decimal(
+            getattr(worker, 'default_hourly_wage', 0)
+    )
+
+    payment_type = getattr(worker, 'payment_type', '')
+
+    if payment_type == WorkerProfile.PaymentType.HOURLY:
+        wage_total = (
+            attendance_hours * hourly_wage
+        ).quantize(
+            Decimal('0.01'),
+            rounding=ROUND_HALF_UP,
+        )
+
+    elif payment_type == WorkerProfile.PaymentType.MONTHLY:
+        wage_total = _normalize_decimal(
+            aggregates['monthly_wage_accrual_total']
+        )
+
     else:
-        wage_total = sum((_job_worker_share_for(job, worker.id) for job in jobs), Decimal('0'))
+        wage_total = sum(
+            (_job_worker_share_for(job, worker.id) for job in jobs),
+            Decimal('0'),
+        )
     tip_total = sum((_job_worker_tip_for(job, worker.id) for job in jobs), Decimal('0'))
     insurance_target_month = _normalize_jalali_month(insurance_month) or _current_jalali_month()
     insurance_start_month = _resolve_worker_insurance_start_month(worker)
@@ -975,19 +1073,38 @@ def _compute_all_workers_totals(tenant, jobs, insurance_month='', start=None, en
                     tenant=tenant,
                 ).first()
     if tenant:
-        # Only hourly workers who actually worked in this range (avoid inflating totals with idle staff).
+        # Hourly workers are included only when they have attendance.
         hourly_workers = WorkerProfile.objects.select_related('user').filter(
             tenant=tenant,
             payment_type=WorkerProfile.PaymentType.HOURLY,
             is_deleted=False,
             user__is_deleted=False,
         )
+
         for worker in hourly_workers:
             if worker.id in workers_map:
                 continue
-            if _compute_worker_attendance_minutes(worker, start=start, end=end) <= 0:
+
+            if _compute_worker_attendance_minutes(
+                worker,
+                start=start,
+                end=end,
+            ) <= 0:
                 continue
+
             workers_map[worker.id] = worker
+
+        # Monthly workers are not dependent on jobs or attendance.
+        monthly_workers = WorkerProfile.objects.select_related('user').filter(
+            tenant=tenant,
+            payment_type=WorkerProfile.PaymentType.MONTHLY,
+            is_deleted=False,
+            user__is_deleted=False,
+        )
+
+        for worker in monthly_workers:
+            if worker.id not in workers_map:
+                workers_map[worker.id] = worker
     workers = [item for item in workers_map.values() if item]
     total_payable = Decimal('0')
     total_bonus = Decimal('0')

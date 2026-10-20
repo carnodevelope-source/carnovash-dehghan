@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 import base64
 import json
 import logging
@@ -165,18 +166,17 @@ def log_ai_plate_audit_event(*, vehicle, request, operation):
         try:
             now = timezone.localtime()
             # Rebuild a lightweight vehicle-like namespace for helpers that need fields.
-            class _VehicleSnap:
-                id = vehicle_id
-                plate_number = plate_number
-                plate_type = plate_type
-                plate_mid = plate_mid
-                plate_letter = plate_letter
-                plate_left = plate_left
-                plate_right = plate_right
-                car_model = car_model
-                car_color = car_color
-
-            snap = _VehicleSnap()
+            snap = SimpleNamespace(
+                id=vehicle_id,
+                plate_number=plate_number,
+                plate_type=plate_type,
+                plate_mid=plate_mid,
+                plate_letter=plate_letter,
+                plate_left=plate_left,
+                plate_right=plate_right,
+                car_model=car_model,
+                car_color=car_color,
+            )
             record = {
                 'created_at': now.isoformat(),
                 'operation': operation,

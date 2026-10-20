@@ -562,10 +562,21 @@
                 <option value="percent">درصدی</option>
                 <option value="fixed">تومانی</option>
                 <option value="hourly">ساعتی</option>
+                <option value="monthly">ماهیانه</option>
               </select>
             </label>
             <label>
-              <span>{{ forms.worker.payment_type === 'percent' ? 'درصد دریافتی' : forms.worker.payment_type === 'hourly' ? 'مبلغ ساعتی (تومان)' : 'مبلغ دریافتی (تومان)' }}</span>
+              <span>
+                  {{
+                    forms.worker.payment_type === 'percent'
+                      ? 'درصد دریافتی'
+                      : forms.worker.payment_type === 'hourly'
+                        ? 'مبلغ ساعتی (تومان)'
+                        : forms.worker.payment_type === 'monthly'
+                          ? 'حقوق ماهیانه (تومان)'
+                          : 'مبلغ دریافتی (تومان)'
+                  }}
+                </span>
               <input
                 v-if="forms.worker.payment_type === 'percent'"
                 type="number"
@@ -1046,7 +1057,7 @@ const workerRoleLabel = (value) => {
 }
 
 const formatWorkerPayment = (worker) => {
-  if (['fixed', 'hourly'].includes(worker?.payment_type || 'percent')) return money(worker?.payment_value || 0)
+  if (['fixed', 'hourly', 'monthly'].includes(worker?.payment_type || 'percent')) return money(worker?.payment_value || 0)
   return `${Number(worker?.payment_value || 0).toLocaleString('fa-IR')}٪`
 }
 const serviceActionLabel = (value) => ({
@@ -1623,7 +1634,7 @@ const openWorkerModal = (item = null) => {
   workerPhoneTouched.value = false
   forms.worker.address = item?.address || ''
   forms.worker.payment_type = item?.payment_type || 'percent'
-  forms.worker.payment_value = ['fixed', 'hourly'].includes(forms.worker.payment_type)
+  forms.worker.payment_value = ['fixed', 'hourly', 'monthly'].includes(forms.worker.payment_type)
     ? toThousandsDisplay(item?.payment_value || 0)
     : Number(item?.payment_value || 0)
   forms.worker.insurance_amount = toThousandsDisplay(item?.insurance_amount || 0)
@@ -1791,7 +1802,7 @@ const submitModal = async () => {
         t(phoneError, 'error')
         return
       }
-      const paymentValueNormalized = ['fixed', 'hourly'].includes(forms.worker.payment_type)
+      const paymentValueNormalized = ['fixed', 'hourly', 'monthly'].includes(forms.worker.payment_type)
         ? fromThousandsInput(forms.worker.payment_value)
         : Number(forms.worker.payment_value || 0)
       const entrustedItemsPayload = forms.worker.has_entrusted_item

@@ -573,14 +573,39 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             return None, None
 
         payment_configs = []
-        for profile in ordered_profiles:
-            if profile.payment_type == 'hourly' and (profile.default_hourly_wage or 0) > 0:
-                payment_configs.append((VehicleJob.WorkerPaymentType.HOURLY, Decimal(str(profile.default_hourly_wage or 0))))
-            elif profile.payment_type == 'fixed' or (profile.default_fixed_wage or 0) > 0:
-                payment_configs.append((VehicleJob.WorkerPaymentType.FIXED, Decimal(str(profile.default_fixed_wage or 0))))
-            else:
-                payment_configs.append((VehicleJob.WorkerPaymentType.PERCENT, Decimal(str(profile.default_commission_percent or 0))))
 
+        for profile in ordered_profiles:
+            if profile.payment_type == 'monthly':
+                payment_configs.append(
+                    (
+                        VehicleJob.WorkerPaymentType.MONTHLY,
+                        Decimal('0'),
+                    )
+                )
+
+            elif profile.payment_type == 'hourly' and (profile.default_hourly_wage or 0) > 0:
+                payment_configs.append(
+                    (
+                        VehicleJob.WorkerPaymentType.HOURLY,
+                        Decimal(str(profile.default_hourly_wage or 0)),
+                    )
+                )
+
+            elif profile.payment_type == 'fixed' or (profile.default_fixed_wage or 0) > 0:
+                payment_configs.append(
+                    (
+                        VehicleJob.WorkerPaymentType.FIXED,
+                        Decimal(str(profile.default_fixed_wage or 0)),
+                    )
+                )
+
+            else:
+                payment_configs.append(
+                    (
+                        VehicleJob.WorkerPaymentType.PERCENT,
+                        Decimal(str(profile.default_commission_percent or 0)),
+                    )
+                )
         if len(payment_configs) == 1:
             return payment_configs[0]
 
@@ -916,10 +941,23 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             services_total,
             manual_discount_total=financials.get('manual_discount_total') or 0,
         )
-        if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
-            worker_share_amount = min(share_base_total, Decimal(str(share_value or 0)))
+        if payment_type == VehicleJob.WorkerPaymentType.MONTHLY:
+            worker_share_amount = Decimal('0')
+
+        elif payment_type in {
+            VehicleJob.WorkerPaymentType.FIXED,
+            VehicleJob.WorkerPaymentType.HOURLY,
+        }:
+            worker_share_amount = min(
+                share_base_total,
+                Decimal(str(share_value or 0)),
+            )
+
         else:
-            percent = min(Decimal('100'), max(Decimal('0'), Decimal(str(share_value or 0))))
+            percent = min(
+                Decimal('100'),
+                max(Decimal('0'), Decimal(str(share_value or 0))),
+            )
             worker_share_amount = (share_base_total * percent) / Decimal('100')
         carwash_share_amount = carwash_remainder(
             share_base_total,
@@ -1381,13 +1419,25 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             services_total,
             manual_discount_total=financials.get('manual_discount_total') or 0,
         )
-        if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
+        if payment_type == VehicleJob.WorkerPaymentType.MONTHLY:
+            worker_share_amount = Decimal('0')
+            payment_percent = Decimal('0')
+            payment_fixed = Decimal('0')
+
+        elif payment_type in {
+            VehicleJob.WorkerPaymentType.FIXED,
+            VehicleJob.WorkerPaymentType.HOURLY,
+        }:
             fixed_amount = max(Decimal('0'), share_value)
             worker_share_amount = min(share_base_total, fixed_amount)
             payment_percent = Decimal('0')
             payment_fixed = fixed_amount
+
         else:
-            percent = min(Decimal('100'), max(Decimal('0'), share_value))
+            percent = min(
+                Decimal('100'),
+                max(Decimal('0'), share_value),
+            )
             worker_share_amount = (share_base_total * percent) / Decimal('100')
             payment_percent = percent
             payment_fixed = Decimal('0')

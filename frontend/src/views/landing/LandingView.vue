@@ -69,10 +69,7 @@
             از پذیرش خودرو و پلاک‌خوان تا پرداخت، گزارش مالی، پیامک و باشگاه مشتریان.
           </p>
           <div class="hero-actions">
-            <button class="btn btn-outline btn-lg" type="button" @click="openTrainingVideo">
-              <IconlyIcon name="play" size="lg" tone="brand" />
-              ویدیو آموزشی
-            </button>
+
             <RouterLink class="btn btn-primary btn-lg" to="/login">
               ورود به پنل
               <IconlyIcon name="arrowLeft" size="md" tone="white" />
@@ -105,44 +102,6 @@
           </picture>
         </div>
       </section>
-
-      <Teleport to="body">
-        <Transition name="training-video">
-          <div
-            v-if="trainingVideoOpen"
-            class="training-video-overlay"
-            @click.self="closeTrainingVideo"
-          >
-          <div class="training-video-modal" role="dialog" aria-modal="true" aria-label="ویدیو آموزشی کارنوواش" tabindex="-1">
-            <div class="training-video-head">
-              <div>
-                <span class="training-video-kicker">شروع سریع کار با کارنوواش</span>
-                <strong>ویدیو آموزشی کارنوواش</strong>
-              </div>
-              <button type="button" class="training-video-close" aria-label="بستن" @click="closeTrainingVideo">×</button>
-            </div>
-            <div class="training-video-frame">
-              <iframe
-                title="ویدیو آموزشی نرم‌افزار کارنوواش"
-                src="https://www.aparat.com/video/video/embed/videohash/rotp2s5/vt/frame"
-                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                allowfullscreen="true"
-                webkitallowfullscreen="true"
-                mozallowfullscreen="true"
-              />
-            </div>
-            <a
-              class="training-video-link"
-              href="https://www.aparat.com/v/rotp2s5"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              مشاهده در آپارات
-            </a>
-          </div>
-          </div>
-        </Transition>
-      </Teleport>
 
       <section class="features-section" id="features">
         <div class="section-heading">
@@ -408,7 +367,6 @@ import mobileImg from '../../assets/landing/mobile-app-platform.webp'
 import ctaImg from '../../assets/landing/automatic-carwash-station.webp'
 
 const mobileOpen = ref(false)
-const trainingVideoOpen = ref(false)
 const activeSection = ref('home')
 
 const navItems = [
@@ -580,22 +538,6 @@ const toFaDigit = (value) => String(value).replace(/\d/g, (digit) => '۰۱۲۳۴
 
 let observer = null
 let faqSchemaEl = null
-let trainingVideoAutoOpenTimer = null
-const TRAINING_VIDEO_SESSION_KEY = 'carvash.landing.training-video-seen.v1'
-
-const openTrainingVideo = () => {
-  trainingVideoOpen.value = true
-  mobileOpen.value = false
-}
-
-const closeTrainingVideo = () => {
-  trainingVideoOpen.value = false
-  try {
-    window.sessionStorage.setItem(TRAINING_VIDEO_SESSION_KEY, '1')
-  } catch {
-    // Storage can be unavailable in private or restricted browser sessions.
-  }
-}
 
 const scrollTo = (id) => {
   mobileOpen.value = false
@@ -617,10 +559,7 @@ const onNavClick = (event, item) => {
 
 const onKeydown = (event) => {
   if (event.key === 'Escape') {
-    if (trainingVideoOpen.value) {
-      closeTrainingVideo()
-      return
-    }
+
     mobileOpen.value = false
   }
 }
@@ -648,14 +587,6 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   mountFaqSchema()
 
-  try {
-    if (!window.sessionStorage.getItem(TRAINING_VIDEO_SESSION_KEY)) {
-      trainingVideoAutoOpenTimer = window.setTimeout(openTrainingVideo, 450)
-    }
-  } catch {
-    trainingVideoAutoOpenTimer = window.setTimeout(openTrainingVideo, 450)
-  }
-
   observer = new IntersectionObserver(
     (entries) => {
       const visible = entries
@@ -676,7 +607,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
-  if (trainingVideoAutoOpenTimer) window.clearTimeout(trainingVideoAutoOpenTimer)
   observer?.disconnect()
   faqSchemaEl?.remove()
 })
@@ -884,116 +814,6 @@ a.btn-primary:visited {
   height: auto;
   filter: drop-shadow(0 28px 48px rgba(8, 70, 170, 0.18));
   transform: translateY(8px);
-}
-
-.training-video-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgba(6, 18, 42, 0.78);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.training-video-modal {
-  width: min(920px, 100%);
-  display: grid;
-  gap: 12px;
-  padding: 18px;
-  border-radius: 26px;
-  background: linear-gradient(145deg, #10244d, #091426 70%);
-  border: 1px solid rgba(147, 197, 253, 0.28);
-  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.45);
-}
-
-.training-video-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: #fff;
-}
-
-.training-video-head strong {
-  display: block;
-  font-size: 15px;
-}
-
-.training-video-kicker {
-  display: block;
-  margin-bottom: 3px;
-  color: #93c5fd;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.training-video-close {
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-  transition: transform 0.18s ease, background 0.18s ease;
-}
-
-.training-video-close:hover {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(1.06);
-}
-
-.training-video-frame {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  border-radius: 16px;
-  overflow: hidden;
-  background: #000;
-}
-
-.training-video-frame iframe {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
-}
-
-.training-video-link {
-  color: #93c5fd;
-  font-size: 13px;
-  font-weight: 800;
-  text-decoration: none;
-  width: max-content;
-}
-
-.training-video-link:hover {
-  text-decoration: underline;
-}
-
-.training-video-enter-active,
-.training-video-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.training-video-enter-active .training-video-modal,
-.training-video-leave-active .training-video-modal {
-  transition: transform 0.24s ease, opacity 0.2s ease;
-}
-
-.training-video-enter-from,
-.training-video-leave-to {
-  opacity: 0;
-}
-
-.training-video-enter-from .training-video-modal,
-.training-video-leave-to .training-video-modal {
-  opacity: 0;
-  transform: translateY(16px) scale(0.98);
 }
 
 .hero-copy {
@@ -1855,32 +1675,6 @@ a.btn-primary:visited {
 }
 
 @media (max-width: 820px) {
-  .training-video-overlay {
-    align-items: end;
-    padding: 12px;
-  }
-
-  .training-video-modal {
-    width: 100%;
-    max-height: calc(100dvh - 24px);
-    padding: 14px;
-    border-radius: 22px;
-  }
-
-  .training-video-head {
-    min-height: 38px;
-  }
-
-  .training-video-frame {
-    border-radius: 14px;
-  }
-
-  .training-video-link {
-    min-height: 32px;
-    display: inline-flex;
-    align-items: center;
-  }
-
   .page-shell {
     width: 100%;
   }

@@ -49,11 +49,14 @@ def _acquire_cycle_lease():
 
 def _run_background_jobs_once():
     from django.core.management import call_command
+    from django.utils import timezone
+    from apps.reports.monthly_wages import accrue_monthly_wages_for_day
 
     from .nightly_sms import dispatch_due_nightly_manager_summaries
     from .support_tickets import close_stale_support_tickets
     from apps.subscriptions.services import run_expiry_and_reminder_jobs
 
+    accrue_monthly_wages_for_day(timezone.localdate())
     dispatch_due_nightly_manager_summaries()
     close_stale_support_tickets()
     run_expiry_and_reminder_jobs()

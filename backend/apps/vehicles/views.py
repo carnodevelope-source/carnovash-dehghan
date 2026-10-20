@@ -1220,11 +1220,26 @@ class VehicleReleaseCheckoutView(APIView):
         """Always derive worker share from payment config × services pool (ignore inflated stored amounts)."""
         share_pool = max(Decimal('0'), self._money(share_pool))
         payment_type = getattr(job, 'worker_payment_type', '') or ''
+
+        # نیروی ماهیانه از هر خودرو سهم جداگانه نمی‌گیرد
+        if payment_type == VehicleJob.WorkerPaymentType.MONTHLY:
+            return Decimal('0')
+
         if payment_type == VehicleJob.WorkerPaymentType.PERCENT:
-            percent = self._clamp_percent(getattr(job, 'worker_payment_percent', 0))
+            percent = self._clamp_percent(
+                getattr(job, 'worker_payment_percent', 0)
+            )
             return self._money((share_pool * percent) / Decimal('100'))
-        if payment_type in {VehicleJob.WorkerPaymentType.FIXED, VehicleJob.WorkerPaymentType.HOURLY}:
-            return min(share_pool, self._money(getattr(job, 'worker_payment_fixed', 0)))
+
+        if payment_type in {
+            VehicleJob.WorkerPaymentType.FIXED,
+            VehicleJob.WorkerPaymentType.HOURLY,
+        }:
+            return min(
+                share_pool,
+                self._money(getattr(job, 'worker_payment_fixed', 0))
+            )
+
         stored = self._money(getattr(job, 'worker_share_amount', 0))
         return min(share_pool, stored)
 

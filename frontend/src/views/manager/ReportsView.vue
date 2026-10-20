@@ -2,17 +2,22 @@
   <AppShell title="گزارشات" subtitle="تحلیل مالی و عملیاتی">
     <div class="reports-content">
       <section class="range-bar">
-        <button
-          v-for="option in rangeOptions"
-          :key="option.key"
-          class="range-chip"
-          :class="{ active: filters.rangeKey === option.key }"
-          @click="setRange(option.key)"
-        >
-          <IconlyIcon :name="option.icon" size="sm" />
-          {{ option.label }}
-        </button>
-      </section>
+      <button
+        v-for="option in rangeOptions"
+        :key="option.key"
+        class="range-chip"
+        :class="{ active: filters.rangeKey === option.key }"
+        @click="setRange(option.key)"
+      >
+        <IconlyIcon :name="option.icon" size="sm" />
+        {{ option.label }}
+      </button>
+
+      <div class="range-period-label">
+        <IconlyIcon name="calendar" size="xs" />
+        <span>{{ reportPeriodLabel }}</span>
+      </div>
+    </section>
 
       <section class="filters-card">
         <div class="filters-top-row">
@@ -831,7 +836,12 @@ const moneyLatin = (value) => Number(value || 0).toLocaleString('en-US')
 const receiptMoney = (value) => `${moneyLatin(value)}`
 const formatStatus = (value) => ({ entered: 'در انتظار تکمیل', assigned: 'در انتظار تکمیل', in_progress: 'در حال انجام', ready_to_settle: 'در انتظار تکمیل', released: 'ترخیص شده', cancelled: 'لغو' }[value] || '-')
 const formatGender = (value) => ({ male: 'آقا', female: 'خانم' }[value] || '-')
-const workerPaymentTypeLabel = (value) => ({ hourly: 'ساعتی', fixed: 'ثابت', percent: 'درصدی' }[value] || '-')
+const workerPaymentTypeLabel = (value) => ({
+  hourly: 'ساعتی',
+  fixed: 'ثابت',
+  monthly: 'ماهیانه',
+  percent: 'درصدی'
+}[value] || '-')
 const workHoursLabel = (value) => `${Number(value || 0).toLocaleString('fa-IR', { maximumFractionDigits: 2 })} ساعت`
 const payoutKindLabel = (value) => ({ wage_payment: 'پرداخت حقوق', tip_payment: 'پرداخت انعام', insurance_payment: 'پرداخت حق بیمه', advance_payment: 'پرداخت مساعده', bonus: 'پاداش', penalty: 'جریمه' }[value] || value)
 const paymentMethodLabel = (value) => ({ cash: 'نقدی', transfer: 'کارت به کارت', cheque: 'چک', credit: 'نسیه', pos: 'کارت‌خوان', manual: 'دستی' }[value] || value || '-')
@@ -985,9 +995,23 @@ if (rangeKey === 'week') {
   return { start: toIsoDate(start), end: toIsoDate(end) }
 }
   if (rangeKey === 'month') {
-    start = new Date(now.getFullYear(), now.getMonth(), 1)
-    return { start: toIsoDate(start), end: toIsoDate(end) }
+  const jalaliToday = formatJalaliDate(toIsoDate(now))
+  const parts = String(jalaliToday).split('/')
+
+  if (parts.length === 3) {
+    const jalaliMonthStart = `${parts[0]}/${parts[1]}/01`
+    const monthStart = parseJalaliToIso(jalaliMonthStart)
+
+    if (monthStart) {
+      return {
+        start: monthStart,
+        end: toIsoDate(end)
+      }
+    }
   }
+
+  return { start: '', end: toIsoDate(end) }
+}
   return { start: '', end: '' }
 }
 
@@ -2319,7 +2343,19 @@ onBeforeUnmount(() => {
 .blacklist-modal-body p strong{color:#0f172a;font-size:13px;text-align:left}
 .blacklist-plate-preview{display:flex;justify-content:center;padding:8px 0 4px}
 .blacklist-modal-body .primary-btn{width:100%}
-
+.range-period-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  background: #f5f7f2;
+  color: #68745c;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .modal-body input,.modal-body select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px}
 .pdf-format-panel{width:min(560px,100%)}
 .pdf-format-body{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px}

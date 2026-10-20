@@ -296,6 +296,7 @@ class VehicleJob(TimestampedModel):
         PERCENT = 'percent', 'Percent'
         FIXED = 'fixed', 'Fixed'
         HOURLY = 'hourly', 'Hourly'
+        MONTHLY = 'monthly', 'Monthly'
 
     tenant = models.ForeignKey(
         'cw_auth.CarWash',

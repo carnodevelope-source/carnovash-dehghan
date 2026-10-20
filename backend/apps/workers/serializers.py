@@ -102,6 +102,8 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
         return 'fixed' if (obj.default_fixed_wage or 0) > 0 else 'percent'
 
     def get_payment_value(self, obj):
+        if obj.payment_type == 'monthly':
+            return obj.default_monthly_wage
         if obj.payment_type == 'hourly':
             return obj.default_hourly_wage
         if obj.payment_type == 'fixed' or (obj.default_fixed_wage or 0) > 0:
@@ -171,6 +173,7 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
             'default_commission_percent',
             'default_fixed_wage',
             'default_hourly_wage',
+            'default_monthly_wage',
             'last_assigned_at',
             'has_entrusted_item',
             'entrusted_items',
@@ -229,7 +232,10 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
     started_at = serializers.DateField(required=False, allow_null=True)
     address = serializers.CharField(required=False, allow_blank=True)
     is_available = serializers.BooleanField(default=True)
-    payment_type = serializers.ChoiceField(choices=['percent', 'fixed', 'hourly'], default='percent')
+    payment_type = serializers.ChoiceField(
+        choices=['percent', 'fixed', 'hourly', 'monthly'],
+        default='percent',
+    )
     payment_value = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
     insurance_amount = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
     tip_share_percent = serializers.DecimalField(max_digits=5, decimal_places=2, default=0)
@@ -404,20 +410,49 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         if payment_type == 'fixed':
             profile.default_fixed_wage = payment_value
             profile.default_hourly_wage = 0
+            profile.default_monthly_wage = 0
             profile.default_commission_percent = 0
             profile.payment_type = 'fixed'
+
         elif payment_type == 'hourly':
             profile.default_hourly_wage = payment_value
             profile.default_fixed_wage = 0
+            profile.default_monthly_wage = 0
             profile.default_commission_percent = 0
             profile.payment_type = 'hourly'
+
+        elif payment_type == 'monthly':
+            profile.default_monthly_wage = payment_value
+            profile.default_fixed_wage = 0
+            profile.default_hourly_wage = 0
+            profile.default_commission_percent = 0
+            profile.payment_type = 'monthly'
+
         else:
             profile.default_commission_percent = payment_value
             profile.default_fixed_wage = 0
             profile.default_hourly_wage = 0
+            profile.default_monthly_wage = 0
             profile.payment_type = 'percent'
-        profile.save(update_fields=['tenant', 'is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'insurance_amount', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
-
+        profile.save(update_fields=[
+            'tenant',
+            'is_available',
+            'started_at',
+            'address',
+            'default_commission_percent',
+            'default_fixed_wage',
+            'default_hourly_wage',
+            'default_monthly_wage',
+            'insurance_amount',
+            'payment_type',
+            'tip_share_percent',
+            'has_entrusted_item',
+            'entrusted_items',
+            'entrusted_item_description',
+            'entrusted_item_quantity',
+            'entrusted_item_price',
+            'updated_at',
+        ])
         return profile
 
     def update(self, instance, validated_data):
@@ -461,18 +496,30 @@ class WorkerProfileCreateUpdateSerializer(serializers.Serializer):
         if payment_type == 'fixed':
             instance.default_fixed_wage = payment_value
             instance.default_hourly_wage = 0
+            instance.default_monthly_wage = 0
             instance.default_commission_percent = 0
             instance.payment_type = 'fixed'
+
         elif payment_type == 'hourly':
             instance.default_hourly_wage = payment_value
             instance.default_fixed_wage = 0
+            instance.default_monthly_wage = 0
             instance.default_commission_percent = 0
             instance.payment_type = 'hourly'
+
+        elif payment_type == 'monthly':
+            instance.default_monthly_wage = payment_value
+            instance.default_fixed_wage = 0
+            instance.default_hourly_wage = 0
+            instance.default_commission_percent = 0
+            instance.payment_type = 'monthly'
+
         else:
             instance.default_commission_percent = payment_value
             instance.default_fixed_wage = 0
             instance.default_hourly_wage = 0
+            instance.default_monthly_wage = 0
             instance.payment_type = 'percent'
-        instance.save(update_fields=['is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage', 'insurance_amount', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
+        instance.save(update_fields=['is_available', 'started_at', 'address', 'default_commission_percent', 'default_fixed_wage', 'default_hourly_wage','default_monthly_wage', 'insurance_amount', 'payment_type', 'tip_share_percent', 'has_entrusted_item', 'entrusted_items', 'entrusted_item_description', 'entrusted_item_quantity', 'entrusted_item_price', 'updated_at'])
 
         return instance

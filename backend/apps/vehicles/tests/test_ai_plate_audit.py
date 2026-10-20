@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+from unittest.mock import patch
 import base64
 import json
 import shutil
@@ -41,28 +43,32 @@ class AiPlateAuditModelColorTests(APITestCase):
 
     def test_create_admission_always_logs_model_and_color(self):
         image_b64 = base64.b64encode(b'fake-jpeg-bytes').decode('ascii')
-        with override_settings(MEDIA_ROOT=str(self.media_root)):
-            response = self.client.post(
-                reverse('vehicle-list-create'),
-                {
-                    'plate_number': '12 ب 345 67',
-                    'plate_left': '12',
-                    'plate_letter': 'ب',
-                    'plate_mid': '345',
-                    'plate_right': '67',
-                    'plate_type': VehicleEntry.PlateType.CAR,
-                    'car_model': 'پژو 206',
-                    'car_color': 'سفید',
-                    'driver_name': 'Test Driver',
-                    'driver_phone': '09120001111',
-                    'status': VehicleEntry.Status.ENTERED,
-                    'ai_raw_text': '67b34512',
-                    'ai_persian_text': '۶۷ ب ۳۴۵ ۱۲',
-                    'ai_converted_plate': '12 ب 345 67',
-                    'ai_image_base64': f'data:image/jpeg;base64,{image_b64}',
-                },
-                format='json',
-            )
+        with override_settings(MEDIA_ROOT=str(self.media_root)), patch(
+            'apps.vehicles.ai_audit.threading.Thread',
+            side_effect=lambda target, daemon: SimpleNamespace(start=target),
+        ):
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    reverse('vehicle-list-create'),
+                    {
+                        'plate_number': '12 ب 345 67',
+                        'plate_left': '12',
+                        'plate_letter': 'ب',
+                        'plate_mid': '345',
+                        'plate_right': '67',
+                        'plate_type': VehicleEntry.PlateType.CAR,
+                        'car_model': 'پژو 206',
+                        'car_color': 'سفید',
+                        'driver_name': 'Test Driver',
+                        'driver_phone': '09120001111',
+                        'status': VehicleEntry.Status.ENTERED,
+                        'ai_raw_text': '67b34512',
+                        'ai_persian_text': '۶۷ ب ۳۴۵ ۱۲',
+                        'ai_converted_plate': '12 ب 345 67',
+                        'ai_image_base64': f'data:image/jpeg;base64,{image_b64}',
+                    },
+                    format='json',
+                )
             self.assertEqual(response.status_code, 201)
 
             log_path = self.media_root / 'ai_plate_audit' / 'plate_recognition_audit.jsonl'

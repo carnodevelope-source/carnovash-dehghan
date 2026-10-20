@@ -3018,12 +3018,17 @@ const releaseSummary = computed(() => {
   const paymentType = String(releaseForm.value.workerPaymentType || 'percent')
   const paymentPercent = Math.max(0, Math.min(100, Number(releaseForm.value.workerPaymentPercent || 0)))
   const paymentFixed = Math.max(0, Number(releaseForm.value.workerPaymentFixed || 0))
+
   let workerShareBase = 0
-  if (paymentType === 'fixed' || paymentType === 'hourly') {
+
+  if (paymentType === 'monthly') {
+    workerShareBase = 0
+  } else if (paymentType === 'fixed' || paymentType === 'hourly') {
     workerShareBase = Math.min(shareBaseTotal, paymentFixed)
   } else if (paymentPercent > 0) {
     workerShareBase = Math.round((shareBaseTotal * paymentPercent) / 100)
   } else {
+
     // Fallback to server-computed services-only share (never inflate with products).
     workerShareBase = Math.min(shareBaseTotal, Math.max(0, Number(releaseForm.value.workerShareAmount || 0)))
   }
