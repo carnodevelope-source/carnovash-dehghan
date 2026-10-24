@@ -76,12 +76,20 @@ class VehicleEntryListCreateView(generics.ListCreateAPIView):
         date_start = parse_date(self.request.query_params.get('date_start') or '')
         date_end = parse_date(self.request.query_params.get('date_end') or '')
         current_timezone = timezone.get_current_timezone()
+        # Completed visits belong to the release day, including their totals.
+        released = Q(status=VehicleEntry.Status.RELEASED)
         if date_start:
             start_at = timezone.make_aware(datetime.combine(date_start, datetime.min.time()), current_timezone)
-            queryset = queryset.filter(check_in_at__gte=start_at)
+            queryset = queryset.filter(
+                (released & Q(released_at__gte=start_at))
+                | (~released & Q(check_in_at__gte=start_at))
+            )
         if date_end:
             end_at = timezone.make_aware(datetime.combine(date_end + timedelta(days=1), datetime.min.time()), current_timezone)
-            queryset = queryset.filter(check_in_at__lt=end_at)
+            queryset = queryset.filter(
+                (released & Q(released_at__lt=end_at))
+                | (~released & Q(check_in_at__lt=end_at))
+            )
         return queryset
 
     def perform_create(self, serializer):

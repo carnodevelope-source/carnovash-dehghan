@@ -11,18 +11,6 @@ from apps.services.models import GeneralSettings, Service, ServiceCategory
 PRODUCTION_CARWASHES = []
 
 
-HQ_ADMIN = {
-    "username": "milad_dhs",
-    "password": "m11051386M!@",
-    "full_name": "Milad Dehestani",
-    "phone": "09120001090",
-    "role": "admin",
-    "platform_role": "hq_admin",
-    "is_staff": True,
-    "is_superuser": True,
-}
-
-
 DEFAULT_SERVICE_CATEGORIES = [
     {"name": "شستشو", "slug": "wash", "display_order": 1},
     {"name": "دیتیلینگ", "slug": "detailing", "display_order": 2},
@@ -259,4 +247,3 @@ def seed_production_data():
         )
         _sync_feature_flags(tenant, item.get("features", []))
 
-    _upsert_user(HQ_ADMIN, tenant=None)

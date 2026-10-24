@@ -528,7 +528,7 @@
               />
             </label>
 
-            <div class="ticket-desk-scopes">
+            <div class="ticket-desk-scopes" tabindex="0" role="region" aria-label="فیلترهای تیکت؛ برای دیدن همه گزینه‌ها افقی اسکرول کنید">
               <button
                 v-for="scope in ticketScopeOptions"
                 :key="scope.key"
@@ -639,8 +639,8 @@
                 </p>
               </div>
               <div class="ticket-stage-controls">
-                <select v-model="ticketReply.status" aria-label="وضعیت">
-                  <option value="">وضعیت</option>
+                <select v-model="ticketReply.status" aria-label="وضعیت" :disabled="ticketStatusSaving" @change="updateSelectedTicketStatus">
+                  <option value="open">باز</option>
                   <option value="answered">پاسخ‌داده‌شده</option>
                   <option value="pending">در انتظار</option>
                   <option value="closed">بستن</option>
@@ -946,7 +946,7 @@ import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
 import { notifyError } from '../../utils/notify'
 import {
   notifyNewSupportTickets,
-  playTicketAlertSound,
+  notifyIncomingSupportMessage,
   unlockTicketAlerts
 } from '../../utils/ticketAlert'
 
@@ -1123,6 +1123,7 @@ const ticketTenantId = ref('')
 const ticketScope = ref('all')
 const ticketFiltersOpen = ref(false)
 const ticketStreamEl = ref(null)
+const ticketStatusSaving = ref(false)
 const ticketReply = reactive({
   body: '',
   status: '',
@@ -1255,10 +1256,12 @@ const ticketSummaryCards = computed(() => {
     if (item.status === 'pending') acc.pending += 1
     if (item.status === 'answered') acc.answered += 1
     if (item.status === 'closed') acc.closed += 1
-    if (!item.assigned_to) acc.unassigned += 1
-    if (Number(item.assigned_to || 0) === Number(authStore.user?.id || 0)) acc.mine += 1
-    if (['urgent', 'high'].includes(item.priority)) acc.urgent += 1
-    if (isWalletOperationTicket(item)) acc.wallet += 1
+    if (item.status !== 'closed') {
+      if (!item.assigned_to) acc.unassigned += 1
+      if (Number(item.assigned_to || 0) === Number(authStore.user?.id || 0)) acc.mine += 1
+      if (['urgent', 'high'].includes(item.priority)) acc.urgent += 1
+      if (isWalletOperationTicket(item)) acc.wallet += 1
+    }
     return acc
   }, { total: 0, open: 0, pending: 0, answered: 0, closed: 0, unassigned: 0, mine: 0, urgent: 0, wallet: 0 })
   const activeCount = counts.open + counts.pending + counts.answered
@@ -1290,16 +1293,10 @@ const visibleTickets = computed(() => {
     // Default "all" = active tickets only (open/pending/answered)
     return item.status !== 'closed'
   })
-  return filtered
-    .map((item) => ({
-      item,
-      open: item.status !== 'closed' ? 1 : 0,
-      wallet: isWalletOperationTicket(item) && item.status !== 'closed' ? 1 : 0,
-      urgent: ['urgent', 'high'].includes(item.priority) ? 1 : 0,
-      at: Date.parse(item.last_message_at || item.created_at || '') || 0
-    }))
-    .sort((a, b) => (b.open - a.open) || (b.wallet - a.wallet) || (b.urgent - a.urgent) || (b.at - a.at))
-    .map((entry) => entry.item)
+  return filtered.sort((a, b) => (
+    ((Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0))
+    || (Number(b.id) - Number(a.id))
+  ))
 })
 const selectedTicketLastResponder = computed(() => {
   if (!selectedTicket.value?.messages?.length) return 'بدون پاسخ'
@@ -1949,7 +1946,9 @@ const ticketActivitySignature = (ticket) => [
   ticket?.status || ''
 ].join('|')
 
+let ticketLoadSequence = 0
 const loadTickets = async (options = {}) => {
+  const sequence = ++ticketLoadSequence
   if (authStore.isHqAdmin && !carwashes.value.length && !options.silent) await loadCarwashes()
   try {
     const { data } = await api.get('/auth/hq/tickets/', {
@@ -1961,21 +1960,14 @@ const loadTickets = async (options = {}) => {
       },
       meta: options.silent ? { trackLoading: false, showErrorToast: false } : undefined
     })
+    if (sequence !== ticketLoadSequence) return
     const nextTickets = Array.isArray(data) ? data : []
-    if (knownTicketIds.size && options.notifyNew) {
-      const hasMessageActivity = nextTickets.some((item) => {
-        if (item.status === 'closed') return false
-        const id = Number(item.id)
-        if (!knownTicketIds.has(id)) return false
-        return knownTicketActivity.get(id) !== ticketActivitySignature(item)
-      })
-      if (hasMessageActivity) playTicketAlertSound()
-    }
     knownTicketIds = new Set(nextTickets.map((item) => Number(item.id)))
     knownTicketActivity = new Map(nextTickets.map((item) => [Number(item.id), ticketActivitySignature(item)]))
     tickets.value = nextTickets
     if (!options.skipSelection) await ensureSelectedTicket(options)
   } catch (error) {
+    if (sequence !== ticketLoadSequence) return
     if (!options.silent) {
       tickets.value = []
     }
@@ -2030,7 +2022,7 @@ const selectTicket = async (ticketId, options = {}) => {
   selectedTicket.value = data
   if (!options.keepReply) {
     ticketReply.body = ''
-    ticketReply.status = ''
+    ticketReply.status = data.status
   }
   if (!options.keepReply) {
     ticketReply.assign_to_user_id = Number(data?.assigned_to || 0)
@@ -2089,7 +2081,7 @@ const stopHqTicketLive = () => {
 
 const startHqTicketLive = () => {
   stopHqTicketLive()
-  hqTicketLiveStream = createLiveEventSource()
+  hqTicketLiveStream = createLiveEventSource({ keepAliveWhenHidden: true })
   hqTicketLiveStream?.addEventListener('open', () => {
     if (tickets.value.length) return
     void refreshTicketsQuietly()
@@ -2097,6 +2089,9 @@ const startHqTicketLive = () => {
   hqTicketLiveStream?.addEventListener('message', (event) => {
     const payload = parseLiveEvent(event.data)
     if (!payload?.type || !String(payload.type).startsWith('support.')) return
+    if (notifyIncomingSupportMessage(payload, authStore.user?.id) && payload.data?.ticket_id) {
+      alertKnownTicketIds.add(Number(payload.data.ticket_id))
+    }
     if (hqTicketLiveRefreshTimer) window.clearTimeout(hqTicketLiveRefreshTimer)
     hqTicketLiveRefreshTimer = window.setTimeout(refreshTicketsQuietly, 1200)
   })
@@ -2127,6 +2122,27 @@ const onGlobalLiveEvent = (event) => {
 const handleVisibilityRefresh = () => {
   if (document.visibilityState === 'visible') {
     refreshTicketsQuietly()
+  }
+}
+
+const updateSelectedTicketStatus = async () => {
+  const ticket = selectedTicket.value
+  if (!ticket?.id || ticketStatusSaving.value) return
+  const previousStatus = ticket.status
+  ticketStatusSaving.value = true
+  try {
+    const { data } = await api.patch(`/auth/hq/tickets/${ticket.id}/`, { status: ticketReply.status })
+    if (selectedTicket.value?.id === ticket.id) {
+      selectedTicket.value = data
+      ticketReply.status = data.status
+    }
+    await loadTickets({ skipSelection: true })
+    if (authStore.isHqAdmin) await loadOverview()
+  } catch (error) {
+    if (selectedTicket.value?.id === ticket.id) ticketReply.status = previousStatus
+    notifyError(error?.response?.data?.detail || 'تغییر وضعیت تیکت ناموفق بود.')
+  } finally {
+    ticketStatusSaving.value = false
   }
 }
 
@@ -6207,13 +6223,28 @@ td strong {
 
 .ticket-desk-scopes {
   display: flex;
+  flex-wrap: nowrap;
+  min-width: 0;
   gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  padding-bottom: 8px;
+  overflow-x: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e2e8f0;
 }
 
 .ticket-desk-scopes::-webkit-scrollbar {
-  display: none;
+  height: 8px;
+}
+
+.ticket-desk-scopes::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 999px;
+}
+
+.ticket-desk-scopes::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border: 2px solid #e2e8f0;
+  border-radius: 999px;
 }
 
 .ticket-scope {

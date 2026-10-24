@@ -61,6 +61,7 @@ def _generate_worker_username(user_model, phone=''):
 
 
 class WorkerProfileListSerializer(serializers.ModelSerializer):
+    is_available = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
     role_key = serializers.CharField(source='user.role', read_only=True)
@@ -83,6 +84,9 @@ class WorkerProfileListSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj):
         return obj.user.full_name or obj.user.username
+
+    def get_is_available(self, obj):
+        return obj.is_available and obj.user.is_active
 
     def get_role(self, obj):
         return obj.user.get_role_display() if obj.user else ''

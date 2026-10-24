@@ -926,9 +926,8 @@ const payingInstallmentFeatureKey = ref('')
 const companyCardHolder = 'امید کریمی'
 const companyBankName = 'بانک ملت'
 const companyBankDetails = [
-  { key: 'card', label: 'شماره کارت', value: '۶۱۰۴ - ۳۳۱۲ - ۰۰۰۶ - ۵۴۴۰', raw: '6104331200065440' },
-  { key: 'iban', label: 'شماره شبا', value: 'IR780120010000002177260145', raw: 'IR780120010000002177260145' },
-  { key: 'account', label: 'شماره حساب', value: '۲۱۷۷۲۶۰۱۴۵', raw: '2177260145' }
+  { key: 'card', label: 'شماره کارت', value: '۵۸۹۴ - ۶۳۷۰ - ۰۰۳۹ - ۲۷۴۳', raw: '5894637000392743' },
+  { key: 'iban', label: 'شماره شبا', value: 'IR660130100000000449424200', raw: 'IR660130100000000449424200' }
 ]
 
 const copyBankDetail = async (value, label) => {

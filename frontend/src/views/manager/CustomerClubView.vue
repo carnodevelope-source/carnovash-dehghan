@@ -184,6 +184,14 @@
               <div class="customer-section-actions">
                 <span class="section-count">{{ toFa(section.totalCustomersCount) }} مشتری</span>
                 <button
+                  v-if="section.sourceGroupId"
+                  type="button"
+                  class="club-inline-btn"
+                  @click="editCustomGroup(groupById(section.sourceGroupId))"
+                >
+                  ویرایش گروه و اعضا
+                </button>
+                <button
                   v-if="activePlan === 'advanced' && section.customers.length"
                   type="button"
                   class="club-inline-btn"
@@ -509,12 +517,12 @@
       </section>
     </div>
 
-    <div v-if="groupBuilder.open" class="overlay" @click.self="closeGroupBuilder">
+    <div v-if="groupBuilder.open" class="overlay group-action-overlay" @click.self="closeGroupBuilder">
       <section class="modal-card group-builder-modal">
         <header class="modal-head">
           <div>
-            <p class="modal-kicker">ساخت گروه جدید</p>
-            <h3>دسته‌بندی دستی یا هوشمند مشتری‌ها</h3>
+            <p class="modal-kicker">{{ groupBuilder.id ? 'ویرایش گروه' : 'ساخت گروه جدید' }}</p>
+            <h3>{{ groupBuilder.id ? groupBuilder.name : 'دسته‌بندی دستی یا هوشمند مشتری‌ها' }}</h3>
           </div>
           <button type="button" class="icon-close" @click="closeGroupBuilder">×</button>
         </header>
@@ -532,7 +540,7 @@
             </label>
 
             <div class="builder-switch">
-              <button type="button" :class="{ active: groupBuilder.mode === 'manual' }" @click="groupBuilder.mode = 'manual'">دستی</button>
+              <button type="button" :class="{ active: groupBuilder.mode === 'manual' }" @click="switchToManualGroup">دستی</button>
               <button type="button" :class="{ active: groupBuilder.mode === 'smart' }" @click="groupBuilder.mode = 'smart'">هوشمند</button>
             </div>
 
@@ -560,9 +568,10 @@
 
             <div v-else class="manual-picker">
               <div class="manual-picker-head">
-                <strong>انتخاب مشتری</strong>
-                <input v-model.trim="groupBuilder.manualSearch" type="text" placeholder="جستجوی مشتری..." />
+                <strong>انتخاب مشتری · {{ toFa(groupBuilderPreview.length) }} عضو</strong>
+                <input v-model.trim="groupBuilder.manualSearch" type="search" aria-label="جستجوی اعضای گروه" placeholder="نام، موبایل یا پلاک..." />
               </div>
+              <p class="group-members-help">برای اضافه کردن مشتری تیک بزنید؛ برای حذف از گروه، تیک او را بردارید.</p>
               <div class="manual-picker-list">
                 <label v-for="customer in manualSelectableCustomers" :key="customer.key" class="manual-picker-item">
                   <input v-model="groupBuilder.manualKeys" type="checkbox" :value="customer.key" />
@@ -571,6 +580,7 @@
                     <small>{{ customer.phone || 'بدون موبایل' }} · {{ customer.carwash_name }}</small>
                   </div>
                 </label>
+                <p v-if="!manualSelectableCustomers.length" class="group-members-help">مشتری‌ای با این جستجو پیدا نشد.</p>
               </div>
             </div>
           </div>
@@ -580,24 +590,26 @@
               <strong>{{ toFa(groupBuilderPreview.length) }}</strong>
               <span>عضو در پیش‌نمایش</span>
             </div>
-            <p>این گروه با تنظیمات فعلی روی همین تعداد مشتری اعمال می‌شود.</p>
+            <p>{{ groupBuilder.mode === 'manual' ? 'اعضای انتخاب‌شده؛ حذف از گروه، اطلاعات مشتری را پاک نمی‌کند.' : 'اعضای گروه هوشمند بر اساس قوانین تعیین می‌شوند. برای اضافه یا حذف دستی، حالت دستی را انتخاب کنید.' }}</p>
             <div class="preview-list">
-              <div v-for="customer in groupBuilderPreview.slice(0, 6)" :key="customer.key" class="preview-list-item">
+              <div v-for="customer in groupBuilderPreview" :key="customer.key" class="preview-list-item">
                 <span>{{ customer.name }}</span>
-                <small>{{ money(customer.total_spent) }}</small>
+                <button v-if="groupBuilder.mode === 'manual'" type="button" class="club-inline-btn" :aria-label="`حذف ${customer.name} از گروه`" @click="removeGroupMember(customer.key)">حذف</button>
+                <small v-else>{{ money(customer.total_spent) }}</small>
               </div>
+              <p v-if="!groupBuilderPreview.length" class="group-members-help">هنوز عضوی انتخاب نشده است.</p>
             </div>
           </aside>
         </div>
 
         <footer class="modal-foot">
           <button type="button" class="club-ghost-btn" @click="closeGroupBuilder">انصراف</button>
-          <button type="button" class="club-primary-btn" @click="saveCustomGroup">ذخیره گروه</button>
+          <button type="button" class="club-primary-btn" :disabled="groupSaving" @click="saveCustomGroup">{{ groupSaving ? 'در حال ذخیره...' : groupBuilder.id ? 'ذخیره تغییرات' : 'ذخیره گروه' }}</button>
         </footer>
       </section>
     </div>
 
-    <div v-if="assignGroupModal.open" class="overlay" @click.self="closeAssignGroupModal">
+    <div v-if="assignGroupModal.open" class="overlay group-action-overlay" @click.self="closeAssignGroupModal">
       <section class="modal-card assign-modal">
         <header class="modal-head">
           <div>
@@ -754,7 +766,7 @@
         </div>
 
         <footer class="modal-foot">
-          <button type="button" class="club-ghost-btn" @click="openAssignGroupModal(customerDetail.customer)">افزودن به گروه</button>
+          <button type="button" class="club-ghost-btn" @click="handleGroupAction(customerDetail.customer)">افزودن به گروه</button>
           <button
             v-if="activePlan === 'advanced' && customerDetail.customer"
             type="button"
@@ -950,7 +962,7 @@ const smsSending = ref(false)
 const templateSaving = ref(false)
 const customers = ref([])
 const currentPage = ref(1)
-const pageSize = 10
+const pageSize = 50
 const smsCreditBalance = ref(0)
 const smsPricePerSegment = ref(185)
 const smsCharsPerSegment = ref(70)
@@ -983,6 +995,7 @@ const filters = reactive({
 
 const groupingMode = ref('tenant')
 const customGroups = ref([])
+const groupSaving = ref(false)
 const smsLogs = ref([])
 
 const groupBuilder = reactive({
@@ -1156,6 +1169,11 @@ const paginatedSections = computed(() => {
     pageSection.customers.push(customer)
   })
 
+  if (currentPage.value === 1) {
+    visibleSections.value.filter((section) => !section.customers.length).forEach((section) => {
+      sections.push({ ...section, totalCustomersCount: 0 })
+    })
+  }
   return sections
 })
 
@@ -1206,8 +1224,8 @@ watch(paginationTotalPages, (totalPages) => {
 
 const manualSelectableCustomers = computed(() => {
   const query = groupBuilder.manualSearch.trim().toLowerCase()
-  if (!query) return filteredCustomers.value
-  return filteredCustomers.value.filter((customer) => {
+  if (!query) return customers.value
+  return customers.value.filter((customer) => {
     const haystack = `${customer.name} ${customer.phone} ${customer.primary_plate}`.toLowerCase()
     return haystack.includes(query)
   })
@@ -1216,9 +1234,9 @@ const manualSelectableCustomers = computed(() => {
 const groupBuilderPreview = computed(() => {
   if (groupBuilder.mode === 'manual') {
     const selected = new Set(groupBuilder.manualKeys)
-    return filteredCustomers.value.filter((customer) => selected.has(customer.key))
+    return customers.value.filter((customer) => selected.has(customer.key))
   }
-  return filteredCustomers.value.filter((customer) => customerMatchesRules(customer, groupBuilder.rules))
+  return customers.value.filter((customer) => customerMatchesRules(customer, groupBuilder.rules))
 })
 
 const smsRecipients = computed(() => smsComposer.recipients || [])
@@ -1487,12 +1505,37 @@ const resetGroupBuilder = () => {
 }
 
 const openGroupBuilder = () => {
+  if (groupSaving.value) return
   resetGroupBuilder()
   groupBuilder.open = true
 }
 
 const closeGroupBuilder = () => {
+  if (groupSaving.value) return
   resetGroupBuilder()
+}
+
+const editCustomGroup = (group) => {
+  if (!group || groupSaving.value) return
+  resetGroupBuilder()
+  groupBuilder.id = group.id
+  groupBuilder.name = group.name
+  groupBuilder.description = group.description || ''
+  groupBuilder.mode = group.mode
+  groupBuilder.manualKeys = [...(group.member_keys || group.memberKeys || [])]
+  Object.assign(groupBuilder.rules, group.rules || {})
+  groupBuilder.open = true
+}
+
+const switchToManualGroup = () => {
+  if (groupBuilder.mode === 'smart') {
+    groupBuilder.manualKeys = groupBuilderPreview.value.map((customer) => customer.key)
+  }
+  groupBuilder.mode = 'manual'
+}
+
+const removeGroupMember = (key) => {
+  groupBuilder.manualKeys = groupBuilder.manualKeys.filter((item) => item !== key)
 }
 
 const buildGroupPayload = () => ({
@@ -1539,26 +1582,32 @@ const loadCustomerClubData = async ({ showLoading = true } = {}) => {
 }
 
 const saveCustomGroup = async () => {
+  if (groupSaving.value) return
   const name = String(groupBuilder.name || '').trim()
   if (!name) {
     notifyWarning('نام گروه را وارد کنید.', { title: 'اطلاعات ناقص' })
     return
   }
 
+  groupSaving.value = true
   try {
     const payload = buildGroupPayload()
+    let savedGroup
     if (groupBuilder.id) {
-      await api.put(`/notifications/customer-groups/${groupBuilder.id}/`, payload)
+      savedGroup = (await api.put(`/notifications/customer-groups/${groupBuilder.id}/`, payload)).data
     } else {
-      await api.post('/notifications/customer-groups/', payload)
+      savedGroup = (await api.post('/notifications/customer-groups/', payload)).data
     }
     await loadCustomerClubData({ showLoading: false })
-    const latestGroup = customGroups.value.find((group) => group.name === payload.name) || customGroups.value[0]
-    closeGroupBuilder()
+    resetGroupBuilder()
     groupingMode.value = 'custom'
-    highlightedGroupId.value = latestGroup?.id || ''
+    currentPage.value = 1
+    highlightedGroupId.value = savedGroup?.id || ''
+    notifySuccess('گروه و اعضای آن ذخیره شدند.', { title: 'ذخیره گروه' })
   } catch (error) {
     notifyError(resolveApiErrorMessage(error, 'ذخیره گروه ناموفق بود.'), { title: 'خطا در ذخیره گروه' })
+  } finally {
+    groupSaving.value = false
   }
 }
 
@@ -2844,6 +2893,10 @@ onBeforeUnmount(() => {
   padding: 24px;
 }
 
+.overlay.group-action-overlay {
+  z-index: 60;
+}
+
 .modal-card {
   width: min(1180px, 100%);
   max-height: calc(100vh - 48px);
@@ -3052,6 +3105,18 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.95);
+}
+
+.group-members-help {
+  margin: 10px 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.group-preview-card .preview-list {
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .assign-modal {

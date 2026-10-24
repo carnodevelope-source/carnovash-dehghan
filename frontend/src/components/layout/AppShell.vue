@@ -231,6 +231,7 @@ import api from '../../services/api'
 import { createLiveEventSource, dispatchLiveEvent, parseLiveEvent } from '../../services/live'
 import { ATTENDANCE_ROUTE, getAttendanceUpgradeMessage, getFeatureLockNotice, hasAttendanceAccess, hasFeatureAccess, requiresAttendanceUpgrade } from '../../utils/attendanceAccess'
 import { notifyWarning } from '../../utils/notify'
+import { notifyIncomingSupportMessage, unlockTicketAlerts } from '../../utils/ticketAlert'
 import IconlyIcon from '../base/IconlyIcon.vue'
 
 const props = defineProps({
@@ -272,9 +273,6 @@ let supportCountPollingInFlight = false
 let trialCountdownInterval = null
 let trialExpiryHandled = false
 let compactSearchMedia = null
-let supportNotificationAudio = null
-let lastSupportNotificationSoundAt = 0
-const SUPPORT_NOTIFICATION_SOUND = `${import.meta.env.BASE_URL}ElevenLabs_Soft_chime_new_message_notification%2C_single_bright_tone.mp3`
 
 const syncCompactSearchMode = () => {
   const nextValue = Boolean(compactSearchMedia?.matches)
@@ -544,30 +542,6 @@ const loadSupportOpenCount = async () => {
   }
 }
 
-const playSupportNotificationSound = (payload) => {
-  // The sender already sees their own message immediately; alert only the
-  // recipient(s) in the other ticket view.
-  const actorId = String(payload?.data?.actor_user_id || '')
-  if (actorId && actorId === String(authStore.user?.id || '')) return
-
-  // Do not play a sound storm after reconnect/replay; only fresh events get
-  // an audible cue and repeated event types are coalesced.
-  const occurredAt = Date.parse(payload?.occurred_at || payload?.created_at || '')
-  if (Number.isFinite(occurredAt) && Date.now() - occurredAt > 30_000) return
-  if (Date.now() - lastSupportNotificationSoundAt < 1_500) return
-
-  lastSupportNotificationSoundAt = Date.now()
-  if (!supportNotificationAudio) {
-    supportNotificationAudio = new Audio(SUPPORT_NOTIFICATION_SOUND)
-    supportNotificationAudio.preload = 'auto'
-    supportNotificationAudio.volume = 0.45
-  }
-  supportNotificationAudio.currentTime = 0
-  void supportNotificationAudio.play().catch(() => {
-    // Browsers may require a prior user interaction, especially on mobile.
-  })
-}
-
 const stopSupportCountLive = () => {
   if (supportCountInterval) {
     window.clearInterval(supportCountInterval)
@@ -583,7 +557,7 @@ const stopSupportCountLive = () => {
 
 const startSupportCountLive = () => {
   stopSupportCountLive()
-  supportCountLiveStream = createLiveEventSource()
+  supportCountLiveStream = createLiveEventSource({ keepAliveWhenHidden: true })
   supportCountLiveStream?.addEventListener('open', () => {
     void loadSupportOpenCount()
   })
@@ -595,10 +569,7 @@ const startSupportCountLive = () => {
     if (type.startsWith('support.')) {
       if (supportCountLiveRefreshTimer) window.clearTimeout(supportCountLiveRefreshTimer)
       supportCountLiveRefreshTimer = window.setTimeout(loadSupportOpenCount, 400)
-      // No toast on the operator panel — count badge + optional sound only.
-      if (type === 'support.message.created' || type === 'support.ticket.created') {
-        playSupportNotificationSound(payload)
-      }
+      notifyIncomingSupportMessage(payload, authStore.user?.id)
     }
     if (
       type.startsWith('payment.')
@@ -616,6 +587,8 @@ const startSupportCountLive = () => {
 }
 
 onMounted(() => {
+  window.addEventListener('pointerdown', unlockTicketAlerts, { once: true })
+  window.addEventListener('keydown', unlockTicketAlerts, { once: true })
   document.addEventListener('click', onDocumentClick)
   window.addEventListener('resize', onWindowResize)
   window.addEventListener('keydown', onWindowKeydown)
@@ -655,6 +628,8 @@ watch(trialEndsAtMs, () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('pointerdown', unlockTicketAlerts)
+  window.removeEventListener('keydown', unlockTicketAlerts)
   document.removeEventListener('click', onDocumentClick)
   window.removeEventListener('resize', onWindowResize)
   window.removeEventListener('keydown', onWindowKeydown)
@@ -664,10 +639,6 @@ onBeforeUnmount(() => {
     compactSearchMedia.removeListener(syncCompactSearchMode)
   }
   stopSupportCountLive()
-  if (supportNotificationAudio) {
-    supportNotificationAudio.pause()
-    supportNotificationAudio = null
-  }
   if (trialCountdownInterval) window.clearInterval(trialCountdownInterval)
   document.body.classList.remove('mobile-menu-open')
 })

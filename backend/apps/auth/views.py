@@ -891,7 +891,7 @@ class SupportTicketListCreateView(APIView):
             )
             .filter(tenant=tenant)
             .annotate(messages_count=Count('messages', distinct=True), last_message_body=Subquery(last_body))
-            .order_by('-last_message_at', '-created_at')
+            .order_by('-created_at', '-id')
         )
         return Response(SupportTicketListSerializer(tickets, many=True).data, status=status.HTTP_200_OK)
 
@@ -1568,9 +1568,15 @@ class HqTicketListView(HqBaseView):
         queryset = (
             SupportTicket.objects.select_related('tenant', 'created_by', 'responded_by', 'assigned_to')
             .select_related('registration_request__manager')
-            .prefetch_related('messages__sender')
+            .annotate(
+                messages_count=Count('messages', distinct=True),
+                last_message_body=Subquery(
+                    SupportTicketMessage.objects.filter(ticket_id=OuterRef('pk'))
+                    .order_by('-created_at', '-id').values('body')[:1]
+                ),
+            )
             .filter(_hq_ticket_queryset_q())
-            .order_by('-last_message_at', '-created_at')
+            .order_by('-created_at', '-id')
         )
         queryset = apply_hq_ticket_visibility(queryset, request.user)
         if status_filter == 'active':
@@ -1592,10 +1598,30 @@ class HqTicketListView(HqBaseView):
                 | Q(created_by__username__icontains=q)
             )
 
-        return Response(SupportTicketListSerializer(queryset[:300], many=True).data, status=status.HTTP_200_OK)
+        return Response(SupportTicketListSerializer(queryset, many=True).data, status=status.HTTP_200_OK)
 
 
 class HqTicketDetailView(HqBaseView):
+    @transaction.atomic
+    def patch(self, request, pk):
+        forbidden = self.forbid_if_not_hq(request)
+        if forbidden:
+            return forbidden
+        new_status = request.data.get('status')
+        if new_status not in SupportTicket.Status.values:
+            return Response({'status': ['وضعیت معتبر انتخاب کنید.']}, status=status.HTTP_400_BAD_REQUEST)
+        queryset = SupportTicket.objects.select_for_update().filter(pk=pk).filter(_hq_ticket_queryset_q())
+        ticket = apply_hq_ticket_visibility(queryset, request.user).first()
+        if not ticket:
+            return Response({'detail': 'تیکت یافت نشد.'}, status=status.HTTP_404_NOT_FOUND)
+        if ticket.status != new_status:
+            ticket.status = new_status
+            ticket.closed_at = timezone.now() if new_status == SupportTicket.Status.CLOSED else None
+            ticket.save(update_fields=['status', 'closed_at', 'updated_at'])
+            if ticket.assigned_to_id:
+                _recalculate_support_metrics(ticket.assigned_to)
+        return Response(SupportTicketDetailSerializer(ticket, context={'request': request}).data)
+
     def get(self, request, pk):
         forbidden = self.forbid_if_not_hq(request)
         if forbidden:

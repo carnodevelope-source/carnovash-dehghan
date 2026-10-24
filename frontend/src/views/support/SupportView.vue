@@ -286,21 +286,6 @@
               </label>
             </template>
 
-            <template v-else-if="ticketModal.category === 'technical'">
-              <label>
-                <span>نوع دستگاه</span>
-                <input v-model.trim="ticketModal.context.device_type" placeholder="مثلا موبایل اندروید" />
-              </label>
-              <label>
-                <span>مرورگر / اپ</span>
-                <input v-model.trim="ticketModal.context.browser_name" placeholder="مثلا Chrome 136" />
-              </label>
-              <label>
-                <span>سیستم‌عامل</span>
-                <input v-model.trim="ticketModal.context.os_name" placeholder="مثلا Android 14" />
-              </label>
-            </template>
-
             <template v-else-if="ticketModal.category === 'account'">
               <BasePhoneInput
                 v-model="ticketModal.context.account_phone"
@@ -365,9 +350,6 @@ const getEmptyContext = () => ({
   payment_date: '',
   order_number: '',
   service_name: '',
-  device_type: '',
-  browser_name: '',
-  os_name: '',
   account_phone: '',
   account_issue: ''
 })
@@ -459,7 +441,10 @@ const filteredTickets = computed(() => {
     if (!query) return true
     const haystack = `${item.id} ${item.subject} ${item.message || ''} ${item.category || ''} ${item.last_message_preview || ''}`.toLowerCase()
     return haystack.includes(query)
-  })
+  }).sort((a, b) => (
+    ((Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0))
+    || (Number(b.id) - Number(a.id))
+  ))
 })
 
 const isWalletCardPaymentDraft = computed(() => ticketModal.mode === 'wallet-card-payment')
@@ -603,9 +588,6 @@ const buildStructuredMessage = () => {
     payment_amount: 'مبلغ پرداخت',
     payment_date: 'تاریخ پرداخت',
     service_name: 'سرویس',
-    device_type: 'نوع دستگاه',
-    browser_name: 'مرورگر / اپ',
-    os_name: 'سیستم‌عامل',
     account_phone: 'موبایل حساب',
     account_issue: 'موضوع حساب'
   }

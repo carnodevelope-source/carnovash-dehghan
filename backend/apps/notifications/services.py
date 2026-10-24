@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import threading
+from .sms_text import ltr_sms_fragment, prepare_sms_text
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
@@ -61,7 +62,7 @@ def sms_provider_footer_text():
 
 
 def sms_billable_text(text):
-    body = str(text or '')
+    body = prepare_sms_text(text)
     if not body.strip():
         return ''
     footer = sms_provider_footer_text()
@@ -249,6 +250,10 @@ def iter_service_lines(job):
 
 
 def format_plate_for_sms(vehicle):
+    return ltr_sms_fragment(_plate_sms_components(vehicle))
+
+
+def _plate_sms_components(vehicle):
     if not vehicle:
         return 'بدون پلاک'
     plate_type = str(getattr(vehicle, 'plate_type', '') or '').strip()
@@ -850,7 +855,7 @@ def send_provider_sms(tenant, text, recipients, *, provider_config=None):
         return {'ok': False, 'message': message, 'provider_status': 0, 'provider_data': {}, 'raw_body': message, 'payload': {}}
 
     payload = {
-        'text': text,
+        'text': prepare_sms_text(text),
         'line_number': line_number,
         'recipients': recipients,
         'number_format': 'english',

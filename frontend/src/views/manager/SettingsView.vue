@@ -28,6 +28,11 @@
         <template v-if="activeTab === 'workers'">
           <div class="head-row">
             <h2>مدیریت پرسنل</h2>
+            <select v-model="workerStatusFilter" aria-label="وضعیت پرسنل">
+              <option value="active">فعال‌ها</option>
+              <option value="inactive">غیرفعال‌ها</option>
+              <option value="all">همه</option>
+            </select>
             <button class="primary-btn btn-with-icon" @click="openWorkerModal()"><IconlyIcon name="plus" size="sm" />افزودن پرسنل</button>
           </div>
           <div class="table-wrap">
@@ -880,9 +885,11 @@ import HelpTip from '../../components/base/HelpTip.vue'
 import BasePhoneInput from '../../components/base/BasePhoneInput.vue'
 import { iranMobileErrorMessage, normalizeIranMobile } from '../../utils/phone'
 import { smsCharacterCount, smsCostForText, smsSegmentsForText } from '../../utils/smsCost'
+import { filterPersonnel } from '../../utils/personnel.mjs'
 
 const authStore = useAuthStore()
 const search = ref('')
+const workerStatusFilter = ref('active')
 const activeTab = ref('workers')
 const errorMessage = ref('')
 
@@ -1130,12 +1137,7 @@ const productsWithStock = computed(() => products.value.map((item) => ({
   stock_qty: stockByProductId.value[Number(item.id)] ?? 0
 })))
 
-const workerRoleOrder = (worker) => (worker?.role_key || worker?.role) === 'operator' ? 0 : 1
-const filteredWorkers = computed(() => workers.value
-  .filter((i) => (`${i.full_name} ${i.username || ''} ${i.phone || ''} ${i.role || ''}`).includes(search.value))
-  .slice()
-  .sort((a, b) => workerRoleOrder(a) - workerRoleOrder(b) || String(a.full_name || '').localeCompare(String(b.full_name || ''), 'fa'))
-)
+const filteredWorkers = computed(() => filterPersonnel(workers.value, workerStatusFilter.value, search.value))
 const filteredProducts = computed(() => productsWithStock.value.filter((i) => (`${i.name} ${i.description || ''} ${i.unit || ''}`).includes(search.value)))
 const expenseMonthKeyFromDate = (value) => {
   const jalali = toJalaliInput(value)

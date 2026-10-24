@@ -14,6 +14,7 @@ const protocol = createLiveProtocolState({
   maxRecentIds: Number(import.meta.env.VITE_LIVE_RECENT_EVENT_LIMIT || 1000)
 })
 const subscribers = new Set()
+const needsBackgroundConnection = () => [...subscribers].some((subscriber) => subscriber.keepAliveWhenHidden)
 
 let sharedSource = null
 let retryTimer = null
@@ -129,7 +130,7 @@ const stopReconcile = () => {
 
 function openSharedSource() {
   if (sharedSource || !subscribers.size || !isSupported()) return
-  if (document.visibilityState === 'hidden') return
+  if (document.visibilityState === 'hidden' && !needsBackgroundConnection()) return
 
   clearRetry()
   sharedSource = new EventSource(liveUrl(), { withCredentials: true })
@@ -161,6 +162,7 @@ function openSharedSource() {
 const onVisibilityChange = () => {
   if (document.visibilityState === 'hidden') {
     if (hiddenTimer) window.clearTimeout(hiddenTimer)
+    if (needsBackgroundConnection()) return
     // Background tabs pin a gunicorn thread for the whole SSE lifetime.
     // Always release them; on return we reopen and the open handler refreshes.
     // With replay enabled, reconcile() fills any gap after reconnect.
@@ -201,14 +203,19 @@ const bindLifecycle = () => {
   window.addEventListener('pageshow', onPageShow)
 }
 
-export function createLiveEventSource() {
+export function createLiveEventSource({ keepAliveWhenHidden = false } = {}) {
   if (!isSupported()) return null
 
   const subscriber = {
+    keepAliveWhenHidden,
     closed: false,
     handlers: { open: new Set(), message: new Set(), error: new Set() }
   }
   subscribers.add(subscriber)
+  if (keepAliveWhenHidden && hiddenTimer) {
+    window.clearTimeout(hiddenTimer)
+    hiddenTimer = null
+  }
   bindLifecycle()
   startReconcile()
   openSharedSource()

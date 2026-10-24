@@ -40,7 +40,8 @@ export const unlockTicketAlertAudio = () => {
 }
 
 export const ensureTicketBrowserPermission = async () => {
-  if (!canUseNotifications() || browserPermissionRequested) return Notification.permission
+  if (!canUseNotifications()) return 'unsupported'
+  if (browserPermissionRequested) return Notification.permission
   browserPermissionRequested = true
   if (Notification.permission === 'default') {
     try {
@@ -101,6 +102,30 @@ const showBrowserNotification = ({ title, body, tag }) => {
   } catch (_error) {
     // Some browsers block Notification construction outside secure contexts.
   }
+}
+
+const seenSupportMessages = new Set()
+
+export const notifyIncomingSupportMessage = (payload, userId) => {
+  if (payload?.type !== 'support.message.created') return false
+  const data = payload.data || {}
+  if (data.actor_user_id && String(data.actor_user_id) === String(userId)) return false
+  const occurredAt = Date.parse(payload.occurred_at || payload.created_at || '')
+  if (Number.isFinite(occurredAt) && Date.now() - occurredAt > 30_000) return false
+  const key = payload.event_id || payload.id || (data.id ? `message:${data.id}` : null)
+  if (key && seenSupportMessages.has(key)) return false
+  if (key) {
+    seenSupportMessages.add(key)
+    if (seenSupportMessages.size > 500) seenSupportMessages.delete(seenSupportMessages.values().next().value)
+  }
+  const title = 'پیام جدید پشتیبانی'
+  const body = data.ticket_id ? `پیام جدید برای تیکت #${data.ticket_id} دریافت شد.` : 'یک پیام جدید در بخش پشتیبانی دریافت شد.'
+  notifyInfo(body, { title, duration: 7000 })
+  playTicketAlertSound()
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    showBrowserNotification({ title, body, tag: `support-message-${data.id || data.ticket_id}` })
+  }
+  return true
 }
 
 export const notifyNewSupportTickets = (tickets = []) => {

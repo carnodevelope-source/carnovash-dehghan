@@ -1640,7 +1640,7 @@ class ReportsDashboardView(APIView):
                 'outstanding_amount': float(outstanding_amount),
                 'cheque_number': payment.cheque_number,
                 'reminder_due_at': payment.reminder_due_at,
-                'created_at': payment.created_at,
+                'created_at': vehicle.released_at or payment.created_at,
             })
 
         attendances = WorkerAttendance.objects.select_related('worker', 'worker__user').filter(

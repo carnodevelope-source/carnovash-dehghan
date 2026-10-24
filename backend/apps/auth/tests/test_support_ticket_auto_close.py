@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -11,6 +12,10 @@ from apps.auth.models import CarWash, SupportTicket, SupportTicketMessage
 
 class SupportTicketAutoCloseTests(APITestCase):
     def setUp(self):
+        # Each test must run its own sweep, independent of prior requests.
+        self.sweep_clock = patch('apps.auth.support_tickets._last_stale_close_at', 0.0)
+        self.sweep_clock.start()
+        self.addCleanup(self.sweep_clock.stop)
         user_model = get_user_model()
         self.tenant = CarWash.objects.create(name='Auto Close Wash', slug='auto-close-wash')
         self.manager = user_model.objects.create_user(

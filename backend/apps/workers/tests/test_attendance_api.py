@@ -11,6 +11,21 @@ from apps.workers.serializers import ensure_attendance_token
 
 
 class AttendanceApiTests(APITestCase):
+    def test_disabled_account_is_not_active_even_if_profile_is_available(self):
+        self.worker_user.is_active = False
+        self.worker_user.save(update_fields=['is_active'])
+        self.client.force_authenticate(self.manager)
+
+        active_response = self.client.get(reverse('worker-list-create'))
+        all_response = self.client.get(reverse('worker-list-create'), {'include_inactive': 1})
+        self.assertEqual(active_response.status_code, 200)
+        self.assertEqual(all_response.status_code, 200)
+        active_rows = active_response.data if isinstance(active_response.data, list) else active_response.data['results']
+        all_rows = all_response.data if isinstance(all_response.data, list) else all_response.data['results']
+        self.assertNotIn(self.worker.id, [row['id'] for row in active_rows])
+        worker_row = next(row for row in all_rows if row['id'] == self.worker.id)
+        self.assertFalse(worker_row['is_available'])
+
     def setUp(self):
         user_model = get_user_model()
         self.tenant = CarWash.objects.create(name='Blue Wash', slug='blue-wash')

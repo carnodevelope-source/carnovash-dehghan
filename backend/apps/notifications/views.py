@@ -183,6 +183,7 @@ class SmsWalletMixin:
     def _debit_sms_wallets(self, tenant, amount, *, description, reference_type, created_by=None):
         remaining = Decimal(str(amount or 0))
         wallets = self._get_sms_wallets_for_update(tenant)
+        debits = []
         for wallet in wallets:
             if remaining <= 0:
                 break
@@ -201,10 +202,34 @@ class SmsWalletMixin:
                 reference_type=reference_type,
                 created_by=created_by if getattr(created_by, 'is_authenticated', False) else None,
             )
+            debits.append([wallet.id, debit])
             remaining -= debit
 
         if remaining > 0:
             raise ValidationError({'detail': 'موجودی کیف پول پیامک کافی نیست.'})
+        return debits
+
+    def _refund_sms_reservation(self, tenant, debits, amount, user):
+        remaining = amount
+        with transaction.atomic():
+            for debit in debits:
+                if remaining <= 0:
+                    break
+                refund = min(debit[1], remaining)
+                if refund <= 0:
+                    continue
+                wallet = Wallet.objects.select_for_update().get(pk=debit[0], tenant=tenant)
+                wallet.balance += refund
+                wallet.save(update_fields=['balance', 'updated_at'])
+                CashflowTransaction.objects.create(
+                    tenant=tenant, wallet=wallet,
+                    direction=CashflowTransaction.Direction.IN, amount=refund,
+                    description='بازگشت اعتبار رزروشده پیامک ناموفق',
+                    reference_type='sms_campaign_refund', created_by=user,
+                )
+                debit[1] -= refund
+                remaining -= refund
+
 
 
 class SmsProviderMixin:
@@ -539,98 +564,103 @@ class SmsCampaignSendView(APIView, SmsWalletMixin, SmsProviderMixin):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        wallet_balance = self._sms_wallet_balance(tenant)
-        if wallet_balance < estimated_total:
+        try:
+            with transaction.atomic():
+                reservation = self._debit_sms_wallets(
+                    tenant, estimated_total,
+                    description=f'رزرو اعتبار کمپین پیامک: {campaign_id}',
+                    reference_type='sms_campaign_send', created_by=request.user,
+                )
+        except ValidationError:
             return Response(
-                {
-                    'detail': 'موجودی کیف پول پیامک کافی نیست.',
-                    'required_amount': estimated_total,
-                    'wallet_balance': wallet_balance,
-                },
+                {'detail': 'موجودی کیف پول پیامک کافی نیست.',
+                 'required_amount': estimated_total,
+                 'wallet_balance': self._sms_wallet_balance(tenant)},
                 status=status.HTTP_402_PAYMENT_REQUIRED,
             )
+        pending_amount = estimated_total
 
         results = []
         success_count = 0
         failed_count = 0
         debited_amount = Decimal('0')
 
-        for rendered_text, batch_recipients in grouped_batches.items():
-            phone_numbers = [recipient['phone'] for recipient in batch_recipients]
-            provider_result = self._send_provider_request(text=rendered_text, recipients=phone_numbers)
-            unit_cost = sms_cost_for_text(rendered_text)
-            segments = sms_segments_for_text(rendered_text)
-            batch_cost = unit_cost * Decimal(len(batch_recipients))
-            extra_payload = {
-                'campaign_id': campaign_id,
-                'target_label': validated.get('target_label', ''),
-                'note': validated.get('note', ''),
-                'template_code': validated.get('template_code', ''),
-                'template_text': template_text,
-                'segments': segments,
-                'chars_per_segment': chars_per_segment,
-                'price_per_sms': str(unit_cost),
-                'price_per_segment': str(sms_price),
-                'total_cost': str(batch_cost),
-                'provider_request': provider_result['payload'],
-            }
+        try:
+            for rendered_text, batch_recipients in grouped_batches.items():
+                phone_numbers = [recipient['phone'] for recipient in batch_recipients]
+                unit_cost = sms_cost_for_text(rendered_text)
+                segments = sms_segments_for_text(rendered_text)
+                batch_cost = unit_cost * Decimal(len(batch_recipients))
+                provider_result = self._send_provider_request(text=rendered_text, recipients=phone_numbers)
+                if not provider_result['ok']:
+                    self._refund_sms_reservation(tenant, reservation, batch_cost, request.user)
+                pending_amount -= batch_cost
+                extra_payload = {
+                    'campaign_id': campaign_id,
+                    'target_label': validated.get('target_label', ''),
+                    'note': validated.get('note', ''),
+                    'template_code': validated.get('template_code', ''),
+                    'template_text': template_text,
+                    'segments': segments,
+                    'chars_per_segment': chars_per_segment,
+                    'price_per_sms': str(unit_cost),
+                    'price_per_segment': str(sms_price),
+                    'total_cost': str(batch_cost),
+                    'provider_request': provider_result['payload'],
+                }
 
-            if provider_result['ok']:
-                with transaction.atomic():
-                    self._debit_sms_wallets(
-                        tenant,
-                        batch_cost,
-                        description=f'ارسال پیامک: {validated.get("target_label", "").strip() or "باشگاه مشتریان"}',
-                        reference_type='sms_campaign_send',
-                        created_by=request.user,
+                if provider_result['ok']:
+                    debited_amount += batch_cost
+                    self._create_log_entries(
+                        tenant=tenant,
+                        request_user=request.user,
+                        recipients=batch_recipients,
+                        status_value=NotificationLog.Status.SENT,
+                        provider_message_id=provider_result.get('provider_id', ''),
+                        provider_response=provider_result['raw_body'],
+                        extra_payload=extra_payload,
                     )
-                debited_amount += batch_cost
-                self._create_log_entries(
-                    tenant=tenant,
-                    request_user=request.user,
-                    recipients=batch_recipients,
-                    status_value=NotificationLog.Status.SENT,
-                    provider_message_id=provider_result.get('provider_id', ''),
-                    provider_response=provider_result['raw_body'],
-                    extra_payload=extra_payload,
-                )
-                for recipient in batch_recipients:
-                    success_count += 1
-                    results.append(
-                        {
-                            'phone': recipient['phone'],
-                            'recipient_name': recipient.get('name', ''),
-                            'status': 'success',
-                            'message': provider_result['message'],
-                            'provider_message_id': provider_result.get('provider_id', ''),
-                            'rendered_text': recipient.get('rendered_text', ''),
-                            'cost': unit_cost,
-                            'segments': segments,
-                        }
+                    for recipient in batch_recipients:
+                        success_count += 1
+                        results.append(
+                            {
+                                'phone': recipient['phone'],
+                                'recipient_name': recipient.get('name', ''),
+                                'status': 'success',
+                                'message': provider_result['message'],
+                                'provider_message_id': provider_result.get('provider_id', ''),
+                                'rendered_text': recipient.get('rendered_text', ''),
+                                'cost': unit_cost,
+                                'segments': segments,
+                            }
+                        )
+                else:
+                    self._create_log_entries(
+                        tenant=tenant,
+                        request_user=request.user,
+                        recipients=batch_recipients,
+                        status_value=NotificationLog.Status.FAILED,
+                        provider_response=provider_result['raw_body'],
+                        extra_payload=extra_payload,
                     )
-            else:
-                self._create_log_entries(
-                    tenant=tenant,
-                    request_user=request.user,
-                    recipients=batch_recipients,
-                    status_value=NotificationLog.Status.FAILED,
-                    provider_response=provider_result['raw_body'],
-                    extra_payload=extra_payload,
-                )
-                for recipient in batch_recipients:
-                    failed_count += 1
-                    results.append(
-                        {
-                            'phone': recipient['phone'],
-                            'recipient_name': recipient.get('name', ''),
-                            'status': 'failed',
-                            'message': provider_result['message'],
-                            'provider_message_id': '',
-                            'rendered_text': recipient.get('rendered_text', ''),
-                            'cost': unit_cost,
-                            'segments': segments,
-                        }
-                    )
+                    for recipient in batch_recipients:
+                        failed_count += 1
+                        results.append(
+                            {
+                                'phone': recipient['phone'],
+                                'recipient_name': recipient.get('name', ''),
+                                'status': 'failed',
+                                'message': provider_result['message'],
+                                'provider_message_id': '',
+                                'rendered_text': recipient.get('rendered_text', ''),
+                                'cost': unit_cost,
+                                'segments': segments,
+                            }
+                        )
+
+        finally:
+            if pending_amount > 0:
+                self._refund_sms_reservation(tenant, reservation, pending_amount, request.user)
 
         http_status = status.HTTP_201_CREATED if success_count > 0 else status.HTTP_502_BAD_GATEWAY
         detail = 'پیامک با موفقیت در صف ارسال قرار گرفت.'
