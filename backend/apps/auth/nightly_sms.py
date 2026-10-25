@@ -8,7 +8,7 @@ from apps.auth.models import CarWash, User
 from apps.auth.sms import send_logged_sms
 from apps.notifications.models import NotificationLog
 from apps.notifications.services import format_jalali_date, format_toman, normalize_phone, to_persian_digits
-from apps.payments.models import CashflowTransaction, Payment
+from apps.payments.models import Payment
 from apps.vehicles.models import VehicleEntry
 
 
@@ -32,7 +32,7 @@ def _day_bounds(day):
     return start, start + timedelta(days=1)
 
 
-def _build_summary_text(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, wallet_in_total, wallet_out_total):
+def _build_summary_text(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, vehicle_pending_count, vehicle_cancelled_count):
     day_label = format_jalali_date(timezone.make_aware(datetime.combine(day, time.min)))
     return (
         f'گزارش شبانه {tenant.name}\n'
@@ -40,8 +40,8 @@ def _build_summary_text(*, tenant, day, paid_total, vehicle_in_count, vehicle_ou
         f'درآمد وصول‌شده: {format_toman(paid_total)}\n'
         f'خودروهای پذیرش‌شده: {to_persian_digits(vehicle_in_count)}\n'
         f'خودروهای ترخیص‌شده: {to_persian_digits(vehicle_out_count)}\n'
-        f'واریز صندوق: {format_toman(wallet_in_total)}\n'
-        f'برداشت صندوق: {format_toman(wallet_out_total)}'
+        f'آماده ترخیص: {to_persian_digits(vehicle_pending_count)}\n'
+        f'لغو شده‌ها: {to_persian_digits(vehicle_cancelled_count)}'
     )
 
 
@@ -57,7 +57,7 @@ def _has_sent_or_pending_summary(tenant, day, template_code):
     ).exists()
 
 
-def _summary_payload(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, wallet_in_total, wallet_out_total):
+def _summary_payload(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, vehicle_pending_count, vehicle_cancelled_count):
     return {
         'report_date': day.isoformat(),
         'tenant_id': tenant.id,
@@ -65,8 +65,8 @@ def _summary_payload(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_c
         'paid_total': float(paid_total),
         'vehicle_in_count': vehicle_in_count,
         'vehicle_out_count': vehicle_out_count,
-        'wallet_in_total': float(wallet_in_total),
-        'wallet_out_total': float(wallet_out_total),
+        'vehicle_pending_count': vehicle_pending_count,
+        'vehicle_cancelled_count': vehicle_cancelled_count,
     }
 
 
@@ -113,22 +113,19 @@ def dispatch_due_nightly_manager_summaries(*, now=None, target_day=None, force=F
             released_at__gte=start,
             released_at__lt=end,
         ).count()
-        wallet_in_total = _money(
-            CashflowTransaction.objects.filter(
-                tenant=tenant,
-                direction=CashflowTransaction.Direction.IN,
-                transacted_at__gte=start,
-                transacted_at__lt=end,
-            ).aggregate(total=Sum('amount'))['total']
-        )
-        wallet_out_total = _money(
-            CashflowTransaction.objects.filter(
-                tenant=tenant,
-                direction=CashflowTransaction.Direction.OUT,
-                transacted_at__gte=start,
-                transacted_at__lt=end,
-            ).aggregate(total=Sum('amount'))['total']
-        )
+        vehicle_pending_count = VehicleEntry.objects.filter(
+            tenant=tenant,
+            check_in_at__lte=current,
+        ).exclude(
+            status__in=[VehicleEntry.Status.RELEASED, VehicleEntry.Status.CANCELLED],
+        ).count()
+        vehicle_cancelled_count = VehicleEntry.objects.filter(
+            tenant=tenant,
+            status=VehicleEntry.Status.CANCELLED,
+            status_logs__to_status=VehicleEntry.Status.CANCELLED,
+            status_logs__changed_at__gte=start,
+            status_logs__changed_at__lt=end,
+        ).distinct().count()
 
         payload = _summary_payload(
             tenant=tenant,
@@ -136,8 +133,8 @@ def dispatch_due_nightly_manager_summaries(*, now=None, target_day=None, force=F
             paid_total=paid_total,
             vehicle_in_count=vehicle_in_count,
             vehicle_out_count=vehicle_out_count,
-            wallet_in_total=wallet_in_total,
-            wallet_out_total=wallet_out_total,
+            vehicle_pending_count=vehicle_pending_count,
+            vehicle_cancelled_count=vehicle_cancelled_count,
         )
         text = _build_summary_text(
             tenant=tenant,
@@ -145,8 +142,8 @@ def dispatch_due_nightly_manager_summaries(*, now=None, target_day=None, force=F
             paid_total=paid_total,
             vehicle_in_count=vehicle_in_count,
             vehicle_out_count=vehicle_out_count,
-            wallet_in_total=wallet_in_total,
-            wallet_out_total=wallet_out_total,
+            vehicle_pending_count=vehicle_pending_count,
+            vehicle_cancelled_count=vehicle_cancelled_count,
         )
         result = send_logged_sms(
             tenant=tenant,

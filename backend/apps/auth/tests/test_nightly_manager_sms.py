@@ -10,8 +10,8 @@ from rest_framework.test import APITestCase
 from apps.auth.models import CarWash
 from apps.auth.nightly_sms import _resolve_target_day, dispatch_due_nightly_manager_summaries
 from apps.notifications.models import NotificationLog
-from apps.payments.models import CashflowTransaction, Payment, Wallet
-from apps.vehicles.models import VehicleEntry
+from apps.payments.models import Payment, Wallet
+from apps.vehicles.models import VehicleEntry, VehicleStatusLog
 
 
 @override_settings(
@@ -87,22 +87,34 @@ class NightlyManagerSmsTests(APITestCase):
             paid_at=self._at(day, 12),
             created_by=self.manager,
         )
-        wallet_in = CashflowTransaction.objects.create(
-            tenant=self.tenant,
-            wallet=self.wallet,
-            direction=CashflowTransaction.Direction.IN,
-            amount=Decimal('300000'),
-            created_by=self.manager,
+        for status in [
+            VehicleEntry.Status.ENTERED,
+            VehicleEntry.Status.ASSIGNED,
+            VehicleEntry.Status.IN_PROGRESS,
+            VehicleEntry.Status.READY_TO_SETTLE,
+            VehicleEntry.Status.CANCELLED,
+            VehicleEntry.Status.CANCELLED,
+        ]:
+            entry = VehicleEntry.objects.create(
+                tenant=self.tenant, plate_number='11 ب 111 11',
+                status=status, entered_by=self.manager,
+            )
+            # Cars still inside include admissions from earlier days.
+            VehicleEntry.objects.filter(pk=entry.pk).update(check_in_at=self._at(day - timedelta(days=1), 10))
+            if status == VehicleEntry.Status.CANCELLED:
+                for _ in range(2):
+                    log = VehicleStatusLog.objects.create(
+                        tenant=self.tenant, vehicle=entry,
+                        to_status=VehicleEntry.Status.CANCELLED,
+                    )
+                    VehicleStatusLog.objects.filter(pk=log.pk).update(changed_at=self._at(day, 15))
+        old_cancel = VehicleEntry.objects.create(
+            tenant=self.tenant, plate_number='11 ب 112 11', status=VehicleEntry.Status.CANCELLED,
         )
-        wallet_out = CashflowTransaction.objects.create(
-            tenant=self.tenant,
-            wallet=self.wallet,
-            direction=CashflowTransaction.Direction.OUT,
-            amount=Decimal('120000'),
-            created_by=self.manager,
+        old_log = VehicleStatusLog.objects.create(
+            tenant=self.tenant, vehicle=old_cancel, to_status=VehicleEntry.Status.CANCELLED,
         )
-        CashflowTransaction.objects.filter(id=wallet_in.id).update(transacted_at=self._at(day, 9))
-        CashflowTransaction.objects.filter(id=wallet_out.id).update(transacted_at=self._at(day, 15))
+        VehicleStatusLog.objects.filter(pk=old_log.pk).update(changed_at=self._at(day - timedelta(days=1), 15))
 
         first_count = dispatch_due_nightly_manager_summaries(target_day=day, force=True)
         second_count = dispatch_due_nightly_manager_summaries(target_day=day, force=True)
@@ -119,8 +131,12 @@ class NightlyManagerSmsTests(APITestCase):
         self.assertEqual(log.payload['paid_total'], 850000.0)
         self.assertEqual(log.payload['vehicle_in_count'], 1)
         self.assertEqual(log.payload['vehicle_out_count'], 1)
-        self.assertEqual(log.payload['wallet_in_total'], 300000.0)
-        self.assertEqual(log.payload['wallet_out_total'], 120000.0)
+        self.assertEqual(log.payload['vehicle_pending_count'], 4)
+        self.assertEqual(log.payload['vehicle_cancelled_count'], 2)
+        self.assertIn('آماده ترخیص: ۴', log.payload['text'])
+        self.assertIn('لغو شده‌ها: ۲', log.payload['text'])
+        self.assertNotIn('واریز صندوق', log.payload['text'])
+        self.assertNotIn('برداشت صندوق', log.payload['text'])
         self.assertIn('گزارش شبانه کارواش تست', log.payload['text'])
         self.assertIn('درآمد وصول‌شده: ۸۵۰،۰۰۰ تومان', log.payload['text'])
         self.assertIn('خودروهای پذیرش‌شده: ۱', log.payload['text'])

@@ -35,10 +35,7 @@
           </div>
           <div class="field">
             <span><IconlyIcon name="users3" size="xs" />نیرو</span>
-            <select v-model="filters.workerId">
-              <option value="">همه نیروها</option>
-              <option v-for="worker in workers" :key="worker.id" :value="String(worker.id)">{{ worker.full_name }}</option>
-            </select>
+            <ReportWorkerSelect v-model="filters.workerId" :workers="workers" />
           </div>
           <div class="field">
             <span><IconlyIcon name="calendar" size="xs" />ماه بیمه</span>
@@ -614,6 +611,7 @@ import { printHtmlElement, resolvePrintErrorMessage } from '../../utils/receiptP
 import { sectionHelpByPage } from '../../config/pageHelp'
 import HelpTip from '../../components/base/HelpTip.vue'
 import ReportPager from '../../components/reports/ReportPager.vue'
+import ReportWorkerSelect from '../../components/reports/ReportWorkerSelect.vue'
 
 const activeTab = ref('overall')
 let liveReloadTimer = null
