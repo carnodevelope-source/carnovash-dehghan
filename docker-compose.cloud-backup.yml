@@ -1,10 +1,10 @@
 # Opt-in only. Apply after host mount, permissions and key provisioning are reviewed.
 services:
   cloud-backup:
+    image: ${CLOUD_BACKUP_IMAGE:-carvash-cloud-backup:local}
     build:
       context: ./backend
-      args:
-        PYTHON_IMAGE: ${BACKEND_PYTHON_IMAGE:-docker.arvancloud.ir/python:3.12-slim}
+      dockerfile: Dockerfile.cloud-backup
     profiles: [cloud-backup]
     entrypoint: ["python", "manage.py"]
     command: ["run_cloud_backups", "--loop"]
@@ -26,10 +26,15 @@ services:
       DB_HOST: db
       DB_PORT: "3306"
       DJANGO_MEDIA_ROOT: /app/media
-      CLOUD_BACKUP_ROOT: /mnt/extra-storage
+      CLOUD_BACKUP_MOUNT: /mnt/extra-storage
+      CLOUD_BACKUP_ROOT: /mnt/extra-storage/cloud-backups
       CLOUD_BACKUP_DEVICE: ${CLOUD_BACKUP_DEVICE:?expected Linux major:minor required}
       CLOUD_BACKUP_HOST_MOUNTINFO: /run/host-mountinfo
       CLOUD_BACKUP_KEY_FILE: /run/secrets/cloud_backup_key
+      CLOUD_BACKUP_KEY_ID: ${CLOUD_BACKUP_KEY_ID:-primary}
+      CLOUD_BACKUP_MAX_ROWS: ${CLOUD_BACKUP_MAX_ROWS:-20000}
+      CLOUD_BACKUP_MAX_JSON_BYTES: ${CLOUD_BACKUP_MAX_JSON_BYTES:-16777216}
+      CLOUD_BACKUP_MAX_FILES: ${CLOUD_BACKUP_MAX_FILES:-50000}
       CLOUD_BACKUP_INTERVAL_SECONDS: ${CLOUD_BACKUP_INTERVAL_SECONDS:-21600}
       CLOUD_BACKUP_KEEP_VERSIONS: ${CLOUD_BACKUP_KEEP_VERSIONS:-14}
       CLOUD_BACKUP_MIN_FREE_BYTES: ${CLOUD_BACKUP_MIN_FREE_BYTES:-1073741824}
@@ -37,14 +42,20 @@ services:
       - type: bind
         source: /mnt/extra-storage
         target: /mnt/extra-storage
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./docker-data/media
-        target: /app/media
         read_only: true
         bind:
           create_host_path: false
+      - type: bind
+        source: /mnt/extra-storage/cloud-backups
+        target: /mnt/extra-storage/cloud-backups
+        bind:
+          create_host_path: false
+      - type: volume
+        source: cloud_backup_media
+        target: /app/media
+        read_only: true
+        volume:
+          nocopy: true
       - type: bind
         source: /proc/1/mountinfo
         target: /run/host-mountinfo
@@ -66,3 +77,8 @@ services:
 secrets:
   cloud_backup_key:
     file: ${CLOUD_BACKUP_KEY_HOST_FILE:?absolute path to a private backup key file required}
+
+volumes:
+  cloud_backup_media:
+    external: true
+    name: ${CLOUD_BACKUP_MEDIA_VOLUME:-carwash_carvash_media}

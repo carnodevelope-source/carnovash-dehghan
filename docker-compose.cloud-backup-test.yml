@@ -1,0 +1,32 @@
+# Disposable integration tests only. Independent project; no production volumes,
+# host ports, device access, application services or runtime mount paths.
+services:
+  backup-test-db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    command: ["--innodb-buffer-pool-size=64M", "--mysqlx=0"]
+    tmpfs: ["/var/lib/mysql:rw,size=768m"]
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, 127.0.0.1, --silent]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+  backup-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.cloud-backup
+    user: "10001:10001"
+    environment:
+      CLOUD_BACKUP_TEST_MYSQL: isolated
+      CLOUD_BACKUP_TEST_DB_HOST: backup-test-db
+      CARWASH_INTERNAL_SCHEDULER: "false"
+      DB_ENGINE: sqlite
+    command: ["test", "apps.cloud_backup.tests", "--settings=apps.cloud_backup.test_settings_mysql", "--noinput"]
+    read_only: true
+    tmpfs: ["/tmp:rw,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      backup-test-db:
+        condition: service_healthy

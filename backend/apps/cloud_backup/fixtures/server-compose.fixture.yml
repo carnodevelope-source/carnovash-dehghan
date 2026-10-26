@@ -1,0 +1,18 @@
+# Validation fixture ONLY. Represents the named volumes supplied by the user.
+# The real docker-compose.usb-local.yml is server-local and absent from this repo.
+# Do not deploy this fixture or use it to replace that server-local file.
+services:
+  db:
+    volumes:
+      - carvash_mysql:/var/lib/mysql
+  backend:
+    volumes:
+      - carvash_media:/app/media
+  frontend:
+    volumes:
+      - carvash_media:/var/www/media:ro
+volumes:
+  carvash_mysql:
+    name: carwash_carvash_mysql
+  carvash_media:
+    name: carwash_carvash_media

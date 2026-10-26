@@ -1,7 +1,11 @@
 import base64
 import errno
+import hashlib
+import io
 import json
 import os
+import struct
+import tarfile
 import tempfile
 from contextlib import ExitStack, contextmanager, nullcontext
 from pathlib import Path
@@ -17,10 +21,10 @@ from apps.auth.models import CarWash, CarWashFeaturePurchase, SupportTicket, Sup
 from apps.inventory.models import ExpenseEntry
 from apps.vehicles.models import VehicleEntry
 from apps.subscriptions.models import PlatformProject, ServiceProduct, ServicePlan, ServiceSubscription, ServicePeriod
-from .archive import restore_fixture, verify
+from .archive import restore_fixture, verify, EncryptWriter, DecryptReader, archive_cipher, MAGIC, CHUNK
 from .models import BackupRun
-from .service import backup_tenant, mount_guard
-from .snapshot import SnapshotError, collect
+from .service import backup_tenant, mount_guard, due
+from .snapshot import SnapshotError, collect, ownership_registry, add_bytes, serialize_row
 
 
 class CloudBackupTests(TransactionTestCase):
@@ -37,7 +41,7 @@ class CloudBackupTests(TransactionTestCase):
         self.key.write_bytes(base64.b64encode(os.urandom(32)))
         os.chmod(self.key, 0o600)
         self.settings_override = self.settings(
-            CLOUD_BACKUP_ROOT=str(self.disk), CLOUD_BACKUP_KEY_FILE=str(self.key),
+            CLOUD_BACKUP_ROOT=str(self.disk), CLOUD_BACKUP_MOUNT=str(self.disk), CLOUD_BACKUP_KEY_FILE=str(self.key),
             CLOUD_BACKUP_MIN_FREE_BYTES=0, MEDIA_ROOT=str(self.media),
         )
         self.settings_override.enable()
@@ -50,6 +54,7 @@ class CloudBackupTests(TransactionTestCase):
         # Windows has no Linux mount namespace/flock. Only OS boundaries are
         # stubbed; real encryption, filesystem IO, ORM and restore run below.
         self.stack.enter_context(patch('apps.cloud_backup.service.pinned_root', pin))
+        self.stack.enter_context(patch('apps.cloud_backup.service.pinned_tenant', lambda path: nullcontext(path)))
         self.stack.enter_context(patch('apps.cloud_backup.service.mount_guard'))
         self.stack.enter_context(patch('apps.cloud_backup.service.tenant_lock', lambda _: nullcontext()))
         self.stack.enter_context(patch('apps.cloud_backup.service.sync_directory'))
@@ -73,7 +78,7 @@ class CloudBackupTests(TransactionTestCase):
         archive = self.archive(run)
         self.assertNotIn(b'A PRIVATE MEDIA', archive.read_bytes())
         output = self.root / 'recovered'
-        call_command('recover_cloud_backup', str(archive), tenant=self.a.pk, output=str(output), database='recovery')
+        call_command('recover_cloud_backup', str(archive), tenant=self.a.pk, output=str(output), database='recovery', confirm_isolated_restore=True)
         self.assertEqual((output / 'media/a.txt').read_bytes(), b'A PRIVATE MEDIA')
         self.assertFalse((output / 'media/b.txt').exists())
         restored = SupportTicketAttachment.objects.using('recovery').get()
@@ -82,6 +87,13 @@ class CloudBackupTests(TransactionTestCase):
         self.assertFalse(CarWash.objects.using('recovery').filter(pk=self.b.pk).exists())
         self.assertGreater(run.retained_bytes, 0)
         self.assertIsNotNone(run.verified_at)
+        from django.apps import apps
+        for expected in json.loads((output / 'fixture.json').read_text()):
+            obj = apps.get_model(expected['model']).objects.using('recovery').get(pk=expected['pk'])
+            actual = json.loads(serialize_row(obj))[0]
+            if expected['model'] == 'cw_auth.user':
+                actual['fields'].update(groups=[], user_permissions=[])
+            self.assertEqual(actual, expected)
 
     def test_ineligible_does_not_create_directory_or_run(self):
         self.assertIsNone(backup_tenant(self.b.pk))
@@ -179,7 +191,7 @@ class CloudBackupTests(TransactionTestCase):
         run = backup_tenant(self.a.pk)
         self.assertEqual(run.status, 'success', run.error_code)
         output = self.root / 'restore-catalog'
-        call_command('recover_cloud_backup', str(self.archive(run)), tenant=self.a.pk, output=str(output), database='recovery')
+        call_command('recover_cloud_backup', str(self.archive(run)), tenant=self.a.pk, output=str(output), database='recovery', confirm_isolated_restore=True)
         restored = ServicePeriod.objects.using('recovery').get()
         self.assertEqual(restored.subscription.tenant_id, self.a.pk)
         self.assertEqual(restored.plan.product.project.code, 'backup-test')
@@ -207,7 +219,7 @@ class CloudBackupTests(TransactionTestCase):
         # Invoke the actual guard, bypassing only Linux stat on this Windows host.
         info = self.root / 'mountinfo'
         info.write_text('1 0 8:17 / /mnt/extra-storage rw - ext4 /dev/sdb1 rw\n')
-        with self.settings(CLOUD_BACKUP_ROOT='/mnt/extra-storage', CLOUD_BACKUP_DEVICE='8:17', CLOUD_BACKUP_HOST_MOUNTINFO=str(info)):
+        with self.settings(CLOUD_BACKUP_MOUNT='/mnt/extra-storage', CLOUD_BACKUP_DEVICE='8:17', CLOUD_BACKUP_HOST_MOUNTINFO=str(info)):
             with patch('pathlib.Path.is_absolute', return_value=True), patch('pathlib.Path.resolve', return_value=Path('/mnt/extra-storage')), patch('pathlib.Path.stat') as stat, patch('pathlib.Path.is_mount', return_value=True), patch('os.major', return_value=8, create=True), patch('os.minor', return_value=17, create=True):
                 stat.return_value.st_dev = 1
                 # On Windows Path renders backslashes; use a native-path record.
@@ -216,3 +228,182 @@ class CloudBackupTests(TransactionTestCase):
                 info.write_text('1 0 8:1 / / rw - ext4 /dev/sda1 rw\n')
                 with self.assertRaises(SnapshotError):
                     mount_guard()
+
+    def test_every_first_party_model_has_reviewed_ownership(self):
+        from django.apps import apps
+        registry = ownership_registry()
+        actual = {m._meta.label_lower for m in apps.get_models() if m._meta.app_config.name.startswith('apps.')}
+        self.assertEqual(set(registry), actual)
+
+    def test_unknown_model_is_rejected_even_with_tenant(self):
+        from django.apps import apps
+        from types import SimpleNamespace
+        unknown = SimpleNamespace(_meta=SimpleNamespace(label_lower='inventory.new_private_model', app_config=SimpleNamespace(name='apps.inventory')))
+        with patch('apps.cloud_backup.snapshot.apps.get_models', return_value=[*apps.get_models(), unknown]):
+            with self.assertRaisesRegex(SnapshotError, 'unclassified_model'):
+                ownership_registry()
+
+    def test_snapshot_limits_fail_without_final_archive(self):
+        with self.settings(CLOUD_BACKUP_MAX_ROWS=1):
+            self.assertEqual(backup_tenant(self.a.pk).error_code, 'snapshot_limit_exceeded')
+        with self.settings(CLOUD_BACKUP_MAX_JSON_BYTES=32):
+            self.assertEqual(backup_tenant(self.a.pk).error_code, 'snapshot_limit_exceeded')
+        with self.settings(CLOUD_BACKUP_MAX_FILES=0):
+            self.assertEqual(backup_tenant(self.a.pk).error_code, 'snapshot_limit_exceeded')
+        self.assertFalse(list(self.disk.rglob('*.cvb')))
+
+    def test_changed_file_after_snapshot_is_rejected(self):
+        def collect_then_change(tenant):
+            result = collect(tenant)
+            (self.media / 'a.txt').write_bytes(b'CHANGED')
+            return result
+        with patch('apps.cloud_backup.service.collect', side_effect=collect_then_change):
+            self.assertEqual(backup_tenant(self.a.pk).error_code, 'source_changed')
+        self.assertFalse(list(self.disk.rglob('*.cvb')))
+
+    def test_eio_and_readonly_preserve_success_and_redact_errors(self):
+        first = backup_tenant(self.a.pk)
+        for error, code in ((errno.EIO, 'storage_io_error'), (errno.EROFS, 'storage_read_only')):
+            with patch('apps.cloud_backup.service.EncryptWriter.write', side_effect=OSError(error, 'private-secret')):
+                run = backup_tenant(self.a.pk)
+            self.assertEqual(run.error_code, code)
+            self.assertTrue(self.archive(first).exists())
+            self.assertFalse(run.archive_name)
+
+    def test_scheduled_run_checks_interval_inside_lock(self):
+        self.assertTrue(due(self.a.pk))
+        first = backup_tenant(self.a.pk, scheduled=True)
+        self.assertEqual(first.status, 'success')
+        self.assertFalse(due(self.a.pk))
+        self.assertIsNone(backup_tenant(self.a.pk, scheduled=True))
+        self.assertEqual(BackupRun.objects.count(), 1)
+
+    def test_failure_backoff_and_busy_lock(self):
+        with patch('apps.cloud_backup.service.EncryptWriter.write', side_effect=OSError(errno.EIO, 'error')):
+            backup_tenant(self.a.pk)
+        self.assertFalse(due(self.a.pk))
+        with patch('apps.cloud_backup.service.tenant_lock', side_effect=SnapshotError('already_running')):
+            self.assertIsNone(backup_tenant(self.a.pk))
+        self.assertEqual(BackupRun.objects.count(), 1)
+
+    def test_v2_key_rotation_and_v1_recovery(self):
+        old = backup_tenant(self.a.pk)
+        with open(self.archive(old), 'rb') as source, io.BufferedReader(DecryptReader(source)) as stream:
+            plaintext = stream.read()
+        salt = os.urandom(32)
+        cipher = archive_cipher(salt, legacy=True)
+        legacy = self.root / 'legacy.cvb'
+        with open(legacy, 'wb') as output:
+            output.write(MAGIC + salt)
+            blocks = [plaintext[i:i+CHUNK] for i in range(0, len(plaintext), CHUNK)] + [b'']
+            for index, block in enumerate(blocks):
+                encrypted = cipher.encrypt(index.to_bytes(12, 'big'), block, MAGIC)
+                output.write(struct.pack('>I', len(encrypted)) + encrypted)
+        ring = self.root / 'keyring'
+        ring.write_text(json.dumps({
+            'primary': self.key.read_text().strip(), 'legacy-v1': self.key.read_text().strip(),
+            'rotated': base64.b64encode(os.urandom(32)).decode(),
+        }))
+        os.chmod(ring, 0o600)
+        with self.settings(CLOUD_BACKUP_KEYRING_FILE=str(ring), CLOUD_BACKUP_KEY_ID='rotated'):
+            new = backup_tenant(self.a.pk)
+            self.assertEqual(new.status, 'success', new.error_code)
+            for archive in (legacy, self.archive(old), self.archive(new)):
+                verify(archive, self.a.pk)
+        with self.settings(CLOUD_BACKUP_KEY_ID='unknown'):
+            with self.assertRaises(SnapshotError):
+                verify(self.archive(old), self.a.pk)
+
+    def forged_archive(self, members):
+        path = self.root / 'forged.cvb'
+        with open(path, 'wb') as source:
+            writer = EncryptWriter(source, lambda: None)
+            with tarfile.open(fileobj=writer, mode='w|gz') as tar:
+                for name, data in members:
+                    add_bytes(tar, name, data)
+            writer.finish()
+        return path
+
+    def test_authenticated_archive_rejects_traversal_duplicate_and_foreign_fixture(self):
+        for members in ([('../escape', b'x')], [('fixture.json', b'[]'), ('fixture.json', b'[]')]):
+            with self.assertRaises(SnapshotError):
+                verify(self.forged_archive(members), self.a.pk)
+        fixture, _ = collect(self.a.pk)
+        rows = json.loads(fixture)
+        rows.append({'model': 'cw_auth.carwash', 'pk': self.b.pk, 'fields': {'name': 'B'}})
+        payload = json.dumps(rows).encode()
+        manifest = json.dumps({'version': 1, 'tenant_id': self.a.pk, 'members': {'fixture.json': hashlib.sha256(payload).hexdigest()}}).encode()
+        with self.assertRaises(SnapshotError):
+            verify(self.forged_archive([('fixture.json', payload), ('manifest.json', manifest)]), self.a.pk)
+
+    def test_restore_requires_explicit_approval_before_any_output(self):
+        from django.core.management.base import CommandError
+        run = backup_tenant(self.a.pk)
+        output = self.root / 'not-created'
+        with self.assertRaises(CommandError):
+            call_command('recover_cloud_backup', str(self.archive(run)), tenant=self.a.pk, output=str(output), database='recovery')
+        self.assertFalse(output.exists())
+
+    def test_restore_rejects_existing_directory_and_corruption_before_output(self):
+        from django.core.management.base import CommandError
+        run = backup_tenant(self.a.pk)
+        output = self.root / 'exists'
+        output.mkdir()
+        with self.assertRaises(CommandError):
+            call_command('recover_cloud_backup', str(self.archive(run)), tenant=self.a.pk, output=str(output))
+        archive = self.archive(run)
+        archive.write_bytes(archive.read_bytes()[:-20])
+        output = self.root / 'not-created'
+        with self.assertRaises(CommandError):
+            call_command('recover_cloud_backup', str(archive), tenant=self.a.pk, output=str(output))
+        self.assertFalse(output.exists())
+
+    @skipUnless(settings.DATABASES['default']['ENGINE'].endswith('mysql'), 'MySQL-only least-privilege integration test')
+    def test_mysql_snapshot_with_only_generated_table_grants(self):
+        from django.db import connection, DatabaseError
+        password = os.urandom(24).hex()
+        account = 'cloud_backup_test_limited'
+        sql = io.StringIO()
+        call_command('cloud_backup_grants', database_name=connection.settings_dict['NAME'], user=account, stdout=sql)
+        with connection.cursor() as cursor:
+            cursor.execute('CREATE USER %s@%s IDENTIFIED BY %s', [account, '%', password])
+            for line in sql.getvalue().splitlines():
+                cursor.execute(line)
+        original = {k: connection.settings_dict[k] for k in ('USER', 'PASSWORD')}
+        connection.close()
+        connection.settings_dict.update(USER=account, PASSWORD=password)
+        try:
+            run = backup_tenant(self.a.pk)
+            self.assertEqual(run.status, 'success', run.error_code)
+            with self.assertRaises(DatabaseError):
+                CarWash.objects.filter(pk=-1).update(name='not-written')
+            with self.assertRaises(DatabaseError):
+                BackupRun.objects.filter(pk=-1).delete()
+            with connection.cursor() as cursor:
+                with self.assertRaises(DatabaseError):
+                    cursor.execute('CREATE TABLE cloud_backup_forbidden (id INT)')
+        finally:
+            connection.close()
+            connection.settings_dict.update(original)
+            with connection.cursor() as cursor:
+                cursor.execute(f"DROP USER '{account}'@'%'")
+
+    def test_authenticated_but_truncated_gzip_is_rejected(self):
+        first = backup_tenant(self.a.pk)
+        with open(self.archive(first), 'rb') as source, io.BufferedReader(DecryptReader(source)) as stream:
+            compressed = stream.read()
+        broken = self.root / 'truncated-gzip.cvb'
+        with open(broken, 'wb') as output:
+            writer = EncryptWriter(output, lambda: None)
+            writer.write(compressed[:-8])  # All content present, but gzip CRC/length trailer missing.
+            writer.finish()
+        with self.assertRaises(Exception):
+            verify(broken, self.a.pk)
+
+    def test_generated_grants_exclude_technical_tables_and_writes(self):
+        output = io.StringIO()
+        call_command('cloud_backup_grants', database_name='review', stdout=output)
+        statements = output.getvalue()
+        self.assertIn('SELECT, INSERT, UPDATE ON `review`.`cloud_backup_backuprun`', statements)
+        for forbidden in ('DELETE', 'CREATE', 'ALL PRIVILEGES', 'realtime_', 'django_session', 'bulkservicejob', 'auth_permission'):
+            self.assertNotIn(forbidden, statements)

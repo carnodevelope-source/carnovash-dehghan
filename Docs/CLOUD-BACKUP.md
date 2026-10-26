@@ -1,135 +1,289 @@
-# Secondary tenant backups (opt-in, not deployed)
+# Cloud Backup: server readiness and operator runbook
 
-The primary database and media paths are unchanged. This is a scheduled logical
-backup, not synchronous replication or a substitute for full disaster recovery.
-Only `CarWashFeaturePurchase(feature_key='cloud_storage', is_active=True)` enables
-new snapshots. The current purchase model has no expiry date; installment locks
-do not revoke this eligibility. There is no subscription-triggered deletion.
+Opt-in scheduled encrypted tenant backups. Primary DB/media paths and application
+services are unchanged. The preparation/deployment commands below are proposals;
+none have been executed on production. The server layout was supplied by the
+operator and must be rechecked before rollout.
 
-## Contents and isolation
+## Supplied server topology
 
-All first-party models with a tenant FK, plus ticket messages/attachments and
-subscription periods/meters, are scoped to that tenant. Only referenced shared
-project/product/plan catalog rows are included. New unclassified models cause an
-error until their ownership is specified. Cross-tenant FKs and shared media paths
-fail closed; optional references to tenant-less HQ authors become null. Tenant
-user password hashes are encrypted in the archive, but staff/superuser/platform
-roles and auth groups/permissions are intentionally cleared for recovery.
+| Item | Location |
+| --- | --- |
+| Checkout | `/home/shivamouj/carvash-releases/source-master` |
+| Active Compose | `docker-compose.yml` + `docker-compose.usb-local.yml` |
+| Primary disk | ext4 `/dev/sda2` at `/mnt/server-data` |
+| Docker root | `/mnt/server-data/docker` |
+| DB | `carwash-db-1`, `carwash_carvash_mysql`, `/var/lib/mysql` |
+| Media volume | `carwash_carvash_media`, server logical name `carvash_media` |
+| Media host path | `/mnt/server-data/docker/volumes/carwash_carvash_media/_data` |
+| Backend / frontend | `/app/media` / `/var/www/media` |
+| Backup disk | ext4 `/dev/sdb1` at `/mnt/extra-storage` |
+| UUID | `e8c44715-a4e9-45cc-b1cc-932e8e5e2db2` |
+| Reviewed major:minor | `8:17`, recheck after reboot |
+| Reported free space | About 434 GiB; measure again |
 
-Session, replay/idempotency, backup history and HQ bulk-job orchestration records
-are excluded. Global settings without a tenant are excluded. Existing JSON fields
-are preserved as tenant business data, not interpreted as file references.
-All currently declared FileFields are copied. AI audit image sidecars are checked
-against both tenant ID and owned vehicle ID and copied with their images. Mixed
-daily AI JSONL logs are not copied wholesale; per-image JSON metadata is retained.
-Unknown/unreferenced files in MEDIA_ROOT cannot be assigned safely and are not
-copied. Inventory future upload paths in this module when adding new storage.
+The server-local `docker-compose.usb-local.yml` is absent from this checkout.
+Do not invent/replace it. Local config validation uses the explicitly marked
+`backend/apps/cloud_backup/fixtures/server-compose.fixture.yml` representing the
+supplied topology. Validate with the REAL server-local file before deployment.
 
-The database export uses a repeatable-read transaction on MySQL (SQLite supported
-for tests). File contents are copied afterward with size/mtime checks and SHA-256.
-Concurrent deletion/change or missing files fail the snapshot and retry next tick.
-This does not create a filesystem snapshot at the exact database transaction time.
-Very large tenants require memory sizing: ORM records/fixture are currently held
-in worker memory; media and encryption stream in bounded chunks. Worker memory is
-limited by Compose and does not compete with web request workers without bounds.
+The backup overlay's independent logical key `cloud_backup_media` has
+`external: true`, explicit name `carwash_carvash_media`: it selects the existing
+volume without project-prefix surprises or creation of an empty replacement.
+It does not conflict with the server's logical `carvash_media` definition. Media
+is RO/nocopy. The second disk root is RO; only its pre-existing `cloud-backups`
+subdirectory is RW, only in the backup worker. Binds never create missing host
+paths. No socket/devices/privileged mode; no ports; capabilities dropped,
+no-new-privileges, read-only root, dedicated 10001:10001 identity, existing default
+network and `db` dependency. Inspect the real server network configuration too.
 
-## Storage and encryption
+## Contents, isolation and limits
 
-Destination: `/mnt/extra-storage/tenant-<numeric-id>/*.cvb`, directories 0700,
-files 0600, dedicated Unix identity. No application-facing download API is added.
-The mount must exist inside the container AND in the host mountinfo with the
-configured Linux major:minor device. Bind mounting an unmounted host directory
-does not pass this check. Writes resolve via an open mount directory FD, so an
-unmount race cannot redirect writes into the SSD path under the mountpoint.
-Each write checks the mount and free-space reserve. A disconnect/ENOSPC fails the
-attempt, preserving previously finalized snapshots. Test physical detach on
-staging before enabling production; unit tests simulate OS failure boundaries.
+`snapshot.py` explicitly classifies every first-party model. Unknown models,
+even new tenant models, fail until reviewed. Include the tenant root, reviewed
+tenant models, ticket messages/attachments, subscription periods/meters and only
+referenced project/product/plan catalog rows. Reject cross-tenant FKs and shared
+media paths. Nullable tenant-less HQ author references become null.
 
-Encryption: random 256-bit external key; HKDF-SHA256 derives an archive-specific
-AES-GCM key with a random 256-bit salt. Chunks use ordered nonce counters and an authenticated final frame.
-No plaintext temporary archive. SHA-256 manifest of fixture and every file is
-inside the encrypted archive. Full decrypt/checksum/FK verification is required
-before atomic rename and fsync. `integrity_verified` means this check passed;
-it does not claim an actual database restore drill has run for that snapshot.
+Include every owned FileField and AI image/sidecar. On Linux source components
+are opened with directory FDs/O_NOFOLLOW; reject links/non-regular files. Capture
+device/inode/size/mtime/ctime and compare when copying; also bind AI sidecar bytes
+to their checked ownership using digests. Missing/replaced/changed files fail the
+whole attempt. Unowned/orphan media and mixed AI JSONL logs are excluded; retain
+per-image metadata. JSON business fields are data, not arbitrary file paths.
 
-Keep at least 14 versions by default, never fewer than two and never delete
-versions newer than seven days. Pruning runs only after a successful new backup
-for an eligible tenant. Inactive/deleted tenants' finalized archives remain
-untouched indefinitely; removal requires a separate future retention policy.
-Encrypted stale partials are cleaned on the next attempt under the tenant lock.
-Filesystem flock prevents overlapping processes on the same disk. Backup history
-uses a scalar tenant ID so tenant deletion cannot cascade-delete history.
+Exclude global runtime settings, sessions, auth memberships, replay/idempotency,
+BackupRun history and HQ bulk-job orchestration. User hashes are encrypted, but
+staff/superuser/platform roles and auth memberships are stripped. Re-provision
+privileges after recovery. This is logical operational tenant recovery, not a
+server image: platform configuration, external services and jobs need separate
+disaster recovery setup. Preserve raw-fixture semantics in future model signals.
 
-## Host provisioning (requires separate deployment approval)
+MySQL REPEATABLE READ uses no row/table locks; requires transactional InnoDB
+business tables. Files are copied after the DB snapshot, so this is not a
+simultaneous filesystem snapshot. Source changes can fail and retry an attempt.
+No source DB/media writes occur.
 
-1. Verify primary data placement separately. This change does not migrate any
-   data to the 3 TB disk or prove existing primary paths use it.
-2. Mount the 500 GB filesystem persistently at `/mnt/extra-storage`. Record its
-   UUID and `lsblk`/`findmnt` MAJ:MIN; set `CLOUD_BACKUP_DEVICE` to that MAJ:MIN.
-   A changed device number after reboot blocks backups until reviewed/updated.
-3. Provision UID/GID 10001 (or override both Compose variables), private writable
-   backup root and read/traverse access to source media. Do not change ownership
-   of existing application files indiscriminately. The source media mount is RO.
-4. Generate a random 32-byte key encoded with standard Base64 into a private
-   file OUTSIDE the repository and backup disk. Set `CLOUD_BACKUP_KEY_HOST_FILE`
-   to its absolute path. Provision the secret file readable only by the backup
-   UID (0400). Compose file secrets are bind mounts: host permissions matter.
-   Keep an offline recovery copy; losing the key makes every archive unreadable.
-   Do not replace the key while retaining old versions: archive/key rotation is
-   not implemented yet. Never use Django SECRET_KEY as the encryption key.
-5. Apply the new migration using the existing normal migration procedure.
-   The backup worker overrides entrypoint so it never auto-migrates or starts
-   web services. Provision a separate database account with SELECT on the app
-   tables, and SELECT/INSERT/UPDATE only on `cloud_backup_backuprun`. No DELETE,
-   DDL or write access to business tables. Set CLOUD_BACKUP_DB_USER/PASSWORD.
-6. Compose overlay is opt-in:
+Default caps: 20,000 total rows, 16 MiB fixture, 50,000 files, at most 1 MiB per
+individual text/JSON field. Counts/field lengths are checked before unbounded
+fetches; chunked ORM iteration, streaming media/encryption. Oversized tenants
+fail with `snapshot_limit_exceeded`. These conservative caps reduce OOM risk
+under 1 GiB; arbitrary nested JSON still requires staging memory measurements.
+Raise limits only after sizing or implement a disk-backed streaming fixture.
+There is no plaintext temporary archive.
 
-   ```sh
-   docker compose -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.cloud-backup.yml --profile cloud-backup config --quiet
-   # Only after deployment approval:
-   docker compose -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.cloud-backup.yml --profile cloud-backup up -d --build cloud-backup
-   ```
+## Disk safety, scheduling and retention
 
-No Docker socket, devices or privileged mode are exposed. The worker has no
-published ports, drops capabilities, uses a read-only root, and reads host
-mountinfo only. Default snapshot interval is six hours; worker polls every minute
-and retries failed tenants. Enforce operational alerting for stale success / disk
-reserve; a local second disk does not protect against loss of the whole server.
+`CLOUD_BACKUP_MOUNT=/mnt/extra-storage` is the filesystem mountpoint;
+`CLOUD_BACKUP_ROOT=/mnt/extra-storage/cloud-backups` is the private destination.
+The destination must already exist, mode 0700, owned by the effective worker UID.
+Do not chown the disk root, DB or media. Runtime checks local mount/stat and host
+mountinfo: reviewed major:minor, ext4 filesystem root, host RW, real mountpoint,
+no symlink. UUID is checked by the read-only HOST preflight script; runtime has no
+raw-device access. A changed major:minor fails closed until UUID is rechecked.
 
-## Status and recovery
+Root AND tenant directories are pinned using FDs. Writes cannot fall back to the
+SSD directory underneath an unmounted filesystem. Each write checks mount/free
+reserve. EIO, EROFS, ENOSPC and permissions get sanitized codes. Fully authenticate,
+verify gzip/manifest/digests/FKs, atomically rename, then fsync. Failed transfers
+preserve finalized backups. Encrypted stale partials are cleaned on the next
+attempt under that tenant's flock. Existing old-layout `/mnt/extra-storage/tenant-*`
+archives are not moved or deleted automatically.
 
-Operator command: `python manage.py cloud_backup_status --tenant <id>` returns
-last attempt and last successful backup, integrity status, size, retained usage
-at the last successful run and sanitized error codes. It exposes no client data.
+Eligibility: active `CarWashFeaturePurchase.cloud_storage` only. The existing
+purchase model has no expiry; installment locks do not revoke eligibility.
+Six-hour success interval; poll each minute. Failure backoff grows from two
+minutes to six hours. Recheck due status under the real filesystem flock; a
+second worker cannot duplicate a scheduled successful run. Recover interrupted
+run history when the next worker acquires its tenant lock.
 
-Recovery is an administrative CLI, never a tenant-supplied path. Run in an
-isolated environment with the same code/schema and key:
+Retention target 14, at least two, protect ALL versions younger than seven days.
+**Seven-day protection takes precedence over 14:** at six-hour intervals about
+28 young versions can coexist; a strict cap of 14 contradicts seven-day retention.
+Prune only after a new verified success. Inactive/deleted tenants retain archives
+indefinitely pending a separately approved policy. No subscription deletion hook.
+Default free reserve 1 GiB. CLI reports disk free/total, mount state, stale success,
+last attempt/success and last measured retained bytes. Configure operational
+alerts separately. A second disk in the SAME server is not off-server backup.
+
+## Encryption and key rotation
+
+AES-256-GCM, HKDF-SHA256 per-archive key with random 256-bit salt, ordered 96-bit
+nonce counters, authenticated final frame. New v2 headers contain an authenticated
+nonsecret Key ID; v1 from commit `0a67d6a` remains readable. Verify every chunk,
+gzip checksum/trailer, member digest, fixture ownership/FKs and encryption terminal.
+
+Default single secret is a standard-Base64 32-byte key, private file permissions,
+`/run/secrets/cloud_backup_key`; writer ID `primary`. Never use Django SECRET_KEY.
+Optional `CLOUD_BACKUP_KEYRING_FILE` selects a private JSON map of Key ID -> Base64
+key; `CLOUD_BACKUP_KEY_ID` selects the writer. Mount it with a separately reviewed
+RO secret overlay, not environment key contents. Retain old IDs and keys.
+`CLOUD_BACKUP_LEGACY_KEY_ID=legacy-v1` selects the original v1 key from the ring;
+without a ring, v1 uses the single key file. Rotation requires old, new and any
+legacy keys in the ring, followed by old/new restore tests BEFORE switching the
+writer ID. Never overwrite the only old key copy. Keep offline key copies outside
+the server/disk; losing keys makes archives unreadable. No actual keys in source.
+
+## Proposed HOST preparation (not executed)
+
+Confirm disk UUID/type/major:minor and persistent UUID mount configuration first:
 
 ```sh
-python manage.py recover_cloud_backup /private/source.cvb --tenant 123 --output /private/NEW-recovery-directory
+findmnt -rn -M /mnt/extra-storage -o TARGET,SOURCE,FSTYPE,UUID,MAJ:MIN,OPTIONS
+# Expected UUID e8c44715-a4e9-45cc-b1cc-932e8e5e2db2, ext4, reviewed 8:17.
+# After approval, create ONLY the service directory; review any existing contents.
+test ! -L /mnt/extra-storage/cloud-backups
+sudo install -d -o 10001 -g 10001 -m 0700 /mnt/extra-storage/cloud-backups
 ```
 
-The directory must not already exist. Archive is authenticated/validated before
-plaintext extraction; files go under `media/`, data under `fixture.json`. Failure
-can leave private staging files; inspect them manually, never serve that directory.
-For actual DB recovery configure an explicit `recovery` DATABASES alias to a
-separate, migrated empty database in a private settings module and add
-`--database recovery`. Default DB restore is forbidden; existing tenants or
-conflicting catalog rows abort recovery. Raw fixture loading preserves PK/FK
-relationships, checks constraints and resets DB sequences. Business signals must
-continue to honor Django's `raw` fixture semantics. Media remains in the private
-staging directory until an operator validates and approves a separate cutover.
-Re-provision privileges after recovery through normal administration.
-
-## Validation
+New key preparation ONLY if no existing key is used; commands never print it:
 
 ```sh
-python manage.py test apps.cloud_backup.tests --settings=apps.cloud_backup.test_settings --noinput
+sudo install -d -o root -g root -m 0700 /etc/carvash-backup
+sudo sh -c 'test ! -e /etc/carvash-backup/primary.key && test ! -L /etc/carvash-backup/primary.key && set -C && umask 077 && openssl rand -base64 32 > /etc/carvash-backup/primary.key'
+sudo chown 10001:10001 /etc/carvash-backup/primary.key
+sudo chmod 0400 /etc/carvash-backup/primary.key
 ```
 
-Dedicated test settings use two disposable SQLite test databases. Tests exercise
-tenant/media isolation, actual fixture recovery into the second database,
-inactive eligibility, cross-tenant FKs, retention, authentication/tampering,
-missing mount, disconnect, ENOSPC, retry and source-file errors. Linux mount/FD/
-flock behavior and MySQL restore must additionally pass a staging drill before
-production rollout. Never test disconnects against a disk containing live data.
+Compose file secrets use host permissions. Preserve an offline key copy through
+the approved secret procedure. Never run generation over an existing key.
+Inspect actual media read/traverse access as UID 10001. If denied, prepare a
+narrowly scoped approved ACL/supplemental group for affected upload paths and
+future uploads. Do not recursively chown media or make private files world-readable.
+The source volume remains RO. Linux tests verify real 10001:10001 access.
+
+Nonsecret variables: CLOUD_BACKUP_DEVICE=8:17, CLOUD_BACKUP_UID/GID=10001,
+CLOUD_BACKUP_MEDIA_VOLUME=carwash_carvash_media, CLOUD_BACKUP_KEY_ID=primary,
+CLOUD_BACKUP_KEY_HOST_FILE=/etc/carvash-backup/primary.key. Load private DB
+credentials through the existing secure environment procedure, not source.
+
+## Proposed MySQL account preparation (not executed)
+
+Only table-level SELECT on reviewed snapshot tables/catalogs, and
+SELECT/INSERT/UPDATE on `cloud_backup_backuprun`. No business writes/DELETE,
+DDL, FILE, PROCESS, LOCK TABLES or administrative grants. REPEATABLE READ needs
+no additional privileges. User auth M2M is excluded before serialization.
+
+Generate the exact reviewable grants in development (no MySQL connection):
+
+```sh
+DB_ENGINE=sqlite python backend/manage.py cloud_backup_grants --database-name carwash --user carvash_backup --host '%' > /private/reviewed-backup-grants.sql
+```
+
+Authorized DBA account template, NOT executable with its placeholder password:
+
+```sql
+CREATE USER 'carvash_backup'@'%' IDENTIFIED BY '<PASSWORD_FROM_PRIVATE_SECRET_MANAGER>';
+-- Review/apply the generated table-level grants, then:
+SHOW GRANTS FOR 'carvash_backup'@'%';
+```
+
+Prefer a constrained Docker subnet host pattern when practical. No database-wide
+ALL/SELECT, application writer reuse or password-bearing CLI/history. Integration
+tests use only generated grants and prove source UPDATE, backup DELETE and DDL
+are denied. No account/grant creation runs in the production worker.
+
+## Proposed deployment and rollback (operator approval required)
+
+The initial BackupRun migration is unchanged; no other app migrations. Apply only
+through the approved migration workflow. The worker never auto-migrates.
+Dedicated `Dockerfile.cloud-backup` pins the validated Python base digest and
+Python dependencies in `cloud-backup-requirements.lock`; main backend build is
+unchanged. For immutable releases retain the resulting backup image digest;
+Debian apt repositories are not immutable snapshots.
+
+Use the real server files and existing project name, after private settings load:
+
+```sh
+cd /home/shivamouj/carvash-releases/source-master
+backup_compose() {
+  docker compose -p carwash -f docker-compose.yml -f docker-compose.usb-local.yml \
+    -f docker-compose.cloud-backup.yml --profile cloud-backup "$@"
+}
+export CLOUD_BACKUP_DEVICE=8:17
+sh scripts/cloud-backup-preflight.sh
+backup_compose config --quiet
+```
+
+Privately inspect resolved media volume/network; never paste full config with
+credentials into chat. Both backend and backup must resolve to carwash_carvash_media.
+After explicit approval AND migration/account prerequisites:
+
+```sh
+backup_compose build cloud-backup
+backup_compose run --rm --no-deps cloud-backup check_cloud_backup
+backup_compose up -d --no-deps --no-build cloud-backup
+backup_compose exec cloud-backup python manage.py cloud_backup_status --tenant TENANT_ID
+```
+
+`check_cloud_backup` is read-only: mount, private destination, schema, key and
+media-root access. It creates no backup. `--no-deps` prevents starting/recreating
+primary services; MySQL must already be healthy. Do not use whole-project up,
+down or down -v. Verify a first archive and isolated restore before acceptance.
+
+Stop/rollback ONLY the worker; preserve archives, keys and BackupRun schema:
+
+```sh
+backup_compose stop cloud-backup
+# Select a compatible reviewed prior image/digest; start ONLY cloud-backup
+# using --no-deps --no-build. Do not reverse migration or delete volumes.
+```
+
+A v1-only worker cannot read v2 archives. Preserve a v2 recovery image/keyring
+even if rolling the writer back.
+
+## Isolated tests and recovery
+
+SQLite (two disposable DBs):
+
+```sh
+DB_ENGINE=sqlite python backend/manage.py test apps.cloud_backup.tests --settings=apps.cloud_backup.test_settings --noinput
+```
+
+MySQL 8.4, separate test project, no production volumes/ports/services, tmpfs DB:
+
+```sh
+docker compose -p carvash-backup-isolated-test -f docker-compose.cloud-backup-test.yml up --build --abort-on-container-exit --exit-code-from backup-tests
+# Cleanup only this explicitly named DISPOSABLE TEST project afterward.
+```
+
+Linux tests use root only in a PRIVATE mount namespace with new scratch ext4
+loop images under `/tmp/carvash-backup-mount-test-*`, never the real backup disk:
+
+```sh
+cd backend
+sudo env CLOUD_BACKUP_LINUX_MOUNT_TESTS=1 DB_ENGINE=sqlite CARWASH_INTERNAL_SCHEDULER=false \
+  unshare --mount --propagation private /path/to/test-venv/bin/python manage.py test \
+  apps.cloud_backup.tests_linux --settings=apps.cloud_backup.test_settings --noinput
+```
+
+Require unshare, mount/umount, mkfs.ext4 and loop support. Cover real effective
+UID/GID, mount loss/identity, lazy-detach FD safety, interprocess flock, symlinks,
+low space and RO filesystem. EIO/ENOSPC/transfer failure is injected in unit tests;
+this does not emulate firmware faults. Never physically unplug production disks.
+
+Recover only in an isolated environment with matching code/schema/key:
+
+```sh
+python manage.py recover_cloud_backup /private/source.cvb --tenant 123 --output /private/NEW-staging
+```
+
+Destination must be NEW, private and free of symlink parents. Authenticate before
+any extraction; use the same opened regular archive for both passes. Failures may
+leave private staging files, never overwrite live media. Decrypted fixture/media
+are sensitive and must not be served. For DB restore define a separate migrated
+empty recovery alias in private settings, allowlist it with
+CLOUD_BACKUP_RECOVERY_ALIASES=recovery, and explicitly confirm:
+
+```sh
+python manage.py recover_cloud_backup /private/source.cvb --tenant 123 \
+  --output /private/NEW-staging --database recovery --confirm-isolated-restore
+```
+
+Default/nonallowlisted aliases are refused. Recovery must have a distinct DB name
+(SQLite paths normalized), no existing business rows or conflicting catalogs.
+Raw loading is transactional, checks FKs and resets sequences. SQLite/MySQL drills
+compare recovered record contents, relationships and media bytes. Do not point
+recovery at ANY live DB; restrict its credentials independently. Final media
+cutover, privileges/global service setup and actual production restore require
+separate operator approval.
