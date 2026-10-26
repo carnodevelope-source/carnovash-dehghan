@@ -1,0 +1,68 @@
+# Opt-in only. Apply after host mount, permissions and key provisioning are reviewed.
+services:
+  cloud-backup:
+    build:
+      context: ./backend
+      args:
+        PYTHON_IMAGE: ${BACKEND_PYTHON_IMAGE:-docker.arvancloud.ir/python:3.12-slim}
+    profiles: [cloud-backup]
+    entrypoint: ["python", "manage.py"]
+    command: ["run_cloud_backups", "--loop"]
+    user: "${CLOUD_BACKUP_UID:-10001}:${CLOUD_BACKUP_GID:-10001}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 1g
+    cpus: 0.5
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?required}
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: localhost
+      CARWASH_INTERNAL_SCHEDULER: "false"
+      DB_NAME: ${DB_NAME:-carwash}
+      DB_USER: ${CLOUD_BACKUP_DB_USER:?dedicated backup DB user required}
+      DB_PASSWORD: ${CLOUD_BACKUP_DB_PASSWORD:?dedicated backup DB password required}
+      DB_HOST: db
+      DB_PORT: "3306"
+      DJANGO_MEDIA_ROOT: /app/media
+      CLOUD_BACKUP_ROOT: /mnt/extra-storage
+      CLOUD_BACKUP_DEVICE: ${CLOUD_BACKUP_DEVICE:?expected Linux major:minor required}
+      CLOUD_BACKUP_HOST_MOUNTINFO: /run/host-mountinfo
+      CLOUD_BACKUP_KEY_FILE: /run/secrets/cloud_backup_key
+      CLOUD_BACKUP_INTERVAL_SECONDS: ${CLOUD_BACKUP_INTERVAL_SECONDS:-21600}
+      CLOUD_BACKUP_KEEP_VERSIONS: ${CLOUD_BACKUP_KEEP_VERSIONS:-14}
+      CLOUD_BACKUP_MIN_FREE_BYTES: ${CLOUD_BACKUP_MIN_FREE_BYTES:-1073741824}
+    volumes:
+      - type: bind
+        source: /mnt/extra-storage
+        target: /mnt/extra-storage
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./docker-data/media
+        target: /app/media
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /proc/1/mountinfo
+        target: /run/host-mountinfo
+        read_only: true
+        bind:
+          create_host_path: false
+    secrets:
+      - cloud_backup_key
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+secrets:
+  cloud_backup_key:
+    file: ${CLOUD_BACKUP_KEY_HOST_FILE:?absolute path to a private backup key file required}

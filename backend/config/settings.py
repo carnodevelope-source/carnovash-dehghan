@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'apps.inventory.apps.InventoryConfig',
     'apps.subscriptions.apps.SubscriptionsConfig',
     'apps.realtime.apps.RealtimeConfig',
+    'apps.cloud_backup',
 ]
 
 MIDDLEWARE = [
@@ -200,6 +201,13 @@ STATIC_URL = '/static/'
 STATIC_ROOT = config('DJANGO_STATIC_ROOT', default=str(BASE_DIR / 'staticfiles'))
 MEDIA_URL = '/media/'
 MEDIA_ROOT = config('DJANGO_MEDIA_ROOT', default=str(BASE_DIR / 'media'))
+CLOUD_BACKUP_ROOT = config('CLOUD_BACKUP_ROOT', default='/mnt/extra-storage')
+CLOUD_BACKUP_DEVICE = config('CLOUD_BACKUP_DEVICE', default='')  # Linux major:minor, mandatory
+CLOUD_BACKUP_HOST_MOUNTINFO = config('CLOUD_BACKUP_HOST_MOUNTINFO', default='/proc/self/mountinfo')
+CLOUD_BACKUP_KEY_FILE = config('CLOUD_BACKUP_KEY_FILE', default='/run/secrets/cloud_backup_key')
+CLOUD_BACKUP_INTERVAL_SECONDS = config('CLOUD_BACKUP_INTERVAL_SECONDS', default=21600, cast=int)
+CLOUD_BACKUP_KEEP_VERSIONS = config('CLOUD_BACKUP_KEEP_VERSIONS', default=14, cast=int)
+CLOUD_BACKUP_MIN_FREE_BYTES = config('CLOUD_BACKUP_MIN_FREE_BYTES', default=1073741824, cast=int)
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 USE_X_FORWARDED_HOST = config('DJANGO_USE_X_FORWARDED_HOST', default=not DEBUG, cast=bool)
