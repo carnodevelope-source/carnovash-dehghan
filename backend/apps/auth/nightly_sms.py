@@ -1,7 +1,8 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
-from django.db.models import Q, Sum
+from django.db.models import OuterRef, Q, Subquery, Sum
 from django.utils import timezone
 
 from apps.auth.models import CarWash, User
@@ -9,7 +10,10 @@ from apps.auth.sms import send_logged_sms
 from apps.notifications.models import NotificationLog
 from apps.notifications.services import format_jalali_date, format_toman, normalize_phone, to_persian_digits
 from apps.payments.models import Payment
-from apps.vehicles.models import VehicleEntry
+from apps.vehicles.models import VehicleEntry, VehicleStatusLog
+
+
+REPORT_TZ = ZoneInfo('Asia/Tehran')
 
 
 def _money(value):
@@ -17,7 +21,7 @@ def _money(value):
 
 
 def _resolve_target_day(now, force=False):
-    local_now = timezone.localtime(now or timezone.now())
+    local_now = timezone.localtime(now or timezone.now(), REPORT_TZ)
     if force:
         return local_now.date()
     if local_now.hour == 23 and local_now.minute >= 59:
@@ -28,20 +32,26 @@ def _resolve_target_day(now, force=False):
 
 
 def _day_bounds(day):
-    start = timezone.make_aware(datetime.combine(day, time.min))
+    start = timezone.make_aware(datetime.combine(day, time.min), REPORT_TZ)
     return start, start + timedelta(days=1)
 
 
-def _build_summary_text(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, vehicle_pending_count, vehicle_cancelled_count):
-    day_label = format_jalali_date(timezone.make_aware(datetime.combine(day, time.min)))
+def _build_summary_text(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, vehicle_pending_count, vehicle_cancelled_count, vehicle_remaining_count, history_unknown_count):
+    with timezone.override(REPORT_TZ):
+        day_label = format_jalali_date(_day_bounds(day)[0])
+
+    def count_label(value):
+        return 'نامشخص (تاریخچه ناکافی)' if value is None else to_persian_digits(str(value))
     return (
         f'گزارش شبانه {tenant.name}\n'
         f'تاریخ: {day_label}\n'
         f'درآمد وصول‌شده: {format_toman(paid_total)}\n'
-        f'خودروهای پذیرش‌شده: {to_persian_digits(vehicle_in_count)}\n'
-        f'خودروهای ترخیص‌شده: {to_persian_digits(vehicle_out_count)}\n'
-        f'آماده ترخیص: {to_persian_digits(vehicle_pending_count)}\n'
-        f'لغو شده‌ها: {to_persian_digits(vehicle_cancelled_count)}'
+        f'خودروهای پذیرش‌شده: {to_persian_digits(str(vehicle_in_count))}\n'
+        f'خودروهای ترخیص‌شده: {to_persian_digits(str(vehicle_out_count))}\n'
+        f'آماده ترخیص: {count_label(vehicle_pending_count)}\n'
+        f'کل خودروهای باقی‌مانده: {count_label(vehicle_remaining_count)}\n'
+        f'لغو شده‌ها: {to_persian_digits(str(vehicle_cancelled_count))}'
+        + (f'\nتاریخچه ناکافی برای {to_persian_digits(str(history_unknown_count))} خودرو؛ آمار ترخیص و لغو فقط براساس رویدادهای ثبت‌شده است.' if history_unknown_count else '')
     )
 
 
@@ -57,7 +67,7 @@ def _has_sent_or_pending_summary(tenant, day, template_code):
     ).exists()
 
 
-def _summary_payload(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, vehicle_pending_count, vehicle_cancelled_count):
+def _summary_payload(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_count, vehicle_pending_count, vehicle_cancelled_count, vehicle_remaining_count, history_unknown_count):
     return {
         'report_date': day.isoformat(),
         'tenant_id': tenant.id,
@@ -67,16 +77,54 @@ def _summary_payload(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_c
         'vehicle_out_count': vehicle_out_count,
         'vehicle_pending_count': vehicle_pending_count,
         'vehicle_cancelled_count': vehicle_cancelled_count,
+        'vehicle_remaining_count': vehicle_remaining_count,
+        'history_unknown_count': history_unknown_count,
     }
 
 
+def _historical_inventory(tenant, end):
+    """Use the last transition before midnight, or the next transition's source.
+
+    Current status is deliberately never a fallback: legacy entries without
+    history cannot establish a historical ready/active status. released_at is
+    independent evidence of release, unless a later recorded transition exists.
+    """
+    logs = VehicleStatusLog.objects.filter(tenant=tenant, vehicle_id=OuterRef('pk'))
+    before = logs.filter(changed_at__lt=end).order_by('-changed_at', '-pk')
+    after = logs.filter(changed_at__gte=end).order_by('changed_at', 'pk')
+    entries = VehicleEntry.objects.filter(tenant=tenant, check_in_at__lt=end).annotate(
+        historical_status=Subquery(before.values('to_status')[:1]),
+        historical_at=Subquery(before.values('changed_at')[:1]),
+        next_source=Subquery(after.values('from_status')[:1]),
+    ).values('historical_status', 'historical_at', 'next_source', 'released_at')
+    ready = remaining = unknown = 0
+    active = {VehicleEntry.Status.ENTERED, VehicleEntry.Status.ASSIGNED,
+              VehicleEntry.Status.IN_PROGRESS, VehicleEntry.Status.READY_TO_SETTLE}
+    for entry in entries.iterator():
+        status = entry['historical_status'] or entry['next_source']
+        released_at = entry['released_at']
+        if released_at and released_at < end and (
+            entry['historical_at'] is None or released_at >= entry['historical_at']
+        ):
+            status = VehicleEntry.Status.RELEASED
+        if status in active:
+            remaining += 1
+            ready += status == VehicleEntry.Status.READY_TO_SETTLE
+        elif status not in {VehicleEntry.Status.RELEASED, VehicleEntry.Status.CANCELLED}:
+            unknown += 1
+    # Partial counts would look exact in the SMS. Expose missing evidence instead.
+    return (None if unknown else ready, None if unknown else remaining, unknown)
+
+
 def dispatch_due_nightly_manager_summaries(*, now=None, target_day=None, force=False):
-    current = timezone.localtime(now or timezone.now())
+    current = timezone.localtime(now or timezone.now(), REPORT_TZ)
     day = target_day or _resolve_target_day(current, force=force)
     if not day:
         return 0
 
     start, end = _day_bounds(day)
+    if current < end:
+        return 0  # A complete end-of-day snapshot is not available yet.
     sent_count = 0
 
     for tenant in CarWash.objects.filter(is_active=True).order_by('id'):
@@ -107,25 +155,18 @@ def dispatch_due_nightly_manager_summaries(*, now=None, target_day=None, force=F
             check_in_at__gte=start,
             check_in_at__lt=end,
         ).count()
-        vehicle_out_count = VehicleEntry.objects.filter(
-            tenant=tenant,
-            status=VehicleEntry.Status.RELEASED,
-            released_at__gte=start,
-            released_at__lt=end,
+        daily_logs = VehicleStatusLog.objects.filter(
+            tenant=tenant, vehicle__tenant=tenant,
+            changed_at__gte=start, changed_at__lt=end,
+        )
+        vehicle_out_count = VehicleEntry.objects.filter(tenant=tenant).filter(
+            Q(released_at__gte=start, released_at__lt=end)
+            | Q(pk__in=daily_logs.filter(to_status=VehicleEntry.Status.RELEASED).values('vehicle_id'))
         ).count()
-        vehicle_pending_count = VehicleEntry.objects.filter(
-            tenant=tenant,
-            check_in_at__lte=current,
-        ).exclude(
-            status__in=[VehicleEntry.Status.RELEASED, VehicleEntry.Status.CANCELLED],
-        ).count()
-        vehicle_cancelled_count = VehicleEntry.objects.filter(
-            tenant=tenant,
-            status=VehicleEntry.Status.CANCELLED,
-            status_logs__to_status=VehicleEntry.Status.CANCELLED,
-            status_logs__changed_at__gte=start,
-            status_logs__changed_at__lt=end,
-        ).distinct().count()
+        vehicle_pending_count, vehicle_remaining_count, history_unknown_count = _historical_inventory(tenant, end)
+        vehicle_cancelled_count = daily_logs.filter(
+            to_status=VehicleEntry.Status.CANCELLED,
+        ).values('vehicle_id').distinct().count()
 
         payload = _summary_payload(
             tenant=tenant,
@@ -135,6 +176,8 @@ def dispatch_due_nightly_manager_summaries(*, now=None, target_day=None, force=F
             vehicle_out_count=vehicle_out_count,
             vehicle_pending_count=vehicle_pending_count,
             vehicle_cancelled_count=vehicle_cancelled_count,
+            vehicle_remaining_count=vehicle_remaining_count,
+            history_unknown_count=history_unknown_count,
         )
         text = _build_summary_text(
             tenant=tenant,
@@ -144,6 +187,8 @@ def dispatch_due_nightly_manager_summaries(*, now=None, target_day=None, force=F
             vehicle_out_count=vehicle_out_count,
             vehicle_pending_count=vehicle_pending_count,
             vehicle_cancelled_count=vehicle_cancelled_count,
+            vehicle_remaining_count=vehicle_remaining_count,
+            history_unknown_count=history_unknown_count,
         )
         result = send_logged_sms(
             tenant=tenant,
