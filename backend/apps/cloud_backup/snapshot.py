@@ -17,7 +17,25 @@ from apps.auth.models import CarWash
 
 
 class SnapshotError(Exception):
-    pass
+    def __init__(self, code, *, diagnostics=None):
+        super().__init__(code)
+        self.diagnostics = diagnostics or {}
+
+
+class StoredBytes(models.Func):
+    function = 'OCTET_LENGTH'
+    output_field = models.IntegerField()
+
+    def as_sqlite(self, compiler, connection, **extra_context):
+        return super().as_sql(compiler, connection, template='LENGTH(CAST(%(expressions)s AS BLOB))', **extra_context)
+
+
+def limit_error(metric, observed, limit, *, model=None):
+    # Only schema labels and aggregate sizes/counts, never values, SQL or PII.
+    detail = {'metric': metric, 'observed': int(observed), 'limit': int(limit)}
+    if model is not None:
+        detail['model'] = model._meta.label_lower
+    return SnapshotError('snapshot_limit_exceeded', diagnostics=detail)
 
 
 class MediaFiles(list):
@@ -133,21 +151,27 @@ def collect(tenant_id):
 
     def bounded(query):
         nonlocal used_rows, used_bytes
-        if query.count() + used_rows > settings.CLOUD_BACKUP_MAX_ROWS:
-            raise SnapshotError('snapshot_limit_exceeded')
+        count = query.count() + used_rows
+        if count > settings.CLOUD_BACKUP_MAX_ROWS:
+            raise limit_error('rows', count, settings.CLOUD_BACKUP_MAX_ROWS, model=query.model)
         # Avoid fetching an arbitrarily large DB field into worker memory.
-        from django.db.models.functions import Cast, Length
+        from django.db.models.functions import Cast
         for field in query.model._meta.fields:
             if isinstance(field, (models.TextField, models.CharField, models.JSONField)):
-                measured = query.annotate(_backup_length=Length(Cast(field.name, models.TextField())))
-                if measured.filter(_backup_length__gt=min(1048576, settings.CLOUD_BACKUP_MAX_JSON_BYTES)).exists():
-                    raise SnapshotError('snapshot_limit_exceeded')
+                measured = query.annotate(_backup_length=StoredBytes(Cast(field.name, models.TextField())))
+                limit = min(settings.CLOUD_BACKUP_MAX_FIELD_BYTES, settings.CLOUD_BACKUP_MAX_JSON_BYTES)
+                if measured.filter(_backup_length__gt=limit).exists():
+                    from django.db.models import Max
+                    size = measured.aggregate(size=Max('_backup_length'))['size']
+                    raise limit_error('field_length', size, limit, model=query.model)
         rows = []
         for obj in query.iterator(chunk_size=100):
             used_rows += 1
             used_bytes += len(serialize_row(obj).encode())
-            if used_rows > settings.CLOUD_BACKUP_MAX_ROWS or used_bytes > settings.CLOUD_BACKUP_MAX_JSON_BYTES:
-                raise SnapshotError('snapshot_limit_exceeded')
+            if used_rows > settings.CLOUD_BACKUP_MAX_ROWS:
+                raise limit_error('rows', used_rows, settings.CLOUD_BACKUP_MAX_ROWS, model=query.model)
+            if used_bytes > settings.CLOUD_BACKUP_MAX_JSON_BYTES:
+                raise limit_error('fixture_bytes', used_bytes, settings.CLOUD_BACKUP_MAX_JSON_BYTES, model=query.model)
             rows.append(obj)
         return rows
 
@@ -159,7 +183,12 @@ def collect(tenant_id):
         if model._meta.app_label in {'cloud_backup', 'realtime'} or model is CarWash:
             continue
         if label in TENANT:
-            selected[label] = bounded(model.objects.filter(tenant_id=tenant_id).order_by('pk'))
+            query = model.objects.filter(tenant_id=tenant_id).order_by('pk')
+            if label == 'cw_auth.user':
+                # HQ support is a platform identity even if historically assigned
+                # to a tenant. Never export that account's private profile.
+                query = query.exclude(platform_role='hq_support')
+            selected[label] = bounded(query)
         elif label in CHILDREN:
             selected[label] = bounded(model.objects.filter(**{CHILDREN[label]: tenant_id}).order_by('pk'))
         elif label not in GLOBAL:
@@ -211,14 +240,16 @@ def collect(tenant_id):
                                     raise SnapshotError('shared_media')
                         files.add(name)
                         if len(files) > settings.CLOUD_BACKUP_MAX_FILES:
-                            raise SnapshotError('snapshot_limit_exceeded')
+                            raise limit_error('files', len(files), settings.CLOUD_BACKUP_MAX_FILES)
                 if field.is_relation:
                     pk = getattr(obj, field.attname)
                     label = field.remote_field.model._meta.label_lower
                     if pk is not None and pk not in ids.get(label, set()):
                         # HQ authors are references only. Cross-tenant references are errors.
                         external = field.remote_field.model.objects.filter(pk=pk).first()
-                        is_hq = label == 'cw_auth.user' and external and external.tenant_id is None
+                        is_hq = label == 'cw_auth.user' and external and (
+                            external.tenant_id is None or external.platform_role == 'hq_support'
+                        )
                         if field.null and is_hq:
                             setattr(obj, field.attname, None)
                         else:
@@ -245,10 +276,10 @@ def collect(tenant_id):
             relative_sidecar = sidecar.relative_to(Path(settings.MEDIA_ROOT)).as_posix()
             with open_media(relative_sidecar) as source:
                 info = os.fstat(source.fileno())
-                if info.st_size > 1048576:
-                    raise SnapshotError('snapshot_limit_exceeded')
-                raw = source.read(1048577)
-                if fingerprint(info) != fingerprint(os.fstat(source.fileno())) or len(raw) > 1048576:
+                if info.st_size > settings.CLOUD_BACKUP_MAX_FIELD_BYTES:
+                    raise limit_error('sidecar_bytes', info.st_size, settings.CLOUD_BACKUP_MAX_FIELD_BYTES)
+                raw = source.read(settings.CLOUD_BACKUP_MAX_FIELD_BYTES + 1)
+                if fingerprint(info) != fingerprint(os.fstat(source.fileno())) or len(raw) > settings.CLOUD_BACKUP_MAX_FIELD_BYTES:
                     raise SnapshotError('source_changed')
                 record = json.loads(raw)
             if record.get('tenant_id') != tenant_id:
@@ -264,10 +295,10 @@ def collect(tenant_id):
             fingerprints[relative_sidecar] = fingerprint(info)
             digests[relative_sidecar] = hashlib.sha256(raw).hexdigest()
             if len(files) > settings.CLOUD_BACKUP_MAX_FILES:
-                raise SnapshotError('snapshot_limit_exceeded')
+                raise limit_error('files', len(files), settings.CLOUD_BACKUP_MAX_FILES)
     payload = json.dumps(fixture, ensure_ascii=False).encode()
     if len(payload) > settings.CLOUD_BACKUP_MAX_JSON_BYTES:
-        raise SnapshotError('snapshot_limit_exceeded')
+        raise limit_error('fixture_bytes', len(payload), settings.CLOUD_BACKUP_MAX_JSON_BYTES)
     for name in files:
         with open_media(name) as source:
             captured = fingerprint(os.fstat(source.fileno()))

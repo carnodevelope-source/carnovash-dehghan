@@ -27,7 +27,7 @@ class CustomerProfile(TimestampedModel):
         null=True,
         blank=True,
     )
-    phone = models.CharField(max_length=20, unique=True, db_index=True)
+    phone = models.CharField(max_length=20, db_index=True)
     full_name = models.CharField(max_length=120, blank=True)
     gender = models.CharField(max_length=10, choices=Gender.choices, blank=True, default='')
     yearly_score = models.DecimalField(max_digits=3, decimal_places=1, default=0)
@@ -35,6 +35,11 @@ class CustomerProfile(TimestampedModel):
 
     class Meta:
         ordering = ['-updated_at']
+        # NULL tenant rows are quarantined legacy/import data. They are never
+        # resolved or automatically claimed by operational vehicle registration.
+        constraints = [
+            models.UniqueConstraint(fields=['tenant', 'phone'], name='uniq_customer_phone_per_tenant'),
+        ]
 
     def __str__(self) -> str:
         return f'{self.phone} - {self.full_name or "Customer"}'
