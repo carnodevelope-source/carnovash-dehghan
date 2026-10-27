@@ -478,3 +478,21 @@ class CustomerTenantRepairRun(models.Model):
     plan_hash = models.CharField(max_length=64, unique=True)
     encrypted_journal = models.TextField()
     rolled_back = models.BooleanField(default=False)
+
+
+class CustomerTenantAuthorization(models.Model):
+    """Maintenance-only, connection-bound, exact-transition, one-use permission."""
+    created_at = models.DateTimeField(auto_now_add=True)
+    connection_id = models.PositiveBigIntegerField()
+    vehicle_id = models.PositiveBigIntegerField()
+    tenant_id = models.PositiveBigIntegerField(null=True)
+    from_customer_id = models.PositiveBigIntegerField(null=True)
+    to_customer_id = models.PositiveBigIntegerField()
+    repair_run_id = models.PositiveBigIntegerField()
+    plan_hash = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['connection_id', 'vehicle_id'], name='cw_authz_connection_vehicle')]
+        constraints = [models.UniqueConstraint(fields=['repair_run_id', 'vehicle_id'], name='cw_authz_run_vehicle')]

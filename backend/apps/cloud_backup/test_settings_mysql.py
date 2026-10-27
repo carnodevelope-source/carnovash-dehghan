@@ -8,7 +8,7 @@ if os.environ.get('CLOUD_BACKUP_TEST_MYSQL') != 'isolated':
 
 DATABASES = {
     alias: {
-        'ENGINE': 'django.db.backends.mysql',
+        'ENGINE': 'apps.vehicles.tests.mysql',
         'HOST': os.environ.get('CLOUD_BACKUP_TEST_DB_HOST', 'carvash-backup-review-mysql'),
         'PORT': '3306',
         'USER': 'root',
@@ -18,3 +18,8 @@ DATABASES = {
     }
     for alias in ('default', 'recovery')
 }
+
+TEST_RUNNER = 'apps.vehicles.tests.mysql_runner.GuardMySQLRunner'
+
+# Test DBA is used only for schema/fixtures; repair uses generated restricted credentials.
+CUSTOMER_TENANT_GUARD_ROLE = 'provisioning'

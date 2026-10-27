@@ -19,6 +19,7 @@ from apps.auth.models import CarWash, User
 from apps.vehicles.loyalty import rebuild_customer_score
 from apps.vehicles.models import CustomerProfile, VehicleEntry
 from apps.vehicles.serializers import VehicleEntrySerializer
+from .guard_support import seed_legacy_vehicles, restore_legacy_link
 
 
 class CustomerTenantIsolationTests(APITestCase):
@@ -86,7 +87,7 @@ class CustomerTenantIsolationTests(APITestCase):
 
     def test_rebuild_excludes_historical_foreign_visits(self):
         vehicle = self.create_vehicle(self.ua)
-        models.QuerySet(model=VehicleEntry).bulk_create([VehicleEntry(tenant=self.b, customer=vehicle.customer, plate_number='foreign')])
+        seed_legacy_vehicles([VehicleEntry(tenant=self.b, customer=vehicle.customer, plate_number='foreign')])
         rebuild_customer_score(vehicle.customer)
         vehicle.customer.refresh_from_db()
         self.assertEqual(vehicle.customer.yearly_score, Decimal('0.5'))
@@ -94,7 +95,7 @@ class CustomerTenantIsolationTests(APITestCase):
     def test_existing_bad_link_is_not_silently_repaired_on_edit(self):
         vehicle = self.create_vehicle(self.ua)
         foreign = CustomerProfile.objects.create(tenant=self.b, phone='09121110000')
-        models.QuerySet(model=VehicleEntry).filter(pk=vehicle.pk).update(customer=foreign)
+        restore_legacy_link(vehicle, foreign)
         vehicle.refresh_from_db()
         serializer = VehicleEntrySerializer(vehicle, context={'request': SimpleNamespace(user=self.ua)})
         with self.assertRaises(ValidationError):
@@ -104,7 +105,7 @@ class CustomerTenantIsolationTests(APITestCase):
 
     def test_audit_counts_all_132_bad_links_without_pii_or_writes(self):
         foreign = CustomerProfile.objects.create(tenant=self.b, phone=self.phone, full_name='DO NOT PRINT')
-        models.QuerySet(model=VehicleEntry).bulk_create([
+        seed_legacy_vehicles([
             VehicleEntry(tenant=self.a, customer=foreign, plate_number=f'private-{i}', driver_phone=self.phone)
             for i in range(132)
         ])

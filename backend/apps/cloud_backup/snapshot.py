@@ -97,7 +97,7 @@ inventory.inventoryitem inventory.stockmovement inventory.expenseentry
 subscriptions.servicesubscription subscriptions.serviceorder subscriptions.servicepaymentrecord
 subscriptions.serviceauditlog subscriptions.servicealert
 '''.split())
-TECHNICAL = {'realtime.liveoutbox', 'realtime.idempotencyrecord', 'cloud_backup.backuprun', 'vehicles.customertenantrepairrun'}
+TECHNICAL = {'realtime.liveoutbox', 'realtime.idempotencyrecord', 'cloud_backup.backuprun', 'vehicles.customertenantrepairrun', 'vehicles.customertenantauthorization'}
 
 
 def ownership_registry():

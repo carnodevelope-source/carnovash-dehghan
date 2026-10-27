@@ -1,6 +1,6 @@
 # Customer tenant isolation and historical repair
 
-This change extends ca8a896 and 87cdd9c. It does not modify historical customer links in a
+This change extends ca8a896, 87cdd9c and fe7f079. It does not modify historical customer links in a
 migration. Migration 0026 only creates the encrypted repair journal table.
 Migration 0027 changes Django base-manager options only; it performs no table
 rewrite or data repair and is reversible.
@@ -8,32 +8,17 @@ Never run migration, apply, recovery or rollback against production during revie
 
 ## Permanent protections
 
-Customer resolution remains tenant-scoped with a unique (tenant, phone) database
-constraint. Model clean/save, instance save_base and bulk_create validate customer ownership.
-Instance writes lock the existing vehicle/customer in the write transaction.
-Both the default and base managers use the protected QuerySet. Existing
-customer and vehicle tenant ownership cannot be reassigned by save. QuerySet
-update and bulk_update refuse tenant/customer fields, including expressions;
-use a validated instance save for an operational customer change. Bulk upserts
-are refused. Unrelated bulk updates keep their original behavior.
+Django model/manager/serializer checks remain enabled. MySQL 8.4 additionally
+uses the four guards from migration 0029: vehicle insert/update, customer
+ownership/ID update and customer deletion protection. New foreign links are
+rejected even through direct SQL/custom QuerySets. Existing invalid rows are
+not rewritten by installation. See the implemented account/trigger model and
+staged deployment/rollback instructions in
+[CUSTOMER_TENANT_DB_ENFORCEMENT.md](CUSTOMER_TENANT_DB_ENFORCEMENT.md).
 
-Explicit foreign customer/customer_id API input receives a generic validation
-error. Historical invalid links still block ordinary edits and backups; the
-application does not silently claim or copy a foreign customer.
-
-This is an application ORM guarantee, not a database cross-table constraint.
-Raw SQL, an explicitly constructed models.QuerySet, explicit Model.save_base(obj)
-and external writers bypass it. Calling obj.save_base() is now protected.
-Only the repair service and tests deliberately use that maintenance boundary.
-The old backfill_tenants command cannot reassign these models through update;
-NULL tenant records require separate human review, not this repair.
-
-No trigger is installed. A production trigger would need separate MySQL 8.4
-migration/restore and locking benchmarks, INSERT/UPDATE checks on both tables,
-NULL semantics, and a rollout compatible with existing corrupt links. A normal
-CHECK constraint cannot validate a different table. Current DB uniqueness and
-FK constraints remain enabled. See [the DB enforcement assessment](CUSTOMER_TENANT_DB_ENFORCEMENT.md).
-The absolute requirement covering arbitrary SQL is NOT satisfied by this release.
+Migration 0028 creates the technical one-use authorization table; 0029 installs
+its locked minimal definer and versioned triggers. They must be installed and
+audited before maintenance. SQLite provides application protection only.
 
 ## Review and rehearsal (isolated staging only)
 
@@ -42,14 +27,21 @@ The absolute requirement covering arbitrary SQL is NOT satisfied by this release
    planning/apply/rollback. The service fingerprints ALL fields in tenants,
    customers, vehicles, plate loyalty, vehicle jobs/lines/status history, wallets,
    payments, cashflow and wallet gateway requests, across tenants. Apply/rollback
-   lock those rows and ranges. MySQL uses next-transaction REPEATABLE READ to
+   lock those rows and ranges using FOR SHARE (financial tables remain read-only to the
+   maintenance account). A schema-specific advisory lock serializes maintenance
+   transactions; it is not an authorization mechanism. MySQL uses next-transaction REPEATABLE READ to
    block phantom inserts, including rows with NULL foreign keys. Session defaults
    are unchanged. MySQL repair must run outside any existing transaction. This is intentionally conservative and can be expensive;
-   measure memory and lock duration on a staging clone. New MySQL child inserts
-   wait on parent FK locks. External writers must also be stopped.
+   measure memory and lock duration on a staging clone. RR full-range locks
+   block new tracked rows, including NULL-FK rows. External writers must also
+   be stopped.
 2. Apply reviewed schema changes only to the isolated database:
-   `python manage.py migrate vehicles`.
-3. Generate a dedicated Fernet key in a protected secret store using
+   Follow the staged provisioning steps in the database-enforcement guide;
+   migrate through 0029 and run check_customer_tenant_guards with
+   --settings=apps.vehicles.provisioning_settings. Keep writers stopped.
+3. Inject the separately provisioned CUSTOMER_REPAIR_DB_USER and
+   CUSTOMER_REPAIR_DB_PASSWORD into this standalone process only, using a secret
+   store. No web/restore process receives them. Generate a dedicated Fernet key in a protected secret store using
    Fernet.generate_key(), without printing it or passing it in command arguments.
    Inject CUSTOMER_REPAIR_KEY directly into the maintenance process environment. Keep it
    separate from the backup key and retain it for journal audit/rollback. Do
@@ -57,26 +49,27 @@ The absolute requirement covering arbitrary SQL is NOT satisfied by this release
    to the maintenance operator; Windows requires directory ACLs (mode 0600
    alone does not enforce Windows ACLs).
 4. Preview without writing anything:
-   `python manage.py repair_customer_tenant_links --dry-run --tenant 3`.
+   `python manage.py repair_customer_tenant_links --dry-run --tenant 3 --settings=apps.vehicles.maintenance_settings`.
    Omit --tenant to inspect all tenants. No key is required for counts alone.
 5. Export the encrypted proposal outside the repository:
-   `python manage.py repair_customer_tenant_links --tenant 3 --plan /secure/repair.enc`.
+   `python manage.py repair_customer_tenant_links --tenant 3 --plan /secure/repair.enc --settings=apps.vehicles.maintenance_settings`.
    Files are exclusively created and never overwritten. The output is counts
    and a SHA-256 plan_hash, with no customer phone/name/plate. The encrypted
    version-2 plan contains phone data; its version-2 journal retains only
    affected original score fields, link IDs and fingerprints, not a full database
    copy. Old version-1 plans must be regenerated and reviewed.
 6. Review the individual proposed actions without printing customer data:
-   `python manage.py repair_customer_tenant_links --review-plan --plan /secure/repair.enc`.
+   `python manage.py repair_customer_tenant_links --review-plan --plan /secure/repair.enc --settings=apps.vehicles.maintenance_settings`.
    Review vehicle/tenant/customer IDs and kinds through authorized tenant
    records. Hash approval is operator attestation, not a separate user/role
    approval system. A person must explicitly approve the displayed exact hash.
 7. Apply only that reviewed proposal:
-   `python manage.py repair_customer_tenant_links --apply --plan /secure/repair.enc --approve-hash HASH`.
+   `python manage.py repair_customer_tenant_links --apply --plan /secure/repair.enc --approve-hash HASH --settings=apps.vehicles.maintenance_settings`.
    Any change in the tracked customer/vehicle/financial/history tables aborts
    the entire transaction. Replaying an applied plan is explicitly refused. Modified
    proposals are recomputed and rejected. Invalid/empty/ambiguous mobile phones
-   and NULL tenants are left untouched for human review. Supported phones are
+   and NULL tenants or anomalous negative historical IDs are left untouched
+   for human review rather than proposing a non-reversible repair. Supported phones are
    Iranian 09xxxxxxxxx, +98/0098 equivalents, and Persian/Arabic digits.
 8. Run `python manage.py audit_customer_tenant_links` and
    `python manage.py diagnose_cloud_backup --tenant 3`. Remaining issues can
@@ -95,7 +88,7 @@ and is deliberately excluded from every tenant archive because it spans tenants.
 
 Keep the key and the returned run_id. With writers stopped, run:
 
-`python manage.py repair_customer_tenant_links --rollback RUN_ID --approve-hash rollback:RUN_ID`
+`python manage.py repair_customer_tenant_links --rollback RUN_ID --approve-hash rollback:RUN_ID --settings=apps.vehicles.maintenance_settings`
 
 Rollback refuses subsequent changes in ANY of the tracked tables (including
 new visits, payments, plate loyalty and historical jobs), a missing/wrong key,
@@ -110,7 +103,9 @@ The output contains restored_links, retained_customers and
 unreferenced_customers (internal IDs only). An unreferenced profile is retained
 for human review, including its existing score; there is no automatic cleanup.
 The encrypted journal records this report and completion time in the same
-transaction. A successful rollback deliberately does not reproduce the full
+transaction. Restoring each foreign historical link consumes an exact,
+connection-bound, one-use authorization issued only by the restricted
+maintenance account. The ordinary application cannot issue or reuse it. A successful rollback deliberately does not reproduce the full
 pre-repair database snapshot because the created profiles remain. Restoring the previous state intentionally restores the historical invalid
 links: backups/ordinary edits will be blocked again. If subsequent activity has
 occurred, perform human-reviewed forward repair instead; never force rollback.
@@ -161,74 +156,92 @@ read-only preview, encryption, stale approval, ambiguity, atomic failure,
 conditional rollback and backup/isolated restore after repair. It does not
 connect to production. Shut down that explicitly named test project afterward.
 
-## Validation for the follow-up (2026-10-27)
+## Validation for database enforcement (2026-10-27)
 
-MySQL 8.4.11 tests use the dedicated customer-repair-final Compose project,
-MySQL tmpfs storage, no published ports, and an unprivileged read-only runner.
-The installed dependency image carvash-backup-isolated-test-backup-tests:latest
-was reused with the current backend source mounted read-only at /app using a
-temporary Compose override outside Git; no .env, keys or production data mounts
-were changed. The checked-in Compose command with --build rebuilds the same
-requirements and current source without this local cache optimization.
+**Final MySQL 8.4.11 result: 95 passed, 0 failed, 0 skipped, in 99.880 seconds.**
+The full focused Compose command includes existing cloud backup, customer
+isolation, repair/concurrency, migration preservation and new SQL/account guard
+tests. It verifies direct INSERT/UPDATE and custom-QuerySet rejection, actual
+least-privilege app/maintenance/recovery logins, immutable owners/IDs, legacy
+unrelated updates, single-use expired/tuple/connection-bound permissions,
+ca8a896 historical-model compatibility, failed-rollback atomicity, migration
+installation/retry/reversal/failure compensation, read-only audit and missing-
+definer-grant recovery, and real isolated restore without a bypass capability.
 
-Final focused suite: **69/69 passed on MySQL 8.4.11**, with no skips, in
-53.059 seconds. This includes row/range lock concurrency, simultaneous apply
-(exactly one commit), concurrent customer registration, 137 mismatches distributed
-132/1/4 over tenants 3/12/20, nondeleting rollback, financial/loyalty preservation,
-read-only preview, replay/stale/tampered plans, and encrypted independent
-backup/recovery. The explicit raw-SQL/custom-QuerySet bypass demonstration also
-passes and is a documented limitation, not an enforced security invariant.
+The synthetic production-shaped repair preserved 137 visits distributed 132/1/4
+across tenants 3/12/20, fixed only approved links and retained all new profiles
+after rollback. Existing financial/loyalty histories are preserved and later
+financial/history changes refuse rollback. No test was removed or disabled.
 
-Synthetic 21,413-vehicle benchmark: planning 12.784 seconds under tracemalloc,
-1,730,451 bytes peak traced Python allocation during planning, and 2.904 seconds
-for the apply transaction including its locking scans, 137 relinks, score
-rebuilds and encrypted journal write. These values exclude MySQL server memory
-and are not production resource guarantees.
+For 21,413 synthetic vehicle rows: planning took 10.877 seconds under tracemalloc,
+peak traced Python planning allocation was 1,730,008 bytes, and apply's locking
+transaction took 2.302 seconds. These measurements exclude MySQL server/native
+memory and are not production performance/lock-duration guarantees.
 
-The supplementary broad Windows/SQLite run before the final MySQL-only range
-lock test contained 128 tests: 119 passed, 4 failed, 5 MySQL checks skipped.
-The four failures below are unchanged from the baseline; the new range-lock
-test is covered by the successful final MySQL run. Migration drift and
-whitespace checks passed. Migration 0027 is metadata-only; migration preservation
-and the full latest schema were exercised in the MySQL suite.
-The earlier broad SQLite run had four pre-existing failures, independently
-reproduced from ca8a896 during the previous change:
+Supplementary SQLite run before the last MySQL-only audit test: 94 tests,
+63 passed and 31 MySQL-only checks skipped, no failures. SQLite intentionally
+has no database guard guarantee. Migration drift and git whitespace checks
+passed. Migrations/DDL/repair ran only on disposable test schemas. No Production
+operation, real .env/key/password change or real-backup deletion occurred.
+The test environment is a dedicated customer-guard-review Compose project,
+MySQL 8.4.11 in tmpfs, no published ports or production data mounts, and a
+read-only unprivileged runner. The cached dependency image is reused with the
+current backend mounted read-only; the checked-in --build command includes all
+current source and tests without depending on that local override.
 
-- VehiclePlateLookupAutofillTests.test_lookup_resolves_letter_candidates_in_one_request
-- VehicleStatusSmsTests.test_release_checkout_counts_facility_discount_once_from_list_price
-- ReleasedSmsFixedDiscountTests.test_fixed_mode_writes_milestone_line
-- ReleasedSmsFixedDiscountTests.test_step_mode_keeps_generic_percent
+All previous focused tests are retained. The previous broad vehicle suite had
+four independently verified baseline failures (plate-letter lookup, facility
+loyalty-discount expectation and two SMS SimpleTestCase DB-access failures).
+Those unrelated tests have not been changed or disabled. MySQL guard integration
+adds real ordinary/maintenance/restore credentials, raw SQL, explicit save_base,
+custom QuerySets, permission denial, single-use expiry/connection/tuple checks,
+concurrency, migration install/retry/reverse/failure compensation, and isolated
+restore without maintenance capability.
 
-No existing tests were deleted or disabled. SQL/custom QuerySet bypass is a
-passing boundary demonstration, not proof of SQL protection. These writes still
-succeed without database enforcement; do not declare complete tenant isolation.
-No production migration, repair, restore or data write was executed.
+## Resource behavior and limits
 
-## Resource behavior
+Fingerprinting uses primary-key pages of 500, including MySQL client buffering.
+Planning retains mismatches and their candidate IDs; the journal stores only
+affected scores and link IDs. Fernet/JSON still materialize the plan/journal,
+so memory grows with mismatches/affected customers and field size. The synthetic
+benchmark is not a production resource guarantee. Dry-run fingerprints before
+and after planning; apply revalidates under RR shared row/range locks.
 
-Fingerprinting uses primary-key pages of 500 full rows, including MySQL client
-buffering. Planning retains only mismatches and candidate IDs matching their
-phones. The journal retains affected scores and link IDs; it no longer copies
-all visits/customers into an encrypted JSON snapshot. Memory still grows with
-the number of mismatches/affected customers and the largest field in a page.
-Fernet and JSON serialization materialize the plan/journal; they are not streaming
-cipher formats. Do not treat the small synthetic benchmark as a production RAM
-or latency guarantee.
+Keep external writers stopped during approved maintenance: scans cover every
+tracked tenant, and long/large tables can block unrelated tenants. MySQL DDL
+uses a five-second metadata-lock budget; maintenance uses a ten-second advisory
+lock acquisition budget. DB lock timeout/deadlock aborts the whole transaction;
+there is no automatic repair retry. Inspect state and re-review before retrying.
+No production database, .env, password or real backup has been modified.
 
-Dry-run takes fingerprints before and after planning to detect concurrent changes.
-Apply validates the approved fingerprint under locks and recomputes proposals.
-Stop application/background/external writers for planning and maintenance anyway:
-locking scans span the whole tracked database and can block unrelated tenants.
-A database lock timeout/deadlock aborts the entire transaction; retry only after
-checking/reviewing current state. There is no automatic repair retry.
+## Changed files
 
-Changed files in this follow-up:
+27 files changed in this task:
 
-- backend/apps/vehicles/models.py
-- backend/apps/vehicles/tenant_protection.py
-- backend/apps/vehicles/customer_tenant_repair.py
-- backend/apps/vehicles/management/commands/repair_customer_tenant_links.py
-- backend/apps/vehicles/migrations/0027_alter_customerprofile_options_and_more.py
-- backend/apps/vehicles/tests/test_customer_tenant_repair.py
-- Docs/CUSTOMER_TENANT_REPAIR.md
 - Docs/CUSTOMER_TENANT_DB_ENFORCEMENT.md
+- Docs/CUSTOMER_TENANT_REPAIR.md
+- backend/apps/cloud_backup/snapshot.py
+- backend/apps/cloud_backup/test_settings_mysql.py
+- backend/apps/cloud_backup/tests.py
+- backend/apps/vehicles/apps.py
+- backend/apps/vehicles/customer_tenant_repair.py
+- backend/apps/vehicles/db_checks.py
+- backend/apps/vehicles/db_permissions.py
+- backend/apps/vehicles/maintenance_settings.py
+- backend/apps/vehicles/management/commands/check_customer_tenant_guards.py
+- backend/apps/vehicles/management/commands/customer_tenant_grants.py
+- backend/apps/vehicles/migrations/0028_customertenantauthorization.py
+- backend/apps/vehicles/migrations/0029_mysql_customer_tenant_guards.py
+- backend/apps/vehicles/models.py
+- backend/apps/vehicles/mysql_guards.py
+- backend/apps/vehicles/provisioning_settings.py
+- backend/apps/vehicles/tests/guard_support.py
+- backend/apps/vehicles/tests/mysql/__init__.py
+- backend/apps/vehicles/tests/mysql/base.py
+- backend/apps/vehicles/tests/mysql_runner.py
+- backend/apps/vehicles/tests/test_customer_tenant_isolation.py
+- backend/apps/vehicles/tests/test_customer_tenant_repair.py
+- backend/apps/vehicles/tests/test_mysql_customer_guards.py
+- backend/config/api.py
+- backend/config/settings.py
+- docker-compose.cloud-backup-test.yml

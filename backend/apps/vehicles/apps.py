@@ -5,4 +5,4 @@ class VehiclesConfig(AppConfig):
     name = 'apps.vehicles'
 
     def ready(self):
-        from . import signals  # noqa: F401
+        from . import signals, db_checks  # noqa: F401

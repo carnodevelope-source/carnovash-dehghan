@@ -10,14 +10,14 @@ from unittest.mock import patch
 
 from cryptography.fernet import Fernet
 from django.core.exceptions import ValidationError
-from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import close_old_connections, connection, models, transaction
 from django.test import TransactionTestCase
 
 from apps.auth.models import CarWash
-from apps.vehicles.customer_tenant_repair import apply_plan, digest, make_plan, rollback, state, unseal, fingerprint
+from apps.vehicles.customer_tenant_repair import digest, make_plan, state, unseal, fingerprint
 from apps.vehicles.models import CustomerProfile, CustomerTenantRepairRun, VehicleEntry
+from .guard_support import apply_plan, rollback, call_command, seed_legacy_vehicles
 
 
 class CustomerRepairTests(TransactionTestCase):
@@ -32,7 +32,7 @@ class CustomerRepairTests(TransactionTestCase):
     def legacy(self, phone='09121112222', tenant=None, customer=None):
         v = VehicleEntry(tenant=tenant or self.a, customer=customer or self.foreign, driver_phone=phone, driver_name='OWN SECRET', plate_number='SECRET PLATE')
         # Historical corruption must bypass the production manager explicitly.
-        models.QuerySet(model=VehicleEntry).bulk_create([v])
+        seed_legacy_vehicles([v])
         # MySQL does not populate AutoField IDs on bulk_create.
         return VehicleEntry.objects.order_by('-pk').first()
 
@@ -295,18 +295,20 @@ class CustomerRepairTests(TransactionTestCase):
         with self.assertRaises(CommandError):
             rollback(run)
 
-    def test_custom_queryset_and_raw_sql_are_explicitly_unprotected(self):
-        # Regression of the documented boundary, not a claim of DB enforcement.
-        # These are also the mechanisms used to seed historical corruption.
-        from django.db import connection
+    def test_custom_queryset_and_raw_sql_are_guarded_on_mysql(self):
+        from django.db import DatabaseError
         v = VehicleEntry.objects.create(tenant=self.a)
-        models.QuerySet(model=VehicleEntry).filter(pk=v.pk).update(customer_id=self.foreign.pk)
-        v.refresh_from_db()
-        self.assertEqual(v.customer_id, self.foreign.pk)
-        with connection.cursor() as cursor:
-            cursor.execute('UPDATE vehicles_customerprofile SET tenant_id = %s WHERE id = %s', [self.a.pk, self.foreign.pk])
+        if connection.vendor != 'mysql':
+            # SQLite provides application protection only; explicit boundary.
+            models.QuerySet(model=VehicleEntry).filter(pk=v.pk).update(customer_id=self.foreign.pk)
+            return
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            models.QuerySet(model=VehicleEntry).filter(pk=v.pk).update(customer_id=self.foreign.pk)
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute('UPDATE vehicles_customerprofile SET tenant_id = %s WHERE id = %s', [self.a.pk, self.foreign.pk])
         self.foreign.refresh_from_db()
-        self.assertEqual(self.foreign.tenant_id, self.a.pk)
+        self.assertEqual(self.foreign.tenant_id, self.b.pk)
 
     def test_dry_run_issues_no_database_writes(self):
         from django.db import connection
@@ -357,7 +359,7 @@ class MySQLRepairConcurrencyTests(TransactionTestCase):
         self.addCleanup(key.stop)
 
     def test_parallel_apply_commits_exactly_once(self):
-        models.QuerySet(model=VehicleEntry).bulk_create([
+        seed_legacy_vehicles([
             VehicleEntry(tenant=self.b, customer=self.customer, driver_phone=self.customer.phone)
         ])
         plan = make_plan()
@@ -416,10 +418,10 @@ class MySQLRepairConcurrencyTests(TransactionTestCase):
         VehicleEntry.objects.bulk_create([
             VehicleEntry(tenant=self.a, plate_number=f'benchmark-{i}') for i in range(21276)
         ], batch_size=500)
-        models.QuerySet(model=VehicleEntry).bulk_create([
+        seed_legacy_vehicles([
             VehicleEntry(tenant=self.b, customer=self.customer, driver_phone=f'0912{i:07}')
             for i in range(137)
-        ], batch_size=500)
+        ])
         tracemalloc.start()
         try:
             start = time.monotonic()

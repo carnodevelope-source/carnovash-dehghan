@@ -1,7 +1,7 @@
 """Approved, encrypted maintenance; deliberate raw writes are confined here.
 
-This is not a database constraint. SQL/custom QuerySets remain a documented
-bypass until a separately reviewed DB enforcement rollout is installed.
+MySQL guards enforce ordinary writes; only a separate, restricted maintenance
+account can issue an exact, one-use rollback authorization.
 """
 import hashlib
 from datetime import datetime
@@ -59,12 +59,26 @@ def unseal(value):
 
 def rows(model, *, lock=False, fields=None):
     """Keyset pages bound MySQL client buffering as well as Python allocation."""
-    last = 0
+    last = None
     while True:
-        query = model.objects.filter(pk__gt=last).order_by('pk')
+        query = model.objects.order_by('pk')
+        if last is not None:
+            query = query.filter(pk__gt=last)
         if lock:
             query = query.select_for_update()
-        page = list(query.values(*(fields or []))[:BATCH_SIZE])
+        if lock and connection.vendor == 'mysql':
+            # MySQL FOR UPDATE requires write privileges even for tables that
+            # maintenance must never modify. FOR SHARE locks rows and RR gaps
+            # with SELECT alone. Django has no shared-lock QuerySet API.
+            def shared_read(execute, sql, params, many, context):
+                suffix = 'FOR UPDATE'
+                if not sql.endswith(suffix):
+                    raise CommandError('Unexpected locking SQL; maintenance aborted.')
+                return execute(sql[:-len(suffix)] + 'FOR SHARE', params, many, context)
+            with connection.execute_wrapper(shared_read):
+                page = list(query.values(*(fields or []))[:BATCH_SIZE])
+        else:
+            page = list(query.values(*(fields or []))[:BATCH_SIZE])
         if not page:
             return
         yield from page
@@ -119,9 +133,10 @@ def build_plan(tenant, state_hash):
         invalid = invalid.filter(tenant_id=tenant)
     # Only mismatches and matching phones occupy memory, not every visit/profile.
     actions = []
-    last = 0
+    last = None
     while True:
-        page = list(invalid.filter(pk__gt=last).order_by('pk').values(
+        query = invalid if last is None else invalid.filter(pk__gt=last)
+        page = list(query.order_by('pk').values(
             'id', 'customer_id', 'tenant_id', 'driver_phone',
         )[:BATCH_SIZE])
         if not page:
@@ -142,7 +157,10 @@ def build_plan(tenant, state_hash):
     for action in actions:
         key = (action['tenant'], action['phone'])
         matches = index.get(key, [])
-        if not action['phone'] or action['tenant'] is None:
+        if (not action['phone'] or action['tenant'] is None or action['vehicle'] < 0
+                or action['old_customer'] < 0 or any(pk < 0 for pk in matches)):
+            # Authorization IDs are unsigned. Preserve anomalous historical IDs
+            # for human review rather than proposing a non-reversible repair.
             kind = 'unrepairable'
         elif len(matches) > 1:
             kind = 'ambiguous'
@@ -183,18 +201,33 @@ def repair_transaction():
     # Django defaults MySQL to READ COMMITTED, whose locking scans do not lock
     # gaps. Use next-transaction RR so the paged full-range locking reads also
     # block new rows with NULL FKs and new tenants. Do not mutate session defaults.
-    if connection.vendor == 'mysql':
-        if connection.in_atomic_block or not connection.get_autocommit():
-            raise CommandError('Repair requires an outermost transaction on MySQL.')
+    if connection.vendor != 'mysql':
+        with transaction.atomic():
+            yield
+        return
+    if connection.in_atomic_block or not connection.get_autocommit():
+        raise CommandError('Repair requires an outermost transaction on MySQL.')
+    lock_name = 'cw_customer_repair_' + hashlib.sha256(connection.settings_dict['NAME'].encode()).hexdigest()[:32]
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT GET_LOCK(%s, 10)', [lock_name])
+        if cursor.fetchone()[0] != 1:
+            raise CommandError('Another maintenance transaction is active.')
+    try:
         with connection.cursor() as cursor:
             cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
-    with transaction.atomic():
-        yield
+        with transaction.atomic():
+            yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT RELEASE_LOCK(%s)', [lock_name])
+
 
 
 def apply_plan(plan, approved_hash):
     if digest(plan) != approved_hash or plan.get('version') != PLAN_VERSION:
         raise CommandError('Plan approval hash/version does not match; regenerate old plans.')
+    from .mysql_guards import require_maintenance
+    require_maintenance(connection)
     with repair_transaction():
         before_hash = fingerprint(lock=True)
         if CustomerTenantRepairRun.objects.filter(plan_hash=approved_hash).exists():
@@ -205,11 +238,11 @@ def apply_plan(plan, approved_hash):
             raise CommandError('Plan contents do not match current repair proposals.')
         created, affected, changes = [], set(), []
         actionable = [a for a in plan['actions'] if a['kind'] in ('create', 'link')]
-        old_ids = {a['old_customer'] for a in actionable} | {a['target'] for a in actionable if a['target']}
+        old_ids = {a['old_customer'] for a in actionable} | {a['target'] for a in actionable if a['target'] is not None}
         originals = {str(c.pk): score_state(c) for c in CustomerProfile.objects.filter(pk__in=old_ids)}
         for action in actionable:
             vehicle = VehicleEntry.objects.get(pk=action['vehicle'])
-            if action['target']:
+            if action['target'] is not None:
                 customer = CustomerProfile.objects.get(pk=action['target'], tenant_id=vehicle.tenant_id)
             else:
                 customer, new = CustomerProfile.objects.get_or_create(tenant_id=vehicle.tenant_id, phone=action['phone'])
@@ -228,6 +261,8 @@ def apply_plan(plan, approved_hash):
 
 
 def rollback(run_id):
+    from .mysql_guards import require_maintenance
+    require_maintenance(connection)
     with repair_transaction():
         # Same lock ordering as apply to minimize deadlocks between operators.
         current_hash = fingerprint(lock=True)
@@ -242,6 +277,7 @@ def rollback(run_id):
         if current_hash != journal['after_hash']:
             raise CommandError('Database changed since repair; rollback refused.')
         for change in journal['changes']:
+            authorize_rollback(run, change)
             models.QuerySet(model=VehicleEntry, using='default').filter(pk=change['vehicle']).update(customer_id=change['old'])
         for pk, original in journal['original_scores'].items():
             CustomerProfile.objects.filter(pk=pk).update(**original)
@@ -256,3 +292,26 @@ def rollback(run_id):
         run.rolled_back = True
         run.save(update_fields=['rolled_back', 'encrypted_journal'])
         return report
+
+
+def authorize_rollback(run, change):
+    """Issue only after decryption, state/version/approval checks under locks."""
+    if connection.vendor != 'mysql' or change['old'] is None:
+        return
+    from .models import CustomerTenantAuthorization
+    vehicle = VehicleEntry.objects.get(pk=change['vehicle'])
+    old = CustomerProfile.objects.get(pk=change['old'])
+    if vehicle.tenant_id is not None and vehicle.tenant_id == old.tenant_id:
+        return  # Ordinary valid transition needs no exceptional permission.
+    if vehicle.customer_id != change['new']:
+        raise CommandError('Rollback transition changed; authorization refused.')
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT CONNECTION_ID(), UTC_TIMESTAMP(6)')
+        connection_id, now = cursor.fetchone()
+    from datetime import timedelta, timezone as datetime_timezone
+    CustomerTenantAuthorization.objects.create(
+        connection_id=connection_id, vehicle_id=vehicle.pk, tenant_id=vehicle.tenant_id,
+        from_customer_id=vehicle.customer_id, to_customer_id=old.pk,
+        repair_run_id=run.pk, plan_hash=run.plan_hash,
+        expires_at=now.replace(tzinfo=datetime_timezone.utc) + timedelta(minutes=5),
+    )

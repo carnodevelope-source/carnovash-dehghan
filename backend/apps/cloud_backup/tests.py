@@ -21,6 +21,7 @@ from django.utils import timezone
 from apps.auth.models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketAttachment, SupportTicketMessage, User
 from apps.inventory.models import ExpenseEntry
 from apps.vehicles.models import CustomerProfile, VehicleEntry
+from apps.vehicles.tests.guard_support import seed_legacy_vehicles
 from apps.subscriptions.models import PlatformProject, ServiceProduct, ServicePlan, ServiceSubscription, ServicePeriod
 from .archive import restore_fixture, verify, EncryptWriter, DecryptReader, archive_cipher, MAGIC, CHUNK
 from .models import BackupRun
@@ -412,7 +413,7 @@ class CloudBackupTests(TransactionTestCase):
     def test_customer_foreign_tenant_relation_still_blocks_backup(self):
         customer = CustomerProfile.objects.create(tenant=self.b, phone='09123330000')
         from django.db import models
-        models.QuerySet(model=VehicleEntry).bulk_create([
+        seed_legacy_vehicles([
             VehicleEntry(tenant=self.a, customer=customer, plate_number='mismatched')
         ])
         run = backup_tenant(self.a.pk)
@@ -485,9 +486,10 @@ class CloudBackupTests(TransactionTestCase):
     def test_customer_repair_then_backup_and_isolated_restore(self):
         from cryptography.fernet import Fernet
         from django.db import models
-        from apps.vehicles.customer_tenant_repair import make_plan, apply_plan, digest
+        from apps.vehicles.customer_tenant_repair import make_plan, digest
+        from apps.vehicles.tests.guard_support import apply_plan
         customer = CustomerProfile.objects.create(tenant=self.b, phone='09123330000', full_name='FOREIGN CUSTOMER SECRET')
-        models.QuerySet(model=VehicleEntry).bulk_create([
+        seed_legacy_vehicles([
             VehicleEntry(tenant=self.a, customer=customer, plate_number='own', driver_phone='09121112222')
         ])
         with patch.dict(os.environ, CUSTOMER_REPAIR_KEY=Fernet.generate_key().decode()):
