@@ -5,8 +5,12 @@ services:
   cloud-backup:
     image: ${CLOUD_BACKUP_INCREMENTAL_IMAGE:?reviewed incremental image is required}
     command: ["run_cloud_backup_chains", "--execute", "--loop"]
-    shm_size: 256m
-    memswap_limit: 1g
+    environment:
+      CLOUD_BACKUP_MAX_ROWS: ${CLOUD_BACKUP_INCREMENTAL_MAX_ROWS:-100000}
+      CLOUD_BACKUP_MAX_JSON_BYTES: ${CLOUD_BACKUP_INCREMENTAL_MAX_JSON_BYTES:-268435456}
+    shm_size: 1g
+    mem_limit: 3g
+    memswap_limit: 3g
     ulimits:
       core:
         soft: 0
