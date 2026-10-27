@@ -3,6 +3,7 @@
 # The default production backup command is deliberately unchanged.
 services:
   cloud-backup:
+    image: ${CLOUD_BACKUP_INCREMENTAL_IMAGE:?reviewed incremental image is required}
     command: ["run_cloud_backup_chains", "--execute", "--loop"]
     shm_size: 256m
     memswap_limit: 1g
@@ -10,3 +11,28 @@ services:
       core:
         soft: 0
         hard: 0
+    # Replace by target: live media must match the running backend, not a stale volume.
+    volumes: !override
+      - type: bind
+        source: /mnt/extra-storage
+        target: /mnt/extra-storage
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /mnt/extra-storage/cloud-backups
+        target: /mnt/extra-storage/cloud-backups
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CLOUD_BACKUP_LIVE_MEDIA_HOST_PATH:?reviewed live backend media path is required}
+        target: /app/media
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /proc/1/mountinfo
+        target: /run/host-mountinfo
+        read_only: true
+        bind:
+          create_host_path: false

@@ -40,18 +40,60 @@ def staging_root():
     return root
 
 
-def cleanup_staging(tenant_id):
-    for item in staging_root().glob(f'carvash-verify-{os.geteuid()}-{int(tenant_id)}-*'):
-        info = item.lstat()
-        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
-            raise SnapshotError('unsafe_staging_directory')
-        shutil.rmtree(item)
+@contextmanager
+def _root_mutex(root):
+    import fcntl
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def cleanup_staging(tenant_id=None):
+    """Reap dead workers even for inactive tenants, never touch live staging."""
+    import fcntl
+    root = staging_root()
+    tenant = '*' if tenant_id is None else str(int(tenant_id))
+    removed = 0
+    with _root_mutex(root):
+        for item in root.glob(f'carvash-verify-{os.geteuid()}-{tenant}-*'):
+            fd = os.open(item, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                info = os.fstat(fd)
+                if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+                    raise SnapshotError('unsafe_staging_directory')
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                shutil.rmtree(item)
+                removed += 1
+            finally:
+                os.close(fd)
+    return removed
 
 
 @contextmanager
 def private_staging(tenant_id):
-    with tempfile.TemporaryDirectory(
-        prefix=f'carvash-verify-{os.geteuid()}-{int(tenant_id)}-', dir=staging_root()
-    ) as temporary:
-        os.chmod(temporary, 0o700)
-        yield Path(temporary)
+    import fcntl
+    root = staging_root()
+    temporary = None
+    fd = None
+    try:
+        with _root_mutex(root):
+            temporary = Path(tempfile.mkdtemp(
+                prefix=f'carvash-verify-{os.geteuid()}-{int(tenant_id)}-', dir=root))
+            os.chmod(temporary, 0o700)
+            fd = os.open(temporary, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield temporary
+    finally:
+        # Keep the lease while deleting; a reaper can never remove live data.
+        try:
+            if temporary is not None:
+                shutil.rmtree(temporary)
+        finally:
+            if fd is not None:
+                os.close(fd)

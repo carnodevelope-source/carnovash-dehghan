@@ -28,7 +28,7 @@ services:
     volumes:
       - ./backend:/app:ro
     entrypoint: [python, /app/manage.py]
-    command: [test, apps.cloud_backup.tests, apps.cloud_backup.test_chain_lifecycle, apps.cloud_backup.test_delta, apps.cloud_backup.test_incremental_archive, apps.cloud_backup.test_media_delta, apps.cloud_backup.test_multiday_chain, apps.cloud_backup.test_planner, apps.cloud_backup.test_retention, apps.cloud_backup.test_schedule, --settings=apps.cloud_backup.test_settings_mysql, --noinput]
+    command: [test, apps.cloud_backup.tests, apps.cloud_backup.test_chain_lifecycle, apps.cloud_backup.test_concurrent_snapshot, apps.cloud_backup.test_process_recovery, apps.cloud_backup.test_storage_audit, apps.cloud_backup.test_delta, apps.cloud_backup.test_incremental_archive, apps.cloud_backup.test_media_delta, apps.cloud_backup.test_multiday_chain, apps.cloud_backup.test_planner, apps.cloud_backup.test_retention, apps.cloud_backup.test_schedule, --settings=apps.cloud_backup.test_settings_mysql, --noinput]
     read_only: true
     tmpfs: ["/tmp:rw,mode=1777,size=256m"]
     shm_size: 256m

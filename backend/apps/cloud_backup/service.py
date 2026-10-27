@@ -15,6 +15,7 @@ from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.auth.models import CarWashFeaturePurchase
+from config.media_storage import media_read_lock
 from .archive import CHUNK, EncryptWriter, verify
 from .models import BackupRun
 from .snapshot import SnapshotError, add_bytes, collect, open_media, fingerprint
@@ -26,7 +27,7 @@ def eligible(tenant_id):
     ).exists()
 
 
-def mount_guard():
+def mount_guard(*, _filesystem='ext4'):
     root = Path(settings.CLOUD_BACKUP_MOUNT)
     expected = settings.CLOUD_BACKUP_DEVICE
     if not expected or not root.is_absolute() or str(root.resolve()) != str(root):
@@ -41,7 +42,7 @@ def mount_guard():
                 return False
             split = parts.index('-')
             return (parts[2] == expected and parts[3] == '/' and parts[4] == str(root)
-                    and 'rw' in parts[5].split(',') and parts[split + 1] == 'ext4')
+                    and 'rw' in parts[5].split(',') and parts[split + 1] == _filesystem)
         host_mounted = any(valid_record(line) for line in records)
         if not root.is_mount() or device != expected or not host_mounted:
             raise SnapshotError('mount_unavailable')
@@ -50,7 +51,7 @@ def mount_guard():
 
 
 @contextmanager
-def pinned_root():
+def pinned_root(*, writable=True):
     # Every write resolves via this open directory, so an unmount race can never
     # redirect writes to the SSD directory hidden underneath the mount.
     mount_guard()
@@ -68,7 +69,7 @@ def pinned_root():
             raise SnapshotError('mount_unavailable')
         if actual.st_uid != os.geteuid() or stat.S_IMODE(actual.st_mode) != 0o700:
             raise SnapshotError('unsafe_destination_permissions')
-        if not os.access(f'/proc/self/fd/{fd}', os.R_OK | os.W_OK | os.X_OK):
+        if not os.access(f'/proc/self/fd/{fd}', os.R_OK | os.X_OK | (os.W_OK if writable else 0)):
             raise SnapshotError('destination_not_writable')
         yield Path(f'/proc/self/fd/{fd}')
     finally:
@@ -189,7 +190,7 @@ def backup_tenant(tenant_id, *, scheduled=False, preserve_chains=False):
     if not eligible(int(tenant_id)):
         return None
     try:
-        with locked_tenant(tenant_id):
+        with locked_tenant(tenant_id), media_read_lock():
             return _backup_tenant_locked(tenant_id, scheduled=scheduled,
                                          preserve_chains=preserve_chains)
     except SnapshotError as exc:

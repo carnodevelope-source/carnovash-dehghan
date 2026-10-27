@@ -13,6 +13,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from django.utils import timezone
+from config.media_storage import media_read_lock
 from .archive import verify
 from .delta import fixture_digest
 from .chain_recovery import recover_chain
@@ -49,7 +50,7 @@ def create_verified_increment(tenant_id, full_name, previous_increment_names=(),
     tenant_id = int(tenant_id)
     if not service.eligible(tenant_id):
         raise SnapshotError('subscription_inactive')
-    with service.pinned_root() as root:
+    with service.pinned_root() as root, media_read_lock():
         directory = root / f'tenant-{tenant_id}'
         with service.pinned_tenant(directory) as directory, (nullcontext() if _lock_held else service.tenant_lock(directory)):
             service.write_guard()

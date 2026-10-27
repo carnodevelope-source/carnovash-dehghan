@@ -285,3 +285,9 @@ SMS_SEND_IN_BACKGROUND = config('SMS_SEND_IN_BACKGROUND', default=True, cast=boo
 
 # Non-secret principal metadata; credentials are provisioned separately.
 CUSTOMER_TENANT_GUARD_APP_ACCOUNT = config('CUSTOMER_TENANT_GUARD_APP_ACCOUNT', default='')
+
+# Upload replacement must allocate a new blob name for MVCC backup consistency.
+STORAGES = {
+    'default': {'BACKEND': 'config.media_storage.ImmutableMediaStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}

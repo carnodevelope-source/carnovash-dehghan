@@ -59,6 +59,8 @@ class Command(BaseCommand):
             time.sleep(max(0.05, min(30, (next_midnight(now) - now).total_seconds())))
 
     def cycle(self, options):
+        from apps.cloud_backup.staging import cleanup_staging
+        cleanup_staging()
         ids = CarWashFeaturePurchase.objects.filter(feature_key='cloud_storage', is_active=True)
         if options['tenant'] is not None:
             ids = ids.filter(tenant_id=options['tenant'])

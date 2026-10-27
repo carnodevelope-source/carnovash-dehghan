@@ -2,6 +2,7 @@ from types import SimpleNamespace
 import base64
 import json
 import logging
+import os
 import re
 import threading
 from pathlib import Path
@@ -85,14 +86,25 @@ def _save_ai_image(*, vehicle, request_data, record):
     stem = f'vehicle-{vehicle.id}-{plate_part}-{model_part}-{color_part}-{uuid4().hex[:10]}'
     relative_path = relative_dir / f'{stem}.{extension}'
     absolute_path = media_root / relative_path
-    absolute_path.write_bytes(image_bytes)
+    with absolute_path.open('xb') as output:
+        output.write(image_bytes)
+        output.flush()
+        os.fsync(output.fileno())
 
     sidecar_path = absolute_path.with_suffix('.json')
     sidecar_payload = {
         **record,
         'image_path': relative_path.as_posix(),
     }
-    sidecar_path.write_text(json.dumps(sidecar_payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    pending = sidecar_path.with_suffix('.json.partial')
+    try:
+        with pending.open('x', encoding='utf-8') as output:
+            output.write(json.dumps(sidecar_payload, ensure_ascii=False, indent=2))
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(pending, sidecar_path)
+    finally:
+        pending.unlink(missing_ok=True)
     return relative_path.as_posix()
 
 

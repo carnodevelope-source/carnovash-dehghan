@@ -1,5 +1,6 @@
 """Opt-in Tehran daily execution. No production service enables this module."""
 from datetime import datetime
+from config.media_storage import media_read_lock
 from django.utils import timezone
 from .chain_history import latest_chain, successful_runs, verify_chain_files
 from .chain_service import create_verified_increment
@@ -55,7 +56,7 @@ def execute_tenant(tenant_id, now=None):
     try:
         if not service.eligible(tenant_id):
             return None
-        with service.locked_tenant(tenant_id) as directory:
+        with service.locked_tenant(tenant_id) as directory, media_read_lock():
             # The lock owner is the only worker allowed to reconcile a dead run.
             BackupRun.objects.filter(tenant_id=tenant_id, status='running').update(
                 status='failed', error_code='worker_interrupted', finished_at=timezone.now())
