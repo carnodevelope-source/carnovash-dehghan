@@ -446,3 +446,22 @@ class CloudBackupTests(TransactionTestCase):
         self.assertEqual(recovered_ticket.subject, 'UPDATED PRIVATE TICKET')
         self.assertEqual(SupportTicketAttachment.objects.using('recovery').count(), 1)
         self.assertEqual(SupportTicketAttachment.objects.using('recovery').get().file.name, 'new.txt')
+
+    def test_chain_service_publishes_only_verified_increment(self):
+        from .chain_service import create_verified_increment
+        first = backup_tenant(self.a.pk)
+        self.assertEqual(first.status, 'success', first.error_code)
+        self.ticket.subject = 'Changed after full'
+        self.ticket.save(update_fields=['subject'])
+        (self.media / 'next.txt').write_bytes(b'NEXT MEDIA')
+        SupportTicketAttachment.objects.create(ticket=self.ticket, file='next.txt', uploaded_by=self.user)
+        name = create_verified_increment(self.a.pk, first.archive_name)
+        self.assertTrue(name.endswith('.delta.cvb'))
+        archive = self.disk / f'tenant-{self.a.pk}' / name
+        self.assertTrue(archive.is_file())
+        self.assertNotIn(b'NEXT MEDIA', archive.read_bytes())
+        from .chain_recovery import recover_chain
+        result = self.root / 'chain-service-recovery'
+        fixture = recover_chain(self.archive(first), [archive], self.a.pk, result)
+        self.assertTrue(any(row['model'] == 'cw_auth.supportticket' and row['fields'].get('subject') == 'Changed after full' for row in fixture))
+        self.assertEqual((result / 'media/next.txt').read_bytes(), b'NEXT MEDIA')
