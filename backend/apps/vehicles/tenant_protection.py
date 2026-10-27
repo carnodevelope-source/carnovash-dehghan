@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, router, transaction
 
 
 ERROR = 'Customer and vehicle ownership is inconsistent.'
@@ -18,13 +18,28 @@ class TenantProtectedQuerySet(models.QuerySet):
         objs = list(objs)
         if kwargs.get('update_conflicts') or (len(args) > 2 and args[2]):
             raise ValidationError(ERROR)
-        from django.db import transaction
         with transaction.atomic(using=self.db):
             for obj in objs:
-                obj.validate_tenant_link(using=self.db)
+                obj.validate_tenant_link(using=self.db, lock=True)
             return super().bulk_create(objs, *args, **kwargs)
 
     def bulk_update(self, objs, fields, **kwargs):
         if {'tenant', 'tenant_id', 'customer', 'customer_id'}.intersection(fields):
             raise ValidationError(ERROR)
         return super().bulk_update(objs, fields, **kwargs)
+
+
+class TenantOwnershipMixin:
+    """Validate and lock in the same transaction as ordinary instance writes.
+
+    Calling Model.save_base explicitly, SQL and independently constructed
+    QuerySets are deliberate bypasses; this does not claim a DB constraint.
+    """
+    def save_base(self, raw=False, force_insert=False, force_update=False,
+                  using=None, update_fields=None):
+        using = using or router.db_for_write(type(self), instance=self)
+        with transaction.atomic(using=using):
+            self.validate_tenant_link(using=using, lock=True, update_fields=update_fields)
+            return super().save_base(raw=raw, force_insert=force_insert,
+                                     force_update=force_update, using=using,
+                                     update_fields=update_fields)

@@ -23,8 +23,8 @@ class Command(BaseCommand):
             if options['rollback'] is not None:
                 if options['approve_hash'] != f"rollback:{options['rollback']}":
                     raise CommandError('Rollback requires --approve-hash rollback:RUN_ID.')
-                rollback(options['rollback'])
-                result = {'rolled_back': options['rollback']}
+                report = rollback(options['rollback'])
+                result = dict(report, rolled_back=options['rollback'])
             elif options['review_plan']:
                 if not options['plan']:
                     raise CommandError('Review requires --plan.')
@@ -41,7 +41,8 @@ class Command(BaseCommand):
                 plan = make_plan(options['tenant'])
                 if options['plan']:
                     path = Path(options['plan']).resolve()
-                    repo = Path(__file__).resolve().parents[5]
+                    source = Path(__file__).resolve()
+                    repo = next((p for p in source.parents if (p / '.git').exists()), source.parents[4])
                     if path.is_relative_to(repo):
                         raise CommandError('Store encrypted plans outside the repository.')
                     write_plan(path, plan)

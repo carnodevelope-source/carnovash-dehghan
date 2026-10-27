@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, router
 from django.utils import timezone
 
-from .tenant_protection import ERROR, TenantProtectedQuerySet
+from .tenant_protection import ERROR, TenantOwnershipMixin, TenantProtectedQuerySet
 
 from apps.realtime.transactions import TransactionalLiveModelMixin
 
@@ -18,23 +18,22 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
-class CustomerProfile(TimestampedModel):
+class CustomerProfile(TenantOwnershipMixin, TimestampedModel):
     objects = TenantProtectedQuerySet.as_manager()
 
-    def validate_tenant_link(self, using=None):
+    def validate_tenant_link(self, using=None, lock=False, update_fields=None):
         using = using or router.db_for_write(type(self), instance=self)
         if self.pk:
-            previous = type(self).objects.using(using).filter(pk=self.pk).values('tenant_id').first()
+            query = type(self).objects.using(using).filter(pk=self.pk)
+            if lock:
+                query = query.select_for_update()
+            previous = query.values('tenant_id').first()
             if previous and previous['tenant_id'] != self.tenant_id:
                 raise ValidationError({'tenant': ERROR})
 
     def clean(self):
         super().clean()
         self.validate_tenant_link()
-
-    def save(self, *args, **kwargs):
-        self.validate_tenant_link(kwargs.get('using'))
-        return super().save(*args, **kwargs)
 
     class Gender(models.TextChoices):
         MALE = 'male', 'Male'
@@ -54,6 +53,7 @@ class CustomerProfile(TimestampedModel):
     score_year = models.PositiveSmallIntegerField(default=1400)
 
     class Meta:
+        base_manager_name = 'objects'
         ordering = ['-updated_at']
         # NULL tenant rows are quarantined legacy/import data. They are never
         # resolved or automatically claimed by operational vehicle registration.
@@ -99,17 +99,28 @@ class PlateLoyaltyProfile(TimestampedModel):
         return self.plate_number
 
 
-class VehicleEntry(TransactionalLiveModelMixin, TimestampedModel):
+class VehicleEntry(TenantOwnershipMixin, TransactionalLiveModelMixin, TimestampedModel):
     objects = TenantProtectedQuerySet.as_manager()
 
-    def validate_tenant_link(self, using=None):
+    def validate_tenant_link(self, using=None, lock=False, update_fields=None):
         using = using or router.db_for_write(type(self), instance=self)
+        customer_id = self.customer_id
         if self.pk:
-            previous = type(self).objects.using(using).filter(pk=self.pk).values('tenant_id').first()
+            query = type(self).objects.using(using).filter(pk=self.pk)
+            if lock:
+                query = query.select_for_update()
+            previous = query.values('tenant_id', 'customer_id').first()
             if previous and previous['tenant_id'] != self.tenant_id:
                 raise ValidationError({'tenant': ERROR})
-        if self.customer_id:
-            owner = CustomerProfile.objects.using(using).filter(pk=self.customer_id).values('tenant_id').first()
+            if previous and update_fields is not None and not {'customer', 'customer_id'}.intersection(update_fields):
+                customer_id = previous['customer_id']
+        if customer_id:
+            if hasattr(customer_id, 'resolve_expression'):
+                raise ValidationError({'customer': ERROR})
+            query = CustomerProfile.objects.using(using).filter(pk=customer_id)
+            if lock:
+                query = query.select_for_update()
+            owner = query.values('tenant_id').first()
             if not owner or self.tenant_id is None or owner['tenant_id'] != self.tenant_id:
                 raise ValidationError({'customer': ERROR})
 
@@ -227,6 +238,7 @@ class VehicleEntry(TransactionalLiveModelMixin, TimestampedModel):
     )
 
     class Meta:
+        base_manager_name = 'objects'
         ordering = ['-check_in_at']
         indexes = [
             models.Index(fields=['status', 'check_in_at']),
@@ -260,7 +272,6 @@ class VehicleEntry(TransactionalLiveModelMixin, TimestampedModel):
         return max(1000, int(latest or 999) + 1)
 
     def save(self, *args, **kwargs):
-        self.validate_tenant_link(kwargs.get("using"))
         if not self.admission_number:
             self.admission_number = self._next_daily_admission_number()
             update_fields = kwargs.get('update_fields')

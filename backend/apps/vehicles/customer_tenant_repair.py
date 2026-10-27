@@ -1,9 +1,11 @@
-"""Explicit, encrypted and atomic maintenance of historical customer links.
+"""Approved, encrypted maintenance; deliberate raw writes are confined here.
 
-Only this module uses an unprotected QuerySet, to restore the exact legacy state
-on an approved rollback. Operational code must use the protected managers.
+This is not a database constraint. SQL/custom QuerySets remain a documented
+bypass until a separately reviewed DB enforcement rollout is installed.
 """
 import hashlib
+from datetime import datetime
+from contextlib import contextmanager
 import json
 import os
 import re
@@ -11,10 +13,15 @@ import re
 from cryptography.fernet import Fernet, InvalidToken
 from django.core.management.base import CommandError
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import models, transaction
+from django.db import connection, models, transaction
+from django.db.models import F, Q
+from django.utils import timezone
 
 from .models import CustomerProfile, CustomerTenantRepairRun, VehicleEntry
 from .loyalty import rebuild_customer_score
+
+BATCH_SIZE = 500
+PLAN_VERSION = 2
 
 
 def codec():
@@ -24,8 +31,15 @@ def codec():
         raise CommandError('Set CUSTOMER_REPAIR_KEY to a dedicated Fernet key.') from None
 
 
+class ExactJSONEncoder(DjangoJSONEncoder):
+    def default(self, value):
+        if isinstance(value, datetime):
+            return value.isoformat(timespec='microseconds')
+        return super().default(value)
+
+
 def encode(value):
-    return json.dumps(value, cls=DjangoJSONEncoder, sort_keys=True, separators=(',', ':')).encode()
+    return json.dumps(value, cls=ExactJSONEncoder, sort_keys=True, separators=(',', ':')).encode()
 
 
 def digest(value):
@@ -43,21 +57,48 @@ def unseal(value):
         raise CommandError('Invalid encrypted repair artifact or key.') from None
 
 
+def rows(model, *, lock=False, fields=None):
+    """Keyset pages bound MySQL client buffering as well as Python allocation."""
+    last = 0
+    while True:
+        query = model.objects.filter(pk__gt=last).order_by('pk')
+        if lock:
+            query = query.select_for_update()
+        page = list(query.values(*(fields or []))[:BATCH_SIZE])
+        if not page:
+            return
+        yield from page
+        last = page[-1][model._meta.pk.attname]
+
+
+def tracked_models():
+    from django.apps import apps
+    # Include financial and loyalty/history data even if not changed by repair.
+    labels = (
+        'cw_auth.CarWash', 'vehicles.CustomerProfile', 'vehicles.VehicleEntry',
+        'vehicles.PlateLoyaltyProfile', 'vehicles.VehicleJob',
+        'vehicles.VehicleJobService', 'vehicles.VehicleJobProduct',
+        'vehicles.VehicleStatusLog', 'payments.Wallet', 'payments.Payment',
+        'payments.CashflowTransaction', 'payments.WalletGatewayRequest',
+    )
+    return [apps.get_model(label) for label in labels]
+
+
+def fingerprint(*, lock=False):
+    hasher = hashlib.sha256()
+    # Parent rows first. On MySQL parent FK locks block new related inserts.
+    for model in tracked_models():
+        hasher.update(encode(model._meta.label_lower) + b'\n')
+        for row in rows(model, lock=lock):
+            hasher.update(encode(row) + b'\n')
+    return hasher.hexdigest()
+
+
 def state(lock=False):
-    # Deliberately conservative: any change to customers or visits invalidates
-    # approval/rollback. Run during a maintenance window for large databases.
+    """Test/audit helper only; planning, apply and rollback never materialize this."""
     if lock:
-        from apps.auth.models import CarWash
-        # Lock parent rows first: MySQL FK checks block new child inserts while
-        # the approval snapshot is checked and applied. Lock all tenants because
-        # this conservative snapshot includes all customer and vehicle rows.
-        list(CarWash.objects.order_by('pk').select_for_update().values_list('pk', flat=True))
-    customers = CustomerProfile.objects.order_by('pk')
-    vehicles = VehicleEntry.objects.order_by('pk')
-    if lock:
-        customers = customers.select_for_update()
-        vehicles = vehicles.select_for_update()
-    return {'customers': list(customers.values()), 'vehicles': list(vehicles.values())}
+        fingerprint(lock=True)
+    return {'customers': list(rows(CustomerProfile)), 'vehicles': list(rows(VehicleEntry))}
 
 
 def normalized_phone(value):
@@ -69,97 +110,149 @@ def normalized_phone(value):
     return value if re.fullmatch(r'09[0-9]{9}', value) else None
 
 
-def make_plan(tenant=None):
-    snapshot = state()
-    customers = {c['id']: c for c in snapshot['customers']}
-    index = {}
-    for c in customers.values():
-        phone = normalized_phone(c['phone'])
-        if phone:
-            index.setdefault((c['tenant_id'], phone), []).append(c['id'])
+def build_plan(tenant, state_hash):
+    invalid = VehicleEntry.objects.filter(customer__isnull=False).filter(
+        Q(tenant_id__isnull=True) | Q(customer__tenant_id__isnull=True)
+        | ~Q(tenant_id=F('customer__tenant_id'))
+    )
+    if tenant is not None:
+        invalid = invalid.filter(tenant_id=tenant)
+    # Only mismatches and matching phones occupy memory, not every visit/profile.
     actions = []
+    last = 0
+    while True:
+        page = list(invalid.filter(pk__gt=last).order_by('pk').values(
+            'id', 'customer_id', 'tenant_id', 'driver_phone',
+        )[:BATCH_SIZE])
+        if not page:
+            break
+        for v in page:
+            phone = normalized_phone(v['driver_phone'])
+            actions.append({'vehicle': v['id'], 'old_customer': v['customer_id'],
+                            'tenant': v['tenant_id'], 'phone': phone})
+        last = page[-1]['id']
+    wanted = {(a['tenant'], a['phone']) for a in actions if a['phone'] and a['tenant'] is not None}
+    index = {}
+    if wanted:
+        for c in rows(CustomerProfile, fields=['id', 'tenant_id', 'phone']):
+            key = (c['tenant_id'], normalized_phone(c['phone']))
+            if key in wanted:
+                index.setdefault(key, []).append(c['id'])
     proposed = set()
-    for v in snapshot['vehicles']:
-        if tenant is not None and v['tenant_id'] != tenant:
-            continue
-        c = customers.get(v['customer_id'])
-        if not c or (v['tenant_id'] is not None and v['tenant_id'] == c['tenant_id']):
-            continue
-        phone = normalized_phone(v['driver_phone'])
-        matches = index.get((v['tenant_id'], phone), []) if phone else []
-        kind = 'unrepairable' if not phone or v['tenant_id'] is None else 'ambiguous' if len(matches) > 1 else 'link' if matches else 'create'
+    for action in actions:
+        key = (action['tenant'], action['phone'])
+        matches = index.get(key, [])
+        if not action['phone'] or action['tenant'] is None:
+            kind = 'unrepairable'
+        elif len(matches) > 1:
+            kind = 'ambiguous'
+        else:
+            kind = 'link' if matches else 'create'
         if kind == 'create':
-            proposed.add((v['tenant_id'], phone))
-        actions.append({'vehicle': v['id'], 'old_customer': v['customer_id'], 'tenant': v['tenant_id'],
-                        'phone': phone, 'target': matches[0] if len(matches) == 1 else None, 'kind': kind})
-    return {'version': 1, 'tenant': tenant, 'state_hash': digest(snapshot), 'actions': actions,
-            'summary': {'mismatches': len(actions), 'repairable': sum(a['kind'] in ('link', 'create') for a in actions),
+            proposed.add(key)
+        action.update(kind=kind, target=matches[0] if len(matches) == 1 else None)
+    return {'version': PLAN_VERSION, 'tenant': tenant, 'state_hash': state_hash, 'actions': actions,
+            'summary': {'mismatches': len(actions),
+                        'repairable': sum(a['kind'] in ('link', 'create') for a in actions),
                         'ambiguous': sum(a['kind'] == 'ambiguous' for a in actions),
                         'unrepairable': sum(a['kind'] == 'unrepairable' for a in actions),
                         'proposed_profiles': len(proposed)}}
 
 
+def make_plan(tenant=None):
+    before = fingerprint()
+    plan = build_plan(tenant, before)
+    if fingerprint() != before:
+        raise CommandError('Database changed during planning; stop writers and retry.')
+    return plan
+
+
 def write_plan(path, plan):
-    # Exclusive creation prevents accidental overwrite; no plaintext temp file.
     encrypted = seal(plan)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w', encoding='ascii') as stream:
         stream.write(encrypted)
 
 
-def apply_plan(plan, approved_hash):
-    if digest(plan) != approved_hash or plan.get('version') != 1:
-        raise CommandError('Plan approval hash does not match.')
+def score_state(customer):
+    return {key: getattr(customer, key) for key in ('yearly_score', 'score_year', 'updated_at')}
+
+
+@contextmanager
+def repair_transaction():
+    # Django defaults MySQL to READ COMMITTED, whose locking scans do not lock
+    # gaps. Use next-transaction RR so the paged full-range locking reads also
+    # block new rows with NULL FKs and new tenants. Do not mutate session defaults.
+    if connection.vendor == 'mysql':
+        if connection.in_atomic_block or not connection.get_autocommit():
+            raise CommandError('Repair requires an outermost transaction on MySQL.')
+        with connection.cursor() as cursor:
+            cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
     with transaction.atomic():
-        before = state(lock=True)
-        if digest(before) != plan['state_hash']:
+        yield
+
+
+def apply_plan(plan, approved_hash):
+    if digest(plan) != approved_hash or plan.get('version') != PLAN_VERSION:
+        raise CommandError('Plan approval hash/version does not match; regenerate old plans.')
+    with repair_transaction():
+        before_hash = fingerprint(lock=True)
+        if CustomerTenantRepairRun.objects.filter(plan_hash=approved_hash).exists():
+            raise CommandError('Plan was already applied; replay refused.')
+        if before_hash != plan['state_hash']:
             raise CommandError('Database changed since planning; generate and review a new plan.')
-        if make_plan(plan.get('tenant')) != plan:
+        if build_plan(plan.get('tenant'), before_hash) != plan:
             raise CommandError('Plan contents do not match current repair proposals.')
+        created, affected, changes = [], set(), []
         actionable = [a for a in plan['actions'] if a['kind'] in ('create', 'link')]
-        created = []
-        affected = set()
-        changes = []
+        old_ids = {a['old_customer'] for a in actionable} | {a['target'] for a in actionable if a['target']}
+        originals = {str(c.pk): score_state(c) for c in CustomerProfile.objects.filter(pk__in=old_ids)}
         for action in actionable:
             vehicle = VehicleEntry.objects.get(pk=action['vehicle'])
-            if vehicle.tenant_id != action['tenant'] or vehicle.customer_id != action['old_customer'] or normalized_phone(vehicle.driver_phone) != action['phone']:
-                raise CommandError('Plan action no longer matches the database.')
-            target = action['target']
-            if target:
-                customer = CustomerProfile.objects.get(pk=target, tenant_id=vehicle.tenant_id)
-                if normalized_phone(customer.phone) != action['phone']:
-                    raise CommandError('Plan target no longer matches.')
+            if action['target']:
+                customer = CustomerProfile.objects.get(pk=action['target'], tenant_id=vehicle.tenant_id)
             else:
                 customer, new = CustomerProfile.objects.get_or_create(tenant_id=vehicle.tenant_id, phone=action['phone'])
                 if new:
                     created.append(customer.pk)
             affected.update((vehicle.customer_id, customer.pk))
-            # No save/signals: do not send SMS, mutate payment or plate snapshots.
+            # Deliberately bypass save/signals: no payment, SMS or plate mutation.
             models.QuerySet(model=VehicleEntry, using='default').filter(pk=vehicle.pk).update(customer_id=customer.pk)
             changes.append({'vehicle': vehicle.pk, 'old': vehicle.customer_id, 'new': customer.pk})
         for customer in CustomerProfile.objects.filter(pk__in=affected).order_by('pk'):
             rebuild_customer_score(customer)
-        journal = {'before': before, 'after_hash': digest(state()), 'changes': changes,
-                   'created': created, 'affected': sorted(affected)}
+        journal = {'version': 2, 'original_scores': originals, 'after_hash': fingerprint(),
+                   'changes': changes, 'created': created, 'affected': sorted(affected)}
         run = CustomerTenantRepairRun.objects.create(plan_hash=approved_hash, encrypted_journal=seal(journal))
         return run.pk, len(changes)
 
 
 def rollback(run_id):
-    with transaction.atomic():
+    with repair_transaction():
+        # Same lock ordering as apply to minimize deadlocks between operators.
+        current_hash = fingerprint(lock=True)
         run = CustomerTenantRepairRun.objects.select_for_update().get(pk=run_id)
         if run.rolled_back:
             raise CommandError('Repair was already rolled back.')
         journal = unseal(run.encrypted_journal)
-        if digest(state(lock=True)) != journal['after_hash']:
+        if journal.get('version') != 2:
+            # v1 did not fingerprint payments/history: cannot safely attest that
+            # no business activity occurred. Preserve the journal for review.
+            raise CommandError('Legacy journal cannot prove unchanged financial/history data; manual review required.')
+        if current_hash != journal['after_hash']:
             raise CommandError('Database changed since repair; rollback refused.')
         for change in journal['changes']:
             models.QuerySet(model=VehicleEntry, using='default').filter(pk=change['vehicle']).update(customer_id=change['old'])
-        originals = {c['id']: c for c in journal['before']['customers']}
-        for pk in journal['affected']:
-            if pk in originals:
-                c = originals[pk]
-                CustomerProfile.objects.filter(pk=pk).update(yearly_score=c['yearly_score'], score_year=c['score_year'], updated_at=c['updated_at'])
-        CustomerProfile.objects.filter(pk__in=journal['created']).delete()
+        for pk, original in journal['original_scores'].items():
+            CustomerProfile.objects.filter(pk=pk).update(**original)
+        # Retain every created profile, including identity, score and timestamps.
+        # The restored links may leave profiles unreferenced; report, never delete.
+        unreferenced = list(CustomerProfile.objects.filter(pk__in=journal['created'], vehicle_entries__isnull=True)
+                            .order_by('pk').values_list('pk', flat=True))
+        report = {'restored_links': len(journal['changes']), 'retained_customers': journal['created'],
+                  'unreferenced_customers': unreferenced}
+        journal['rollback'] = dict(report, completed_at=timezone.now().isoformat())
+        run.encrypted_journal = seal(journal)
         run.rolled_back = True
-        run.save(update_fields=['rolled_back'])
+        run.save(update_fields=['rolled_back', 'encrypted_journal'])
+        return report
