@@ -407,3 +407,42 @@ class CloudBackupTests(TransactionTestCase):
         self.assertIn('SELECT, INSERT, UPDATE ON `review`.`cloud_backup_backuprun`', statements)
         for forbidden in ('DELETE', 'CREATE', 'ALL PRIVILEGES', 'realtime_', 'django_session', 'bulkservicejob', 'auth_permission'):
             self.assertNotIn(forbidden, statements)
+
+    @skipUnless('recovery' in settings.DATABASES, 'Requires isolated recovery DB')
+    def test_full_plus_incremental_rebuilds_changed_deleted_rows_and_media(self):
+        from .incremental_archive import create_delta_archive
+        from .chain_recovery import recover_chain
+        from .snapshot import open_media
+        from .archive import restore_fixture
+        from django.db import connections
+        first = backup_tenant(self.a.pk)
+        self.assertEqual(first.status, 'success', first.error_code)
+        full = self.archive(first)
+        base = self.root / 'base-stage'
+        base.mkdir(mode=0o700)
+        verify(full, self.a.pk, output=base)
+        previous_fixture = json.loads((base / 'fixture.json').read_bytes())
+        previous_media = {'a.txt': __import__('hashlib').sha256(b'A PRIVATE MEDIA').hexdigest()}
+        self.ticket.subject = 'UPDATED PRIVATE TICKET'
+        self.ticket.save(update_fields=['subject'])
+        SupportTicketAttachment.objects.filter(ticket=self.ticket).delete()
+        (self.media / 'new.txt').write_bytes(b'NEW PRIVATE MEDIA')
+        SupportTicketAttachment.objects.create(ticket=self.ticket, file='new.txt', uploaded_by=self.user)
+        current_bytes, files = collect(self.a.pk)
+        current_fixture = json.loads(current_bytes)
+        current_media = {}
+        for name in files:
+            with open_media(name) as source:
+                current_media[name] = __import__('hashlib').sha256(source.read()).hexdigest()
+        delta = self.root / 'incremental.cvb'
+        create_delta_archive(delta, self.a.pk, previous_fixture, current_fixture, previous_media, current_media, open_media)
+        destination = self.root / 'chain-output'
+        reconstructed = recover_chain(full, [delta], self.a.pk, destination)
+        self.assertEqual(reconstructed, current_fixture)
+        self.assertEqual((destination / 'media/new.txt').read_bytes(), b'NEW PRIVATE MEDIA')
+        self.assertFalse((destination / 'media/a.txt').exists())
+        restore_fixture(destination / 'fixture.json', self.a.pk, 'recovery')
+        recovered_ticket = SupportTicket.objects.using('recovery').get(pk=self.ticket.pk)
+        self.assertEqual(recovered_ticket.subject, 'UPDATED PRIVATE TICKET')
+        self.assertEqual(SupportTicketAttachment.objects.using('recovery').count(), 1)
+        self.assertEqual(SupportTicketAttachment.objects.using('recovery').get().file.name, 'new.txt')
