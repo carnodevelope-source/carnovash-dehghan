@@ -3,6 +3,7 @@
 A delta contains only fixture upserts/tombstones and changed media bytes.
 It never writes plaintext backups to persistent storage.
 """
+import gzip
 import hashlib
 import io
 import json
@@ -75,8 +76,8 @@ def read_delta_archive(path, tenant_id, output_media):
     observed = {}
     metadata = None
     with open(path, 'rb') as source:
-        with io.BufferedReader(DecryptReader(source)) as stream:
-            with tarfile.open(fileobj=stream, mode='r|gz') as tar:
+        with io.BufferedReader(DecryptReader(source)) as encrypted_stream, gzip.GzipFile(fileobj=encrypted_stream, mode='rb') as stream:
+            with tarfile.open(fileobj=stream, mode='r|') as tar:
                 for member in tar:
                     name = safe_relative(member.name)
                     if not member.isfile() or name in observed or len(observed) > settings.CLOUD_BACKUP_MAX_FILES:
@@ -104,6 +105,8 @@ def read_delta_archive(path, tenant_id, output_media):
                     observed[name] = digest.hexdigest()
             while stream.read(CHUNK):
                 pass
+            while encrypted_stream.read(CHUNK):
+                raise SnapshotError('trailing_data')
     if not isinstance(metadata, dict) or metadata.get('version') != 1 or metadata.get('tenant_id') != int(tenant_id):
         raise SnapshotError('wrong_tenant')
     changes = metadata.get('media')

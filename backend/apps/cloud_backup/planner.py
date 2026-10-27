@@ -23,12 +23,12 @@ def plan_backup(now, *, eligible, last_success, last_full, chain_healthy):
     day = local_day(now)
     if not eligible:
         return Plan('skip', 'subscription_inactive')
-    if last_success is not None and local_day(last_success) >= day:
-        return Plan('skip', 'already_backed_up_today')
     if last_full is None:
         return Plan('full', 'no_verified_base')
     if not chain_healthy:
         return Plan('full', 'chain_unhealthy')
+    if last_success is not None and local_day(last_success) >= day:
+        return Plan('skip', 'already_backed_up_today')
     if last_success is None or (day - local_day(last_success)) > timedelta(days=1):
         return Plan('full', 'missing_incremental_day')
     kind = backup_kind(now, last_full)

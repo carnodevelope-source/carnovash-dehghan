@@ -4,6 +4,7 @@ from django.db import models
 class BackupRun(models.Model):
     # Deliberately not a cascading FK: deleting a tenant preserves backup history.
     tenant_id = models.PositiveBigIntegerField(db_index=True)
+    scheduled_for = models.DateField(null=True, blank=True, db_index=True)
     started_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True)
     status = models.CharField(max_length=16, default='running')

@@ -273,7 +273,15 @@ def collect(tenant_id):
             captured = fingerprint(os.fstat(source.fileno()))
             if name in fingerprints and fingerprints[name] != captured:
                 raise SnapshotError('source_changed')
+            digest = hashlib.sha256()
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+            if fingerprint(os.fstat(source.fileno())) != captured:
+                raise SnapshotError('source_changed')
+            if name in digests and digests[name] != digest.hexdigest():
+                raise SnapshotError('source_changed')
             fingerprints[name] = captured
+            digests[name] = digest.hexdigest()
     return payload, MediaFiles(sorted(files), fingerprints, digests)
 
 

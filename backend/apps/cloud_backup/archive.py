@@ -26,13 +26,19 @@ CHUNK = 1024 * 1024
 
 def private_bytes(filename):
     path = Path(filename)
-    if os.name == 'posix' and path.stat().st_mode & 0o077:
-        raise SnapshotError('insecure_key_permissions')
-    if path.is_symlink() or not path.is_file():
+    if path.absolute() != path.resolve():
         raise SnapshotError('invalid_key_file')
-    if path.stat().st_size > 65536:
-        raise SnapshotError('invalid_key_file')
-    return path.read_bytes().strip()
+    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
+    with os.fdopen(fd, 'rb') as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise SnapshotError('invalid_key_file')
+        if os.name == 'posix' and (info.st_mode & 0o077 or info.st_uid not in {0, os.geteuid()}):
+            raise SnapshotError('insecure_key_permissions')
+        data = source.read(65537)
+        if len(data) > 65536:
+            raise SnapshotError('invalid_key_file')
+        return data.strip()
 
 
 def key(key_id=None, *, legacy=False):

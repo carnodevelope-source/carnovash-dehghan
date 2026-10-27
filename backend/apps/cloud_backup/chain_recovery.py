@@ -78,6 +78,13 @@ def recover_chain(full_archive, incremental_archives, tenant_id, output):
                 fixture_path.write_bytes(canonical(fixture))
                 os.chmod(fixture_path, 0o600)
         validate_fixture(fixture, tenant_id)
+        from django.apps import apps
+        from django.db.models import FileField
+        for row in fixture:
+            for field in apps.get_model(row['model'])._meta.fields:
+                if isinstance(field, FileField) and (name := row['fields'].get(field.name)):
+                    if safe_relative(name) not in media:
+                        raise SnapshotError('missing_media_member')
         for name, expected in media.items():
             if digest_file(media_root / safe_relative(name)) != expected:
                 raise SnapshotError('checksum_mismatch')

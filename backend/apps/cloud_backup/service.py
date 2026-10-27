@@ -6,7 +6,7 @@ import shutil
 import stat
 import tarfile
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import timedelta
 from pathlib import Path
 
@@ -169,7 +169,37 @@ def due(tenant_id):
     return True
 
 
+@contextmanager
+def locked_tenant(tenant_id):
+    """One process lock covers planning, publication AND durable history."""
+    tenant_id = int(tenant_id)
+    if tenant_id <= 0:
+        raise SnapshotError('invalid_tenant')
+    with pinned_root() as root:
+        directory = root / f'tenant-{tenant_id}'
+        write_guard()
+        if directory.is_symlink():
+            raise SnapshotError('unsafe_destination')
+        directory.mkdir(mode=0o700, exist_ok=True)
+        with pinned_tenant(directory) as directory, tenant_lock(directory):
+            yield directory
+
+
 def backup_tenant(tenant_id, *, scheduled=False, preserve_chains=False):
+    if not eligible(int(tenant_id)):
+        return None
+    try:
+        with locked_tenant(tenant_id):
+            return _backup_tenant_locked(tenant_id, scheduled=scheduled,
+                                         preserve_chains=preserve_chains)
+    except SnapshotError as exc:
+        if str(exc) == 'already_running':
+            return None
+        return BackupRun.objects.create(tenant_id=int(tenant_id), status='failed',
+            error_code=(str(exc) if str(exc) in {'mount_unavailable', 'insufficient_space', 'unsafe_destination', 'unsafe_destination_permissions', 'destination_not_writable'} else 'storage_guard_failed'), finished_at=timezone.now())
+
+
+def _backup_tenant_locked(tenant_id, *, scheduled=False, preserve_chains=False, scheduled_for=None):
     tenant_id = int(tenant_id)
     if not eligible(tenant_id):
         return None
@@ -182,13 +212,13 @@ def backup_tenant(tenant_id, *, scheduled=False, preserve_chains=False):
             if directory.is_symlink():
                 raise SnapshotError('unsafe_destination')
             directory.mkdir(mode=0o700, exist_ok=True)
-            with pinned_tenant(directory) as directory, tenant_lock(directory):
+            with pinned_tenant(directory) as directory, nullcontext():
                 if scheduled and not due(tenant_id):
                     return None
                 BackupRun.objects.filter(tenant_id=tenant_id, status='running').update(
                     status='failed', error_code='worker_interrupted', finished_at=timezone.now(),
                 )
-                run = BackupRun.objects.create(tenant_id=tenant_id)
+                run = BackupRun.objects.create(tenant_id=tenant_id, scheduled_for=scheduled_for)
                 if not eligible(tenant_id):
                     raise SnapshotError('subscription_inactive')
                 # A previous worker may have died mid-transfer; encrypted partials
@@ -234,6 +264,9 @@ def backup_tenant(tenant_id, *, scheduled=False, preserve_chains=False):
                 verify(temporary, tenant_id)
                 if not eligible(tenant_id):
                     raise SnapshotError('subscription_inactive')
+                # Persist intent before publishing: interrupted files remain traceable.
+                run.archive_name = name
+                run.save(update_fields=['archive_name'])
                 final = directory / name
                 write_guard()
                 os.replace(temporary, final)

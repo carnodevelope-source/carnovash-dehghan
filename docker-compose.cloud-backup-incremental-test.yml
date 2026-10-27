@@ -1,0 +1,43 @@
+# Disposable only: no production networks, mounts, ports or persistent volumes.
+services:
+  incremental-test-db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    command: ["--innodb-buffer-pool-size=64M", "--mysqlx=0"]
+    tmpfs: ["/var/lib/mysql:rw,size=768m"]
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, 127.0.0.1, --silent]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+  incremental-tests:
+    image: carwash-cloud-backup:2ed6f8b
+    user: "10001:10001"
+    working_dir: /tmp
+    environment:
+      CLOUD_BACKUP_TEST_MYSQL: isolated
+      CLOUD_BACKUP_TEST_DB_HOST: incremental-test-db
+      CARWASH_INTERNAL_SCHEDULER: "false"
+      DB_ENGINE: sqlite
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONPATH: /app
+    volumes:
+      - ./backend:/app:ro
+    entrypoint: [python, /app/manage.py]
+    command: [test, apps.cloud_backup.tests, apps.cloud_backup.test_chain_lifecycle, apps.cloud_backup.test_delta, apps.cloud_backup.test_incremental_archive, apps.cloud_backup.test_media_delta, apps.cloud_backup.test_multiday_chain, apps.cloud_backup.test_planner, apps.cloud_backup.test_retention, apps.cloud_backup.test_schedule, --settings=apps.cloud_backup.test_settings_mysql, --noinput]
+    read_only: true
+    tmpfs: ["/tmp:rw,mode=1777,size=256m"]
+    shm_size: 256m
+    mem_limit: 768m
+    cpus: 1.0
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      incremental-test-db:
+        condition: service_healthy
+networks:
+  default:
+    internal: true

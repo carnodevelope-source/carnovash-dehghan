@@ -69,3 +69,31 @@ class EncryptedIncrementalArchiveTests(TestCase):
         another.mkdir(mode=0o700)
         with self.assertRaises(Exception):
             read_delta_archive(archive, 3, another)
+
+    def test_authenticated_bad_gzip_trailer_is_rejected(self):
+        import io
+        from .archive import DecryptReader, EncryptWriter
+        archive = self.root / 'delta.cvb'
+        create_delta_archive(archive, 3, [row(1, 'old')], [row(1, 'new')], {}, {}, self.open_file)
+        with archive.open('rb') as source:
+            payload = bytearray(io.BufferedReader(DecryptReader(source)).read())
+        payload[-8] ^= 1  # Bad CRC, re-encrypted with otherwise valid GCM frames.
+        with archive.open('wb') as output:
+            writer = EncryptWriter(output, lambda: None)
+            writer.write(payload)
+            writer.finish()
+        destination = self.root / 'bad-trailer'
+        destination.mkdir(mode=0o700)
+        with self.assertRaises(Exception):
+            read_delta_archive(archive, 3, destination)
+
+    def test_symlink_and_hardlink_keys_are_rejected(self):
+        from .archive import private_bytes
+        symlink = self.root / 'linked-key'
+        symlink.symlink_to(self.key)
+        with self.assertRaises(SnapshotError):
+            private_bytes(symlink)
+        hardlink = self.root / 'hard-key'
+        os.link(self.key, hardlink)
+        with self.assertRaises(SnapshotError):
+            private_bytes(hardlink)
