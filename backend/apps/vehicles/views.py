@@ -318,18 +318,6 @@ def _find_latest_vehicle_by_plate(tenant, *, plate_number='', plate_left='', pla
     if found:
         return found, parts
 
-    # When letter was wrong/ambiguous but digits uniquely match history, still autofill.
-    if parts['plate_mid'] and parts['plate_left'] and parts['plate_right']:
-        digit_hits = list(
-            queryset.filter(
-                _q_digit_field('plate_left', parts['plate_left']),
-                _q_digit_field('plate_mid', parts['plate_mid']),
-                _q_digit_field('plate_right', parts['plate_right']),
-            ).order_by('-check_in_at')[:2]
-        )
-        if len(digit_hits) == 1:
-            return digit_hits[0], parts
-
     return None, parts
 
 

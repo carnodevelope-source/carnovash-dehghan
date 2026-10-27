@@ -201,7 +201,7 @@ def license_status_for_tenant(tenant, now=None):
     # Skip cache when caller passes an explicit clock (tests / grace math).
     if use_cache:
         cached = cache.get(cache_key)
-        if cached is not None:
+        if cached is not None and (not cached.get('trial_active') or tenant.is_trial_active()):
             return cached
     now = now or timezone.now()
 

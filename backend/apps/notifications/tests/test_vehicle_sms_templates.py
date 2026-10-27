@@ -64,7 +64,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
         self.assertIn('شست‌وشوی ویژه : ۷۵۰،۰۰۰ تومان', message)
         self.assertIn('واکس بدنه : ۵۰۰،۰۰۰ تومان', message)
         self.assertIn('۱،۲۵۰،۰۰۰ تومان', message)
-        self.assertLess(message.index('پلاک: 67 - 345 ب 22'), message.index('شست‌وشوی ویژه'))
+        self.assertLess(message.index('پلاک: \u2066\u202d67 - 345 ب 22\u202c\u2069'), message.index('شست‌وشوی ویژه'))
 
     def test_assignment_sms_renders_car_model_aliases(self):
         tenant = SimpleNamespace(name='کارواش یک')
@@ -123,7 +123,7 @@ class VehicleSmsTemplateTests(SimpleTestCase):
 
         message, _context = build_vehicle_assignment_sms(settings_obj, vehicle)
 
-        self.assertIn('پلاک: 54 - 377 ص 22', message)
+        self.assertIn('پلاک: \u2066\u202d54 - 377 ص 22\u202c\u2069', message)
         self.assertIn('شماره پذیرش: ۱۰۰۰', message)
         self.assertIn('شست‌وشوی کامل', message)
         self.assertNotIn('شست‌وشوی کامل: ۴۰۰،۰۰۰ تومان', message)

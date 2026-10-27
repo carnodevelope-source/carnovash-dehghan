@@ -34,9 +34,9 @@ class SmsCostByCharacterTests(SimpleTestCase):
         self.assertEqual(sms_cost_for_text(body), Decimal('370'))
 
     def test_long_persian_style_message_matches_five_parts(self):
-        # Melipayamak sample: 282 billable chars → 5 parts (1*70 then 67s)
+        # RTL base-direction mark is a real transmitted and billable character.
         body = 'ب' * (282 - len('\nلغو11'))
-        self.assertEqual(len(sms_billable_text(body)), 282)
+        self.assertEqual(len(sms_billable_text(body)), 283)
         self.assertEqual(sms_segments_for_text(body), 5)
         self.assertEqual(sms_cost_for_text(body), Decimal('925'))
 
@@ -49,4 +49,5 @@ class SmsCostByCharacterTests(SimpleTestCase):
 
     def test_existing_cancel_footer_is_not_duplicated(self):
         body = 'پیام تست\nلغو11'
-        self.assertEqual(sms_billable_text(body), body)
+        self.assertEqual(sms_billable_text(body), '\u200fپیام تست\n\u200fلغو11')
+        self.assertEqual(sms_billable_text(body).count('لغو11'), 1)

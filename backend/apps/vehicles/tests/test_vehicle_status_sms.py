@@ -472,6 +472,12 @@ class VehicleStatusSmsTests(APITestCase):
             next_discount_percent=Decimal('4.00'),
             visit_count=8,
         )
+        # This test checks discount arithmetic, so pin this order's agreed 4%
+        # explicitly; checkout intentionally ignores later profile changes.
+        self.vehicle.loyalty_score_snapshot = Decimal('4.0')
+        self.vehicle.loyalty_visit_count_snapshot = 8
+        self.vehicle.loyalty_discount_percent_snapshot = Decimal('4.00')
+        self.vehicle.save(update_fields=['loyalty_score_snapshot', 'loyalty_visit_count_snapshot', 'loyalty_discount_percent_snapshot'])
         self.job.manual_discount_total = Decimal('20000')
         self.job.save(update_fields=['manual_discount_total', 'updated_at'])
         VehicleJobService.objects.create(

@@ -47,10 +47,10 @@ class LoyaltyRebuildTests(TestCase):
         self.tenant = CarWash.objects.create(name='Rebuild Wash', slug='loyalty-rebuild')
 
     def _plate(self, index):
-        """Distinct in every component, so lookup variants cannot match another case."""
-        left = f'{10 + index:02d}'
+        """Valid component widths; the unique middle number isolates every case."""
+        left = f'{10 + index % 80:02d}'
         mid = f'{100 + index:03d}'
-        right = f'{20 + index:02d}'
+        right = f'{20 + index % 80:02d}'
         return {
             'plate_left': left,
             'plate_letter': 'A',

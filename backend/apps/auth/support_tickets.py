@@ -18,7 +18,7 @@ _HQ_TICKET_SMS_CACHE_TTL_SECONDS = 60 * 60 * 24
 
 
 def calculate_wallet_card_deposit_amounts(gross_amount):
-    """Split a card-to-card deposit into gross, 10% tax, and net wallet credit."""
+    """Split a card-to-card deposit into gross, the configured tax, and net wallet credit."""
     gross = Decimal(str(gross_amount or 0))
     if gross <= 0:
         zero = Decimal('0')

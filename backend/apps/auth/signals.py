@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from django.db import transaction
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
-from apps.auth.models import CarWashFeaturePurchase, SupportTicket, SupportTicketMessage
+from apps.auth.models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketMessage
 from apps.live import publish_live_event
 
 
@@ -65,3 +65,14 @@ def publish_feature_purchase_event(sender, instance: CarWashFeaturePurchase, cre
             'is_active': instance.is_active,
         },
     )
+
+
+@receiver(post_save, sender=CarWash)
+@receiver(post_delete, sender=CarWash)
+@receiver(post_save, sender=CarWashFeaturePurchase)
+@receiver(post_delete, sender=CarWashFeaturePurchase)
+def invalidate_tenant_access(sender, instance, **kwargs):
+    from apps.payments.views import invalidate_license_status_cache
+    tenant_id = instance.pk if sender is CarWash else instance.tenant_id
+    invalidate_license_status_cache(tenant_id)
+    transaction.on_commit(lambda: invalidate_license_status_cache(tenant_id))

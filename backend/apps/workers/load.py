@@ -187,9 +187,6 @@ def free_stale_worker_holds(tenant, *, force=False):
 
     tenant_id = _tenant_id(tenant)
     cache_key = f'worker-stale-hold-sweep:{tenant_id}'
-    if not force and cache.get(cache_key):
-        return 0
-
     day_start = _local_day_start()
     stale_filter = {
         'tenant': tenant,

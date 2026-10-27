@@ -274,6 +274,8 @@ def _plate_sms_components(vehicle):
 
 
 def refresh_vehicle_for_sms(vehicle):
+    if not isinstance(vehicle, VehicleEntry):
+        return vehicle
     vehicle_id = getattr(vehicle, 'pk', None) or getattr(vehicle, 'id', None)
     if not vehicle_id:
         return vehicle
