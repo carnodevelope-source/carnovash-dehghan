@@ -34,7 +34,7 @@ def execute_tenant(tenant_id, now=None):
     if plan.action == 'skip':
         return None
     if plan.action == 'full':
-        return backup_tenant(tenant_id, scheduled=False)
+        return backup_tenant(tenant_id, scheduled=False, preserve_chains=True)
     if base is None:
         raise SnapshotError('missing_full_base')
     # chain_service performs guarded encryption, full restore verification and

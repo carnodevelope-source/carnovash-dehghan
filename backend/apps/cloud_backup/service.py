@@ -169,7 +169,7 @@ def due(tenant_id):
     return True
 
 
-def backup_tenant(tenant_id, *, scheduled=False):
+def backup_tenant(tenant_id, *, scheduled=False, preserve_chains=False):
     tenant_id = int(tenant_id)
     if not eligible(tenant_id):
         return None
@@ -250,7 +250,7 @@ def backup_tenant(tenant_id, *, scheduled=False):
                 versions = sorted(directory.glob('*.cvb'), key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
                 keep = max(2, settings.CLOUD_BACKUP_KEEP_VERSIONS)
                 cutoff = (timezone.now() - timedelta(days=7)).timestamp()
-                for old in versions[keep:]:
+                for old in ([] if preserve_chains else versions[keep:]):
                     if old.stat().st_mtime < cutoff and eligible(tenant_id):
                         write_guard()
                         old.unlink()

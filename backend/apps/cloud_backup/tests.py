@@ -487,3 +487,16 @@ class CloudBackupTests(TransactionTestCase):
         self.assertEqual(selected_base.pk, first.pk)
         self.assertEqual([item.pk for item in deltas], [second.pk])
         self.assertTrue((self.disk / f'tenant-{self.a.pk}' / second.archive_name).exists())
+
+    def test_scheduled_full_preserves_older_chain_archives(self):
+        from .scheduled_chain import execute_tenant
+        from datetime import timedelta
+        from unittest.mock import patch
+        first = backup_tenant(self.a.pk)
+        self.assertEqual(first.status, 'success')
+        old_path = self.archive(first)
+        with patch('apps.cloud_backup.service.settings.CLOUD_BACKUP_KEEP_VERSIONS', 2), patch('apps.cloud_backup.service.timezone.now', return_value=first.finished_at + timedelta(days=45)):
+            with patch('apps.cloud_backup.service.eligible', return_value=True):
+                for _ in range(3):
+                    self.assertEqual(backup_tenant(self.a.pk, preserve_chains=True).status, 'success')
+        self.assertTrue(old_path.exists(), 'A full chain base must not be pruned by legacy retention')
