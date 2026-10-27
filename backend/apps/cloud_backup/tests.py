@@ -465,3 +465,25 @@ class CloudBackupTests(TransactionTestCase):
         fixture = recover_chain(self.archive(first), [archive], self.a.pk, result)
         self.assertTrue(any(row['model'] == 'cw_auth.supportticket' and row['fields'].get('subject') == 'Changed after full' for row in fixture))
         self.assertEqual((result / 'media/next.txt').read_bytes(), b'NEXT MEDIA')
+
+    def test_scheduled_chain_tracks_incremental_parent_and_base(self):
+        from .scheduled_chain import execute_tenant, plan_tenant
+        from .chain_history import latest_chain
+        from datetime import timedelta
+        first = backup_tenant(self.a.pk)
+        self.assertEqual(first.status, 'success', first.error_code)
+        self.ticket.subject = 'scheduled next day'
+        self.ticket.save(update_fields=['subject'])
+        next_day = (first.finished_at or first.started_at) + timedelta(days=1)
+        plan, base, _ = plan_tenant(self.a.pk, next_day)
+        self.assertEqual(plan.action, 'incremental')
+        self.assertTrue(self.archive(first).is_file(), (first.archive_name, str(self.archive(first))))
+        self.assertEqual(base.archive_name, first.archive_name)
+        second = execute_tenant(self.a.pk, next_day)
+        self.assertEqual(second.backup_kind, 'incremental')
+        self.assertEqual(second.parent_run_id, first.pk)
+        self.assertEqual(second.base_run_id, first.pk)
+        selected_base, deltas = latest_chain(self.a.pk)
+        self.assertEqual(selected_base.pk, first.pk)
+        self.assertEqual([item.pk for item in deltas], [second.pk])
+        self.assertTrue((self.disk / f'tenant-{self.a.pk}' / second.archive_name).exists())

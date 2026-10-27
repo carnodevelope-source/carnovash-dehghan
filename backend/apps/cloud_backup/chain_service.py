@@ -16,7 +16,7 @@ from .archive import verify
 from .chain_recovery import recover_chain
 from .incremental_archive import create_delta_archive
 from .snapshot import SnapshotError, collect, open_media
-from .service import eligible, pinned_root, pinned_tenant, tenant_lock, write_guard, sync_directory, consistent_read
+from . import service
 
 
 def media_manifest(files):
@@ -37,12 +37,12 @@ def create_verified_increment(tenant_id, full_name, previous_increment_names=())
     Caller is responsible for durable run history and daily scheduling.
     """
     tenant_id = int(tenant_id)
-    if not eligible(tenant_id):
+    if not service.eligible(tenant_id):
         raise SnapshotError('subscription_inactive')
-    with pinned_root() as root:
+    with service.pinned_root() as root:
         directory = root / f'tenant-{tenant_id}'
-        with pinned_tenant(directory) as directory, tenant_lock(directory):
-            write_guard()
+        with service.pinned_tenant(directory) as directory, service.tenant_lock(directory):
+            service.write_guard()
             names = [full_name, *previous_increment_names]
             if not names or any(not isinstance(name, str) or Path(name).name != name or not name.endswith('.cvb') for name in names):
                 raise SnapshotError('invalid_chain')
@@ -64,7 +64,7 @@ def create_verified_increment(tenant_id, full_name, previous_increment_names=())
                                 while chunk := stream.read(1024 * 1024):
                                     digest.update(chunk)
                             previous_media[file.relative_to(media_root).as_posix()] = digest.hexdigest()
-                with consistent_read():
+                with service.consistent_read():
                     fixture_bytes, files = collect(tenant_id)
                 current_fixture = json.loads(fixture_bytes)
                 current_media = media_manifest(files)
@@ -72,17 +72,17 @@ def create_verified_increment(tenant_id, full_name, previous_increment_names=())
                 partial = directory / (name + '.partial')
                 try:
                     create_delta_archive(partial, tenant_id, previous_fixture, current_fixture,
-                                         previous_media, current_media, open_media, write_guard)
+                                         previous_media, current_media, open_media, service.write_guard)
                     candidate = Path(temporary) / 'candidate'
                     recovered = recover_chain(paths[0], [*paths[1:], partial], tenant_id, candidate)
                     if recovered != current_fixture:
                         raise SnapshotError('checksum_mismatch')
-                    if not eligible(tenant_id):
+                    if not service.eligible(tenant_id):
                         raise SnapshotError('subscription_inactive')
-                    write_guard()
+                    service.write_guard()
                     final = directory / name
                     os.replace(partial, final)
-                    sync_directory(directory)
+                    service.sync_directory(directory)
                     return name
                 finally:
                     if partial.exists():
