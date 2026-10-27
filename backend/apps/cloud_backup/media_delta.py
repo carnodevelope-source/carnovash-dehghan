@@ -4,7 +4,14 @@ Digests must come from verified encrypted archives or a guarded media scan;
 this module never trusts filenames or copies bytes on its own.
 """
 import re
-from .snapshot import safe_relative
+from pathlib import PurePosixPath
+
+
+def safe_relative(name):
+    path = PurePosixPath(name)
+    if not name or path.is_absolute() or ".." in path.parts or "\\" in name or ":" in name or "\x00" in name or path.as_posix() != name or name == ".":
+        raise ValueError("Unsafe media path")
+    return name
 
 SHA256 = re.compile(r'^[0-9a-f]{64}$')
 
