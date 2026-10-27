@@ -4,7 +4,7 @@
 services:
   cloud-backup:
     image: ${CLOUD_BACKUP_INCREMENTAL_IMAGE:?reviewed incremental image is required}
-    command: ["run_cloud_backup_chains", "--execute", "--loop"]
+    command: ["run_cloud_backup_chains", "--execute", "--loop", "--retention"]
     environment:
       CLOUD_BACKUP_MAX_ROWS: ${CLOUD_BACKUP_INCREMENTAL_MAX_ROWS:-100000}
       CLOUD_BACKUP_MAX_JSON_BYTES: ${CLOUD_BACKUP_INCREMENTAL_MAX_JSON_BYTES:-268435456}

@@ -39,6 +39,7 @@ class Command(BaseCommand):
         parser.add_argument('--tenant', type=int)
         parser.add_argument('--execute', action='store_true')
         parser.add_argument('--loop', action='store_true')
+        parser.add_argument('--retention', action='store_true', help='Log, verify and apply approved 30-day chain retention')
 
     def handle(self, *args, **options):
         if options['loop'] and not options['execute']:
@@ -78,6 +79,9 @@ class Command(BaseCommand):
                 if run:
                     self.stdout.write(f'tenant={tenant_id} status={run.status} code={run.error_code}')
                     failed |= run.status != 'success'
+                    if run.status == 'success' and options.get('retention'):
+                        from apps.cloud_backup.automatic_retention import maintain_run
+                        failed |= not maintain_run(run,output=self.stdout.write)
             except Exception:
                 failed = True
                 self.stderr.write(f'tenant={tenant_id} code=backup_failed')

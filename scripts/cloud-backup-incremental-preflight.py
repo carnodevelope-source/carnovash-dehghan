@@ -37,7 +37,7 @@ with connection.cursor() as cursor:
         fields={row[0] for row in cursor.fetchall()}
     finally:
         cursor.execute('ROLLBACK')
-required={'backup_kind','base_run_id','parent_run_id','scheduled_for'}
+required={'backup_kind','base_run_id','parent_run_id','scheduled_for','retention_status','retention_error_code','retention_checked_at'}
 from django.conf import settings
 media=os.stat(settings.MEDIA_ROOT)
 print(json.dumps({'media_identity':[media.st_dev,media.st_ino],'source_policy_deployed':default_storage.__class__.__module__=='config.media_storage',
