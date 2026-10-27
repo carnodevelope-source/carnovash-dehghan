@@ -1,0 +1,12 @@
+# DRAFT opt-in override. Never apply without release approval and rehearsal.
+# Combine AFTER docker-compose.cloud-backup.yml and the reviewed server files.
+# The default production backup command is deliberately unchanged.
+services:
+  cloud-backup:
+    command: ["run_cloud_backup_chains", "--execute", "--loop"]
+    shm_size: 256m
+    memswap_limit: 1g
+    ulimits:
+      core:
+        soft: 0
+        hard: 0

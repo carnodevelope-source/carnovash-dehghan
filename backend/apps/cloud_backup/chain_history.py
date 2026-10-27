@@ -17,6 +17,8 @@ def latest_chain(tenant_id):
     runs = successful_runs(tenant_id)
     if not runs:
         return None, []
+    if len({run.archive_name for run in runs}) != len(runs):
+        raise SnapshotError('invalid_chain_history')
     last = runs[-1]
     if last.backup_kind == 'full':
         return last, []

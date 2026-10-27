@@ -51,6 +51,8 @@ def _inspect(tenant_id, directory, now):
             if run.recovery_status != 'integrity_verified':
                 raise SnapshotError('unverified_archive')
             active.append(run)
+    if len({run.archive_name for run in active}) != len(active):
+        raise SnapshotError('invalid_chain_history')
     observed = {p.name for p in directory.glob('*.cvb')}
     if observed != {run.archive_name for run in active}:
         raise SnapshotError('unmanaged_archive')

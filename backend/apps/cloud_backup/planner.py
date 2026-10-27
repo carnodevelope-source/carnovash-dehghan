@@ -23,6 +23,8 @@ def plan_backup(now, *, eligible, last_success, last_full, chain_healthy):
     day = local_day(now)
     if not eligible:
         return Plan('skip', 'subscription_inactive')
+    if any(value is not None and local_day(value) > day for value in (last_success, last_full)):
+        return Plan('full', 'future_history')
     if last_full is None:
         return Plan('full', 'no_verified_base')
     if not chain_healthy:

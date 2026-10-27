@@ -7,6 +7,7 @@ services:
     command: ["--innodb-buffer-pool-size=64M", "--mysqlx=0"]
     tmpfs: ["/var/lib/mysql:rw,size=768m"]
     mem_limit: 1g
+    memswap_limit: 1g
     cpus: 1.0
     healthcheck:
       test: [CMD, mysqladmin, ping, -h, 127.0.0.1, --silent]
@@ -32,6 +33,7 @@ services:
     tmpfs: ["/tmp:rw,mode=1777,size=256m"]
     shm_size: 256m
     mem_limit: 768m
+    memswap_limit: 768m
     cpus: 1.0
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

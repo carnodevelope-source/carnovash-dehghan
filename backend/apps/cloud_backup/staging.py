@@ -12,6 +12,20 @@ from pathlib import Path
 from .snapshot import SnapshotError
 
 
+def swap_disabled():
+    # In a private cgroup namespace, swap.max=0 also prevents tmpfs pages from
+    # reaching host swap. Host swap policy is never changed by this worker.
+    try:
+        if Path('/sys/fs/cgroup/memory.swap.max').read_text().strip() == '0':
+            return True
+    except OSError:
+        pass
+    try:
+        return len(Path('/proc/swaps').read_text().splitlines()) <= 1
+    except OSError:
+        return False
+
+
 def staging_root():
     root = Path('/dev/shm')
     records = Path('/proc/self/mountinfo').read_text().splitlines()
@@ -21,6 +35,8 @@ def staging_root():
         for parts in (line.split() for line in records)
     ):
         raise SnapshotError('unsafe_staging_filesystem')
+    if not swap_disabled():
+        raise SnapshotError('unsafe_staging_swap')
     return root
 
 

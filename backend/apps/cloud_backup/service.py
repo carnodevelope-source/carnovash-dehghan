@@ -278,15 +278,9 @@ def _backup_tenant_locked(tenant_id, *, scheduled=False, preserve_chains=False, 
                 run.verified_at = timezone.now()
                 run.recovery_status = 'integrity_verified'
                 run.status = 'success'
-                # Keep at least two versions and seven days. No cleanup for inactive
-                # tenants, and never delete data from the original media/database.
-                versions = sorted(directory.glob('*.cvb'), key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
-                keep = max(2, settings.CLOUD_BACKUP_KEEP_VERSIONS)
-                cutoff = (timezone.now() - timedelta(days=7)).timestamp()
-                for old in ([] if preserve_chains else versions[keep:]):
-                    if old.stat().st_mtime < cutoff and eligible(tenant_id):
-                        write_guard()
-                        old.unlink()
+                # All deletion belongs to verified, reviewed chain retention.
+                # Even callers using the legacy command must preserve chain bases.
+                # preserve_chains remains accepted for backwards compatibility.
                 run.retained_bytes = sum(p.stat().st_size for p in directory.glob('*.cvb'))
     except Exception as exc:
         if isinstance(exc, SnapshotError) and str(exc) == 'already_running':

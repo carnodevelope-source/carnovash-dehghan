@@ -350,3 +350,38 @@ class ChainLifecycleTests(TransactionTestCase):
         first = self.first()
         second = execute_tenant(self.a.pk, first.started_at + timedelta(days=1))
         self.assertEqual((second.status, second.backup_kind), ('success', 'incremental'), second.error_code)
+
+    def test_legacy_full_writer_cannot_prune_an_incremental_base(self):
+        first = self.first()
+        second = execute_tenant(self.a.pk, first.started_at + timedelta(days=1))
+        for run in (first, second):
+            os.utime(self.archive(run), (1, 1))
+        with self.settings(CLOUD_BACKUP_KEEP_VERSIONS=2):
+            for _ in range(3):
+                self.assertEqual(service.backup_tenant(self.a.pk).status, 'success')
+        self.assertTrue(self.archive(first).exists())
+        self.assertTrue(self.archive(second).exists())
+
+    def test_future_history_cannot_suppress_backup(self):
+        from .schedule import local_day
+        first = self.first()
+        BackupRun.objects.filter(pk=first.pk).update(scheduled_for=local_day(first.started_at) + timedelta(days=5))
+        self.assertTrue(should_attempt(self.a.pk, first.started_at))
+        second = execute_tenant(self.a.pk, first.started_at)
+        self.assertEqual((second.status, second.backup_kind), ('success', 'full'))
+
+    def test_swap_capable_staging_is_rejected(self):
+        with patch('apps.cloud_backup.staging.swap_disabled', return_value=False):
+            with self.assertRaisesRegex(SnapshotError, 'unsafe_staging_swap'):
+                with private_staging(self.a.pk):
+                    self.fail('swap-capable plaintext staging accepted')
+
+    def test_duplicate_archive_history_cannot_delete_a_retained_file(self):
+        from .retention_service import retain_tenant
+        runs, now = self.old_chains()
+        self.archive(runs[0]).unlink()  # Scratch-only setup of ambiguous history.
+        BackupRun.objects.filter(pk=runs[0].pk).update(archive_name=runs[-1].archive_name,
+            sha256=runs[-1].sha256, size_bytes=runs[-1].size_bytes)
+        with self.assertRaisesRegex(SnapshotError, 'invalid_chain_history'):
+            retain_tenant(self.a.pk, now=now)
+        self.assertTrue(self.archive(runs[-1]).exists())

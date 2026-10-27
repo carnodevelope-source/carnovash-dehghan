@@ -208,13 +208,13 @@ class CloudBackupTests(TransactionTestCase):
         self.assertEqual(run.error_code, 'checksum_mismatch')
         self.assertFalse(list(self.disk.rglob('*.cvb')))
 
-    def test_retention_keeps_two_and_never_touches_source(self):
+    def test_full_writer_never_prunes_unreviewed_archives_or_source(self):
         with self.settings(CLOUD_BACKUP_KEEP_VERSIONS=2):
             for _ in range(3):
                 run = backup_tenant(self.a.pk)
                 self.assertEqual(run.status, 'success', run.error_code)
                 os.utime(self.archive(run), (1, 1))
-            self.assertEqual(len(list(self.disk.rglob('*.cvb'))), 2)
+            self.assertEqual(len(list(self.disk.rglob('*.cvb'))), 3)
             self.assertTrue((self.media / 'a.txt').exists())
 
     def test_host_mount_record_is_mandatory(self):

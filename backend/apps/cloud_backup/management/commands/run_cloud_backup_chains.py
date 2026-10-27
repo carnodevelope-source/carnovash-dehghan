@@ -17,8 +17,12 @@ def should_attempt(tenant_id, now):
         return True
     success = BackupRun.objects.filter(tenant_id=tenant_id, status='success',
         recovery_status='integrity_verified').order_by('-started_at', '-pk').first()
-    if success and (success.scheduled_for or local_day(success.started_at)) >= day:
-        return False
+    if success:
+        recorded_day = success.scheduled_for or local_day(success.started_at)
+        if recorded_day > day:
+            return True  # Corrupt/future history must not suppress jobs indefinitely.
+        if recorded_day == day:
+            return False
     if latest.status in {'running', 'failed'}:
         failures = BackupRun.objects.filter(tenant_id=tenant_id, status='failed')
         if success:
