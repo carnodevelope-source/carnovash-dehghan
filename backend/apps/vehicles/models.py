@@ -1,8 +1,11 @@
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import models, router
 from django.utils import timezone
+
+from .tenant_protection import ERROR, TenantOwnershipMixin, TenantProtectedQuerySet
 
 from apps.realtime.transactions import TransactionalLiveModelMixin
 
@@ -15,7 +18,23 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
-class CustomerProfile(TimestampedModel):
+class CustomerProfile(TenantOwnershipMixin, TimestampedModel):
+    objects = TenantProtectedQuerySet.as_manager()
+
+    def validate_tenant_link(self, using=None, lock=False, update_fields=None):
+        using = using or router.db_for_write(type(self), instance=self)
+        if self.pk:
+            query = type(self).objects.using(using).filter(pk=self.pk)
+            if lock:
+                query = query.select_for_update()
+            previous = query.values('tenant_id').first()
+            if previous and previous['tenant_id'] != self.tenant_id:
+                raise ValidationError({'tenant': ERROR})
+
+    def clean(self):
+        super().clean()
+        self.validate_tenant_link()
+
     class Gender(models.TextChoices):
         MALE = 'male', 'Male'
         FEMALE = 'female', 'Female'
@@ -27,14 +46,20 @@ class CustomerProfile(TimestampedModel):
         null=True,
         blank=True,
     )
-    phone = models.CharField(max_length=20, unique=True, db_index=True)
+    phone = models.CharField(max_length=20, db_index=True)
     full_name = models.CharField(max_length=120, blank=True)
     gender = models.CharField(max_length=10, choices=Gender.choices, blank=True, default='')
     yearly_score = models.DecimalField(max_digits=3, decimal_places=1, default=0)
     score_year = models.PositiveSmallIntegerField(default=1400)
 
     class Meta:
+        base_manager_name = 'objects'
         ordering = ['-updated_at']
+        # NULL tenant rows are quarantined legacy/import data. They are never
+        # resolved or automatically claimed by operational vehicle registration.
+        constraints = [
+            models.UniqueConstraint(fields=['tenant', 'phone'], name='uniq_customer_phone_per_tenant'),
+        ]
 
     def __str__(self) -> str:
         return f'{self.phone} - {self.full_name or "Customer"}'
@@ -74,7 +99,35 @@ class PlateLoyaltyProfile(TimestampedModel):
         return self.plate_number
 
 
-class VehicleEntry(TransactionalLiveModelMixin, TimestampedModel):
+class VehicleEntry(TenantOwnershipMixin, TransactionalLiveModelMixin, TimestampedModel):
+    objects = TenantProtectedQuerySet.as_manager()
+
+    def validate_tenant_link(self, using=None, lock=False, update_fields=None):
+        using = using or router.db_for_write(type(self), instance=self)
+        customer_id = self.customer_id
+        if self.pk:
+            query = type(self).objects.using(using).filter(pk=self.pk)
+            if lock:
+                query = query.select_for_update()
+            previous = query.values('tenant_id', 'customer_id').first()
+            if previous and previous['tenant_id'] != self.tenant_id:
+                raise ValidationError({'tenant': ERROR})
+            if previous and update_fields is not None and not {'customer', 'customer_id'}.intersection(update_fields):
+                customer_id = previous['customer_id']
+        if customer_id:
+            if hasattr(customer_id, 'resolve_expression'):
+                raise ValidationError({'customer': ERROR})
+            query = CustomerProfile.objects.using(using).filter(pk=customer_id)
+            if lock:
+                query = query.select_for_update()
+            owner = query.values('tenant_id').first()
+            if not owner or self.tenant_id is None or owner['tenant_id'] != self.tenant_id:
+                raise ValidationError({'customer': ERROR})
+
+    def clean(self):
+        super().clean()
+        self.validate_tenant_link()
+
     class DriverGender(models.TextChoices):
         MALE = 'male', 'Male'
         FEMALE = 'female', 'Female'
@@ -185,6 +238,7 @@ class VehicleEntry(TransactionalLiveModelMixin, TimestampedModel):
     )
 
     class Meta:
+        base_manager_name = 'objects'
         ordering = ['-check_in_at']
         indexes = [
             models.Index(fields=['status', 'check_in_at']),
@@ -417,3 +471,28 @@ class VehicleJobProduct(models.Model):
                 fields=['vehicle_job', 'product'], name='uniq_vehicle_job_product'
             )
         ]
+
+
+class CustomerTenantRepairRun(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    plan_hash = models.CharField(max_length=64, unique=True)
+    encrypted_journal = models.TextField()
+    rolled_back = models.BooleanField(default=False)
+
+
+class CustomerTenantAuthorization(models.Model):
+    """Maintenance-only, connection-bound, exact-transition, one-use permission."""
+    created_at = models.DateTimeField(auto_now_add=True)
+    connection_id = models.PositiveBigIntegerField()
+    vehicle_id = models.PositiveBigIntegerField()
+    tenant_id = models.PositiveBigIntegerField(null=True)
+    from_customer_id = models.PositiveBigIntegerField(null=True)
+    to_customer_id = models.PositiveBigIntegerField()
+    repair_run_id = models.PositiveBigIntegerField()
+    plan_hash = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['connection_id', 'vehicle_id'], name='cw_authz_connection_vehicle')]
+        constraints = [models.UniqueConstraint(fields=['repair_run_id', 'vehicle_id'], name='cw_authz_run_vehicle')]

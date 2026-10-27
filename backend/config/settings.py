@@ -212,6 +212,7 @@ CLOUD_BACKUP_LEGACY_KEY_ID = config('CLOUD_BACKUP_LEGACY_KEY_ID', default='legac
 CLOUD_BACKUP_MAX_ROWS = config('CLOUD_BACKUP_MAX_ROWS', default=20000, cast=int)
 CLOUD_BACKUP_MAX_JSON_BYTES = config('CLOUD_BACKUP_MAX_JSON_BYTES', default=16777216, cast=int)
 CLOUD_BACKUP_MAX_FILES = config('CLOUD_BACKUP_MAX_FILES', default=50000, cast=int)
+CLOUD_BACKUP_MAX_FIELD_BYTES = config('CLOUD_BACKUP_MAX_FIELD_BYTES', default=1048576, cast=int)
 CLOUD_BACKUP_RECOVERY_ALIASES = _csv_config('CLOUD_BACKUP_RECOVERY_ALIASES')
 CLOUD_BACKUP_INTERVAL_SECONDS = config('CLOUD_BACKUP_INTERVAL_SECONDS', default=21600, cast=int)
 CLOUD_BACKUP_KEEP_VERSIONS = config('CLOUD_BACKUP_KEEP_VERSIONS', default=14, cast=int)
@@ -281,3 +282,6 @@ SMS_CHARS_PER_SEGMENT = config('SMS_CHARS_PER_SEGMENT', default=70, cast=int)
 SMS_PROVIDER_FOOTER = config('SMS_PROVIDER_FOOTER', default='\nلغو11')
 # Keep vehicle assign/release SMS off the request path so operator actions stay snappy.
 SMS_SEND_IN_BACKGROUND = config('SMS_SEND_IN_BACKGROUND', default=True, cast=bool)
+
+# Non-secret principal metadata; credentials are provisioned separately.
+CUSTOMER_TENANT_GUARD_APP_ACCOUNT = config('CUSTOMER_TENANT_GUARD_APP_ACCOUNT', default='')

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db.models import Q
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -305,6 +305,16 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         if isinstance(data, dict):
+            request = self.context.get('request')
+            tenant_id = getattr(getattr(request, 'user', None), 'tenant_id', None)
+            supplied = data.get('customer_id', data.get('customer'))
+            if supplied is not None:
+                try:
+                    valid = tenant_id is not None and CustomerProfile.objects.filter(pk=int(supplied), tenant_id=tenant_id).exists()
+                except (TypeError, ValueError, OverflowError):
+                    valid = False
+                if not valid:
+                    raise serializers.ValidationError({'customer': ['Invalid customer selection.']})
             mutable_data = data.copy()
             if 'ai_confidence' in mutable_data:
                 mutable_data['ai_confidence'] = self._normalize_ai_confidence(
@@ -1072,6 +1082,12 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         request = self.context.get('request')
         tenant = getattr(getattr(request, 'user', None), 'tenant', None)
+        if tenant is None or instance.tenant_id != tenant.pk:
+            raise serializers.ValidationError({'customer': ['مجموعه ثبت خودرو مشخص یا مجاز نیست.']})
+        if instance.customer_id and instance.customer.tenant_id != instance.tenant_id:
+            # Historical corruption must be reviewed, never silently relinked by
+            # an unrelated status/name update. No repair sweep is performed here.
+            raise serializers.ValidationError({'customer': ['ارتباط پرونده مشتری با مجموعه ناسازگار است؛ نیاز به بررسی مدیریتی دارد.']})
         self._discard_ai_audit_fields(validated_data)
         previous_status = instance.status
         initial = getattr(self, 'initial_data', {}) or {}
@@ -1136,7 +1152,7 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         driver_phone = self._normalize_phone(validated_data.get('driver_phone', instance.driver_phone))
         driver_name = (validated_data.get('driver_name', instance.driver_name) or '').strip()
-        if driver_phone:
+        if driver_phone or 'driver_phone' in validated_data:
             instance.customer = self._resolve_customer_profile(
                 phone=driver_phone,
                 full_name=driver_name,
@@ -1740,26 +1756,35 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
         return result
 
+    @transaction.atomic
     def _resolve_customer_profile(self, phone, full_name='', gender='', increment_visit=False, tenant=None):
         from apps.auth.sample_tenant import SAMPLE_MASKED_NAME, SAMPLE_MASKED_PHONE, is_sample_tenant
 
         phone_value = self._normalize_phone(phone)
         if not phone_value:
             return None
+        if tenant is None or tenant.pk is None:
+            raise serializers.ValidationError({'customer': ['برای پرونده مشتری باید مجموعه مشخص باشد.']})
         normalized_gender = str(gender or '').strip().lower()
         if normalized_gender not in {'male', 'female'}:
             normalized_gender = ''
 
-        customer = CustomerProfile.objects.filter(phone=phone_value).first()
-        if not customer:
-            customer = CustomerProfile.objects.create(
-                phone=phone_value,
-                tenant=tenant,
-                full_name=(full_name or '').strip(),
-                gender=normalized_gender,
-                yearly_score=Decimal('0'),
-                score_year=timezone.localtime().year,
-            )
+        lookup = {'tenant': tenant, 'phone': phone_value}
+        try:
+            # get_or_create resolves the unique-index insertion race. Lock the
+            # selected row so concurrent visits do not lose score increments.
+            with transaction.atomic():
+                customer, _created = CustomerProfile.objects.select_for_update().get_or_create(
+                    **lookup,
+                    defaults={
+                        'full_name': (full_name or '').strip(), 'gender': normalized_gender,
+                        'yearly_score': Decimal('0'), 'score_year': timezone.localtime().year,
+                    },
+                )
+        except IntegrityError:
+            customer = CustomerProfile.objects.select_for_update().filter(**lookup).first()
+            if customer is None:
+                raise serializers.ValidationError({'customer': ['ثبت پرونده مشتری انجام نشد؛ دوباره تلاش کنید.']}) from None
 
         update_fields = ['updated_at']
         display_name = (full_name or '').strip()
@@ -1768,9 +1793,6 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
             is_sample_tenant(tenant)
             and customer.phone == SAMPLE_MASKED_PHONE
         )
-        if tenant and customer.tenant_id is None:
-            customer.tenant = tenant
-            update_fields.append('tenant')
         if (
             display_name
             and display_name != (customer.full_name or '').strip()

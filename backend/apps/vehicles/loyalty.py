@@ -412,13 +412,14 @@ def sync_plate_loyalty(profile, *, discount_percent_per_half_star=0, now=None):
 
 
 def rebuild_customer_score(customer, *, now=None):
-    if not customer:
-        return None
+    if not customer or customer.tenant_id is None:
+        return customer
     from .models import VehicleEntry
 
     current_year = timezone.localtime(now or timezone.now()).year
     visits_count = VehicleEntry.objects.filter(
         customer=customer,
+        tenant_id=customer.tenant_id,
         check_in_at__year=current_year,
     ).exclude(status=VehicleEntry.Status.CANCELLED).count()
     customer.score_year = current_year

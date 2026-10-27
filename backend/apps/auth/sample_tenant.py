@@ -471,19 +471,18 @@ def create_or_refresh_sample_carwash(*, source=None, force=False, stdout=None):
         wallet_map[old_w.id] = new_w
 
     masked_customer, _created = CustomerProfile.objects.get_or_create(
+        tenant=sample,
         phone=SAMPLE_MASKED_PHONE,
         defaults={
-            'tenant': sample,
             'full_name': SAMPLE_MASKED_NAME,
             'gender': '',
             'yearly_score': Decimal('0'),
             'score_year': timezone.localtime().year,
         },
     )
-    if masked_customer.tenant_id != sample.id or masked_customer.full_name != SAMPLE_MASKED_NAME:
-        masked_customer.tenant = sample
+    if masked_customer.full_name != SAMPLE_MASKED_NAME:
         masked_customer.full_name = SAMPLE_MASKED_NAME
-        masked_customer.save(update_fields=['tenant', 'full_name', 'updated_at'])
+        masked_customer.save(update_fields=['full_name', 'updated_at'])
 
     for old_lp in PlateLoyaltyProfile.objects.filter(tenant=source).order_by('id'):
         _copy_row(old_lp, tenant=sample).save()

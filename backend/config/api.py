@@ -2,6 +2,11 @@ from rest_framework.views import exception_handler as drf_exception_handler
 
 
 def exception_handler(exc, context):
+    from django.db import DatabaseError
+    from rest_framework.exceptions import ValidationError
+    from apps.vehicles.mysql_guards import ERROR
+    if isinstance(exc, DatabaseError) and exc.args == (1644, ERROR):
+        exc = ValidationError({'customer': [ERROR]})
     response = drf_exception_handler(exc, context)
     if response is None:
         return response

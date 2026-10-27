@@ -8,6 +8,7 @@ import struct
 import tarfile
 import tempfile
 from contextlib import ExitStack, contextmanager, nullcontext
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 from unittest import skipUnless
@@ -17,9 +18,10 @@ from django.core.management import call_command
 from django.test import TransactionTestCase
 from django.utils import timezone
 
-from apps.auth.models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketAttachment, User
+from apps.auth.models import CarWash, CarWashFeaturePurchase, SupportTicket, SupportTicketAttachment, SupportTicketMessage, User
 from apps.inventory.models import ExpenseEntry
-from apps.vehicles.models import VehicleEntry
+from apps.vehicles.models import CustomerProfile, VehicleEntry
+from apps.vehicles.tests.guard_support import seed_legacy_vehicles
 from apps.subscriptions.models import PlatformProject, ServiceProduct, ServicePlan, ServiceSubscription, ServicePeriod
 from .archive import restore_fixture, verify, EncryptWriter, DecryptReader, archive_cipher, MAGIC, CHUNK
 from .models import BackupRun
@@ -500,3 +502,98 @@ class CloudBackupTests(TransactionTestCase):
                 for _ in range(3):
                     self.assertEqual(backup_tenant(self.a.pk, preserve_chains=True).status, 'success')
         self.assertTrue(old_path.exists(), 'A full chain base must not be pruned by legacy retention')
+    def test_customer_foreign_tenant_relation_still_blocks_backup(self):
+        customer = CustomerProfile.objects.create(tenant=self.b, phone='09123330000')
+        from django.db import models
+        seed_legacy_vehicles([
+            VehicleEntry(tenant=self.a, customer=customer, plate_number='mismatched')
+        ])
+        run = backup_tenant(self.a.pk)
+        self.assertEqual(run.error_code, 'foreign_tenant_relation')
+        self.assertFalse(list(self.disk.rglob('*.cvb')))
+
+    def test_hq_support_reference_is_redacted_even_when_assigned_to_other_tenant(self):
+        hq = User.objects.create_user(username='HQ-PRIVATE-IDENTITY', tenant=self.b,
+                                      platform_role='hq_support', phone='09129990000')
+        self.ticket.assigned_to = hq
+        self.ticket.save()
+        SupportTicketMessage.objects.create(ticket=self.ticket, sender=hq, body='Tenant-specific answer')
+        fixture, _ = collect(self.a.pk)
+        self.assertNotIn(hq.username.encode(), fixture)
+        self.assertNotIn(hq.phone.encode(), fixture)
+        rows = json.loads(fixture)
+        self.assertIsNone(next(r for r in rows if r['model'] == 'cw_auth.supportticket')['fields']['assigned_to'])
+        self.assertIsNone(next(r for r in rows if r['model'] == 'cw_auth.supportticketmessage')['fields']['sender'])
+        fixture_b, _ = collect(self.b.pk)
+        self.assertNotIn(hq.username.encode(), fixture_b)
+
+    def test_limit_diagnosis_reports_only_aggregate_metadata_without_writing(self):
+        output = io.StringIO()
+        with self.settings(CLOUD_BACKUP_MAX_ROWS=1):
+            call_command('diagnose_cloud_backup', tenant=self.a.pk, stdout=output)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result['code'], 'snapshot_limit_exceeded')
+        self.assertEqual(result['diagnostics']['metric'], 'rows')
+        self.assertGreater(result['diagnostics']['observed'], result['diagnostics']['limit'])
+        for private in ('A private', 'A PRIVATE MEDIA', self.user.username):
+            self.assertNotIn(private, output.getvalue())
+        self.assertFalse(BackupRun.objects.exists())
+        self.assertFalse(list(self.disk.iterdir()))
+
+    def test_field_limit_counts_utf8_bytes_without_exposing_value(self):
+        self.ticket.subject = 'آ' * 100
+        self.ticket.save()
+        with self.settings(CLOUD_BACKUP_MAX_FIELD_BYTES=150):
+            with self.assertRaises(SnapshotError) as error:
+                collect(self.a.pk)
+        self.assertEqual(error.exception.diagnostics['observed'], 200)
+        self.assertEqual(error.exception.diagnostics['limit'], 150)
+        self.assertNotIn('آ', str(error.exception.diagnostics))
+
+    @skipUnless('recovery' in settings.DATABASES, 'Requires isolated recovery database')
+    def test_same_phone_two_tenants_backup_and_restore_independently(self):
+        CarWashFeaturePurchase.objects.create(tenant=self.b, feature_key='cloud_storage', is_active=True)
+        scores = {self.a.pk: Decimal('1.5'), self.b.pk: Decimal('3.0')}
+        for tenant in (self.a, self.b):
+            customer = CustomerProfile.objects.create(tenant=tenant, phone='09121112222', yearly_score=scores[tenant.pk])
+            VehicleEntry.objects.create(tenant=tenant, customer=customer, plate_number=f'own-{tenant.pk}')
+        for tenant in (self.a, self.b):
+            run = backup_tenant(tenant.pk)
+            self.assertEqual(run.status, 'success', run.error_code)
+            archive = self.disk / f'tenant-{tenant.pk}' / run.archive_name
+            output = self.root / f'restore-{tenant.pk}'
+            call_command('recover_cloud_backup', str(archive), tenant=tenant.pk, output=str(output),
+                         database='recovery', confirm_isolated_restore=True)
+            self.assertEqual(list(CarWash.objects.using('recovery').values_list('pk', flat=True)), [tenant.pk])
+            restored = CustomerProfile.objects.using('recovery').get()
+            self.assertEqual(restored.tenant_id, tenant.pk)
+            self.assertEqual(restored.yearly_score, scores[tenant.pk])
+            self.assertEqual(VehicleEntry.objects.using('recovery').get().customer_id, restored.pk)
+            own_file, foreign_file = ('a.txt', 'b.txt') if tenant.pk == self.a.pk else ('b.txt', 'a.txt')
+            self.assertTrue((output / 'media' / own_file).exists())
+            self.assertFalse((output / 'media' / foreign_file).exists())
+            call_command('flush', database='recovery', interactive=False, verbosity=0)
+
+    @skipUnless('recovery' in settings.DATABASES, 'Requires isolated recovery database')
+    def test_customer_repair_then_backup_and_isolated_restore(self):
+        from cryptography.fernet import Fernet
+        from django.db import models
+        from apps.vehicles.customer_tenant_repair import make_plan, digest
+        from apps.vehicles.tests.guard_support import apply_plan
+        customer = CustomerProfile.objects.create(tenant=self.b, phone='09123330000', full_name='FOREIGN CUSTOMER SECRET')
+        seed_legacy_vehicles([
+            VehicleEntry(tenant=self.a, customer=customer, plate_number='own', driver_phone='09121112222')
+        ])
+        with patch.dict(os.environ, CUSTOMER_REPAIR_KEY=Fernet.generate_key().decode()):
+            plan = make_plan(self.a.pk)
+            apply_plan(plan, digest(plan))
+        run = backup_tenant(self.a.pk)
+        self.assertEqual(run.status, 'success', run.error_code)
+        output = self.root / 'repaired-recovery'
+        call_command('recover_cloud_backup', str(self.archive(run)), tenant=self.a.pk,
+                     output=str(output), database='recovery', confirm_isolated_restore=True, stdout=io.StringIO())
+        restored = VehicleEntry.objects.using('recovery').get()
+        self.assertEqual(restored.customer.tenant_id, self.a.pk)
+        self.assertFalse(CustomerProfile.objects.using('recovery').filter(tenant=self.b).exists())
+        self.assertNotIn(b'FOREIGN CUSTOMER SECRET', (output / 'fixture.json').read_bytes())
+        self.assertNotIn(b'customertenantrepairrun', (output / 'fixture.json').read_bytes())

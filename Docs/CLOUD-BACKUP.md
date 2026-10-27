@@ -43,7 +43,10 @@ network and `db` dependency. Inspect the real server network configuration too.
 even new tenant models, fail until reviewed. Include the tenant root, reviewed
 tenant models, ticket messages/attachments, subscription periods/meters and only
 referenced project/product/plan catalog rows. Reject cross-tenant FKs and shared
-media paths. Nullable tenant-less HQ author references become null.
+media paths. Nullable tenant-less HQ author references become null. Accounts with
+`platform_role=hq_support` are platform identities even if assigned to a tenant:
+exclude their private profiles from exports and null only optional references.
+Nonnullable references still fail; ordinary cross-tenant relations remain blocked.
 
 Include every owned FileField and AI image/sidecar. On Linux source components
 are opened with directory FDs/O_NOFOLLOW; reject links/non-regular files. Capture
@@ -71,6 +74,14 @@ fail with `snapshot_limit_exceeded`. These conservative caps reduce OOM risk
 under 1 GiB; arbitrary nested JSON still requires staging memory measurements.
 Raise limits only after sizing or implement a disk-backed streaming fixture.
 There is no plaintext temporary archive.
+
+`CLOUD_BACKUP_MAX_FIELD_BYTES` makes the individual field/sidecar cap configurable;
+SQL measures UTF-8 byte length on both MySQL and SQLite. For a read-only report of
+the first blocking limit, use `python manage.py diagnose_cloud_backup --tenant ID`.
+It prints only schema labels and aggregate counts/bytes/limits, never field values,
+paths, SQL or credentials, and creates neither BackupRun nor archive files.
+Customer ownership and the approval-only historical repair plan are documented
+in [CUSTOMER-TENANT-ISOLATION.md](CUSTOMER-TENANT-ISOLATION.md).
 
 ## Disk safety, scheduling and retention
 
