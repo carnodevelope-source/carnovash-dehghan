@@ -52,6 +52,15 @@ def recover_chain(full_archive, incremental_archives, tenant_id, output):
                 next_fixture, next_media = reconstruct_delta(fixture, media, metadata)
                 validate_fixture(next_fixture, tenant_id)
                 changes = metadata['media']
+                # Preflight all media mutations before changing the recovered tree.
+                for name in changes['deletes']:
+                    target = media_root / safe_relative(name)
+                    if target.is_symlink() or not target.is_file() or digest_file(target) != media[name]:
+                        raise SnapshotError('unsafe_media')
+                for name in changes['upserts']:
+                    target = media_root / safe_relative(name)
+                    if target.is_symlink() or (target.exists() and not target.is_file()):
+                        raise SnapshotError('unsafe_media')
                 for name in changes['deletes']:
                     target = media_root / safe_relative(name)
                     if target.is_symlink() or not target.is_file():
