@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.core.management import call_command
-from django.db import IntegrityError, close_old_connections, transaction
+from django.db import models, IntegrityError, close_old_connections, transaction
 from django.test import TransactionTestCase
 from django.urls import reverse
 from rest_framework.exceptions import ValidationError
@@ -86,7 +86,7 @@ class CustomerTenantIsolationTests(APITestCase):
 
     def test_rebuild_excludes_historical_foreign_visits(self):
         vehicle = self.create_vehicle(self.ua)
-        VehicleEntry.objects.create(tenant=self.b, customer=vehicle.customer, plate_number='foreign')
+        models.QuerySet(model=VehicleEntry).bulk_create([VehicleEntry(tenant=self.b, customer=vehicle.customer, plate_number='foreign')])
         rebuild_customer_score(vehicle.customer)
         vehicle.customer.refresh_from_db()
         self.assertEqual(vehicle.customer.yearly_score, Decimal('0.5'))
@@ -94,7 +94,7 @@ class CustomerTenantIsolationTests(APITestCase):
     def test_existing_bad_link_is_not_silently_repaired_on_edit(self):
         vehicle = self.create_vehicle(self.ua)
         foreign = CustomerProfile.objects.create(tenant=self.b, phone='09121110000')
-        VehicleEntry.objects.filter(pk=vehicle.pk).update(customer=foreign)
+        models.QuerySet(model=VehicleEntry).filter(pk=vehicle.pk).update(customer=foreign)
         vehicle.refresh_from_db()
         serializer = VehicleEntrySerializer(vehicle, context={'request': SimpleNamespace(user=self.ua)})
         with self.assertRaises(ValidationError):
@@ -104,7 +104,7 @@ class CustomerTenantIsolationTests(APITestCase):
 
     def test_audit_counts_all_132_bad_links_without_pii_or_writes(self):
         foreign = CustomerProfile.objects.create(tenant=self.b, phone=self.phone, full_name='DO NOT PRINT')
-        VehicleEntry.objects.bulk_create([
+        models.QuerySet(model=VehicleEntry).bulk_create([
             VehicleEntry(tenant=self.a, customer=foreign, plate_number=f'private-{i}', driver_phone=self.phone)
             for i in range(132)
         ])

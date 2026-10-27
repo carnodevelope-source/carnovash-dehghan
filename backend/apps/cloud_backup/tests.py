@@ -411,7 +411,10 @@ class CloudBackupTests(TransactionTestCase):
 
     def test_customer_foreign_tenant_relation_still_blocks_backup(self):
         customer = CustomerProfile.objects.create(tenant=self.b, phone='09123330000')
-        VehicleEntry.objects.create(tenant=self.a, customer=customer, plate_number='mismatched')
+        from django.db import models
+        models.QuerySet(model=VehicleEntry).bulk_create([
+            VehicleEntry(tenant=self.a, customer=customer, plate_number='mismatched')
+        ])
         run = backup_tenant(self.a.pk)
         self.assertEqual(run.error_code, 'foreign_tenant_relation')
         self.assertFalse(list(self.disk.rglob('*.cvb')))
@@ -477,3 +480,26 @@ class CloudBackupTests(TransactionTestCase):
             self.assertTrue((output / 'media' / own_file).exists())
             self.assertFalse((output / 'media' / foreign_file).exists())
             call_command('flush', database='recovery', interactive=False, verbosity=0)
+
+    @skipUnless('recovery' in settings.DATABASES, 'Requires isolated recovery database')
+    def test_customer_repair_then_backup_and_isolated_restore(self):
+        from cryptography.fernet import Fernet
+        from django.db import models
+        from apps.vehicles.customer_tenant_repair import make_plan, apply_plan, digest
+        customer = CustomerProfile.objects.create(tenant=self.b, phone='09123330000', full_name='FOREIGN CUSTOMER SECRET')
+        models.QuerySet(model=VehicleEntry).bulk_create([
+            VehicleEntry(tenant=self.a, customer=customer, plate_number='own', driver_phone='09121112222')
+        ])
+        with patch.dict(os.environ, CUSTOMER_REPAIR_KEY=Fernet.generate_key().decode()):
+            plan = make_plan(self.a.pk)
+            apply_plan(plan, digest(plan))
+        run = backup_tenant(self.a.pk)
+        self.assertEqual(run.status, 'success', run.error_code)
+        output = self.root / 'repaired-recovery'
+        call_command('recover_cloud_backup', str(self.archive(run)), tenant=self.a.pk,
+                     output=str(output), database='recovery', confirm_isolated_restore=True, stdout=io.StringIO())
+        restored = VehicleEntry.objects.using('recovery').get()
+        self.assertEqual(restored.customer.tenant_id, self.a.pk)
+        self.assertFalse(CustomerProfile.objects.using('recovery').filter(tenant=self.b).exists())
+        self.assertNotIn(b'FOREIGN CUSTOMER SECRET', (output / 'fixture.json').read_bytes())
+        self.assertNotIn(b'customertenantrepairrun', (output / 'fixture.json').read_bytes())

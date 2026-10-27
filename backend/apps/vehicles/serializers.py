@@ -305,6 +305,16 @@ class VehicleEntrySerializer(serializers.ModelSerializer):
 
     def to_internal_value(self, data):
         if isinstance(data, dict):
+            request = self.context.get('request')
+            tenant_id = getattr(getattr(request, 'user', None), 'tenant_id', None)
+            supplied = data.get('customer_id', data.get('customer'))
+            if supplied is not None:
+                try:
+                    valid = tenant_id is not None and CustomerProfile.objects.filter(pk=int(supplied), tenant_id=tenant_id).exists()
+                except (TypeError, ValueError, OverflowError):
+                    valid = False
+                if not valid:
+                    raise serializers.ValidationError({'customer': ['Invalid customer selection.']})
             mutable_data = data.copy()
             if 'ai_confidence' in mutable_data:
                 mutable_data['ai_confidence'] = self._normalize_ai_confidence(

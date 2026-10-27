@@ -1,8 +1,11 @@
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import models, router
 from django.utils import timezone
+
+from .tenant_protection import ERROR, TenantProtectedQuerySet
 
 from apps.realtime.transactions import TransactionalLiveModelMixin
 
@@ -16,6 +19,23 @@ class TimestampedModel(models.Model):
 
 
 class CustomerProfile(TimestampedModel):
+    objects = TenantProtectedQuerySet.as_manager()
+
+    def validate_tenant_link(self, using=None):
+        using = using or router.db_for_write(type(self), instance=self)
+        if self.pk:
+            previous = type(self).objects.using(using).filter(pk=self.pk).values('tenant_id').first()
+            if previous and previous['tenant_id'] != self.tenant_id:
+                raise ValidationError({'tenant': ERROR})
+
+    def clean(self):
+        super().clean()
+        self.validate_tenant_link()
+
+    def save(self, *args, **kwargs):
+        self.validate_tenant_link(kwargs.get('using'))
+        return super().save(*args, **kwargs)
+
     class Gender(models.TextChoices):
         MALE = 'male', 'Male'
         FEMALE = 'female', 'Female'
@@ -80,6 +100,23 @@ class PlateLoyaltyProfile(TimestampedModel):
 
 
 class VehicleEntry(TransactionalLiveModelMixin, TimestampedModel):
+    objects = TenantProtectedQuerySet.as_manager()
+
+    def validate_tenant_link(self, using=None):
+        using = using or router.db_for_write(type(self), instance=self)
+        if self.pk:
+            previous = type(self).objects.using(using).filter(pk=self.pk).values('tenant_id').first()
+            if previous and previous['tenant_id'] != self.tenant_id:
+                raise ValidationError({'tenant': ERROR})
+        if self.customer_id:
+            owner = CustomerProfile.objects.using(using).filter(pk=self.customer_id).values('tenant_id').first()
+            if not owner or self.tenant_id is None or owner['tenant_id'] != self.tenant_id:
+                raise ValidationError({'customer': ERROR})
+
+    def clean(self):
+        super().clean()
+        self.validate_tenant_link()
+
     class DriverGender(models.TextChoices):
         MALE = 'male', 'Male'
         FEMALE = 'female', 'Female'
@@ -223,6 +260,7 @@ class VehicleEntry(TransactionalLiveModelMixin, TimestampedModel):
         return max(1000, int(latest or 999) + 1)
 
     def save(self, *args, **kwargs):
+        self.validate_tenant_link(kwargs.get("using"))
         if not self.admission_number:
             self.admission_number = self._next_daily_admission_number()
             update_fields = kwargs.get('update_fields')
@@ -422,3 +460,10 @@ class VehicleJobProduct(models.Model):
                 fields=['vehicle_job', 'product'], name='uniq_vehicle_job_product'
             )
         ]
+
+
+class CustomerTenantRepairRun(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    plan_hash = models.CharField(max_length=64, unique=True)
+    encrypted_journal = models.TextField()
+    rolled_back = models.BooleanField(default=False)

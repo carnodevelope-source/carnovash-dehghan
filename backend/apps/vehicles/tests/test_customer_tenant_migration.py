@@ -8,6 +8,7 @@ class CustomerTenantMigrationTests(TransactionTestCase):
         previous = ('vehicles', '0024_alter_vehiclejob_worker_payment_type')
         latest = ('vehicles', '0025_customer_phone_per_tenant')
         executor = MigrationExecutor(connection)
+        restore_targets = executor.loader.graph.leaf_nodes()
         executor.migrate([previous])
         try:
             old = executor.loader.project_state([previous]).apps
@@ -29,4 +30,4 @@ class CustomerTenantMigrationTests(TransactionTestCase):
             # the previously shared customer or any vehicle relationship.
             CustomerProfile.objects.create(tenant=source, phone=customer.phone)
         finally:
-            MigrationExecutor(connection).migrate([latest])
+            MigrationExecutor(connection).migrate(restore_targets)

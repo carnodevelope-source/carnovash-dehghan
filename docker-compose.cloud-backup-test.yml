@@ -22,7 +22,7 @@ services:
       CLOUD_BACKUP_TEST_DB_HOST: backup-test-db
       CARWASH_INTERNAL_SCHEDULER: "false"
       DB_ENGINE: sqlite
-    command: ["test", "apps.cloud_backup.tests", "--settings=apps.cloud_backup.test_settings_mysql", "--noinput"]
+    command: ["test", "apps.cloud_backup.tests", "apps.vehicles.tests.test_customer_tenant_isolation", "apps.vehicles.tests.test_customer_tenant_repair", "apps.vehicles.tests.test_customer_tenant_migration", "--settings=apps.cloud_backup.test_settings_mysql", "--noinput"]
     read_only: true
     tmpfs: ["/tmp:rw,mode=1777"]
     cap_drop: [ALL]

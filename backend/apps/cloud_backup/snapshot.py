@@ -97,7 +97,7 @@ inventory.inventoryitem inventory.stockmovement inventory.expenseentry
 subscriptions.servicesubscription subscriptions.serviceorder subscriptions.servicepaymentrecord
 subscriptions.serviceauditlog subscriptions.servicealert
 '''.split())
-TECHNICAL = {'realtime.liveoutbox', 'realtime.idempotencyrecord', 'cloud_backup.backuprun'}
+TECHNICAL = {'realtime.liveoutbox', 'realtime.idempotencyrecord', 'cloud_backup.backuprun', 'vehicles.customertenantrepairrun'}
 
 
 def ownership_registry():
@@ -178,7 +178,7 @@ def collect(tenant_id):
     selected = {CarWash._meta.label_lower: bounded(CarWash.objects.filter(pk=tenant_id))}
     for model in apps.get_models():
         label = model._meta.label_lower
-        if not model._meta.app_config.name.startswith('apps.') or label in EXCLUDED:
+        if not model._meta.app_config.name.startswith('apps.') or label in EXCLUDED | TECHNICAL:
             continue
         if model._meta.app_label in {'cloud_backup', 'realtime'} or model is CarWash:
             continue
@@ -253,7 +253,10 @@ def collect(tenant_id):
                         if field.null and is_hq:
                             setattr(obj, field.attname, None)
                         else:
-                            raise SnapshotError('foreign_tenant_relation')
+                            raise SnapshotError('foreign_tenant_relation', diagnostics={
+                                'model': obj._meta.label_lower, 'field': field.name,
+                                'repair_command': 'repair_customer_tenant_links' if obj._meta.label_lower == 'vehicles.vehicleentry' and field.name == 'customer' else 'manual_review',
+                            })
 
     objects = [obj for label in sorted(selected) for obj in selected[label]]
     fixture = [json.loads(serialize_row(obj))[0] for obj in objects]
