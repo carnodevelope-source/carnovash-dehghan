@@ -74,3 +74,9 @@ worker فعال نشد. هیچ Cron کاربر یا timer با نام Carvash ba
 اجرای نیمه‌شب، کارایی تحت بار واقعی و Production Incremental بعد از رفع موانع و انتشار هنوز تأیید نشده‌اند.
 
 گزارش‌های خصوصی آزمون در /mnt/extra-storage/carwash-rehearsal-artifacts/cloud-backup-release-f88169d/ حفظ شدند.
+
+## کنترل نهایی
+
+- آزمون واقعی Production برای tenant=20 فاقد cloud_storage فعال: execute_tenant مقدار None برگرداند؛ شمار BackupRun قبل و بعد صفر بود.
+- هر پنج کانتینر Production در بررسی پایانی healthy و running بودند؛ / و /api/health/ روی پورت 18086 پاسخ 200 دادند.
+- دو کانتینر دیتابیس موقت تست پس از پایان آزمون متوقف شدند؛ هیچ کانتینر Production متوقف نشد.
