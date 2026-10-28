@@ -21,9 +21,12 @@ def exists(kind,name):
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--tenants',nargs='+',type=int,required=True)
+    parser.add_argument('--runtime',type=Path,default=ART/'worker-runtime.private.json')
+    parser.add_argument('--image',default='carwash-backend:f88169d')
     args=parser.parse_args()
     if any(tenant<=0 for tenant in args.tenants):raise ValueError('invalid_tenant')
-    lock=os.open(ART/'restore-drill.lock',os.O_CREAT|os.O_RDWR,0o600)
+    art=args.runtime.parent
+    lock=os.open(art/'restore-drill.lock',os.O_CREAT|os.O_RDWR,0o600)
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     code="""import os,json
 os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings')
@@ -41,7 +44,8 @@ print(json.dumps(items))
 """.replace('TENANTS',repr(args.tenants))
     result=subprocess.run(['docker','exec','-e','CARWASH_INTERNAL_SCHEDULER=false','carwash-backend-1','python','-c',code],capture_output=True,text=True,check=True)
     targets=json.loads(result.stdout)
-    config=json.loads((ART/'worker-runtime.private.json').read_text())
+    config=json.loads(args.runtime.read_text())
+    if config['services']['cloud-backup']['image']!=args.image:raise ValueError('restore_image_runtime_mismatch')
     key=config['secrets']['cloud_backup_key']['file']
     settings=config['services']['cloud-backup']['environment']
     if not exists('network',NETWORK):
@@ -56,6 +60,9 @@ print(json.dumps(items))
             '--collation-server=utf8mb4_unicode_ci','--sql-mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'],check=True,stdout=subprocess.DEVNULL)
     server=json.loads(subprocess.check_output(['docker','inspect',DATABASE],text=True))[0]
     if server['HostConfig']['PortBindings'] or server['Config']['Labels'].get('carvash.purpose')!='isolated-restore-drill':raise ValueError('unsafe_restore_server')
+    if set(server['NetworkSettings']['Networks'])!={NETWORK}:raise ValueError('unsafe_restore_network')
+    if not server['State']['Running']:
+        subprocess.run(['docker','start',DATABASE],check=True,stdout=subprocess.DEVNULL)
     deadline=time.monotonic()+90
     while time.monotonic()<deadline:
         ready=subprocess.run(['docker','exec',DATABASE,'mysqladmin','ping','-h','127.0.0.1','--silent'],capture_output=True)
@@ -75,12 +82,12 @@ print(json.dumps(items))
         '--mount','type=bind,src=/mnt/extra-storage/cloud-backups,dst=/backups,readonly',
         '--mount','type=bind,src='+key+',dst=/run/secrets/cloud_backup_key,readonly']
     for name,value in env.items():command+=['-e',name+'='+str(value)]
-    command+=['--entrypoint','python','carwash-backend:f88169d','/app/manage.py','test','apps.cloud_backup.production_drill',
+    command+=['--entrypoint','python',args.image,'/app/manage.py','test','apps.cloud_backup.production_drill',
               '--settings=apps.cloud_backup.test_settings_mysql','--noinput','--verbosity','1']
     print('ISOLATED_RESTORE_STARTED '+json.dumps({'tenants':args.tenants,'production_database_not_connected':True}),flush=True)
     result=subprocess.run(command,capture_output=True,text=True)
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    report=ART/('restore-drill-'+stamp+'.log')
+    report=art/('restore-drill-'+stamp+'.log')
     fd=os.open(report,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     with os.fdopen(fd,'w') as output:output.write(result.stdout+'\n'+result.stderr)
     for line in result.stdout.splitlines():

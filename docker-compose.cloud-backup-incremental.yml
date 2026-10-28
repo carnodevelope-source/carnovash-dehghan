@@ -8,6 +8,7 @@ services:
     environment:
       CLOUD_BACKUP_MAX_ROWS: ${CLOUD_BACKUP_INCREMENTAL_MAX_ROWS:-100000}
       CLOUD_BACKUP_MAX_JSON_BYTES: ${CLOUD_BACKUP_INCREMENTAL_MAX_JSON_BYTES:-268435456}
+    tmpfs: ["/tmp:rw,mode=1777,size=64m"]
     shm_size: 1g
     mem_limit: 3g
     memswap_limit: 3g
