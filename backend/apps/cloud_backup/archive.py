@@ -304,8 +304,10 @@ def restore_fixture(path, tenant_id, using):
                     if item['model'] not in GLOBAL or saved != item:
                         raise SnapshotError('recovery_collision')
                     continue
-                obj = next(serializers.deserialize('json', json.dumps([item])))
-                obj.save(using=using)
+                # DeserializedObject.save() calls Model.save_base(raw=True),
+                # preserving historical timestamps and bypassing model save hooks.
+                deserialized = next(serializers.deserialize('json', json.dumps([item])))
+                deserialized.save(using=using)
             connection.check_constraints()
             from django.core.management.color import no_style
             from django.apps import apps

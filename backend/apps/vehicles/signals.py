@@ -9,6 +9,9 @@ from apps.vehicles.models import BlockedPlate, VehicleEntry, VehicleStatusLog
 
 @receiver(post_save, sender=VehicleEntry)
 def publish_vehicle_entry_event(sender, instance: VehicleEntry, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'vehicle.created' if created else 'vehicle.updated',
         {
@@ -23,6 +26,9 @@ def publish_vehicle_entry_event(sender, instance: VehicleEntry, created: bool, *
 
 @receiver(post_save, sender=VehicleStatusLog)
 def publish_vehicle_status_event(sender, instance: VehicleStatusLog, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'vehicle.status.created' if created else 'vehicle.status.updated',
         {

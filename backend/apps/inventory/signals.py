@@ -9,6 +9,9 @@ from apps.live import publish_live_event
 
 @receiver(post_save, sender=InventoryItem)
 def publish_inventory_item_event(sender, instance: InventoryItem, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'inventory.item.created' if created else 'inventory.item.updated',
         {
@@ -35,6 +38,9 @@ def publish_inventory_item_deleted_event(sender, instance: InventoryItem, **kwar
 
 @receiver(post_save, sender=StockMovement)
 def publish_stock_movement_event(sender, instance: StockMovement, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'inventory.movement.created' if created else 'inventory.movement.updated',
         {
@@ -49,6 +55,9 @@ def publish_stock_movement_event(sender, instance: StockMovement, created: bool,
 
 @receiver(post_save, sender=ExpenseEntry)
 def publish_expense_entry_event(sender, instance: ExpenseEntry, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'expense.created' if created else 'expense.updated',
         {

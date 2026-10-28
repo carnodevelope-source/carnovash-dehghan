@@ -9,6 +9,9 @@ from apps.workers.models import WorkerAttendance, WorkerProfile
 
 @receiver(post_save, sender=WorkerProfile)
 def publish_worker_event(sender, instance: WorkerProfile, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'worker.created' if created else 'worker.updated',
         {
@@ -24,6 +27,9 @@ def publish_worker_event(sender, instance: WorkerProfile, created: bool, **kwarg
 
 @receiver(post_save, sender=WorkerAttendance)
 def publish_worker_attendance_event(sender, instance: WorkerAttendance, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'worker.attendance.created' if created else 'worker.attendance.updated',
         {

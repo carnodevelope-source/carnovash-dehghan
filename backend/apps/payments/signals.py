@@ -9,6 +9,9 @@ from apps.payments.models import CashflowTransaction, Payment, WalletGatewayRequ
 
 @receiver(post_save, sender=Payment)
 def publish_payment_event(sender, instance: Payment, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'payment.created' if created else 'payment.updated',
         {
@@ -23,6 +26,9 @@ def publish_payment_event(sender, instance: Payment, created: bool, **kwargs) ->
 
 @receiver(post_save, sender=WalletGatewayRequest)
 def publish_wallet_gateway_event(sender, instance: WalletGatewayRequest, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'payment.gateway.created' if created else 'payment.gateway.updated',
         {
@@ -37,6 +43,9 @@ def publish_wallet_gateway_event(sender, instance: WalletGatewayRequest, created
 
 @receiver(post_save, sender=CashflowTransaction)
 def publish_cashflow_event(sender, instance: CashflowTransaction, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'payment.cashflow.created' if created else 'payment.cashflow.updated',
         {

@@ -72,6 +72,8 @@ def open_media(name):
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                 raise SnapshotError('unsafe_media')
             yield source
+    except FileNotFoundError:
+        raise SnapshotError('missing_media') from None
     finally:
         os.close(fd)
 

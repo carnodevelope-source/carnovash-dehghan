@@ -9,6 +9,9 @@ from apps.services.models import GeneralSettings, Service, ServiceCategory
 
 @receiver(post_save, sender=ServiceCategory)
 def publish_service_category_event(sender, instance: ServiceCategory, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'service.category.created' if created else 'service.category.updated',
         {
@@ -22,6 +25,9 @@ def publish_service_category_event(sender, instance: ServiceCategory, created: b
 
 @receiver(post_save, sender=Service)
 def publish_service_event(sender, instance: Service, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'service.created' if created else 'service.updated',
         {
@@ -37,6 +43,9 @@ def publish_service_event(sender, instance: Service, created: bool, **kwargs) ->
 
 @receiver(post_save, sender=GeneralSettings)
 def publish_settings_event(sender, instance: GeneralSettings, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'settings.updated',
         {

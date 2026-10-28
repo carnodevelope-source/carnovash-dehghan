@@ -10,6 +10,9 @@ from apps.live import publish_live_event
 
 @receiver(post_save, sender=SupportTicket)
 def publish_support_ticket_event(sender, instance: SupportTicket, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'support.ticket.created' if created else 'support.ticket.updated',
         {
@@ -41,6 +44,9 @@ def publish_support_ticket_event(sender, instance: SupportTicket, created: bool,
 
 @receiver(post_save, sender=SupportTicketMessage)
 def publish_support_message_event(sender, instance: SupportTicketMessage, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'support.message.created' if created else 'support.message.updated',
         {
@@ -55,6 +61,9 @@ def publish_support_message_event(sender, instance: SupportTicketMessage, create
 
 @receiver(post_save, sender=CarWashFeaturePurchase)
 def publish_feature_purchase_event(sender, instance: CarWashFeaturePurchase, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'subscription.updated',
         {
@@ -72,6 +81,9 @@ def publish_feature_purchase_event(sender, instance: CarWashFeaturePurchase, cre
 @receiver(post_save, sender=CarWashFeaturePurchase)
 @receiver(post_delete, sender=CarWashFeaturePurchase)
 def invalidate_tenant_access(sender, instance, **kwargs):
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     from apps.payments.views import invalidate_license_status_cache
     tenant_id = instance.pk if sender is CarWash else instance.tenant_id
     invalidate_license_status_cache(tenant_id)

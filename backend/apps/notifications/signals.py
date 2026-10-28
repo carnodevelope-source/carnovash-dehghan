@@ -9,6 +9,9 @@ from apps.notifications.models import CustomerGroup, ImportedCustomer, Notificat
 
 @receiver(post_save, sender=NotificationLog)
 def publish_notification_log_event(sender, instance: NotificationLog, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'notification.created' if created else 'notification.updated',
         {
@@ -23,6 +26,9 @@ def publish_notification_log_event(sender, instance: NotificationLog, created: b
 
 @receiver(post_save, sender=SmsTemplate)
 def publish_sms_template_event(sender, instance: SmsTemplate, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'notification.template.created' if created else 'notification.template.updated',
         {
@@ -36,6 +42,9 @@ def publish_sms_template_event(sender, instance: SmsTemplate, created: bool, **k
 
 @receiver(post_save, sender=CustomerGroup)
 def publish_customer_group_event(sender, instance: CustomerGroup, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'notification.customer_group.created' if created else 'notification.customer_group.updated',
         {
@@ -49,6 +58,9 @@ def publish_customer_group_event(sender, instance: CustomerGroup, created: bool,
 
 @receiver(post_save, sender=ImportedCustomer)
 def publish_imported_customer_event(sender, instance: ImportedCustomer, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'notification.customer.created' if created else 'notification.customer.updated',
         {

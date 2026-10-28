@@ -44,7 +44,7 @@ def failure_code(exc):
     # Fixed vocabulary only: never exception messages, SQL, paths or keys.
     safe = {'subscription_inactive', 'source_changed', 'insufficient_space',
             'mount_unavailable', 'checksum_mismatch', 'missing_archive',
-            'invalid_chain_history', 'unsafe_media', 'snapshot_limit_exceeded'}
+            'invalid_chain_history', 'unsafe_media', 'missing_media', 'snapshot_limit_exceeded'}
     return str(exc) if isinstance(exc, SnapshotError) and str(exc) in safe else 'backup_failed'
 
 

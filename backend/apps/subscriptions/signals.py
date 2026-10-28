@@ -9,6 +9,9 @@ from apps.subscriptions.models import ServiceOrder, ServicePaymentRecord, Servic
 
 @receiver(post_save, sender=ServiceSubscription)
 def publish_subscription_event(sender, instance: ServiceSubscription, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'subscription.created' if created else 'subscription.updated',
         {
@@ -24,6 +27,9 @@ def publish_subscription_event(sender, instance: ServiceSubscription, created: b
 
 @receiver(post_save, sender=ServiceOrder)
 def publish_subscription_order_event(sender, instance: ServiceOrder, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'subscription.order.created' if created else 'subscription.order.updated',
         {
@@ -39,6 +45,9 @@ def publish_subscription_order_event(sender, instance: ServiceOrder, created: bo
 
 @receiver(post_save, sender=ServicePaymentRecord)
 def publish_subscription_payment_event(sender, instance: ServicePaymentRecord, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'subscription.payment.created' if created else 'subscription.payment.updated',
         {

@@ -9,6 +9,9 @@ from apps.products.models import Product, ProductCategory
 
 @receiver(post_save, sender=ProductCategory)
 def publish_product_category_event(sender, instance: ProductCategory, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'product.category.created' if created else 'product.category.updated',
         {
@@ -22,6 +25,9 @@ def publish_product_category_event(sender, instance: ProductCategory, created: b
 
 @receiver(post_save, sender=Product)
 def publish_product_event(sender, instance: Product, created: bool, **kwargs) -> None:
+    # Raw fixture recovery must not publish events, send SMS or touch live caches.
+    if kwargs.get('raw'):
+        return
     publish_live_event(
         'product.created' if created else 'product.updated',
         {
