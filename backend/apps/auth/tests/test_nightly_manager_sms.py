@@ -134,7 +134,7 @@ class NightlyManagerSmsTests(APITestCase):
         self.assertEqual(log.payload['paid_total'], 850000.0)
         self.assertEqual(log.payload['vehicle_in_count'], 1)
         self.assertEqual(log.payload['vehicle_out_count'], 1)
-        self.assertEqual(log.payload['vehicle_pending_count'], 1)
+        self.assertEqual(log.payload['vehicle_pending_count'], 0)
         self.assertEqual(log.payload['vehicle_cancelled_count'], 2)
         self.assertEqual(log.payload['vehicle_remaining_count'], 4)
         self.assertIn('لغو شده‌ها: ۲', log.payload['text'])
@@ -226,14 +226,28 @@ class NightlyManagerSmsTests(APITestCase):
         self.assertEqual(payload['vehicle_out_count'], 1)
         self.assertEqual(payload['vehicle_remaining_count'], 0)
 
-    def test_missing_history_is_explicit_and_current_status_is_not_used(self):
+    def test_missing_history_uses_recorded_status_for_daily_ready_count(self):
         day = date(2026, 7, 16)
         self._entry(day, VehicleEntry.Status.READY_TO_SETTLE, history=False)
         call = self._report(day)[0].kwargs
-        self.assertIsNone(call['payload']['vehicle_pending_count'])
+        self.assertEqual(call['payload']['vehicle_pending_count'], 1)
         self.assertIsNone(call['payload']['vehicle_remaining_count'])
         self.assertEqual(call['payload']['history_unknown_count'], 1)
-        self.assertIn('\u0646\u0627\u0645\u0634\u062e\u0635', call['text'])
+        self.assertNotIn('نامشخص', call['text'])
+        self.assertNotIn('کل خودروهای باقی', call['text'])
+        self.assertNotIn('تاریخچه ناکافی', call['text'])
+
+    def test_daily_ready_count_excludes_old_released_and_unfinished_entries(self):
+        day = date(2026, 7, 16)
+        self._entry(day - timedelta(days=1), VehicleEntry.Status.READY_TO_SETTLE)
+        self._entry(day, VehicleEntry.Status.IN_PROGRESS, history=False)
+        self._entry(day, VehicleEntry.Status.RELEASED, released_at=self._at(day, 15), history=False)
+        self.assertEqual(self._report(day)[0].kwargs['payload']['vehicle_pending_count'], 0)
+        for _ in range(3):
+            self._entry(day, VehicleEntry.Status.READY_TO_SETTLE, history=False)
+        call = self._report(day)[0].kwargs
+        self.assertEqual(call['payload']['vehicle_pending_count'], 3)
+        self.assertIn('\u0622\u0645\u0627\u062f\u0647 \u062a\u0631\u062e\u06cc\u0635: \u06f3', call['text'])
 
     def test_next_transition_source_reconstructs_previous_day(self):
         day = date(2026, 7, 16)

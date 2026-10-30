@@ -40,18 +40,14 @@ def _build_summary_text(*, tenant, day, paid_total, vehicle_in_count, vehicle_ou
     with timezone.override(REPORT_TZ):
         day_label = format_jalali_date(_day_bounds(day)[0])
 
-    def count_label(value):
-        return 'نامشخص (تاریخچه ناکافی)' if value is None else to_persian_digits(str(value))
     return (
         f'گزارش شبانه {tenant.name}\n'
         f'تاریخ: {day_label}\n'
         f'درآمد وصول‌شده: {format_toman(paid_total)}\n'
         f'خودروهای پذیرش‌شده: {to_persian_digits(str(vehicle_in_count))}\n'
         f'خودروهای ترخیص‌شده: {to_persian_digits(str(vehicle_out_count))}\n'
-        f'آماده ترخیص: {count_label(vehicle_pending_count)}\n'
-        f'کل خودروهای باقی‌مانده: {count_label(vehicle_remaining_count)}\n'
+        f'آماده ترخیص: {to_persian_digits(str(vehicle_pending_count))}\n'
         f'لغو شده‌ها: {to_persian_digits(str(vehicle_cancelled_count))}'
-        + (f'\nتاریخچه ناکافی برای {to_persian_digits(str(history_unknown_count))} خودرو؛ آمار ترخیص و لغو فقط براساس رویدادهای ثبت‌شده است.' if history_unknown_count else '')
     )
 
 
@@ -85,9 +81,9 @@ def _summary_payload(*, tenant, day, paid_total, vehicle_in_count, vehicle_out_c
 def _historical_inventory(tenant, end):
     """Use the last transition before midnight, or the next transition's source.
 
-    Current status is deliberately never a fallback: legacy entries without
-    history cannot establish a historical ready/active status. released_at is
-    independent evidence of release, unless a later recorded transition exists.
+    Total remaining inventory requires historical evidence. Daily ready counts
+    fall back to recorded status for legacy entries without history. released_at
+    is independent evidence of release unless a later transition exists.
     """
     logs = VehicleStatusLog.objects.filter(tenant=tenant, vehicle_id=OuterRef('pk'))
     before = logs.filter(changed_at__lt=end).order_by('-changed_at', '-pk')
@@ -96,7 +92,7 @@ def _historical_inventory(tenant, end):
         historical_status=Subquery(before.values('to_status')[:1]),
         historical_at=Subquery(before.values('changed_at')[:1]),
         next_source=Subquery(after.values('from_status')[:1]),
-    ).values('historical_status', 'historical_at', 'next_source', 'released_at')
+    ).values('historical_status', 'historical_at', 'next_source', 'released_at', 'check_in_at', 'status')
     ready = remaining = unknown = 0
     active = {VehicleEntry.Status.ENTERED, VehicleEntry.Status.ASSIGNED,
               VehicleEntry.Status.IN_PROGRESS, VehicleEntry.Status.READY_TO_SETTLE}
@@ -107,13 +103,17 @@ def _historical_inventory(tenant, end):
             entry['historical_at'] is None or released_at >= entry['historical_at']
         ):
             status = VehicleEntry.Status.RELEASED
+        # Ready count covers admissions on the report day only. For legacy
+        # entries without transitions, use their recorded current status.
+        ready_status = status or entry['status']
+        if entry['check_in_at'] >= end - timedelta(days=1):
+            ready += ready_status == VehicleEntry.Status.READY_TO_SETTLE
         if status in active:
             remaining += 1
-            ready += status == VehicleEntry.Status.READY_TO_SETTLE
         elif status not in {VehicleEntry.Status.RELEASED, VehicleEntry.Status.CANCELLED}:
             unknown += 1
-    # Partial counts would look exact in the SMS. Expose missing evidence instead.
-    return (None if unknown else ready, None if unknown else remaining, unknown)
+    # Keep missing historical evidence explicit for total remaining inventory.
+    return (ready, None if unknown else remaining, unknown)
 
 
 def dispatch_due_nightly_manager_summaries(*, now=None, target_day=None, force=False):
