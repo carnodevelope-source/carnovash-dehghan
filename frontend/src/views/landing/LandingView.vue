@@ -344,6 +344,22 @@
             <a href="/about/">معرفی محصول</a>
             <a href="https://carnoco.ir" target="_blank" rel="noopener noreferrer">درباره ما</a>
           </nav>
+          <div class="footer-trust">
+            <a
+              class="enamad-badge"
+              referrerpolicy="origin"
+              target="_blank"
+              rel="noopener"
+              href="https://trustseal.enamad.ir/?id=7469934&Code=hWcnhCRsUvTTdvEKMhW1Mb1JGS17vL29"
+            >
+              <img
+                referrerpolicy="origin"
+                src="https://trustseal.enamad.ir/logo.aspx?id=7469934&Code=hWcnhCRsUvTTdvEKMhW1Mb1JGS17vL29"
+                alt="نماد اعتماد الکترونیکی کارنوواش"
+                code="hWcnhCRsUvTTdvEKMhW1Mb1JGS17vL29"
+              />
+            </a>
+          </div>
           <div class="footer-bottom">
             <small>سامانه هوشمند مدیریت کارواش؛ پذیرش سریع‌تر، عملیات شفاف‌تر، درآمد دقیق‌تر.</small>
             <RouterLink class="btn btn-primary footer-cta" to="/login">ورود به پنل کارنوواش</RouterLink>
@@ -1505,6 +1521,28 @@ a.btn-primary:visited {
 
 .footer-links a:hover {
   color: #7cbcff;
+}
+
+.footer-trust {
+  display: flex;
+  justify-content: center;
+}
+
+.enamad-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.enamad-badge img {
+  display: block;
+  width: 125px;
+  max-width: 100%;
+  height: auto;
+  cursor: pointer;
 }
 
 .footer-bottom {
