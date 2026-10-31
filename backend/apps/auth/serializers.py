@@ -556,11 +556,21 @@ class SupportTicketListSerializer(serializers.ModelSerializer):
         return parse_wallet_id_from_ticket(obj)
 
 class SupportTicketDetailSerializer(SupportTicketListSerializer):
+    tenant_phone = serializers.SerializerMethodField()
     messages = SupportTicketMessageSerializer(many=True, read_only=True)
     attachments = SupportTicketAttachmentSerializer(many=True, read_only=True)
 
     class Meta(SupportTicketListSerializer.Meta):
-        fields = SupportTicketListSerializer.Meta.fields + ['messages', 'attachments']
+        fields = SupportTicketListSerializer.Meta.fields + ['tenant_phone', 'messages', 'attachments']
+
+    def get_tenant_phone(self, obj):
+        User = get_user_model()
+        return (
+            User.objects.filter(tenant_id=obj.tenant_id, role=User.Roles.MANAGER)
+            .order_by('id')
+            .values_list('phone', flat=True)
+            .first()
+        ) or ''
 
 
 class SupportTicketCreateSerializer(serializers.Serializer):

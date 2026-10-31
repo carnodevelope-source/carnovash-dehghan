@@ -634,6 +634,7 @@
                 <p class="ticket-stage-meta">
                   <span>#{{ selectedTicket.id }}</span>
                   <span>{{ selectedTicket.tenant_name || '—' }}</span>
+                  <a v-if="selectedTicket.tenant_phone" :href="`tel:${selectedTicket.tenant_phone}`" dir="ltr" aria-label="تماس با کارواش">{{ selectedTicket.tenant_phone }}</a>
                   <span>{{ selectedTicket.assigned_to_name || 'بدون مسئول' }}</span>
                   <span>{{ priorityLabel(selectedTicket.priority) }}</span>
                 </p>
