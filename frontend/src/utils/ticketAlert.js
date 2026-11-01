@@ -6,7 +6,9 @@ export const TICKET_ALERT_SOUND_URL = encodeURI(
 
 let alertAudio = null
 let audioUnlocked = false
-let browserPermissionRequested = false
+let permissionRequest = null
+let workerRegistration = null
+const alertSessionStartedAt = Date.now()
 
 const canUseNotifications = () => typeof window !== 'undefined' && 'Notification' in window
 
@@ -39,17 +41,33 @@ export const unlockTicketAlertAudio = () => {
   }
 }
 
+export const prepareTicketNotificationWorker = () => {
+  const worker = typeof navigator !== 'undefined' ? navigator.serviceWorker : null
+  if (!worker || !window.isSecureContext) return Promise.resolve(null)
+  if (!workerRegistration) {
+    workerRegistration = worker.register('/ticket-alert-sw.js', { scope: '/' })
+      .then(async (registration) => {
+        if (registration.active) return registration
+        return Promise.race([
+          worker.ready,
+          new Promise((resolve) => window.setTimeout(() => resolve(null), 5000))
+        ])
+      })
+      .catch(() => { workerRegistration = null; return null })
+  }
+  return workerRegistration
+}
+
 export const ensureTicketBrowserPermission = async () => {
   if (!canUseNotifications()) return 'unsupported'
-  if (browserPermissionRequested) return Notification.permission
-  browserPermissionRequested = true
   if (Notification.permission === 'default') {
-    try {
-      await Notification.requestPermission()
-    } catch (_error) {
-      // Ignore permission errors; in-app toast + sound still work.
+    if (!permissionRequest) {
+      permissionRequest = Notification.requestPermission().catch(() => Notification.permission)
+        .finally(() => { permissionRequest = null })
     }
+    await permissionRequest
   }
+  if (Notification.permission === 'granted') void prepareTicketNotificationWorker()
   return Notification.permission
 }
 
@@ -83,25 +101,24 @@ export const playTicketAlertSound = () => {
   }
 }
 
-const showBrowserNotification = ({ title, body, tag }) => {
+const showBrowserNotification = async ({ title, body, tag }) => {
   if (!canUseNotifications() || Notification.permission !== 'granted') return
-  try {
-    const notification = new Notification(title, {
-      body,
-      tag,
-      renotify: true,
-      // Keep OS sound as fallback when the tab is backgrounded and HTMLAudio may be blocked.
-      silent: false,
-      dir: 'rtl',
-      lang: 'fa'
-    })
-    notification.onclick = () => {
-      window.focus?.()
-      notification.close()
-    }
-  } catch (_error) {
-    // Some browsers block Notification construction outside secure contexts.
+  const options = { body, tag, renotify: true, silent: false, dir: 'rtl', lang: 'fa',
+    data: { url: '/hq?tab=tickets' } }
+  const hasWorker = typeof navigator !== 'undefined' && navigator.serviceWorker && window.isSecureContext
+  if (hasWorker) {
+    try {
+      const registration = await prepareTicketNotificationWorker()
+      if (registration?.active) {
+        await registration.showNotification(title, options)
+        return
+      }
+    } catch (_error) { /* Fall back to desktop Notification if worker delivery fails. */ }
   }
+  try {
+    const notification = new Notification(title, options)
+    notification.onclick = () => { window.focus?.(); notification.close() }
+  } catch (_error) { /* Permission/OS settings are outside page control. */ }
 }
 
 const seenSupportMessages = new Set()
@@ -111,8 +128,8 @@ export const notifyIncomingSupportMessage = (payload, userId) => {
   const data = payload.data || {}
   if (data.actor_user_id && String(data.actor_user_id) === String(userId)) return false
   const occurredAt = Date.parse(payload.occurred_at || payload.created_at || '')
-  if (Number.isFinite(occurredAt) && Date.now() - occurredAt > 30_000) return false
-  const key = payload.event_id || payload.id || (data.id ? `message:${data.id}` : null)
+  if (Number.isFinite(occurredAt) && occurredAt < alertSessionStartedAt - 5000) return false
+  const key = data.id ? `message:${data.id}` : payload.event_id || payload.id || null
   if (key && seenSupportMessages.has(key)) return false
   if (key) {
     seenSupportMessages.add(key)

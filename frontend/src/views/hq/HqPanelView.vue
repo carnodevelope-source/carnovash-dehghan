@@ -973,6 +973,7 @@ let knownTicketIds = new Set()
 let knownTicketActivity = new Map()
 let alertKnownTicketIds = new Set()
 let ticketAlertsInitialized = false
+let alertKnownMessageTimes = new Map()
 const visibleTabs = computed(() => {
   if (authStore.isHqAdmin) {
     return allTabs
@@ -1979,20 +1980,47 @@ const loadTickets = async (options = {}) => {
 
 const pollTicketAlerts = async () => {
   const { data } = await api.get('/auth/hq/tickets/', {
-    params: {
-      status: 'all',
-      priority: 'all'
-    },
-    meta: { trackLoading: false, showErrorToast: false }
+    params: { status: 'all', priority: 'all' },
+    meta: { trackLoading: false, showErrorToast: false, timeoutMs: 15000 }
   })
   const nextTickets = Array.isArray(data) ? data : []
+  const nextMessageTimes = new Map(alertKnownMessageTimes)
   if (ticketAlertsInitialized) {
-    const freshTickets = nextTickets.filter((item) => {
-      if (!item || item.status === 'closed') return false
-      return !alertKnownTicketIds.has(Number(item.id))
-    })
+    const freshTickets = nextTickets.filter((item) => item?.id && item.status !== 'closed' && !alertKnownTicketIds.has(Number(item.id)))
     if (freshTickets.length) notifyNewSupportTickets(freshTickets)
+    // Recover messages missed while SSE disconnected, using message IDs for
+    // shared live/poll deduplication. Never change the selected ticket or drafts.
+    for (const ticket of nextTickets) {
+      const id = Number(ticket.id)
+      const previous = alertKnownMessageTimes.get(id)
+      const latest = ticket.last_message_at || ''
+      if (!previous || !latest || Date.parse(latest) <= Date.parse(previous)) continue
+      try {
+        const { data: detail } = await api.get(`/auth/hq/tickets/${id}/`, {
+          meta: { trackLoading: false, showErrorToast: false, timeoutMs: 8000 }
+        })
+        for (const message of detail?.messages || []) {
+          if (Date.parse(message.created_at) <= Date.parse(previous)) continue
+          notifyIncomingSupportMessage({ type: 'support.message.created',
+            occurred_at: message.created_at,
+            data: { id: message.id, ticket_id: id, actor_user_id: message.sender }
+          }, authStore.user?.id)
+        }
+      } catch (_error) {
+        // Keep the old watermark so the next poll retries the missed messages.
+        continue
+      }
+      nextMessageTimes.set(id, latest)
+    }
   }
+  for (const ticket of nextTickets) {
+    const id = Number(ticket.id)
+    const previous = alertKnownMessageTimes.get(id)
+    if (!ticketAlertsInitialized || !previous || !ticket.last_message_at || Date.parse(ticket.last_message_at) <= Date.parse(previous)) {
+      nextMessageTimes.set(id, ticket.last_message_at || ticket.created_at || '')
+    }
+  }
+  alertKnownMessageTimes = nextMessageTimes
   alertKnownTicketIds = new Set(nextTickets.map((item) => Number(item.id)))
   ticketAlertsInitialized = true
 }
@@ -2088,7 +2116,6 @@ const startHqTicketLive = () => {
   stopHqTicketLive()
   hqTicketLiveStream = createLiveEventSource({ keepAliveWhenHidden: true })
   hqTicketLiveStream?.addEventListener('open', () => {
-    if (tickets.value.length) return
     void refreshTicketsQuietly()
   })
   hqTicketLiveStream?.addEventListener('message', (event) => {
@@ -2104,7 +2131,7 @@ const startHqTicketLive = () => {
     if (hqTicketLiveRefreshTimer) window.clearTimeout(hqTicketLiveRefreshTimer)
     hqTicketLiveRefreshTimer = window.setTimeout(refreshTicketsQuietly, 1200)
   })
-  hqTicketPollingTimer = window.setInterval(refreshTicketsQuietly, 90_000)
+  hqTicketPollingTimer = window.setInterval(refreshTicketsQuietly, 30_000)
 }
 
 const onGlobalLiveEvent = (event) => {
@@ -2463,11 +2490,7 @@ onMounted(async () => {
   }
   if (activeTab.value === 'tickets') initialLoads.push(loadTickets())
   await Promise.all(initialLoads)
-  if (tickets.value.length) {
-    alertKnownTicketIds = new Set(tickets.value.map((item) => Number(item.id)))
-  } else {
-    await pollTicketAlerts()
-  }
+  await refreshTicketsQuietly()
 })
 
 onBeforeUnmount(() => {
