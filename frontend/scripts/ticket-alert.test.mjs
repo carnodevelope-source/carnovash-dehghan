@@ -22,7 +22,7 @@ function setup({ hidden = false, notifications = true } = {}) {
     document: { visibilityState: hidden ? 'hidden' : 'visible' },
     notifyInfo() { calls.toasts++ }, Date, encodeURI,
   })
-  vm.runInContext(source + ';globalThis.alertMessage=notifyIncomingSupportMessage;globalThis.permission=ensureTicketBrowserPermission', context)
+  vm.runInContext(source + ';globalThis.alertMessage=notifyIncomingSupportMessage;globalThis.permission=ensureTicketBrowserPermission;globalThis.alertTickets=notifyNewSupportTickets', context)
   return { calls, context }
 }
 
@@ -56,4 +56,30 @@ test('unsupported browser notifications do not break in-app alerts', async () =>
   context.alertMessage(event(1), 1)
   assert.equal(calls.toasts, 1)
   assert.equal(calls.sounds, 1)
+})
+
+
+test('a new ticket shows one OS banner while minimized, even with duplicate live/poll delivery', () => {
+  const { calls, context } = setup({ hidden: true })
+  context.alertTickets([{ id: 700, subject: 'new ticket' }])
+  context.alertTickets([{ id: 700, subject: 'new ticket' }])
+  context.alertTickets([{ id: 701, subject: 'another ticket' }])
+  assert.deepEqual(calls, { sounds: 2, toasts: 2, banners: 2 })
+})
+
+test('minimized HQ still checks alerts without loading or rendering the ticket panel', async () => {
+  const hq = readFileSync(new URL('../src/views/hq/HqPanelView.vue', import.meta.url), 'utf8')
+  const start = hq.indexOf('const refreshTicketsQuietly = async () => {')
+  const end = hq.indexOf('const stopHqTicketLive', start)
+  let polls = 0, loads = 0
+  const context = vm.createContext({
+    document: { visibilityState: 'hidden' },
+    pollTicketAlerts: async () => { polls++ },
+    loadTickets: async () => { loads++ }
+  })
+  vm.runInContext('let hqTicketPollingInFlight = false;'+hq.slice(start, end)+';globalThis.refresh=refreshTicketsQuietly', context)
+  await context.refresh()
+  await context.refresh()
+  assert.equal(polls, 2)
+  assert.equal(loads, 0)
 })

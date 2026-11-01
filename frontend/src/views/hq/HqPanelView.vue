@@ -972,6 +972,7 @@ let hqTicketPollingInFlight = false
 let knownTicketIds = new Set()
 let knownTicketActivity = new Map()
 let alertKnownTicketIds = new Set()
+let ticketAlertsInitialized = false
 const visibleTabs = computed(() => {
   if (authStore.isHqAdmin) {
     return allTabs
@@ -1985,7 +1986,7 @@ const pollTicketAlerts = async () => {
     meta: { trackLoading: false, showErrorToast: false }
   })
   const nextTickets = Array.isArray(data) ? data : []
-  if (alertKnownTicketIds.size) {
+  if (ticketAlertsInitialized) {
     const freshTickets = nextTickets.filter((item) => {
       if (!item || item.status === 'closed') return false
       return !alertKnownTicketIds.has(Number(item.id))
@@ -1993,6 +1994,7 @@ const pollTicketAlerts = async () => {
     if (freshTickets.length) notifyNewSupportTickets(freshTickets)
   }
   alertKnownTicketIds = new Set(nextTickets.map((item) => Number(item.id)))
+  ticketAlertsInitialized = true
 }
 
 const ensureSelectedTicket = async (options = {}) => {
@@ -2051,11 +2053,13 @@ const selectTicket = async (ticketId, options = {}) => {
 }
 
 const refreshTicketsQuietly = async () => {
-  if (hqTicketPollingInFlight || document.visibilityState === 'hidden') return
+  if (hqTicketPollingInFlight) return
   hqTicketPollingInFlight = true
   try {
     // Unfiltered alert poll so new tickets are not missed when inbox filters are active.
     await pollTicketAlerts()
+    // Keep alerts active while minimized; defer panel rendering until visible.
+    if (document.visibilityState === 'hidden') return
     await loadTickets({
       keepReply: true,
       notifyNew: true,
@@ -2090,6 +2094,10 @@ const startHqTicketLive = () => {
   hqTicketLiveStream?.addEventListener('message', (event) => {
     const payload = parseLiveEvent(event.data)
     if (!payload?.type || !String(payload.type).startsWith('support.')) return
+    if (payload.type === 'support.ticket.created' && payload.data?.id) {
+      notifyNewSupportTickets([payload.data])
+      alertKnownTicketIds.add(Number(payload.data.id))
+    }
     if (notifyIncomingSupportMessage(payload, authStore.user?.id) && payload.data?.ticket_id) {
       alertKnownTicketIds.add(Number(payload.data.ticket_id))
     }

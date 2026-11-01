@@ -128,9 +128,13 @@ export const notifyIncomingSupportMessage = (payload, userId) => {
   return true
 }
 
+const seenNewTicketIds = new Set()
+
 export const notifyNewSupportTickets = (tickets = []) => {
-  const items = (Array.isArray(tickets) ? tickets : []).filter((item) => item && item.id)
+  const items = (Array.isArray(tickets) ? tickets : []).filter((item) => item && item.id && !seenNewTicketIds.has(String(item.id)))
   if (!items.length) return
+  for (const item of items) seenNewTicketIds.add(String(item.id))
+  while (seenNewTicketIds.size > 500) seenNewTicketIds.delete(seenNewTicketIds.values().next().value)
 
   playTicketAlertSound()
 
